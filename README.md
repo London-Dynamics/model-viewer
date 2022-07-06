@@ -28,12 +28,14 @@ Node.js and npm.
 Then, perform the following steps to get set up for development:
 
 ```sh
-git clone --depth=1 git@github.com:google/model-viewer.git
+git clone --depth=1 git@github.com:London-Dynamics/model-viewer.git
 cd model-viewer
 npm install
 ```
 
-Note: depth=1 keeps you from downloading our ~3Gb of history, which is dominated by all the versions of our golden render fidelity images.
+> **Note**
+> 
+> depth=1 keeps you from downloading our ~3Gb of history, which is dominated by all the versions of our golden render fidelity images.
 
 The following global commands are available:
 
@@ -41,7 +43,7 @@ Command                        | Description
 ------------------------------ | -----------
 `npm ci`                       | Install dependencies and cross-links sub-projects
 `npm run build`                | Runs the build step for all sub-projects
-`npm run serve`                | Runs a web server and opens a new browser tab pointed to the local copy of modelviewer.dev (don't forget to build!)
+`npm run serve`                | Runs a web server and opens a new browser tab pointed to the local copy of modelviewer.dev (don't forget `npm run build` first)
 `npm run test`                 | Runs tests in all sub-projects that have them
 `npm run clean`                | Removes built artifacts from all sub-projects
 
