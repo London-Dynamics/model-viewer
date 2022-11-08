@@ -83,7 +83,7 @@ button {
           </div>
           <example-snippet stamp-to="variants" highlight-as="html">
             <template>
-<model-viewer id="shoe" camera-controls src="../../shared-assets/models/glTF-Sample-Models/2.0/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb" ar ar-modes="webxr scene-viewer quick-look" alt="A 3D model of a Shoe">
+<model-viewer id="shoe" camera-controls touch-action="pan-y" src="../../shared-assets/models/glTF-Sample-Models/2.0/MaterialsVariantsShoe/glTF-Binary/MaterialsVariantsShoe.glb" ar alt="A 3D model of a Shoe">
   <div class="controls">
     <div>Variant: <select id="variant"></select></div>
   </div>
@@ -129,9 +129,7 @@ select.addEventListener('input', (event) => {
             will be taken into account by the automatic camera framing. If they
             are changed afterwards the camera will not move, so to get new
             automatic framing the <code>updateFraming()</code> method must be
-            called. Also, the <code>bounds</code> attribute is set to
-            <code>"tight"</code> to keep the transformed model from floating
-            over its shadow.</p>
+            called.</p>
             <p>Note that these changes can be made in AR as well, but only in
             WebXR mode, as this is the only mode that remains in the browser.
             Changes you made ahead of time will not be reflected in Scene
@@ -142,7 +140,7 @@ select.addEventListener('input', (event) => {
           </div>
           <example-snippet stamp-to="transforms" highlight-as="html">
             <template>
-<model-viewer id="transform" orientation="20deg 0 0" bounds="tight" shadow-intensity="1" camera-controls ar ar-modes="webxr scene-viewer quick-look" src="../../shared-assets/models/Astronaut.glb" alt="A 3D model of an astronaut">
+<model-viewer id="transform" orientation="20deg 0 0" shadow-intensity="1" camera-controls touch-action="pan-y" ar src="../../shared-assets/models/Astronaut.glb" alt="A 3D model of an astronaut">
   <div class="controls">
     <div>Roll: <input id="roll" value="20" size="3" class="number"> degrees</div>
     <div>Pitch: <input id="pitch" value="0" size="3" class="number"> degrees</div>
@@ -217,7 +215,7 @@ z.addEventListener('input', () => {
           </div>
           <example-snippet stamp-to="changeColor" highlight-as="html">
             <template>
-<model-viewer id="color" camera-controls interaction-prompt="none" src="../../shared-assets/models/Astronaut.glb" ar ar-modes="webxr scene-viewer quick-look" alt="A 3D model of an astronaut">
+<model-viewer id="color" camera-controls touch-action="pan-y" interaction-prompt="none" src="../../shared-assets/models/Astronaut.glb" ar alt="A 3D model of an astronaut">
   <div class="controls", id="color-controls">
     <button data-color="1,0,0,1">Red</button>
     <button data-color="0,1,0,1">Green</button>
@@ -261,7 +259,7 @@ document.querySelector('#color-controls').addEventListener('click', (event) => {
           </div>
           <example-snippet stamp-to="changeMaterial" highlight-as="html">
             <template>
-<model-viewer id="sphere" camera-controls interaction-prompt="none" src="../../shared-assets/models/reflective-sphere.gltf" ar ar-modes="webxr scene-viewer quick-look" alt="A 3D model of a sphere">
+<model-viewer id="sphere" camera-controls touch-action="pan-y" interaction-prompt="none" src="../../shared-assets/models/reflective-sphere.gltf" ar alt="A 3D model of a sphere">
   <div class="controls">
     <div>
       <p>Metalness: <span id="metalness-value"></span></p>
@@ -319,7 +317,7 @@ modelViewerParameters.addEventListener("load", (ev) => {
           </div>
           <example-snippet stamp-to="createTexturesExample" highlight-as="html">
             <template>
-<model-viewer id="duck" camera-controls src="../../shared-assets/models/glTF-Sample-Models/2.0/Duck/glTF-Binary/Duck.glb" ar ar-modes="webxr scene-viewer quick-look" alt="A 3D model of a duck">
+<model-viewer id="duck" camera-controls touch-action="pan-y" src="../../shared-assets/models/glTF-Sample-Models/2.0/Duck/glTF-Binary/Duck.glb" ar alt="A 3D model of a duck">
   <div class="controls">
       <p>Normals</p>
       <select id="normals2">
@@ -336,6 +334,8 @@ modelViewerParameters.addEventListener("load", (ev) => {
 </model-viewer>
 <script type="module">
 const modelViewerTexture = document.querySelector("model-viewer#duck");
+const textureName = document.querySelector('#texture-name');
+const imageName = document.querySelector('#image-name');
 
 modelViewerTexture.addEventListener("load", () => {
 
@@ -345,6 +345,9 @@ modelViewerTexture.addEventListener("load", () => {
     if (event.target.value == "None") {
       // Clears the texture.
       material[channel].setTexture(null);
+      // Display the names values
+      textureName.innerText = "None";
+      imageName.innerText = "None";
     } else if (event.target.value) {
       // Creates a new texture.
       const texture = await modelViewerTexture.createTexture(event.target.value);
@@ -353,8 +356,8 @@ modelViewerTexture.addEventListener("load", () => {
       // Applies the new texture to the specified channel.
       material[channel].setTexture(texture);
       // Display the names values
-      document.querySelector('#texture-name').innerText = texture.name;
-      document.querySelector('#image-name').innerText = texture.source.name;
+      textureName.innerText = texture.name;
+      imageName.innerText = texture.source.name;
     }
   }
 
@@ -383,7 +386,7 @@ modelViewerTexture.addEventListener("load", () => {
           </div>
           <example-snippet stamp-to="swapTextures" highlight-as="html">
             <template>
-<model-viewer id="helmet" camera-controls src="../../shared-assets/models/glTF-Sample-Models/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb" ar ar-modes="webxr scene-viewer quick-look" alt="A 3D model of a helmet">
+<model-viewer id="helmet" camera-controls touch-action="pan-y" src="../../shared-assets/models/glTF-Sample-Models/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb" ar alt="A 3D model of a helmet">
   <div class="controls">
     <div>
       <p>Diffuse</p>
@@ -485,7 +488,7 @@ modelViewerTexture1.addEventListener("load", () => {
           </div>
           <example-snippet stamp-to="pickMaterialExample" highlight-as="html">
             <template>
-<model-viewer id="pickMaterial" shadow-intensity="1" camera-controls src="../../shared-assets/models/glTF-Sample-Models/2.0/Buggy/glTF-Binary/Buggy.glb" ar ar-modes="webxr scene-viewer" scale="0.001 0.001 0.001" alt="A Material Picking Example">
+<model-viewer id="pickMaterial" shadow-intensity="1" camera-controls touch-action="pan-y" disable-tap src="../../shared-assets/models/glTF-Sample-Models/2.0/Buggy/glTF-Binary/Buggy.glb" ar ar-modes="webxr scene-viewer" scale="0.001 0.001 0.001" alt="A Material Picking Example">
 </model-viewer>
 <script type="module">
 const modelViewer = document.querySelector("model-viewer#pickMaterial");
@@ -646,17 +649,17 @@ enum MaxFilter {
           </div>
           <example-snippet stamp-to="exporter" highlight-as="html">
             <template>
-<model-viewer id="static-model" src="../../shared-assets/models/Astronaut.glb" shadow-intensity="1" camera-controls alt="A 3D model of an astronaut">
+<model-viewer id="static-model" src="../../shared-assets/models/Astronaut.glb" shadow-intensity="1" camera-controls touch-action="pan-y" alt="A 3D model of an astronaut">
   <div class="controls">
     <button onclick="exportGLB()">Export GLB</button>
   </div>
 </model-viewer>
 <script>
   async function exportGLB(){
-    let modelViewer = document.getElementById("static-model");
+    const modelViewer = document.getElementById("static-model");
     const glTF = await modelViewer.exportScene();
-    var file = new File([glTF], "export.glb");
-    var link = document.createElement("a");
+    const file = new File([glTF], "export.glb");
+    const link = document.createElement("a");
     link.download =file.name;
     link.href = URL.createObjectURL(file);
     link.click();

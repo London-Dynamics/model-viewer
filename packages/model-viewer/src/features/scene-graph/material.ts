@@ -47,10 +47,10 @@ const $modelVariants = Symbol('modelVariants');
  * Material facade implementation for Three.js materials
  */
 export class Material extends ThreeDOMElement implements MaterialInterface {
-  private[$pbrMetallicRoughness]: PBRMetallicRoughness;
-  private[$normalTexture]: TextureInfo;
-  private[$occlusionTexture]: TextureInfo;
-  private[$emissiveTexture]: TextureInfo;
+  private[$pbrMetallicRoughness]!: PBRMetallicRoughness;
+  private[$normalTexture]!: TextureInfo;
+  private[$occlusionTexture]!: TextureInfo;
+  private[$emissiveTexture]!: TextureInfo;
   private[$lazyLoadGLTFInfo]?: LazyLoader;
   private[$gltfIndex]: number;
   private[$isActive]: boolean;
@@ -121,7 +121,7 @@ export class Material extends ThreeDOMElement implements MaterialInterface {
 
     const {
       normalTexture: gltfNormalTexture,
-      occlusionTexture: gltfOcculsionTexture,
+      occlusionTexture: gltfOcclusionTexture,
       emissiveTexture: gltfEmissiveTexture
     } = gltfMaterial;
 
@@ -143,7 +143,7 @@ export class Material extends ThreeDOMElement implements MaterialInterface {
         aoMap,
         correlatedMaterials,
         gltf,
-        gltfOcculsionTexture ? gltfOcculsionTexture : null,
+        gltfOcclusionTexture ? gltfOcclusionTexture : null,
     );
 
     this[$emissiveTexture] = new TextureInfo(
