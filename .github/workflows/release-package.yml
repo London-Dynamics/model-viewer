@@ -1,4 +1,4 @@
-name: model-viewer
+name: Release Package
 
 on:
   release:
