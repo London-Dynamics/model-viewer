@@ -20,6 +20,9 @@ supported to provide a seamless development experience.
 
 [Demo](https://model-viewer.glitch.me) • [Documentation](https://modelviewer.dev/) • [Kanban](https://github.com/google/model-viewer/projects/1) • [Quality Tests](https://modelviewer.dev/fidelity/)
 
+## Versioning
+
+  `<model-viewer>` follows [Semantic Versioning](https://semver.org/). [London Dynamics](https://github.com/London-Dynamics) edits are marked with the prelease tag `-ld.1` and are not considered stable. The original Google code is considered stable and is not marked with a prelease tag.
 
 ## Installing
 
