@@ -45,6 +45,16 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    updateNodeScale(name: string, scale: [number, number, number]) {
+      const node = this[$meshes].get(name);
+      if (node) {
+        node.scale.set(...scale);
+        this[$scene].updateShadow();
+        this[$scene].queueRender();
+        this._updateNodePositionDebounced();
+      }
+    }
+
     [$onModelLoad]() {
       super[$onModelLoad]();
 
