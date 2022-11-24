@@ -302,5 +302,15 @@
         "name": "Custom Effects"
       }
     ]
+  },
+  {
+    "name": "Puzzler",
+    "htmlName": "puzzler",
+    "examples": [
+      {
+        "htmlId": "transforms",
+        "name": "Transforms"
+      }
+    ]
   }
 ]
