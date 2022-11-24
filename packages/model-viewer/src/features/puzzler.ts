@@ -18,7 +18,7 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   class PuzzlerModelViewerElement extends ModelViewerElement {
     private [$meshes] = new Map<string, Object3D>();
 
-    private updateNodePositionDebounced = debounce(async () => {
+    private _updateNodePositionDebounced = debounce(async () => {
       this[$scene].updateBoundingBox();
       this[$scene].updateShadow();
       await this[$scene].updateFraming();
@@ -31,7 +31,7 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         node.position.set(...position);
         this[$scene].updateShadow();
         this[$scene].queueRender();
-        this.updateNodePositionDebounced();
+        this._updateNodePositionDebounced();
       }
     }
 
@@ -41,7 +41,7 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         node.rotation.set(...rotation);
         this[$scene].updateShadow();
         this[$scene].queueRender();
-        this.updateNodePositionDebounced();
+        this._updateNodePositionDebounced();
       }
     }
 
