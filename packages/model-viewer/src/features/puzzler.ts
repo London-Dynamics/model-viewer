@@ -8,6 +8,8 @@ import { Constructor, debounce } from '../utilities.js';
 export declare interface PuzzlerInterface {
   updateNodePosition(name: string, position: [number, number, number]): void;
   updateNodeRotation(name: string, rotation: [number, number, number]): void;
+  updateNodeScale(name: string, scale: [number, number, number]): void;
+  getNodes(): Array<string>;
 }
 
 const $meshes = Symbol('meshes');
@@ -24,6 +26,10 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       await this[$scene].updateFraming();
       this[$scene].queueRender();
     }, 300);
+
+    getNodes() {
+      return [...this[$meshes].keys()];
+    }
 
     updateNodePosition(name: string, position: [number, number, number]) {
       const node = this[$meshes].get(name);
