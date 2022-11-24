@@ -206,6 +206,48 @@
                           />
                         </div>
                       </div>
+                      <h5>Scale</h5>
+                      <div class="scale flex-row">
+                        <div class="px-3">
+                          <label for="scale-xaxis">X-axis</label>
+                          <input
+                            type="range"
+                            id="scale-xaxis"
+                            class="axis-input"
+                            name="x"
+                            min="0"
+                            max="2"
+                            default="1"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="scale-yaxis">Y-axis</label>
+                          <input
+                            type="range"
+                            id="scale-yaxis"
+                            class="axis-input"
+                            name="y"
+                            min="0"
+                            max="2"
+                            default="1"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="scale-zaxis">Z-axis</label>
+                          <input
+                            type="range"
+                            id="scale-zaxis"
+                            class="axis-input"
+                            name="z"
+                            min="0"
+                            max="2"
+                            default="1"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </model-viewer>
 
@@ -220,6 +262,9 @@
                     const rotators = modelViewer.querySelectorAll(
                       '.rotate .axis-input'
                     );
+
+                    const scalers =
+                      modelViewer.querySelectorAll('.scale .axis-input');
 
                     translators.forEach((input) => {
                       input.addEventListener('input', (event) => {
@@ -248,6 +293,19 @@
                           y * Math.PI,
                           z * Math.PI,
                         ]);
+                      });
+                    });
+
+                    scalers.forEach((input) => {
+                      input.addEventListener('input', (event) => {
+                        const x =
+                          modelViewer.querySelector('#scale-xaxis').value;
+                        const y =
+                          modelViewer.querySelector('#scale-yaxis').value;
+                        const z =
+                          modelViewer.querySelector('#scale-zaxis').value;
+
+                        modelViewer.updateNodeScale('Box', [x, y, z]);
                       });
                     });
                   </script>
