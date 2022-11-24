@@ -1174,5 +1174,27 @@
         "description": "Returns an array av all objects in the scene graph that can be transformed."
       }
     ]
+  },
+  {
+    "Title": "Puzzler",
+    "htmlName": "puzzler",
+    "Methods": [
+      {
+        "name": "updateNodePosition(nodeName, newPosition)",
+        "htmlName": "updateNodePosition",
+        "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateNodeRotation(nodeName, newRotation)",
+        "htmlName": "updateNodeRotation",
+        "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+        ]
+      }
+    ]
   }
 ]
