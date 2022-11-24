@@ -17,61 +17,72 @@
 
 <!DOCTYPE html>
 <html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; Examples and Documentation</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; examples and documentation"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../styles/docs.css" rel="stylesheet" />
+    <link rel="shortcut icon" type="image/png" href="../assets/favicon.png" />
+    <script>
+      window.ga =
+        window.ga ||
+        function () {
+          (ga.q = ga.q || []).push(arguments);
+        };
+      ga.l = +new Date();
+      ga('create', 'UA-169901325-1', { storage: 'none' });
+      ga('set', 'referrer', document.referrer.split('?')[0]);
+      ga('set', 'anonymizeIp', true);
+      ga('send', 'pageview');
+    </script>
+    <script async src="https://www.google-analytics.com/analytics.js"></script>
+  </head>
 
-<head>
-  <title>&lt;model-viewer&gt; Examples and Documentation</title>
-  <meta charset="utf-8">
-  <meta name="description" content="&lt;model-viewer&gt; examples and documentation">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link type="text/css" href="../styles/examples.css" rel="stylesheet" />
-  <link type="text/css" href="../styles/docs.css" rel="stylesheet" />
-  <link rel="shortcut icon" type="image/png" href="../assets/favicon.png" />
-  <script>
-    window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
-    ga('create', 'UA-169901325-1', { 'storage': 'none' });
-    ga('set', 'referrer', document.referrer.split('?')[0]);
-    ga('set', 'anonymizeIp', true);
-    ga('send', 'pageview');
-  </script>
-  <script async src='https://www.google-analytics.com/analytics.js'></script>
-</head>
+  <style>
+    :root {
+      --scroll-top: 65px;
+      scroll-padding-top: var(--scroll-top);
+    }
+  </style>
 
-<style>
-  :root {
-    --scroll-top: 65px;
-    scroll-padding-top: var(--scroll-top);
-  }
-</style>
+  <body>
+    <div class="sidebar" id="sidenav"></div>
 
-<body>
-  <div class="sidebar" id="sidenav"></div>
-
-  <!-- Start of all documentation -->
-  <div class="outer-content">
-    <div id="toggle"></div>
-    <div id="loading-docs"></div>
-    <div id="augmentedreality-docs"></div>
-    <div id="stagingandcameras-docs"></div>
-    <div id="annotations-docs"></div>
-    <div id="lightingandenv-docs"></div>
-    <div id="animation-docs"></div>
-    <div id="scenegraph-docs"></div>
-    <div class="footerDocumentation">
-      <div class="footer">
-        <div style="margin-top:24px;" class="copyright">©Copyright 2018-2020 Google Inc. Licensed under the Apache License 2.0.</div>
-        <div id='footer-links'></div>
+    <!-- Start of all documentation -->
+    <div class="outer-content">
+      <div id="toggle"></div>
+      <div id="loading-docs"></div>
+      <div id="augmentedreality-docs"></div>
+      <div id="stagingandcameras-docs"></div>
+      <div id="annotations-docs"></div>
+      <div id="lightingandenv-docs"></div>
+      <div id="animation-docs"></div>
+      <div id="scenegraph-docs"></div>
+      <div id="puzzler-docs"></div>
+      <div class="footerDocumentation">
+        <div class="footer">
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2018-2020 Google Inc. Licensed under the Apache License
+            2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
       </div>
     </div>
-  </div>
-  
 
-  <script type="module" src="../examples/built/docs-and-examples.js">
-  </script>
-  <script type="module">
-    (() => { init('docs'); })();
-    (() => { initFooterLinks();})();
-  </script>
-
-</body>
-
+    <script type="module" src="../examples/built/docs-and-examples.js"></script>
+    <script type="module">
+      (() => {
+        init('docs');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+  </body>
 </html>

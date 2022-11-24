@@ -7,9 +7,7 @@
         "name": "src",
         "htmlName": "src",
         "description": "The URL to the 3D model. Only <a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0\">glTF</a>/<a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#glb-file-format-specification\">GLB</a> models are supported.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -19,9 +17,7 @@
         "name": "alt",
         "htmlName": "alt",
         "description": "Configures the model with custom text that will be used to describe the model to viewers who use a screen reader or otherwise depend on additional semantic context to understand what they are viewing.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any description"
@@ -31,9 +27,7 @@
         "name": "poster",
         "htmlName": "poster",
         "description": "Displays an image instead of the model, useful for showing the user something before a model is loaded and ready to render.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -43,9 +37,7 @@
         "name": "loading",
         "htmlName": "loading",
         "description": "An enumerable attribute describing under what conditions the model should be preloaded. The supported values are \"auto\", \"lazy\" and \"eager\". Auto is equivalent to lazy, which loads the model when it is near the viewport for <span class='attribute'>reveal=\"auto\"</span>, and when interacted with for <span class='attribute'>reveal=\"interaction\"</span>. Eager loads the model immediately.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "auto",
           "options": "auto, lazy, eager"
@@ -55,9 +47,7 @@
         "name": "reveal",
         "htmlName": "reveal",
         "description": "This attribute controls when the model should be revealed. If <span class='attribute'>reveal</span> is set to \"auto\", the model will be revealed as soon as it is done loading and rendering. If <span class='attribute'>reveal</span> is set to \"manual\", the model will remain hidden until <span class='attribute'>dismissPoster()</span> is called.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "auto",
           "options": "auto, manual"
@@ -744,9 +734,7 @@
         "name": "--min-hotspot-opacity",
         "htmlName": "minHotspotOpacity",
         "description": "Sets the opacity of hidden hotspots.",
-        "links": [
-          "<a href=\"../examples/annotations/\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/annotations/\">Related examples</a>"],
         "default": {
           "default": "0.25",
           "options": "any value between 0 and 1"
@@ -1086,6 +1074,28 @@
         "description": "Async method that returns a Texture object for use with the <code>setTexture</code> method on <code>TextureInfo</code> objects in the Materials API. The uri to the lottie json is required, while the quality defaults to 1 (resolution specified in the file). The Lottie animation created is available through <code>texture.source.animation</code> for controlling playback. The Lottie canvas module is lazy-loaded like the DRACO decoder and if you don't like our default CDN, you can specify your own location using <a href=\"./#entrydocs-loading-staticProperties-lottieLoaderLocation\">lottieLoaderLocation</a>. Note that an import map is required mapping 'three' to your model-viewer library file in order to load a Lottie, follow the link below for an example.",
         "links": [
           "<a href=\"../examples/scenegraph/#animatedTexturesExample\">Create animated textures example</a>"
+        ]
+      }
+    ]
+  },
+  {
+    "Title": "Puzzler",
+    "htmlName": "puzzler",
+    "Methods": [
+      {
+        "name": "updateNodePosition(nodeName, newPosition)",
+        "htmlName": "updateNodePosition",
+        "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateNodeRotation(nodeName, newRotation)",
+        "htmlName": "updateNodeRotation",
+        "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
         ]
       }
     ]
