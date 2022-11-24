@@ -1,6 +1,6 @@
 {
   "name": "@london-dynamics/model-viewer",
-  "version": "2.0.2-ld.0",
+  "version": "2.0.2-ld.1",
   "description": "Easily display interactive 3D models on the web and in AR!",
   "repository": "https://github.com/london-dynamics/model-viewer",
   "bugs": {

@@ -256,5 +256,15 @@
         "name": "Exporter"
       }
     ]
+  },
+  {
+    "name": "Puzzler",
+    "htmlName": "puzzler",
+    "examples": [
+            {
+        "htmlId": "transforms",
+        "name": "Transforms"
+      }
+    ]
   }
 ]
