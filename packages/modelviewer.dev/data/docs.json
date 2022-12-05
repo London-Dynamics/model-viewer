@@ -1046,33 +1046,62 @@
     "htmlName": "puzzler",
     "Methods": [
       {
-        "name": "updateNodePosition(nodeName, newPosition)",
-        "htmlName": "updateNodePosition",
+        "name": "updateMeshPosition(nodeName, newPosition)",
+        "htmlName": "updateMeshPosition",
         "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
           "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
         ]
       },
       {
-        "name": "updateNodeRotation(nodeName, newRotation)",
-        "htmlName": "updateNodeRotation",
+        "name": "updateMeshRotation(nodeName, newRotation)",
+        "htmlName": "updateMeshRotation",
         "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
           "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
         ]
       },
       {
-        "name": "updateNodeScale(nodeName, newScale)",
-        "htmlName": "updateNodeScale",
+        "name": "updateMeshScale(nodeName, newScale)",
+        "htmlName": "updateMeshScale",
         "description": "Updates the scale of a node in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
           "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
         ]
       },
       {
-        "name": "getNodes(nodeName)",
-        "htmlName": "getNodes",
-        "description": "Returns an array av all nodes in the scene graph that can be transformed."
+        "name": "updateObjectPosition(nodeName, newPosition)",
+        "htmlName": "updateObjectPosition",
+        "description": "Updates the position of an object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateObjectRotation(nodeName, newRotation)",
+        "htmlName": "updateObjectRotation",
+        "description": "Updates the rotation of an object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateObjectScale(nodeName, newScale)",
+        "htmlName": "updateObjectScale",
+        "description": "Updates the scale of an object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
+        "links": [
+          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getMeshes()",
+        "htmlName": "getMeshes",
+        "description": "Returns an array av all meshes in the scene graph that can be transformed."
+      },
+      {
+        "name": "getObjects()",
+        "htmlName": "getObjects",
+        "description": "Returns an array av all objects in the scene graph that can be transformed."
       }
     ]
   }
