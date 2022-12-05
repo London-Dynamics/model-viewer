@@ -308,6 +308,13 @@
                         modelViewer.updateNodeScale('Box', [x, y, z]);
                       });
                     });
+
+                    modelViewer.addEventListener('load', () => {
+                      console.group('Model Loaded');
+                      console.log('Object3D', modelViewer.getSceneObjects());
+                      console.log('Meshes', modelViewer.getSceneMeshes());
+                      console.groupEnd();
+                    });
                   </script>
                 </template>
               </example-snippet>
