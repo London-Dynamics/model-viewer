@@ -16,6 +16,7 @@ export declare interface PuzzlerInterface {
   getSceneObjects(): Array<string>;
 }
 
+const $meshRoot = Symbol('meshRoot');
 const $meshes = Symbol('meshes');
 const $objects = Symbol('objects');
 
@@ -23,6 +24,7 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<PuzzlerInterface> & T => {
   class PuzzlerModelViewerElement extends ModelViewerElement {
+    private [$meshRoot] = new Object3D();
     private [$meshes] = new Map<string, Object3D>();
     private [$objects] = new Map<string, Object3D>();
 
@@ -106,6 +108,21 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._updateNodeScale(node, scale);
     }
 
+    updateScenePosition(position: [number, number, number]) {
+      const node = this[$meshRoot];
+      this._updateNodePosition(node, position);
+    }
+
+    updateSceneRotation(rotation: [number, number, number]) {
+      const node = this[$meshRoot];
+      this._updateNodeRotation(node, rotation);
+    }
+
+    updateSceneScale(scale: [number, number, number]) {
+      const node = this[$meshRoot];
+      this._updateNodeScale(node, scale);
+    }
+
     [$onModelLoad]() {
       super[$onModelLoad]();
 
@@ -118,6 +135,9 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$objects].clear();
 
         scene.traverse((node) => {
+          if (node.type === 'Group' && node.name === 'Scene') {
+            this[$meshRoot] = node;
+          }
           if (node.type === 'Mesh' && node.name.length) {
             this[$meshes].set(node.name, node);
           }
