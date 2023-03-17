@@ -33,7 +33,7 @@
     />
 
     <style>
-      #controls {
+      .controls {
         position: absolute;
         bottom: 16px;
         left: 16px;
@@ -47,6 +47,10 @@
         padding: 0.5rem 1rem;
         color: #999;
       }
+      .controls--scene {
+        top: 16px;
+        bottom: unset;
+      }
       .flex-col {
         display: flex;
         flex-direction: column;
@@ -55,16 +59,16 @@
         display: flex;
         flex-direction: row;
       }
-      #controls h5 {
+      .controls h5 {
         margin: 0 0 0.25em 0;
       }
-      #controls label {
+      .controls label {
         color: gray;
         font-size: 0.6rem;
         text-transform: uppercase;
         line-height: 1em;
       }
-      #controls input {
+      .controls input {
         width: 100%;
       }
       .p-3 {
@@ -121,14 +125,18 @@
                     src="../../shared-assets/models/cubes.gltf"
                     alt="An animated 3D model two cubes"
                   >
-                    <div id="controls" class="flex-col">
+                    <div
+                      id="scene-transforms"
+                      class="controls controls--scene flex-col"
+                    >
+                      <h3>Scene</h3>
                       <h5>Translate</h5>
                       <div class="translate flex-row">
                         <div class="px-3">
                           <label for="translate-xaxis">X-axis</label>
                           <input
                             type="range"
-                            id="translate-xaxis"
+                            id="scene-translate-xaxis"
                             class="axis-input"
                             name="x"
                             min="-1"
@@ -141,7 +149,7 @@
                           <label for="translate-yaxis">Y-axis</label>
                           <input
                             type="range"
-                            id="translate-yaxis"
+                            id="scene-translate-yaxis"
                             class="axis-input"
                             name="y"
                             min="-1"
@@ -154,7 +162,7 @@
                           <label for="translate-zaxis">Z-axis</label>
                           <input
                             type="range"
-                            id="translate-zaxis"
+                            id="scene-translate-zaxis"
                             class="axis-input"
                             name="z"
                             min="-1"
@@ -170,7 +178,7 @@
                           <label for="rotate-xaxis">X-axis</label>
                           <input
                             type="range"
-                            id="rotate-xaxis"
+                            id="scene-rotate-xaxis"
                             class="axis-input"
                             name="x"
                             min="-1"
@@ -183,7 +191,7 @@
                           <label for="rotate-yaxis">Y-axis</label>
                           <input
                             type="range"
-                            id="rotate-yaxis"
+                            id="scene-rotate-yaxis"
                             class="axis-input"
                             name="y"
                             min="-1"
@@ -196,7 +204,7 @@
                           <label for="rotate-zaxis">Z-axis</label>
                           <input
                             type="range"
-                            id="rotate-zaxis"
+                            id="scene-rotate-zaxis"
                             class="axis-input"
                             name="z"
                             min="-1"
@@ -212,7 +220,7 @@
                           <label for="scale-xaxis">X-axis</label>
                           <input
                             type="range"
-                            id="scale-xaxis"
+                            id="scene-scale-xaxis"
                             class="axis-input"
                             name="x"
                             min="0"
@@ -225,7 +233,7 @@
                           <label for="scale-yaxis">Y-axis</label>
                           <input
                             type="range"
-                            id="scale-yaxis"
+                            id="scene-scale-yaxis"
                             class="axis-input"
                             name="y"
                             min="0"
@@ -238,7 +246,139 @@
                           <label for="scale-zaxis">Z-axis</label>
                           <input
                             type="range"
-                            id="scale-zaxis"
+                            id="scene-scale-zaxis"
+                            class="axis-input"
+                            name="z"
+                            min="0"
+                            max="2"
+                            default="1"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      id="box-transforms"
+                      class="controls controls--box flex-col"
+                    >
+                      <h3>Purple Box</h3>
+                      <h5>Translate</h5>
+                      <div class="translate flex-row">
+                        <div class="px-3">
+                          <label for="translate-xaxis">X-axis</label>
+                          <input
+                            type="range"
+                            id="box-translate-xaxis"
+                            class="axis-input"
+                            name="x"
+                            min="-1"
+                            max="1"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="translate-yaxis">Y-axis</label>
+                          <input
+                            type="range"
+                            id="box-translate-yaxis"
+                            class="axis-input"
+                            name="y"
+                            min="-1"
+                            max="1"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="translate-zaxis">Z-axis</label>
+                          <input
+                            type="range"
+                            id="box-translate-zaxis"
+                            class="axis-input"
+                            name="z"
+                            min="-1"
+                            max="1"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <h5>Rotate</h5>
+                      <div class="rotate flex-row">
+                        <div class="px-3">
+                          <label for="rotate-xaxis">X-axis</label>
+                          <input
+                            type="range"
+                            id="box-rotate-xaxis"
+                            class="axis-input"
+                            name="x"
+                            min="-1"
+                            max="1"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="rotate-yaxis">Y-axis</label>
+                          <input
+                            type="range"
+                            id="box-rotate-yaxis"
+                            class="axis-input"
+                            name="y"
+                            min="-1"
+                            max="1"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="rotate-zaxis">Z-axis</label>
+                          <input
+                            type="range"
+                            id="box-rotate-zaxis"
+                            class="axis-input"
+                            name="z"
+                            min="-1"
+                            max="1"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                      <h5>Scale</h5>
+                      <div class="scale flex-row">
+                        <div class="px-3">
+                          <label for="scale-xaxis">X-axis</label>
+                          <input
+                            type="range"
+                            id="box-scale-xaxis"
+                            class="axis-input"
+                            name="x"
+                            min="0"
+                            max="2"
+                            default="1"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="scale-yaxis">Y-axis</label>
+                          <input
+                            type="range"
+                            id="box-scale-yaxis"
+                            class="axis-input"
+                            name="y"
+                            min="0"
+                            max="2"
+                            default="1"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="scale-zaxis">Z-axis</label>
+                          <input
+                            type="range"
+                            id="box-scale-zaxis"
                             class="axis-input"
                             name="z"
                             min="0"
@@ -255,40 +395,90 @@
                     const modelViewer =
                       document.querySelector('#transform-demo');
 
-                    const translators = modelViewer.querySelectorAll(
-                      '.translate .axis-input'
+                    const sceneTranslators = modelViewer.querySelectorAll(
+                      '#scene-transforms .translate .axis-input'
                     );
 
-                    const rotators = modelViewer.querySelectorAll(
-                      '.rotate .axis-input'
+                    const sceneRotators = modelViewer.querySelectorAll(
+                      '#scene-transforms .rotate .axis-input'
                     );
 
-                    const scalers =
-                      modelViewer.querySelectorAll('.scale .axis-input');
+                    const sceneScalers = modelViewer.querySelectorAll(
+                      '#scene-transforms .scale .axis-input'
+                    );
 
-                    translators.forEach((input) => {
+                    const boxTranslators = modelViewer.querySelectorAll(
+                      '#box-transforms .translate .axis-input'
+                    );
+
+                    const boxRotators = modelViewer.querySelectorAll(
+                      '#box-transforms .rotate .axis-input'
+                    );
+
+                    const boxScalers = modelViewer.querySelectorAll(
+                      '#box-transforms .scale .axis-input'
+                    );
+
+                    boxTranslators.forEach((input) => {
                       input.addEventListener('input', (event) => {
-                        const x =
-                          modelViewer.querySelector('#translate-xaxis').value;
-                        const y =
-                          modelViewer.querySelector('#translate-yaxis').value;
-                        const z =
-                          modelViewer.querySelector('#translate-zaxis').value;
+                        const x = modelViewer.querySelector(
+                          '#box-translate-xaxis'
+                        ).value;
+                        const y = modelViewer.querySelector(
+                          '#box-translate-yaxis'
+                        ).value;
+                        const z = modelViewer.querySelector(
+                          '#box-translate-zaxis'
+                        ).value;
 
-                        modelViewer.updateNodePosition('Box', [x, y, z]);
+                        modelViewer.updateMeshPosition('Box', [x, y, z]);
+                      });
+                    });
+                    sceneTranslators.forEach((input) => {
+                      input.addEventListener('input', (event) => {
+                        const x = modelViewer.querySelector(
+                          '#scene-translate-xaxis'
+                        ).value;
+                        const y = modelViewer.querySelector(
+                          '#scene-translate-yaxis'
+                        ).value;
+                        const z = modelViewer.querySelector(
+                          '#scene-translate-zaxis'
+                        ).value;
+
+                        modelViewer.updateScenePosition([x, y, z]);
                       });
                     });
 
-                    rotators.forEach((input) => {
+                    boxRotators.forEach((input) => {
                       input.addEventListener('input', (event) => {
                         const x =
-                          modelViewer.querySelector('#rotate-xaxis').value;
+                          modelViewer.querySelector('#box-rotate-xaxis').value;
                         const y =
-                          modelViewer.querySelector('#rotate-yaxis').value;
+                          modelViewer.querySelector('#box-rotate-yaxis').value;
                         const z =
-                          modelViewer.querySelector('#rotate-zaxis').value;
+                          modelViewer.querySelector('#box-rotate-zaxis').value;
 
-                        modelViewer.updateNodeRotation('Box', [
+                        modelViewer.updateMeshRotation('Box', [
+                          x * Math.PI,
+                          y * Math.PI,
+                          z * Math.PI,
+                        ]);
+                      });
+                    });
+                    sceneRotators.forEach((input) => {
+                      input.addEventListener('input', (event) => {
+                        const x = modelViewer.querySelector(
+                          '#scene-rotate-xaxis'
+                        ).value;
+                        const y = modelViewer.querySelector(
+                          '#scene-rotate-yaxis'
+                        ).value;
+                        const z = modelViewer.querySelector(
+                          '#scene-rotate-zaxis'
+                        ).value;
+
+                        modelViewer.updateSceneRotation([
                           x * Math.PI,
                           y * Math.PI,
                           z * Math.PI,
@@ -296,16 +486,28 @@
                       });
                     });
 
-                    scalers.forEach((input) => {
+                    boxScalers.forEach((input) => {
                       input.addEventListener('input', (event) => {
                         const x =
-                          modelViewer.querySelector('#scale-xaxis').value;
+                          modelViewer.querySelector('#box-scale-xaxis').value;
                         const y =
-                          modelViewer.querySelector('#scale-yaxis').value;
+                          modelViewer.querySelector('#box-scale-yaxis').value;
                         const z =
-                          modelViewer.querySelector('#scale-zaxis').value;
+                          modelViewer.querySelector('#box-scale-zaxis').value;
 
-                        modelViewer.updateNodeScale('Box', [x, y, z]);
+                        modelViewer.updateMeshScale('Box', [x, y, z]);
+                      });
+                    });
+                    sceneScalers.forEach((input) => {
+                      input.addEventListener('input', (event) => {
+                        const x =
+                          modelViewer.querySelector('#scene-scale-xaxis').value;
+                        const y =
+                          modelViewer.querySelector('#scene-scale-yaxis').value;
+                        const z =
+                          modelViewer.querySelector('#scene-scale-zaxis').value;
+
+                        modelViewer.updateSceneScale([x, y, z]);
                       });
                     });
 
