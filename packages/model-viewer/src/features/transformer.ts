@@ -5,7 +5,7 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { Constructor, debounce } from '../utilities.js';
 
-export declare interface PuzzlerInterface {
+export declare interface TransformerInterface {
   updateMeshPosition(name: string, position: [number, number, number]): void;
   updateMeshRotation(name: string, rotation: [number, number, number]): void;
   updateMeshScale(name: string, scale: [number, number, number]): void;
@@ -20,10 +20,10 @@ const $meshRoot = Symbol('meshRoot');
 const $meshes = Symbol('meshes');
 const $objects = Symbol('objects');
 
-export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
+export const TransformerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
-): Constructor<PuzzlerInterface> & T => {
-  class PuzzlerModelViewerElement extends ModelViewerElement {
+): Constructor<TransformerInterface> & T => {
+  class TransformerModelViewerElement extends ModelViewerElement {
     private [$meshRoot] = new Object3D();
     private [$meshes] = new Map<string, Object3D>();
     private [$objects] = new Map<string, Object3D>();
@@ -149,5 +149,5 @@ export const PuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
   }
 
-  return PuzzlerModelViewerElement;
+  return TransformerModelViewerElement;
 };
