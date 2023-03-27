@@ -266,7 +266,7 @@
     ]
   },
   {
-    "name": "Transformer",
+    "name": "LD Transformer",
     "htmlName": "transformer",
     "examples": [
       {
