@@ -266,12 +266,16 @@
     ]
   },
   {
-    "name": "Puzzler",
-    "htmlName": "puzzler",
+    "name": "Transformer",
+    "htmlName": "transformer",
     "examples": [
-            {
-        "htmlId": "transforms",
-        "name": "Transforms"
+      {
+        "htmlId": "transform-geometry",
+        "name": "Transform Geometry"
+      },
+      {
+        "htmlId": "transform-scene",
+        "name": "Transform Scene"
       }
     ]
   }

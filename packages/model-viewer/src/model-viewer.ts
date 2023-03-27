@@ -19,7 +19,7 @@ import { ARMixin } from './features/ar.js';
 import { ControlsMixin } from './features/controls.js';
 import { EnvironmentMixin } from './features/environment.js';
 import { LoadingMixin } from './features/loading.js';
-import { PuzzlerMixin } from './features/puzzler.js';
+import { TransformerMixin } from './features/transformer.js';
 import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 import ModelViewerElementBase from './model-viewer-base.js';
@@ -27,11 +27,11 @@ import { FocusVisiblePolyfillMixin } from './utilities/focus-visible.js';
 
 // Export these to allow lazy-loaded LottieLoader.js to find what it needs.
 // Requires an import map - "three": "path/to/model-viewer.min.js".
-export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
+export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
 export const ModelViewerElement = AnnotationMixin(
   SceneGraphMixin(
-    PuzzlerMixin(
+    TransformerMixin(
       StagingMixin(
         EnvironmentMixin(
           ControlsMixin(

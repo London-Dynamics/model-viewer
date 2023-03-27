@@ -1079,15 +1079,15 @@
     ]
   },
   {
-    "Title": "Puzzler",
-    "htmlName": "puzzler",
+    "Title": "Transformer",
+    "htmlName": "transformer",
     "Methods": [
       {
         "name": "updateMeshPosition(nodeName, newPosition)",
         "htmlName": "updateMeshPosition",
         "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1095,7 +1095,7 @@
         "htmlName": "updateMeshRotation",
         "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1103,7 +1103,7 @@
         "htmlName": "updateMeshScale",
         "description": "Updates the scale of a node in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1111,7 +1111,7 @@
         "htmlName": "updateObjectPosition",
         "description": "Updates the position of an object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1119,7 +1119,7 @@
         "htmlName": "updateObjectRotation",
         "description": "Updates the rotation of an object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1127,7 +1127,7 @@
         "htmlName": "updateObjectScale",
         "description": "Updates the scale of an object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1143,15 +1143,15 @@
     ]
   },
   {
-    "Title": "Puzzler",
-    "htmlName": "puzzler",
+    "Title": "Transformer",
+    "htmlName": "transformer",
     "Methods": [
       {
         "name": "updateMeshPosition(nodeName, newPosition)",
         "htmlName": "updateMeshPosition",
         "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1159,7 +1159,7 @@
         "htmlName": "updateMeshRotation",
         "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1167,7 +1167,7 @@
         "htmlName": "updateMeshScale",
         "description": "Updates the scale of a node in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1175,7 +1175,7 @@
         "htmlName": "updateObjectPosition",
         "description": "Updates the position of an object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1183,7 +1183,7 @@
         "htmlName": "updateObjectRotation",
         "description": "Updates the rotation of an object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1191,7 +1191,7 @@
         "htmlName": "updateObjectScale",
         "description": "Updates the scale of an object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/puzzler/#transforms\">Related examples</a>"
+          "<a href=\"../examples/transformer/#transforms\">Related examples</a>"
         ]
       },
       {
