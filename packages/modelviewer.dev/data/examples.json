@@ -305,7 +305,7 @@
   },
   {
     "name": "LD Transformer",
-    "htmlName": "transformer",
+    "htmlName": "ld-transformer",
     "examples": [
       {
         "htmlId": "transform-geometry",
@@ -314,6 +314,16 @@
       {
         "htmlId": "transform-scene",
         "name": "Transform Scene"
+      }
+    ]
+  },
+  {
+    "name": "LD Cameras",
+    "htmlName": "ld-cameras",
+    "examples": [
+      {
+        "htmlId": "main-camera-control",
+        "name": "Main Camera Control"
       }
     ]
   }

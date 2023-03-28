@@ -1120,7 +1120,7 @@
         "htmlName": "updateMeshPosition",
         "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/transformer/#transform-geometry\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-geometry\">Related examples</a>"
         ]
       },
       {
@@ -1128,7 +1128,7 @@
         "htmlName": "updateMeshRotation",
         "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/transformer/#transform-geometry\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-geometry\">Related examples</a>"
         ]
       },
       {
@@ -1136,7 +1136,7 @@
         "htmlName": "updateMeshScale",
         "description": "Updates the scale of a node in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/transformer/#transform-geometry\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-geometry\">Related examples</a>"
         ]
       },
       {
@@ -1144,7 +1144,7 @@
         "htmlName": "updateObjectPosition",
         "description": "Updates the position of an object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/transformer/#transform-geometry\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-geometry\">Related examples</a>"
         ]
       },
       {
@@ -1152,7 +1152,7 @@
         "htmlName": "updateObjectRotation",
         "description": "Updates the rotation of an object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/transformer/#transform-geometry\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-geometry\">Related examples</a>"
         ]
       },
       {
@@ -1160,7 +1160,7 @@
         "htmlName": "updateObjectScale",
         "description": "Updates the scale of an object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/transformer/#transform-geometry\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-geometry\">Related examples</a>"
         ]
       },
       {
@@ -1168,7 +1168,7 @@
         "htmlName": "updateScenePosition",
         "description": "Updates the position of the root object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
         "links": [
-          "<a href=\"../examples/transformer/#transform-scene\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-scene\">Related examples</a>"
         ]
       },
       {
@@ -1176,7 +1176,7 @@
         "htmlName": "updateSceneRotation",
         "description": "Updates the rotation of the root object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
         "links": [
-          "<a href=\"../examples/transformer/#transform-scene\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-scene\">Related examples</a>"
         ]
       },
       {
@@ -1184,7 +1184,7 @@
         "htmlName": "updateSceneScale",
         "description": "Updates the scale of the root object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
         "links": [
-          "<a href=\"../examples/transformer/#transform-scene\">Related examples</a>"
+          "<a href=\"../examples/ld-transformer/#transform-scene\">Related examples</a>"
         ]
       },
       {
