@@ -19,7 +19,7 @@ import { ARMixin } from './features/ar.js';
 import { ControlsMixin } from './features/controls.js';
 import { EnvironmentMixin } from './features/environment.js';
 import { LoadingMixin } from './features/loading.js';
-import { TransformerMixin } from './features/transformer.js';
+import { LDTransformerMixin } from './features/ld-transformer.js';
 import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 import ModelViewerElementBase from './model-viewer-base.js';
@@ -31,7 +31,7 @@ export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
 export const ModelViewerElement = AnnotationMixin(
   SceneGraphMixin(
-    TransformerMixin(
+    LDTransformerMixin(
       StagingMixin(
         EnvironmentMixin(
           ControlsMixin(

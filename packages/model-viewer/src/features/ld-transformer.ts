@@ -20,7 +20,9 @@ const $meshRoot = Symbol('meshRoot');
 const $meshes = Symbol('meshes');
 const $objects = Symbol('objects');
 
-export const TransformerMixin = <T extends Constructor<ModelViewerElementBase>>(
+export const LDTransformerMixin = <
+  T extends Constructor<ModelViewerElementBase>
+>(
   ModelViewerElement: T
 ): Constructor<TransformerInterface> & T => {
   class TransformerModelViewerElement extends ModelViewerElement {

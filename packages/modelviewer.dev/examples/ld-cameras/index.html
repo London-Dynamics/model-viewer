@@ -1,0 +1,190 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; Materials & Scene Examples</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; scene graph examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style></style>
+
+    <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
+    <script
+      src="../../node_modules/focus-visible/dist/focus-visible.js"
+      defer
+    ></script>
+  </head>
+  <body>
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="main-camera-control" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">Cameras </span>by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page showcases how you can take more control over the
+                camera
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">
+                  Control the main camera as if it was a 3D object
+                </h2>
+              </div>
+              <example-snippet
+                stamp-to="main-camera-control"
+                highlight-as="html"
+              >
+                <template>Hello There</template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul>
+            <li class="attribution">
+              <a
+                href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/MaterialsVariantsShoe"
+                >Shoe</a
+              >
+              ©Copyright 2020
+              <a href="https://www.shopify.com/">Shopify Inc.</a>, licensed
+              under
+              <a href="https://creativecommons.org/licenses/by/4.0/"
+                >CC-BY-4.0</a
+              >.
+            </li>
+            <li class="attribution">
+              <a href="https://poly.google.com/view/dLHpzNdygsg">Astronaut</a>
+              by <a href="https://poly.google.com/user/4aEd8rQgKu2">Poly</a>,
+              licensed under
+              <a href="https://creativecommons.org/licenses/by/2.0/">CC-BY</a>.
+            </li>
+            <li class="attribution">
+              <a
+                href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet"
+                >Damaged Helmet</a
+              >
+              by
+              <a href="https://sketchfab.com/theblueturtle_">theblueturtle_</a>,
+              licensed under
+              <a href="https://creativecommons.org/licenses/by-nc/3.0/us/"
+                >Creative Commons Attribution-NonCommercial</a
+              >.
+            </li>
+            <li class="attribution">
+              <a
+                href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Lantern"
+                >Lantern</a
+              >, licensed under
+              <a href="https://creativecommons.org/publicdomain/zero/1.0/"
+                >Creative Commons Zero</a
+              >.
+            </li>
+            <li class="attribution">
+              <a
+                href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/WaterBottle"
+                >Water Bottle</a
+              >, licensed under
+              <a href="https://creativecommons.org/publicdomain/zero/1.0/"
+                >Creative Commons Zero</a
+              >.
+            </li>
+            <li class="attribution">
+              <a
+                href="https://github.com/dataarts/3-dreams-of-black/tree/master/deploy/files/models/soup"
+                >Horse</a
+              >
+              by
+              <a href="https://github.com/dataarts">Google Data Arts Team</a>,
+              licensed under
+              <a
+                href="https://github.com/dataarts/3-dreams-of-black/blob/master/deploy/files/models/soup/LICENSE.txt"
+                >Creative Commons Attribution-NonCommercial-ShareAlike</a
+              >.
+            </li>
+            <li class="attribution">
+              <a
+                href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Duck"
+                >Duck</a
+              >
+              by Sony Computer Entertainment Inc., licensed under
+              <a
+                href="https://web.archive.org/web/20160320123355/http://research.scea.com/scea_shared_source_license.html"
+                >the SCEA Shared Source License, Version 1.0</a
+              >.
+            </li>
+            <li class="attribution">
+              <a
+                href="https://github.com/dataarts/3-dreams-of-black/tree/master/deploy/files/models/soup"
+                >Buggy</a
+              >
+              by Okino Computer Graphics, Data conversion from original JT to
+              COLLADA has been kindly performed by Okino Computer Graphics,
+              using
+              <a href="http://www.okino.com/conv/conv.htm"
+                >Okino Polytrans Software</a
+              >.
+            </li>
+          </ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2018-2020 Google Inc. Licensed under the Apache License
+            2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-transforms');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+    <!-- src="../../node_modules/@google/model-viewer/dist/model-viewer.js" -->
+  </body>
+</html>
