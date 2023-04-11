@@ -31,7 +31,55 @@
       type="image/png"
       href="../../assets/favicon.png"
     />
-    <style></style>
+
+    <style>
+      .controls {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        max-width: unset;
+        transform: unset;
+        pointer-events: auto;
+        border-radius: 4px;
+        background-color: #fff;
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+        padding: 0.5rem 1rem;
+        color: #999;
+      }
+
+      .flex-col {
+        display: flex;
+        flex-direction: column;
+      }
+      .flex-row {
+        display: flex;
+        flex-direction: row;
+      }
+      .controls h5 {
+        margin: 0 0 0.25em 0;
+      }
+      .controls label {
+        color: gray;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        line-height: 1em;
+      }
+      .controls input {
+        width: 100%;
+      }
+      .p-3 {
+        padding: 1rem;
+      }
+      .px-3 {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      .py-3 {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+      }
+    </style>
 
     <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
     <script
@@ -64,7 +112,108 @@
                 stamp-to="main-camera-control"
                 highlight-as="html"
               >
-                <template>Hello There</template>
+                <template>
+                  <model-viewer
+                    id="transform-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="An animated 3D model two cubes"
+                  >
+                    <div id="camera-transforms" class="controls flex-col">
+                      <h5>Translate</h5>
+                      <div class="translate flex-row">
+                        <div class="px-3">
+                          <label for="translate-xaxis">X-axis</label>
+                          <input
+                            type="range"
+                            id="camera-translate-xaxis"
+                            class="axis-input"
+                            name="x"
+                            min="-10"
+                            max="10"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="translate-yaxis">Y-axis</label>
+                          <input
+                            type="range"
+                            id="camera-translate-yaxis"
+                            class="axis-input"
+                            name="y"
+                            min="-10"
+                            max="10"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="px-3">
+                          <label for="translate-zaxis">Z-axis</label>
+                          <input
+                            type="range"
+                            id="camera-translate-zaxis"
+                            class="axis-input"
+                            name="z"
+                            min="-10"
+                            max="10"
+                            default="0"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#transform-demo');
+
+                      const cameraTranslators = modelViewer.querySelectorAll(
+                        '#camera-transforms .translate .axis-input'
+                      );
+
+                      cameraTranslators.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x = modelViewer.querySelector(
+                            '#camera-translate-xaxis'
+                          ).value;
+                          const y = modelViewer.querySelector(
+                            '#camera-translate-yaxis'
+                          ).value;
+                          const z = modelViewer.querySelector(
+                            '#camera-translate-zaxis'
+                          ).value;
+
+                          modelViewer.updateCameraPosition([x, y, z]);
+                        });
+                      });
+
+                      modelViewer.addEventListener('load', () => {
+                        const currentCameraPosition =
+                          modelViewer.getCameraPosition();
+
+                        modelViewer.querySelector(
+                          '#camera-translate-xaxis'
+                        ).value = currentCameraPosition.x;
+
+                        modelViewer.querySelector(
+                          '#camera-translate-yaxis'
+                        ).value = currentCameraPosition.y;
+
+                        modelViewer.querySelector(
+                          '#camera-translate-zaxis'
+                        ).value = currentCameraPosition.z;
+                      });
+                    })();
+                  </script>
+                </template>
               </example-snippet>
             </div>
           </div>
