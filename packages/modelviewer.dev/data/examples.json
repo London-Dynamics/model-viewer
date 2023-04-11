@@ -280,8 +280,8 @@
     ]
   },
   {
-    "name": "LD Cameras",
-    "htmlName": "ld-cameras",
+    "name": "LD Stage Manager",
+    "htmlName": "ld-stagemanager",
     "examples": [
       {
         "htmlId": "main-camera-control",
