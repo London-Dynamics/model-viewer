@@ -134,7 +134,7 @@ export const LDTransformerMixin = <
     }
 
     getSceneRotation() {
-      const rotation = this[$meshRoot].rotation.toArray();
+      const rotation = this[$meshRoot]?.rotation?.toArray() || [0, 0, 0];
 
       return rotation.slice(0, 3);
     }
