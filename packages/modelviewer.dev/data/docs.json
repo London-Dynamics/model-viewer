@@ -1079,8 +1079,8 @@
     ]
   },
   {
-    "Title": "LD Transforms",
-    "htmlName": "transformer",
+    "Title": "LD Transformer",
+    "htmlName": "ld-transformer",
     "Methods": [
       {
         "name": "updateMeshPosition(nodeName, newPosition)",
@@ -1163,6 +1163,25 @@
         "name": "getObjects()",
         "htmlName": "getObjects",
         "description": "Returns an array av all objects in the scene graph that can be transformed."
+      }
+    ]
+  },
+  {
+    "Title": "LD Stage Manager",
+    "htmlName": "ld-stagemanager",
+    "Methods": [
+      {
+        "name": "updateCameraPosition(newPosition)",
+        "htmlName": "updateCameraPosition",
+        "description": "Updates the position of the main camera in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/ld-stagemanager/#main-camera-control\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getCameraPosition()",
+        "htmlName": "getCameraPosition",
+        "description": "Returns the position vector for the main camera."
       }
     ]
   }
