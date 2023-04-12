@@ -1,4 +1,4 @@
-import { Object3D, Vector3 } from 'three';
+import { Object3D } from 'three';
 import ModelViewerElementBase, {
   $scene,
   $onModelLoad,
@@ -7,7 +7,7 @@ import { Constructor } from '../utilities.js';
 
 export declare interface LDStageManagerInterface {
   updateCameraPosition(position: [number, number, number]): void;
-  getCameraPosition(): Vector3;
+  getCameraPosition(): number[];
 }
 
 const $theCamera = Symbol('theCamera');
@@ -32,7 +32,9 @@ export const LDStageManagerMixin = <
     }
 
     getCameraPosition() {
-      return this[$theCamera].position;
+      const position = this[$theCamera].position;
+
+      return [position.x, position.y, position.z];
     }
 
     [$onModelLoad]() {

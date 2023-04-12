@@ -9,9 +9,17 @@ export declare interface TransformerInterface {
   updateMeshPosition(name: string, position: [number, number, number]): void;
   updateMeshRotation(name: string, rotation: [number, number, number]): void;
   updateMeshScale(name: string, scale: [number, number, number]): void;
+
   updateObjectPosition(name: string, position: [number, number, number]): void;
   updateObjectRotation(name: string, rotation: [number, number, number]): void;
   updateObjectScale(name: string, scale: [number, number, number]): void;
+
+  updateScenePosition(position: [number, number, number]): void;
+  updateSceneRotation(rotation: [number, number, number]): void;
+  updateSceneScale(scale: [number, number, number]): void;
+
+  getSceneRotation(): number[];
+
   getSceneMeshes(): Array<string>;
   getSceneObjects(): Array<string>;
 }
@@ -125,6 +133,12 @@ export const LDTransformerMixin = <
       this._updateNodeScale(node, scale);
     }
 
+    getSceneRotation() {
+      const rotation = this[$meshRoot].rotation.toArray();
+
+      return rotation.slice(0, 3);
+    }
+
     [$onModelLoad]() {
       super[$onModelLoad]();
 
@@ -137,7 +151,7 @@ export const LDTransformerMixin = <
         this[$objects].clear();
 
         scene.traverse((node) => {
-          if (node.type === 'Group' && node.name === 'Scene') {
+          if (!node.parent) {
             this[$meshRoot] = node;
           }
           if (node.type === 'Mesh' && node.name.length) {
