@@ -1,4 +1,4 @@
-import { Object3D } from 'three';
+import { EulerOrder, Object3D } from 'three';
 import ModelViewerElementBase, {
   $scene,
   $onModelLoad,
@@ -7,11 +7,19 @@ import { Constructor, debounce } from '../utilities.js';
 
 export declare interface TransformerInterface {
   updateMeshPosition(name: string, position: [number, number, number]): void;
-  updateMeshRotation(name: string, rotation: [number, number, number]): void;
+  updateMeshRotation(
+    name: string,
+    rotation: [number, number, number],
+    order?: EulerOrder
+  ): void;
   updateMeshScale(name: string, scale: [number, number, number]): void;
 
   updateObjectPosition(name: string, position: [number, number, number]): void;
-  updateObjectRotation(name: string, rotation: [number, number, number]): void;
+  updateObjectRotation(
+    name: string,
+    rotation: [number, number, number],
+    order?: EulerOrder
+  ): void;
   updateObjectScale(name: string, scale: [number, number, number]): void;
 
   updateScenePosition(position: [number, number, number]): void;
@@ -63,10 +71,11 @@ export const LDTransformerMixin = <
 
     private _updateNodeRotation(
       node: Object3D | undefined,
-      value: [number, number, number]
+      value: [number, number, number],
+      order: EulerOrder = 'XYZ'
     ) {
       if (node) {
-        node.rotation.set(...value);
+        node.rotation.set(...value, order);
         this._prepareScene();
       }
     }
@@ -93,9 +102,13 @@ export const LDTransformerMixin = <
       this._updateNodePosition(node, position);
     }
 
-    updateMeshRotation(name: string, rotation: [number, number, number]) {
+    updateMeshRotation(
+      name: string,
+      rotation: [number, number, number],
+      order?: EulerOrder
+    ) {
       const node = this[$meshes].get(name);
-      this._updateNodeRotation(node, rotation);
+      this._updateNodeRotation(node, rotation, order);
     }
 
     updateMeshScale(name: string, scale: [number, number, number]) {
@@ -108,9 +121,13 @@ export const LDTransformerMixin = <
       this._updateNodePosition(node, position);
     }
 
-    updateObjectRotation(name: string, rotation: [number, number, number]) {
+    updateObjectRotation(
+      name: string,
+      rotation: [number, number, number],
+      order?: EulerOrder
+    ) {
       const node = this[$objects].get(name);
-      this._updateNodeRotation(node, rotation);
+      this._updateNodeRotation(node, rotation, order);
     }
 
     updateObjectScale(name: string, scale: [number, number, number]) {
