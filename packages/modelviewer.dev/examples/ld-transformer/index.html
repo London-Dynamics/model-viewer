@@ -59,6 +59,9 @@
       }
       .controls h5 {
         margin: 0 0 0.25em 0;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
       }
       .controls label {
         display: flex;
@@ -75,6 +78,14 @@
       }
       .controls input {
         width: 100%;
+      }
+      .controls select {
+
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 0.25rem;
+        font-size: 0.8rem;
+        color: #333;
       }
       .p-3 {
         padding: 1rem;
@@ -177,7 +188,13 @@
                           />
                         </div>
                       </div>
-                      <h5>Rotate (degrees)</h5>
+                      <h5>Rotate (degrees)<span>Rotation order:
+                        <select id="rotation-order">
+                            <option value="XYZ">XYZ</option>
+                            <option value="ZXY" selected>ZXY</option>
+                          </select>
+                      </span>
+                      </h5>
                       <div class="rotate flex-row">
                         <div class="">
                           <label for="rotate-xaxis"><span>X-axis</span> <span id="box-rotate-x-value">0</span></label>
@@ -272,6 +289,15 @@
                       const degToRad = (deg) => deg * Math.PI / 180;
                       const radToDeg = (rad) => rad * (180 / Math.PI);
 
+                      let rotationOrder = 'ZXY';
+
+                      const rotationOrderSelect = document.querySelector('#rotation-order');
+
+                      rotationOrderSelect.addEventListener('change', (event) => {
+                        rotationOrder = event.target.value;
+                        console.log('rotationOrder', rotationOrder);
+                      });
+
                       const boxTranslators = modelViewer.querySelectorAll(
                         '#box-transforms .translate .axis-input'
                       );
@@ -317,16 +343,12 @@
                               '#box-rotate-zaxis'
                             ).value;
                             modelViewer.querySelector('#box-rotate-z-value').innerText = z;
-console.log(x,y,z,[
-                            degToRad(x),
-                            degToRad(y),
-                            degToRad(z),
-                          ]);
+
                           modelViewer.updateMeshRotation('Box', [
                             degToRad(x),
                             degToRad(y),
                             degToRad(z),
-                          ]);
+                          ], rotationOrder);
                         });
                       });
 
