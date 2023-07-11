@@ -5,7 +5,7 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { Constructor, debounce } from '../utilities.js';
 
-export declare interface TransformerInterface {
+export declare interface LDTransformerInterface {
   updateMeshPosition(name: string, position: [number, number, number]): void;
   updateMeshRotation(
     name: string,
@@ -40,7 +40,7 @@ export const LDTransformerMixin = <
   T extends Constructor<ModelViewerElementBase>
 >(
   ModelViewerElement: T
-): Constructor<TransformerInterface> & T => {
+): Constructor<LDTransformerInterface> & T => {
   class TransformerModelViewerElement extends ModelViewerElement {
     private [$meshRoot] = new Object3D();
     private [$meshes] = new Map<string, Object3D>();
