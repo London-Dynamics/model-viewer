@@ -19,6 +19,8 @@ import {ARMixin} from './features/ar.js';
 import {ControlsMixin} from './features/controls.js';
 import {EnvironmentMixin} from './features/environment.js';
 import {LoadingMixin} from './features/loading.js';
+import {LDTransformerMixin} from './features/ld-transformer.js';
+import {LDStageManagerMixin} from './features/ld-stagemanager';
 import {SceneGraphMixin} from './features/scene-graph.js';
 import {StagingMixin} from './features/staging.js';
 import ModelViewerElementBase from './model-viewer-base.js';
@@ -28,8 +30,8 @@ import ModelViewerElementBase from './model-viewer-base.js';
 export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
 
 export const ModelViewerElement =
-    AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
-        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase))))))));
+    AnnotationMixin(SceneGraphMixin(LDTransformerMixin(LDStageManagerMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
+        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase))))))))));
 
 export type ModelViewerElement = InstanceType<typeof ModelViewerElement>;
 
