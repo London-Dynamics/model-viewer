@@ -20,7 +20,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/google/model-viewer.git"
+    "url": "git+https://github.com/London-Dynamics/model-viewer.git"
   },
   "workspaces": [
     "packages/model-viewer",
@@ -32,12 +32,12 @@
   "author": "DevXR Contributors",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=16.20.0"
   },
   "bugs": {
-    "url": "https://github.com/google/model-viewer/issues"
+    "url": "https://github.com/London-Dynamics/model-viewer/issues"
   },
-  "homepage": "https://github.com/google/model-viewer#readme",
+  "homepage": "https://github.com/London-Dynamics/model-viewer#readme",
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.31.0",
     "@typescript-eslint/parser": "^5.31.0",

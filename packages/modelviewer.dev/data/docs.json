@@ -7,7 +7,9 @@
         "name": "src",
         "htmlName": "src",
         "description": "The URL to the 3D model. Only <a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0\">glTF</a>/<a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#glb-file-format-specification\">GLB</a> models are supported.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -17,7 +19,9 @@
         "name": "alt",
         "htmlName": "alt",
         "description": "Configures the model with custom text that will be used to describe the model to viewers who use a screen reader or otherwise depend on additional semantic context to understand what they are viewing.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "empty string",
           "options": "any description"
@@ -27,7 +31,9 @@
         "name": "poster",
         "htmlName": "poster",
         "description": "Displays an image instead of the model, useful for showing the user something before a model is loaded and ready to render.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -37,7 +43,9 @@
         "name": "loading",
         "htmlName": "loading",
         "description": "An enumerable attribute describing under what conditions the model should be preloaded. The supported values are \"auto\", \"lazy\" and \"eager\". Auto is equivalent to lazy, which loads the model when it is near the viewport for <span class='attribute'>reveal=\"auto\"</span>, and when interacted with for <span class='attribute'>reveal=\"interaction\"</span>. Eager loads the model immediately.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "auto",
           "options": "auto, lazy, eager"
@@ -47,7 +55,9 @@
         "name": "reveal",
         "htmlName": "reveal",
         "description": "This attribute controls when the model should be revealed. If <span class='attribute'>reveal</span> is set to \"auto\", the model will be revealed as soon as it is done loading and rendering. If <span class='attribute'>reveal</span> is set to \"manual\", the model will remain hidden until <span class='attribute'>dismissPoster()</span> is called.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "auto",
           "options": "auto, manual"
@@ -767,7 +777,9 @@
         "name": "--min-hotspot-opacity",
         "htmlName": "minHotspotOpacity",
         "description": "Sets the opacity of hidden hotspots.",
-        "links": ["<a href=\"../examples/annotations/\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/annotations/\">Related examples</a>"
+        ],
         "default": {
           "default": "0.25",
           "options": "any value between 0 and 1"
