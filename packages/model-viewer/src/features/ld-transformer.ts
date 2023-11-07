@@ -1,9 +1,10 @@
 import { EulerOrder, Object3D } from 'three';
 import ModelViewerElementBase, {
   $scene,
+  $needsRender,
   $onModelLoad,
 } from '../model-viewer-base.js';
-import { Constructor, debounce } from '../utilities.js';
+import { Constructor, throttle } from '../utilities.js';
 
 export declare interface LDTransformerInterface {
   updateMeshPosition(name: string, position: [number, number, number]): void;
@@ -36,6 +37,8 @@ const $meshRoot = Symbol('meshRoot');
 const $meshes = Symbol('meshes');
 const $objects = Symbol('objects');
 
+export const $updateFramingThrottled = Symbol('updateFramingThrottled');
+
 export const LDTransformerMixin = <
   T extends Constructor<ModelViewerElementBase>
 >(
@@ -46,18 +49,10 @@ export const LDTransformerMixin = <
     private [$meshes] = new Map<string, Object3D>();
     private [$objects] = new Map<string, Object3D>();
 
-    private _prepareScene() {
-      this[$scene].updateShadow();
-      this[$scene].queueRender();
-      this._updateSceneDebounced();
-    }
-
-    private _updateSceneDebounced = debounce(async () => {
-      this[$scene].updateBoundingBox();
-      this[$scene].updateShadow();
+    private [$updateFramingThrottled] = throttle(async () => {
       await this[$scene].updateFraming();
-      this[$scene].queueRender();
-    }, 300);
+      this[$needsRender]();
+    }, 400);
 
     private _updateNodePosition(
       node: Object3D | undefined,
@@ -65,7 +60,10 @@ export const LDTransformerMixin = <
     ) {
       if (node) {
         node.position.set(...value);
-        this._prepareScene();
+        this[$scene].updateBoundingBox();
+        this[$scene].updateShadow();
+        this[$needsRender]();
+        this[$updateFramingThrottled]();
       }
     }
 
@@ -76,7 +74,10 @@ export const LDTransformerMixin = <
     ) {
       if (node) {
         node.rotation.set(...value, order);
-        this._prepareScene();
+        this[$scene].updateBoundingBox();
+        this[$scene].updateShadow();
+        this[$needsRender]();
+        this[$updateFramingThrottled]();
       }
     }
 
@@ -86,7 +87,10 @@ export const LDTransformerMixin = <
     ) {
       if (node) {
         node.scale.set(...value);
-        this._prepareScene();
+        this[$scene].updateBoundingBox();
+        this[$scene].updateShadow();
+        this[$needsRender]();
+        this[$updateFramingThrottled]();
       }
     }
 

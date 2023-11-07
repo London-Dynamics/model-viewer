@@ -20,15 +20,11 @@ export const LDStageManagerMixin = <
   class LDStageManagerModelViewerElement extends ModelViewerElement {
     private [$theCamera] = new Object3D();
 
-    private async _prepareScene() {
-      this[$scene].updateBoundingBox();
-      this[$scene].queueRender();
-    }
-
     updateCameraPosition(position: [number, number, number]) {
       console.log(this[$theCamera].position);
       this[$theCamera].position.set(...position);
-      this._prepareScene();
+      this[$scene].updateBoundingBox();
+      this[$scene].queueRender();
     }
 
     getCameraPosition() {
