@@ -21,7 +21,7 @@ import {EnvironmentMixin} from './features/environment.js';
 import {LoadingMixin} from './features/loading.js';
 import {SceneGraphMixin} from './features/scene-graph.js';
 import {StagingMixin} from './features/staging.js';
-import {LDStageManagerMixin} from './features/ld-stagemanager.js';
+import {LDThreeMixin} from './features/ld-three.js';
 import {LDTransformerMixin} from './features/ld-transformer.js';
 import ModelViewerElementBase from './model-viewer-base.js';
 
@@ -30,7 +30,7 @@ import ModelViewerElementBase from './model-viewer-base.js';
 export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
 
 export const ModelViewerElement =
-    LDStageManagerMixin(LDTransformerMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
+    LDThreeMixin(LDTransformerMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
         ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase))))))))));
 
 export type ModelViewerElement = InstanceType<typeof ModelViewerElement>;

@@ -1212,21 +1212,21 @@
     ]
   },
   {
-    "Title": "LD Stage Manager",
-    "htmlName": "ld-stagemanager",
+    "Title": "LD Three",
+    "htmlName": "ld-three",
     "Methods": [
       {
-        "name": "updateCameraPosition(newPosition)",
-        "htmlName": "updateCameraPosition",
-        "description": "Updates the position of the main camera in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "name": "set3DCamera(cameraMetadata)",
+        "htmlName": "set3DCamera",
+        "description": "TODO",
         "links": [
-          "<a href=\"../examples/ld-stagemanager/#main-camera-control\">Related examples</a>"
+          "<a href=\"../examples/ld-three/#get-3d-camera\">Related examples</a>"
         ]
       },
       {
-        "name": "getCameraPosition()",
-        "htmlName": "getCameraPosition",
-        "description": "Returns the position vector for the main camera."
+        "name": "get3DCamera()",
+        "htmlName": "get3DCamera",
+        "description": "TODO"
       }
     ]
   }
