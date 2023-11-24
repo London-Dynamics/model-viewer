@@ -318,8 +318,8 @@
     "htmlName": "ld-three",
     "examples": [
       {
-        "htmlId": "get-3d-camera",
-        "name": "Get 3D Camera"
+        "htmlId": "get-camera-json",
+        "name": "Get Camera JSON"
       }
     ]
   }

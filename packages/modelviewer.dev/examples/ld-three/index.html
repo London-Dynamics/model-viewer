@@ -112,7 +112,7 @@
       <div id="toggle"></div>
       <div class="examples-container">
         <div class="sample">
-          <div id="get-3d-camera" class="demo"></div>
+          <div id="get-camera-json" class="demo"></div>
           <div class="content">
             <div class="wrapper">
               <h4 id="intro">
@@ -123,11 +123,11 @@
               </h4>
               <div class="heading">
                 <h2 class="demo-title">
-                  Get 3D camera meta data
+                  Camera JSON interactions
                 </h2>
               </div>
               <example-snippet
-                stamp-to="get-3d-camera"
+                stamp-to="get-camera-json"
                 highlight-as="html"
               >
                 <template>
@@ -143,8 +143,8 @@
                     alt="An animated 3D model two cubes"
                   >
   <div class="controls flex-row gap-3">
-    <button type="button">Get 3D Camera</button>
-    <button type="button">Set 3D Camera</button>
+    <button type="button" id="getCameraButton">Get camera meta</button>
+    <button type="button" id="setCameraButton">Set camera from JSON</button>
   </div>
 </model-viewer>
 
@@ -153,7 +153,50 @@
     const modelViewer =
       document.querySelector('#three-demo');
 
+    document.getElementById('getCameraButton')
+      .addEventListener('click', () => {
+        const object = modelViewer.getCameraMeta();
 
+        console.info("Camera JSON",JSON.stringify(object, null, 2));
+      });
+
+    document.getElementById('setCameraButton').addEventListener('click', () => {
+      const cameraJSON = {
+ "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0.9659258262890683,
+    -0.2588190451025207,
+    0,
+    0,
+    0.2588190451025207,
+    0.9659258262890683,
+    0,
+    0,
+    1.500161641239547,
+    5.598679464671904,
+    1
+  ],
+  "up": [
+    0,
+    1,
+    0
+  ],
+  "fov": 33.83851389059542,
+  "zoom": 1,
+  "near": 0.011592358983051795,
+  "far": 11.592358983051795,
+  "focus": 10,
+  "aspect": 0.4628482972136223,
+  "filmGauge": 35,
+  "filmOffset": 0
+      };
+
+      modelViewer.setCameraFromJSON(cameraJSON);
+    });
   })();
 </script>
                 </template>

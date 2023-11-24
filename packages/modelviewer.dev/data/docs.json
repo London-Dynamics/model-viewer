@@ -1216,16 +1216,16 @@
     "htmlName": "ld-three",
     "Methods": [
       {
-        "name": "set3DCamera(cameraMetadata)",
-        "htmlName": "set3DCamera",
+        "name": "setCameraFromJSON(cameraMetadata)",
+        "htmlName": "setCameraFromJSON",
         "description": "TODO",
         "links": [
-          "<a href=\"../examples/ld-three/#get-3d-camera\">Related examples</a>"
+          "<a href=\"../examples/ld-three/#get-camera-json\">Related examples</a>"
         ]
       },
       {
-        "name": "get3DCamera()",
-        "htmlName": "get3DCamera",
+        "name": "getCameraMeta()",
+        "htmlName": "getCameraMeta",
         "description": "TODO"
       }
     ]
