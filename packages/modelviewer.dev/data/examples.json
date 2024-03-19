@@ -314,8 +314,8 @@
     ]
   },
   {
-    "name": "LD Three",
-    "htmlName": "ld-three",
+    "name": "LD Camera",
+    "htmlName": "ld-camera",
     "examples": [
       {
         "htmlId": "get-camera-json",

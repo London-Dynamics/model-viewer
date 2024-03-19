@@ -21,7 +21,7 @@ import {EnvironmentMixin} from './features/environment.js';
 import {LoadingMixin} from './features/loading.js';
 import {SceneGraphMixin} from './features/scene-graph.js';
 import {StagingMixin} from './features/staging.js';
-import {LDThreeMixin} from './features/ld-three.js';
+import {LDThreeMixin} from './features/ld-camera.js';
 import {LDTransformerMixin} from './features/ld-transformer.js';
 import ModelViewerElementBase from './model-viewer-base.js';
 

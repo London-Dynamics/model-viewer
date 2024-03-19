@@ -1212,15 +1212,15 @@
     ]
   },
   {
-    "Title": "LD Three",
-    "htmlName": "ld-three",
+    "Title": "LD Camera",
+    "htmlName": "ld-camera",
     "Methods": [
       {
         "name": "setCameraFromJSON(cameraMetadata)",
         "htmlName": "setCameraFromJSON",
         "description": "TODO",
         "links": [
-          "<a href=\"../examples/ld-three/#get-camera-json\">Related examples</a>"
+          "<a href=\"../examples/ld-camera/#get-camera-json\">Related examples</a>"
         ]
       },
       {

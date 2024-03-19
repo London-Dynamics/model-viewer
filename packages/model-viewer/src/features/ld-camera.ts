@@ -8,7 +8,7 @@ import ModelViewerElementBase, {
   $onModelLoad,
 } from '../model-viewer-base.js';
 
-import {$controls} from '../features/controls.js';
+import {$controls} from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
 
