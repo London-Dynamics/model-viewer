@@ -6,7 +6,7 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { Constructor, throttle } from '../utilities.js';
 
-export declare interface LDTransformerInterface {
+export declare interface LDTransformsInterface {
   updateMeshPosition(name: string, position: [number, number, number]): void;
   updateMeshRotation(
     name: string,
@@ -39,11 +39,11 @@ const $objects = Symbol('objects');
 
 export const $updateFramingThrottled = Symbol('updateFramingThrottled');
 
-export const LDTransformerMixin = <
+export const LDTransformsMixin = <
   T extends Constructor<ModelViewerElementBase>
 >(
   ModelViewerElement: T
-): Constructor<LDTransformerInterface> & T => {
+): Constructor<LDTransformsInterface> & T => {
   class TransformerModelViewerElement extends ModelViewerElement {
     private [$meshRoot] = new Object3D();
     private [$meshes] = new Map<string, Object3D>();

@@ -300,8 +300,8 @@
     ]
   },
   {
-    "name": "LD Transformer",
-    "htmlName": "ld-transformer",
+    "name": "LD Transforms",
+    "htmlName": "ld-transforms",
     "examples": [
       {
         "htmlId": "transform-geometry",
@@ -310,6 +310,16 @@
       {
         "htmlId": "transform-scene",
         "name": "Transform Scene"
+      }
+    ]
+  },
+  {
+    "name": "LD Lights",
+    "htmlName": "ld-lights",
+    "examples": [
+      {
+        "htmlId": "toggle-lights",
+        "name": "Toggle Lights"
       }
     ]
   },

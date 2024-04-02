@@ -20,17 +20,17 @@ type CameraMeta = {
   }
 }
 
-export declare interface LDThreeInterface {
+export declare interface LDCameraInterface {
   setCameraFromJSON(json: CameraMeta['object']): void;
   getCameraMeta(): CameraMeta | null;
 }
 
-export const LDThreeMixin = <
+export const LDCameraMixin = <
   T extends Constructor<ModelViewerElementBase>
 >(
   ModelViewerElement: T
-): Constructor<LDThreeInterface> & T => {
-  class LDThreeModelViewerElement extends ModelViewerElement {
+): Constructor<LDCameraInterface> & T => {
+  class LDCameraModelViewerElement extends ModelViewerElement {
     // protected[$controls] = new SmoothControls(
     //     this[$scene].camera as PerspectiveCamera, this[$userInputElement],
     //     this[$scene]);
@@ -128,5 +128,5 @@ export const LDThreeMixin = <
     }
   }
 
-  return LDThreeModelViewerElement;
+  return LDCameraModelViewerElement;
 };
