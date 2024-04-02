@@ -1,16 +1,19 @@
+import { property } from 'lit/decorators.js';
 import ModelViewerElementBase, {
-  // $scene,
+  $scene,
   $onModelLoad,
+  $needsRender,
 } from '../model-viewer-base.js';
-
-
 
 import { Constructor } from '../utilities.js';
 
 
 export declare interface LDLightsInterface {
+  lights: boolean;
   toggleLights(state?: boolean): boolean;
 }
+
+const $traverseAndToggleLights = Symbol('traverseAndToggleLights');
 
 export const LDLightsMixin = <
   T extends Constructor<ModelViewerElementBase>
@@ -18,28 +21,40 @@ export const LDLightsMixin = <
   ModelViewerElement: T
 ): Constructor<LDLightsInterface> & T => {
   class LDLightsModelViewerElement extends ModelViewerElement {
-    // protected[$controls] = new SmoothControls(
-    //     this[$scene].camera as PerspectiveCamera, this[$userInputElement],
-    //     this[$scene]);
+    @property({type: Boolean, attribute: 'lights'})
+    lights: boolean = false;
 
+    private[$traverseAndToggleLights] = (lights: boolean) => {
+      this[$scene].traverse( function ( object ) {
+        const light = object as THREE.Light;
 
+        if (light.isLight) {
+						light.visible = lights;
+				}
+      });
+
+      this[$needsRender]();
+    }
 
     toggleLights(state?: boolean) {
-      // const {camera} = this[$scene];
+      const lightsOn = typeof state !== 'undefined' ? state : !this.lights;
 
-      // console.log("toggle lights!")
+      this.lights = lightsOn;
 
-      return !state;
+      return lightsOn;
+    }
+
+    updated(changedProperties: Map<string|number|symbol, unknown>) {
+      super.updated(changedProperties);
+      if (changedProperties.has('lights')) {
+         this[$traverseAndToggleLights](this.lights);
+      }
     }
 
     [$onModelLoad]() {
       super[$onModelLoad]();
 
-      // const { currentGLTF } = this[$scene];
-
-      // if (currentGLTF != null) {
-
-      // }
+      this[$traverseAndToggleLights](this.lights);
     }
   }
 

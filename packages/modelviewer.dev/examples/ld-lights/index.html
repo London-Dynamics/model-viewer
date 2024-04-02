@@ -134,7 +134,6 @@
                   <model-viewer
                     id="three-demo"
                     camera-controls
-                    lights="false"
                     interaction-prompt="none"
                     autoplay
                     ar
@@ -145,6 +144,7 @@
                   >
   <div class="controls flex-row gap-3">
     <button type="button" id="toggleLights">Turn ON</button>
+    <button type="button" id="toggleAttribute">Toggle HTML attribute</button>
   </div>
 </model-viewer>
 
@@ -155,12 +155,29 @@
 
     let lightsOn = false;
 
+    const setButtonText = () => {
+      document.getElementById('toggleLights')
+        .innerText = lightsOn ? 'Turn OFF' : 'Turn ON';
+    }
+
     document.getElementById('toggleLights')
       .addEventListener('click', (e) => {
-        const state = modelViewer.toggleLights(lightsOn);
-
+        const state = modelViewer.toggleLights(!lightsOn);
         lightsOn = state;
-        e.target.innerText = lightsOn ? 'Turn OFF' : 'Turn ON';
+        setButtonText();
+      });
+
+      document.getElementById("toggleAttribute")
+      .addEventListener('click', (e) => {
+        lightsOn = !lightsOn;
+
+        if (lightsOn) {
+          modelViewer.setAttribute('lights', 'true');
+        } else {
+          modelViewer.removeAttribute('lights');
+        }
+
+        setButtonText();
       });
 
 
