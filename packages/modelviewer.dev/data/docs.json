@@ -1223,7 +1223,7 @@
           "<a href=\"../examples/ld-lights/#toggle-lights\">Related examples</a>"
         ],
         "default": {
-          "default": "true",
+          "default": "false",
           "options": "true, false"
         }
       }
@@ -1232,7 +1232,7 @@
       {
         "name": "toggleLights()",
         "htmlName": "toggle-lights",
-        "description": "TODO",
+        "description": "Toggle lights in scene. If lights are on, they will be turned off, and vice versa. Add a boolean argument to force lights on or off.",
         "links": [
           "<a href=\"../examples/ld-lights/#toggle-lights\">Related examples</a>"
         ]
