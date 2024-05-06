@@ -1,0 +1,653 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Transforms Examples</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; scene graph examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <style>
+      .controls {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        max-width: unset;
+        transform: unset;
+        pointer-events: auto;
+        border-radius: 4px;
+        background-color: #fff;
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+        padding: 0.5rem 1rem;
+        color: #999;
+      }
+
+      .flex-col {
+        display: flex;
+        flex-direction: column;
+      }
+      .flex-row {
+        display: flex;
+        flex-direction: row;
+        gap: 1rem;
+      }
+      .controls h5 {
+        margin: 0 0 0.25em 0;
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+      }
+      .controls label {
+        display: flex;
+        flex-direction: row;
+        color: gray;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        line-height: 1em;
+        position: relative;
+        justify-content: space-between;
+      }
+      .controls label span {
+        display: inline-block;
+      }
+      .controls input {
+        width: 100%;
+      }
+      .controls select {
+
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 0.25rem;
+        font-size: 0.8rem;
+        color: #333;
+      }
+      .p-3 {
+        padding: 1rem;
+      }
+      .px-3 {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      .py-3 {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+      }
+    </style>
+
+    <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
+    <script
+      src="../../node_modules/focus-visible/dist/focus-visible.js"
+      defer
+    ></script>
+  </head>
+  <body>
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="transform-geometry" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                LD <span class="font-medium">Transforms</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page showcases how you can control parts of the model on
+                the fly
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Transform Geometry</h2>
+                <h4>
+                  Dynamicly alter position, rotation, and scale of geometry.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="transform-geometry"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="transform-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="An animated 3D model two cubes"
+                  >
+  <div id="box-transforms" class="controls flex-col">
+    <h3>Purple Box</h3>
+    <h5>Translate</h5>
+    <div class="translate flex-row">
+      <div class="">
+        <label for="translate-xaxis">X-axis</label>
+        <input
+          type="range"
+          id="box-translate-xaxis"
+          class="axis-input"
+          name="x"
+          min="-1"
+          max="1"
+          default="0"
+          step="0.01"
+        />
+      </div>
+      <div class="">
+        <label for="translate-yaxis">Y-axis</label>
+        <input
+          type="range"
+          id="box-translate-yaxis"
+          class="axis-input"
+          name="y"
+          min="-1"
+          max="1"
+          default="0"
+          step="0.01"
+        />
+      </div>
+      <div class="">
+        <label for="translate-zaxis">Z-axis</label>
+        <input
+          type="range"
+          id="box-translate-zaxis"
+          class="axis-input"
+          name="z"
+          min="-1"
+          max="1"
+          default="0"
+          step="0.01"
+        />
+      </div>
+    </div>
+    <h5>Rotate (degrees)<span>Rotation order:
+      <select id="rotation-order">
+          <option value="XYZ">XYZ</option>
+          <option value="ZXY" selected>ZXY</option>
+        </select>
+    </span>
+    </h5>
+    <div class="rotate flex-row">
+      <div class="">
+        <label for="rotate-xaxis"><span>X-axis</span> <span id="box-rotate-x-value">0</span></label>
+        <input
+          type="range"
+          id="box-rotate-xaxis"
+          class="axis-input"
+          name="x"
+          min="-180"
+          max="180"
+          default="0"
+          step="1"
+        />
+      </div>
+      <div class="">
+        <label for="rotate-yaxis"><span>Y-axis</span> <span id="box-rotate-y-value">0</span></label>
+        <input
+          type="range"
+          id="box-rotate-yaxis"
+          class="axis-input"
+          name="y"
+          min="-180"
+          max="180"
+          default="0"
+          step="1"
+        />
+      </div>
+      <div class="">
+        <label for="rotate-zaxis"><span>Z-axis</span> <span id="box-rotate-z-value">0</span></label>
+        <input
+          type="range"
+          id="box-rotate-zaxis"
+          class="axis-input"
+          name="z"
+          min="-180"
+          max="180"
+          default="0"
+          step="1"
+        />
+      </div>
+    </div>
+    <h5>Scale</h5>
+    <div class="scale flex-row">
+      <div class="">
+        <label for="scale-xaxis">X-axis</label>
+        <input
+          type="range"
+          id="box-scale-xaxis"
+          class="axis-input"
+          name="x"
+          min="0"
+          max="2"
+          default="1"
+          step="0.01"
+        />
+      </div>
+      <div class="">
+        <label for="scale-yaxis">Y-axis</label>
+        <input
+          type="range"
+          id="box-scale-yaxis"
+          class="axis-input"
+          name="y"
+          min="0"
+          max="2"
+          default="1"
+          step="0.01"
+        />
+      </div>
+      <div class="">
+        <label for="scale-zaxis">Z-axis</label>
+        <input
+          type="range"
+          id="box-scale-zaxis"
+          class="axis-input"
+          name="z"
+          min="0"
+          max="2"
+          default="1"
+          step="0.01"
+        />
+      </div>
+    </div>
+  </div>
+</model-viewer>
+
+<script type="module">
+  (() => {
+    const modelViewer =
+      document.querySelector('#transform-demo');
+
+    const degToRad = (deg) => deg * Math.PI / 180;
+    const radToDeg = (rad) => rad * (180 / Math.PI);
+
+    let rotationOrder = 'ZXY';
+
+    const rotationOrderSelect = document.querySelector('#rotation-order');
+
+    rotationOrderSelect.addEventListener('change', (event) => {
+      rotationOrder = event.target.value;
+      console.log('rotationOrder', rotationOrder);
+    });
+
+    const boxTranslators = modelViewer.querySelectorAll(
+      '#box-transforms .translate .axis-input'
+    );
+
+    const boxRotators = modelViewer.querySelectorAll(
+      '#box-transforms .rotate .axis-input'
+    );
+
+    const boxScalers = modelViewer.querySelectorAll(
+      '#box-transforms .scale .axis-input'
+    );
+
+    boxTranslators.forEach((input) => {
+      input.addEventListener('input', (event) => {
+        const x = modelViewer.querySelector(
+          '#box-translate-xaxis'
+        ).value;
+        const y = modelViewer.querySelector(
+          '#box-translate-yaxis'
+        ).value;
+        const z = modelViewer.querySelector(
+          '#box-translate-zaxis'
+        ).value;
+
+        modelViewer.updateMeshPosition('Box', [x, y, z]);
+      });
+    });
+
+    boxRotators.forEach((input) => {
+      input.addEventListener('input', (event) => {
+        const x =
+          modelViewer.querySelector(
+            '#box-rotate-xaxis'
+          ).value;
+        modelViewer.querySelector('#box-rotate-x-value').innerText = x;
+        const y =
+          modelViewer.querySelector(
+            '#box-rotate-yaxis'
+          ).value;
+          modelViewer.querySelector('#box-rotate-y-value').innerText = y;
+        const z =
+          modelViewer.querySelector(
+            '#box-rotate-zaxis'
+          ).value;
+          modelViewer.querySelector('#box-rotate-z-value').innerText = z;
+
+        modelViewer.updateMeshRotation('Box', [
+          degToRad(x),
+          degToRad(y),
+          degToRad(z),
+        ], rotationOrder);
+      });
+    });
+
+    boxScalers.forEach((input) => {
+      input.addEventListener('input', (event) => {
+        const x =
+          modelViewer.querySelector('#box-scale-xaxis').value;
+        const y =
+          modelViewer.querySelector('#box-scale-yaxis').value;
+        const z =
+          modelViewer.querySelector('#box-scale-zaxis').value;
+
+        modelViewer.updateMeshScale('Box', [x, y, z]);
+      });
+    });
+
+    modelViewer.addEventListener('load', () => {
+      console.group('Model Loaded');
+      console.log('Object3D', modelViewer.getSceneObjects());
+      console.log('Meshes', modelViewer.getSceneMeshes());
+      console.groupEnd();
+    });
+  })();
+</script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="transform-scene" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Transform Scene</h2>
+                <h4>
+                  Dynamicly alter position, rotation, and scale of entire scene.
+                </h4>
+              </div>
+              <example-snippet stamp-to="transform-scene" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="transform-scene-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="An animated 3D model two cubes"
+                  >
+<div id="scene-transforms" class="controls flex-col">
+  <h3>Scene</h3>
+  <h5>Translate</h5>
+  <div class="translate flex-row">
+    <div class="px-3">
+      <label for="translate-xaxis">X-axis</label>
+      <input
+        type="range"
+        id="scene-translate-xaxis"
+        class="axis-input"
+        name="x"
+        min="-1"
+        max="1"
+        default="0"
+        step="0.01"
+      />
+    </div>
+    <div class="px-3">
+      <label for="translate-yaxis">Y-axis</label>
+      <input
+        type="range"
+        id="scene-translate-yaxis"
+        class="axis-input"
+        name="y"
+        min="-1"
+        max="1"
+        default="0"
+        step="0.01"
+      />
+    </div>
+    <div class="px-3">
+      <label for="translate-zaxis">Z-axis</label>
+      <input
+        type="range"
+        id="scene-translate-zaxis"
+        class="axis-input"
+        name="z"
+        min="-1"
+        max="1"
+        default="0"
+        step="0.01"
+      />
+    </div>
+  </div>
+  <h5>Rotate</h5>
+  <div class="rotate flex-row">
+    <div class="px-3">
+      <label for="rotate-xaxis">X-axis</label>
+      <input
+        type="range"
+        id="scene-rotate-xaxis"
+        class="axis-input"
+        name="x"
+        min="-1"
+        max="1"
+        default="0"
+        step="0.01"
+      />
+    </div>
+    <div class="px-3">
+      <label for="rotate-yaxis">Y-axis</label>
+      <input
+        type="range"
+        id="scene-rotate-yaxis"
+        class="axis-input"
+        name="y"
+        min="-1"
+        max="1"
+        default="0"
+        step="0.01"
+      />
+    </div>
+    <div class="px-3">
+      <label for="rotate-zaxis">Z-axis</label>
+      <input
+        type="range"
+        id="scene-rotate-zaxis"
+        class="axis-input"
+        name="z"
+        min="-1"
+        max="1"
+        default="0"
+        step="0.01"
+      />
+    </div>
+  </div>
+  <h5>Scale</h5>
+  <div class="scale flex-row">
+    <div class="px-3">
+      <label for="scale-xaxis">X-axis</label>
+      <input
+        type="range"
+        id="scene-scale-xaxis"
+        class="axis-input"
+        name="x"
+        min="0"
+        max="2"
+        default="1"
+        step="0.01"
+      />
+    </div>
+    <div class="px-3">
+      <label for="scale-yaxis">Y-axis</label>
+      <input
+        type="range"
+        id="scene-scale-yaxis"
+        class="axis-input"
+        name="y"
+        min="0"
+        max="2"
+        default="1"
+        step="0.01"
+      />
+    </div>
+    <div class="px-3">
+      <label for="scale-zaxis">Z-axis</label>
+      <input
+        type="range"
+        id="scene-scale-zaxis"
+        class="axis-input"
+        name="z"
+        min="0"
+        max="2"
+        default="1"
+        step="0.01"
+      />
+    </div>
+  </div>
+</div>
+                  </model-viewer>
+
+<script type="module">
+  (() => {
+    const modelViewer = document.querySelector(
+      '#transform-scene-demo'
+    );
+
+    const sceneTranslators = modelViewer.querySelectorAll(
+      '#scene-transforms .translate .axis-input'
+    );
+
+    const sceneRotators = modelViewer.querySelectorAll(
+      '#scene-transforms .rotate .axis-input'
+    );
+
+    const sceneScalers = modelViewer.querySelectorAll(
+      '#scene-transforms .scale .axis-input'
+    );
+
+    sceneTranslators.forEach((input) => {
+      input.addEventListener('input', (event) => {
+        console.log('scene trans');
+        const x = modelViewer.querySelector(
+          '#scene-translate-xaxis'
+        ).value;
+        const y = modelViewer.querySelector(
+          '#scene-translate-yaxis'
+        ).value;
+        const z = modelViewer.querySelector(
+          '#scene-translate-zaxis'
+        ).value;
+
+        modelViewer.updateScenePosition([x, y, z]);
+      });
+    });
+
+    sceneRotators.forEach((input) => {
+      input.addEventListener('input', (event) => {
+        const x = modelViewer.querySelector(
+          '#scene-rotate-xaxis'
+        ).value;
+        const y = modelViewer.querySelector(
+          '#scene-rotate-yaxis'
+        ).value;
+        const z = modelViewer.querySelector(
+          '#scene-rotate-zaxis'
+        ).value;
+
+        modelViewer.updateSceneRotation([
+          x * Math.PI,
+          y * Math.PI,
+          z * Math.PI,
+        ]);
+      });
+    });
+
+    sceneScalers.forEach((input) => {
+      input.addEventListener('input', (event) => {
+        const x =
+          modelViewer.querySelector(
+            '#scene-scale-xaxis'
+          ).value;
+        const y =
+          modelViewer.querySelector(
+            '#scene-scale-yaxis'
+          ).value;
+        const z =
+          modelViewer.querySelector(
+            '#scene-scale-zaxis'
+          ).value;
+
+        modelViewer.updateSceneScale([x, y, z]);
+      });
+    });
+
+    modelViewer.addEventListener('load', () => {
+      console.group('Model Loaded');
+      console.log('Object3D', modelViewer.getSceneObjects());
+      console.log('Meshes', modelViewer.getSceneMeshes());
+      console.groupEnd();
+    });
+  })();
+</script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top:24px;" class="copyright">©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.</div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld-transforms');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+    <!-- src="../../node_modules/@google/model-viewer/dist/model-viewer.js" -->
+  </body>
+</html>
