@@ -1,4 +1,5 @@
 import { property } from 'lit/decorators.js';
+import type { Light } from 'three';
 import ModelViewerElementBase, {
   $scene,
   $onModelLoad,
@@ -26,7 +27,7 @@ export const LDLightsMixin = <
 
     private[$traverseAndToggleLights] = (lights: boolean) => {
       this[$scene].traverse( function ( object ) {
-        const light = object as THREE.Light;
+        const light = object as Light;
 
         if (light.isLight) {
 						light.visible = lights;
