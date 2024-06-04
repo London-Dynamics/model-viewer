@@ -344,5 +344,15 @@
         "name": "Get Camera JSON"
       }
     ]
+  },
+  {
+    "name": "LD Puzzler",
+    "htmlName": "ld-puzzler",
+    "examples": [
+      {
+        "htmlId": "array-buffer",
+        "name": "Load from ArrayBuffer"
+      }
+    ]
   }
 ]

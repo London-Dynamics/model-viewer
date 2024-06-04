@@ -1293,5 +1293,19 @@
         "description": "TODO"
       }
     ]
+  },
+  {
+    "Title": "LD Puzzler",
+    "htmlName": "ld-puzzler",
+    "Methods": [
+      {
+        "name": "setSrcFromBuffer(ArrayBuffer)",
+        "htmlName": "setSrcFromBuffer",
+        "description": "If you've got an ArrayBuffer, turn it into a src Model Viewer can use.",
+        "links": [
+          "<a href=\"../examples/ld-puzzler/#set-src-from-buffer\">Related examples</a>"
+        ]
+      }
+    ]
   }
 ]
