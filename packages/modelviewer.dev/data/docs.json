@@ -1159,7 +1159,7 @@
       }
     ]
   },
-    {
+  {
     "Title": "LD Transforms",
     "htmlName": "ld-transforms",
     "Methods": [
@@ -1244,6 +1244,24 @@
         "name": "getObjects()",
         "htmlName": "getObjects",
         "description": "Returns an array av all objects in the scene graph that can be transformed."
+      }
+    ]
+  },
+  {
+    "Title": "LD Environment",
+    "htmlName": "ld-environment",
+    "Attributes": [
+       {
+        "name": "water-texture",
+        "htmlName": "waterTexture",
+        "description": "TODO",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty string",
+          "options": "URL to a .jpg file"
+        }
       }
     ]
   },

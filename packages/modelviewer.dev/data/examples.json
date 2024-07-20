@@ -326,6 +326,16 @@
     ]
   },
   {
+    "name": "LD Environment",
+    "htmlName": "ld-environment",
+    "examples": [
+      {
+        "htmlId": "water",
+        "name": "Just Add Water"
+      }
+    ]
+  },
+  {
     "name": "LD Lights",
     "htmlName": "ld-lights",
     "examples": [
