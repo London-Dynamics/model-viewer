@@ -1,0 +1,219 @@
+<!--
+/* @license
+ * Copyright 2020 Google Inc. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>&lt;model-viewer&gt; LD Environment</title>
+  <meta charset="utf-8">
+  <meta name="description" content="&lt;model-viewer&gt; lighting &amp; environment examples">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+  <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+  <link rel="shortcut icon" type="image/png" href="../../assets/favicon.png"/>
+
+  <style>
+      .controls {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        max-width: unset;
+        transform: unset;
+        pointer-events: auto;
+        border-radius: 4px;
+        background-color: #fff;
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+        padding: 0.5rem 1rem;
+        color: #999;
+      }
+
+      .flex-col {
+        display: flex;
+        flex-direction: column;
+      }
+      .flex-row {
+        display: flex;
+        flex-direction: row;
+      }
+      .controls h5 {
+        margin: 0 0 0.25em 0;
+      }
+      .controls label {
+        color: gray;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        line-height: 1em;
+      }
+      .controls input {
+        width: 100%;
+      }
+      .controls button {
+        border: 1px solid #ccc;
+        padding: 0.25em 0.5em;
+        border-radius: 4px;
+        background: white;
+        color: #111;
+        cursor: pointer;
+      }
+      .controls button:hover {
+        background: #eee;
+
+      }
+      .controls button:active {
+        background: cornflowerblue;
+        color: white;
+      }
+      .gap-3 {
+        gap: 1rem;
+      }
+      .p-3 {
+        padding: 1rem;
+      }
+      .px-3 {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      .py-3 {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+      }
+    </style>
+
+  <script defer src="https://web3dsurvey.com/collector.js"></script>
+
+
+  <script>
+    window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+    ga('create', 'UA-169901325-1', { 'storage': 'none' });
+    ga('set', 'referrer', document.referrer.split('?')[0]);
+    ga('set', 'anonymizeIp', true);
+    ga('send', 'pageview');
+  </script>
+  <script async src='https://www.google-analytics.com/analytics.js'></script>
+</head>
+<body>
+
+<div class="examples-page">
+  <div class="sidebar" id="sidenav"></div>
+  <div id="toggle"></div>
+
+  <div class="examples-container">
+    <div class="sample">
+      <div id="water" class="demo"></div>
+      <div class="content">
+        <div class="wrapper">
+          <h4 id="intro">
+            LD <span class="font-medium">Environment</span> by
+            <a href="https://londondynamics.com" target="_blank"
+              >London Dynamics</a
+            >. This page showcases how you can control the weather like a god.
+          </h4>
+          <div class="heading">
+            <h2 class="demo-title">Just Add Water with <span class="attribute">water-texture</span></h2>
+            <p>Wow!</p>
+          </div>
+          <example-snippet stamp-to="water" highlight-as="html">
+            <template>
+<model-viewer
+  id="water-demo"
+  water-texture="../../shared-assets/normals/waternormals.jpg"
+  alt="A 3D model of a boat in the sea"
+  src="https://assets.v2.londondynamics.com/1b1c190d-7aa3-4075-9bb2-edb1afe09477/puzzle/6e201b0a-c631-7f92-c13e-1d457b3695b5.glb"
+  skybox-image="../../shared-assets/environments/industrial_sunset_02_puresky_2k.hdr"
+  exposure="0.5"
+  ar
+  camera-controls
+  touch-action="pan-y"
+  camera-orbit="150deg 80deg 105%"
+  max-camera-orbit="Infinity 80deg auto"
+  camera-target="auto 0.5m auto"
+  interaction-prompt="none"></model-viewer>
+  <div class="controls flex-row gap-3">
+    <button type="button" id="swapBoat">Swap Boat</button>
+  </div>
+  <script type="module">
+     (() => {
+      const modelViewer =
+      document.querySelector('#water-demo');
+
+      const boats = [
+        "https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/cd30aa60-1c4b-ccea-5056-f1711b26549e.glb",
+        "https://assets.v2.londondynamics.com/1b1c190d-7aa3-4075-9bb2-edb1afe09477/puzzle/6e201b0a-c631-7f92-c13e-1d457b3695b5.glb"
+      ];
+
+      let currentBoat = 1;
+
+      document.getElementById('swapBoat').addEventListener('click', () => {
+        currentBoat = (currentBoat + 1) % boats.length;
+
+        modelViewer.src = boats[currentBoat];
+      });
+     })();
+  </script>
+            </template>
+          </example-snippet>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <ul>
+        <li class="attribution">
+          <a href="https://poly.google.com/view/dLHpzNdygsg">Astronaut</a> by <a href="https://poly.google.com/user/4aEd8rQgKu2">Poly</a>,
+          licensed under <a href="https://creativecommons.org/licenses/by/2.0/">CC-BY</a>.
+        </li>
+
+        <li class="attribution">
+          <a href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet">Damaged Helmet</a> by <a href="https://sketchfab.com/theblueturtle_">theblueturtle_</a>,
+          licensed under <a href="https://creativecommons.org/licenses/by-nc/3.0/us/">Creative Commons Attribution-NonCommercial</a>.
+        </li>
+
+        <li class="attribution">
+          <a href="https://hdrihaven.com/hdri/?h=small_hangar_01">small_hangar_01_1k.jpg</a> by <a href="https://hdrihaven.com">HDRI Haven</a>,
+          licensed under <a href="https://hdrihaven.com/p/license.php">CC0</a>.
+        </li>
+
+        <li class="attribution">
+          <a href="https://hdrihaven.com/hdri/?h=whipple_creek_regional_park_04">whipple_creek_regional_park_04_1k.hdr</a> by <a href="https://hdrihaven.com">HDRI Haven</a>,
+          licensed under <a href="https://hdrihaven.com/p/license.php">CC0</a>.
+        </li>
+      </ul>
+      <div style="margin-top:24px;" class="copyright">©Copyright 2018-2020 Google Inc. Licensed under the Apache License 2.0.</div>
+      <div id='footer-links'></div>
+    </div>
+  </div>
+</div>
+
+  <script type="module" src="../../examples/built/docs-and-examples.js">
+  </script>
+  <script type="module">
+    (() => { init('examples-ld-environment'); })();
+    (() => { initFooterLinks();})();
+  </script>
+
+  <!-- Documentation-specific dependencies: -->
+  <script type="module"
+      src="../built/dependencies.js">
+  </script>
+
+  <!-- Loads <model-viewer> on modern browsers: -->
+  <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+</body>
+</html>
