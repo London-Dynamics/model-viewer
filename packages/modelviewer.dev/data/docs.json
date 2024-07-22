@@ -1254,7 +1254,7 @@
        {
         "name": "water-texture",
         "htmlName": "waterTexture",
-        "description": "TODO",
+        "description": "Activate a water texture on the ground plane by providing a normals texture file.",
         "links": [
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
         ],
