@@ -112,7 +112,7 @@
           </h4>
           <div class="heading">
             <h2 class="demo-title">Just add water with the <span class="attribute">water-texture</span> attribute</h2>
-            <h4></h4>
+            <h4>Adjust water effect with <span class="attribute">water-distortion-scale</span> and <span class="attribute">water-size</span></h4>
           </div>
           <example-snippet stamp-to="water" highlight-as="html">
             <template>
@@ -131,7 +131,17 @@
   camera-target="auto 0.5m auto"
   interaction-prompt="none"></model-viewer>
   <div class="controls flex-row gap-3">
-    <button type="button" id="swapBoat">Swap Boat</button>
+    <div>
+      <button type="button" id="swapBoat">Swap Boat</button>
+    </div>
+    <div>
+      <label for="water-distortion-scale">Distortion Scale</label>
+      <input type="range" id="water-distortion-scale" min="0" max="20" step="0.1" value="3.7" />
+    </div>
+    <div>
+      <label for="water-size">Water Size</label>
+      <input type="range" id="water-size" min="0.1" max="10" step="0.1" value="1" />
+    </div>
   </div>
   <script type="module">
      (() => {
@@ -150,6 +160,15 @@
 
         modelViewer.src = boats[currentBoat];
       });
+
+      document.getElementById('water-distortion-scale').addEventListener('input', (event) => {
+        modelViewer.setAttribute('water-distortion-scale', event.target.value);
+      });
+
+      document.getElementById('water-size').addEventListener('input', (event) => {
+        modelViewer.setAttribute('water-size', event.target.value);
+      });
+
      })();
   </script>
             </template>

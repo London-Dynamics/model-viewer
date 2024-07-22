@@ -8,7 +8,7 @@ import ModelViewerElementBase, {
 import { Constructor } from '../utilities.js';
 
 import {Water} from './ld-environment/water.js';
-import { PlaneGeometry, RepeatWrapping, TextureLoader, Vector3 } from 'three';
+import { PlaneGeometry, RepeatWrapping, ShaderMaterial, TextureLoader, Vector3 } from 'three';
 
 const $justAddWater = Symbol('justAddWater');
 const $animateEnvironment = Symbol('animateEnvironment');
@@ -16,6 +16,8 @@ const $water = Symbol('water');
 
 export declare interface LDEnvironmentInterface {
   waterTexture: string|null;
+  waterDistortionScale: number|null;
+  waterSize: number|null;
 }
 
 export const LDEnvironmentMixin = <
@@ -26,6 +28,12 @@ export const LDEnvironmentMixin = <
   class LDEnvironmentModelViewerElement extends ModelViewerElement {
     @property({type: String, attribute: 'water-texture'})
     waterTexture: string|null = null;
+
+    @property({type: Number, attribute: 'water-distortion-scale'})
+    waterDistortionScale: number|null = null;
+
+    @property({type: Number, attribute: 'water-size'})
+    waterSize: number|null = null;
 
     private [$water]: Water|null = null;
 
@@ -38,7 +46,7 @@ export const LDEnvironmentMixin = <
     }
 
     private[$justAddWater]() {
-      if (this[$scene]) {
+      if (this[$scene] && !this[$water]) {
         const {waterTexture} = this;
 
         const waterGeometry = new PlaneGeometry( 10000, 10000 );
@@ -54,7 +62,7 @@ export const LDEnvironmentMixin = <
 						sunDirection: new Vector3(),
 						sunColor: 0xffffff,
 						waterColor: 0x001e0f,
-						distortionScale: 3.7,
+						distortionScale: this.waterDistortionScale || 3.7,
 						fog: this[$scene].fog !== undefined
 					}
 				);
@@ -73,7 +81,14 @@ export const LDEnvironmentMixin = <
 
       if (changedProperties.has('waterTexture') && this.waterTexture != null) {
         this[$justAddWater]();
-        this[$needsRender]();
+      }
+
+      if (changedProperties.has('waterDistortionScale') && this[$water] && this.waterDistortionScale) {
+        (this[$water].material as ShaderMaterial).uniforms['distortionScale'].value = this.waterDistortionScale;
+      }
+
+      if (changedProperties.has('waterSize') && this[$water] && this.waterSize) {
+        (this[$water].material as ShaderMaterial).uniforms['size'].value = this.waterSize;
       }
     }
   }
