@@ -29,8 +29,6 @@ export const LDEnvironmentMixin = <
 
     private [$water]: Water|null = null;
 
-
-
     private[$animateEnvironment]() {
       if(this[$water]) {
         this[$water].animate();
@@ -73,7 +71,7 @@ export const LDEnvironmentMixin = <
     updated(changedProperties: Map<string|number|symbol, unknown>) {
       super.updated(changedProperties);
 
-      if (changedProperties.has('waterTexture')) {
+      if (changedProperties.has('waterTexture') && this.waterTexture != null) {
         this[$justAddWater]();
         this[$needsRender]();
       }
