@@ -42,13 +42,10 @@ type WaterOptions = {
 class Water extends Mesh {
 	isWater: boolean;
 
-
 	constructor( geometry: BufferGeometry<NormalBufferAttributes> | undefined, options:WaterOptions = {} ) {
-
 		super( geometry );
 
 		this.isWater = true;
-
 
 		const scope = this;
 
@@ -88,7 +85,6 @@ class Water extends Mesh {
 		const renderTarget = new WebGLRenderTarget( textureWidth, textureHeight );
 
 		const mirrorShader = {
-
 			name: 'MirrorShader',
 
 			uniforms: UniformsUtils.merge( [
@@ -100,7 +96,7 @@ class Water extends Mesh {
 					'alpha': { value: 1.0 },
 					'time': { value: 0.0 },
 					'size': { value: 1.0 },
-					'distortionScale': { value: 20.0 },
+					'distortionScale': { value: 10.0 },
 					'textureMatrix': { value: new Matrix4() },
 					'sunColor': { value: new Color( 0x7F7F7F ) },
 					'sunDirection': { value: new Vector3( 0.70707, 0.70707, 0 ) },
@@ -341,9 +337,7 @@ class Water extends Mesh {
 			const viewport = camera.viewport;
 
 			if ( viewport !== undefined ) {
-
 				renderer.state.viewport( viewport );
-
 			}
 
 		};
@@ -351,7 +345,7 @@ class Water extends Mesh {
 	}
 
 	animate() {
-		(this.material as ShaderMaterial).uniforms[ 'time' ].value += 0.25 / 60.0;
+		(this.material as ShaderMaterial).uniforms[ 'time' ].value += 0.10 / 60.0;
 	}
 
 }
