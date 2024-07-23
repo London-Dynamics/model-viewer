@@ -112,54 +112,47 @@
           </h4>
           <div class="heading">
             <h2 class="demo-title">Just add water with the <span class="attribute">water-texture</span> attribute</h2>
-            <h4>Adjust water effect with <span class="attribute">water-distortion-scale</span> and <span class="attribute">water-size</span></h4>
+            <h4>Adjust water effect with <span class="attribute">water-distortion-scale</span> and <span class="attribute">water-size</span>. Add a sky with the <span class="attribute">sky</span> attribute, set the position of the sun in the sky with <span class="attribute">sun-elevation</span> and <span class="attribute">sun-azimuth</span> (do not mix with <span class="attribute">skybox-image</span>)</h4>
           </div>
           <example-snippet stamp-to="water" highlight-as="html">
             <template>
 <model-viewer
   id="water-demo"
   water-texture="../../shared-assets/normals/waternormals.jpg"
+  sky
+  environment-image="
+https://assets.dev.d.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/kloofendal_48d_partly_cloudy_puresky_4k 1.jpg"
   alt="A 3D model of a boat in the sea"
   src="https://assets.v2.londondynamics.com/1b1c190d-7aa3-4075-9bb2-edb1afe09477/puzzle/6e201b0a-c631-7f92-c13e-1d457b3695b5.glb"
-  skybox-image="../../shared-assets/environments/industrial_sunset_02_puresky_2k.hdr"
-  exposure="0.5"
   ar
   camera-controls
   touch-action="pan-y"
   camera-orbit="150deg 80deg 105%"
   max-camera-orbit="Infinity 80deg auto"
-  camera-target="auto 0.5m auto"
+  camera-target="auto 0.35m auto"
+  exposure="1.2"
   interaction-prompt="none"></model-viewer>
   <div class="controls flex-row gap-3">
     <div>
-      <button type="button" id="swapBoat">Swap Boat</button>
-    </div>
-    <div>
       <label for="water-distortion-scale">Distortion Scale</label>
       <input type="range" id="water-distortion-scale" min="0" max="20" step="0.1" value="3.7" />
-    </div>
-    <div>
+
       <label for="water-size">Water Size</label>
       <input type="range" id="water-size" min="0.1" max="10" step="0.1" value="1" />
     </div>
+    <div>
+      <label for="sun-elevation">Sun Elevation</label>
+      <input type="range" id="sun-elevation" min="0" max="90" step="0.1" value="2" />
+
+      <label for="sun-azimuth">Sun Azimuth</label>
+      <input type="range" id="sun-azimuth" min="-180" max="180" step="0.1" value="180" />
+    </div>
   </div>
+
   <script type="module">
      (() => {
       const modelViewer =
       document.querySelector('#water-demo');
-
-      const boats = [
-        "https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/cd30aa60-1c4b-ccea-5056-f1711b26549e.glb",
-        "https://assets.v2.londondynamics.com/1b1c190d-7aa3-4075-9bb2-edb1afe09477/puzzle/6e201b0a-c631-7f92-c13e-1d457b3695b5.glb"
-      ];
-
-      let currentBoat = 1;
-
-      document.getElementById('swapBoat').addEventListener('click', () => {
-        currentBoat = (currentBoat + 1) % boats.length;
-
-        modelViewer.src = boats[currentBoat];
-      });
 
       document.getElementById('water-distortion-scale').addEventListener('input', (event) => {
         modelViewer.setAttribute('water-distortion-scale', event.target.value);
@@ -167,6 +160,14 @@
 
       document.getElementById('water-size').addEventListener('input', (event) => {
         modelViewer.setAttribute('water-size', event.target.value);
+      });
+
+      document.getElementById('sun-elevation').addEventListener('input', (event) => {
+        modelViewer.setAttribute('sun-elevation', event.target.value);
+      });
+
+      document.getElementById('sun-azimuth').addEventListener('input', (event) => {
+        modelViewer.setAttribute('sun-azimuth', event.target.value);
       });
 
      })();

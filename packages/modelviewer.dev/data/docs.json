@@ -1262,6 +1262,66 @@
           "default": "empty string",
           "options": "URL to a .jpg file"
         }
+      },
+       {
+        "name": "water-distortion-scale",
+        "htmlName": "waterTexture",
+        "description": "Sets the distortion of the model's reflextion in the water texture.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": 3.7,
+          "options": "any number >= 0.0"
+        }
+      },
+      {
+        "name": "water-size",
+        "htmlName": "waterTexture",
+        "description": "Sets the size of the waves in the water texture. A large value will make the waves smaller.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": 1.0,
+          "options": "any number >= 0.0"
+        }
+      },
+      {
+        "name": "sky",
+        "htmlName": "waterTexture",
+        "description": "Add a skybox with option to set the position of the sun.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "sun-elevation",
+        "htmlName": "waterTexture",
+        "description": "If sky is set, this attribute sets the elevation of the sun in degrees.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "2",
+          "options": "any number between 0 and 90"
+        }
+      },
+      {
+        "name": "sun-azimuth",
+        "htmlName": "waterTexture",
+        "description": "If sky is set, this attribute sets the azimuth of the sun in degrees.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "180",
+          "options": "any number between -180 and 180"
+        }
       }
     ]
   },
