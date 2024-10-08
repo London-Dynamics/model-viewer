@@ -155,6 +155,10 @@
     const modelViewer =
       document.querySelector('#three-demo');
 
+    modelViewer.addEventListener('camera-change', (event) => {
+      console.info('Camera changed', event.detail);
+    });
+
     document.getElementById('getCameraButton')
       .addEventListener('click', () => {
         const object = modelViewer.getCameraMeta();
