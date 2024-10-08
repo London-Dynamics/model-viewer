@@ -75,6 +75,7 @@ export const INTERACTION_PROMPT = '. Use mouse, touch or arrow keys to move.';
 
 export interface CameraChangeDetails {
   source: ChangeSource;
+  spacialRegion?: string;
 }
 
 export interface SphericalPosition {
@@ -853,6 +854,8 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$updateStatus](
             `View from stage ${position}`);
       }
+
+      return position;
     }
 
     get[$ariaLabel]() {
@@ -915,12 +918,12 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     };
 
     [$onChange] = () => {
-      this[$updateAria]();
+      const spacialRegion = this[$updateAria]();
       this[$needsRender]();
       const source = this[$controls].changeSource;
 
       this.dispatchEvent(new CustomEvent<CameraChangeDetails>(
-          'camera-change', {detail: {source}}));
+          'camera-change', {detail: {source, spacialRegion}}));
     };
 
     [$onPointerChange] = (event: PointerChangeEvent) => {
