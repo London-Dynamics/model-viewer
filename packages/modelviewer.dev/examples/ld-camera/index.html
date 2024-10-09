@@ -159,6 +159,12 @@
       console.info('Camera changed', event.detail);
     });
 
+    modelViewer.addEventListener('click', (event) => {
+      if (typeof event.detail === "object") {
+        console.info('Click', event.detail);
+      }
+    });
+
     document.getElementById('getCameraButton')
       .addEventListener('click', () => {
         const object = modelViewer.getCameraMeta();

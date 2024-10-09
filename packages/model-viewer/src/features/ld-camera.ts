@@ -11,7 +11,13 @@ import ModelViewerElementBase, {
 import {$controls} from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
+import { Mesh } from 'three';
 
+export interface ClickDetails {
+  geometry?: string;
+  material?: string;
+  mesh?: string;
+}
 
 type CameraMeta = {
   metadata: object,
@@ -25,6 +31,7 @@ export declare interface LDCameraInterface {
   getCameraMeta(): CameraMeta | null;
 }
 
+
 export const LDCameraMixin = <
   T extends Constructor<ModelViewerElementBase>
 >(
@@ -34,6 +41,44 @@ export const LDCameraMixin = <
     // protected[$controls] = new SmoothControls(
     //     this[$scene].camera as PerspectiveCamera, this[$userInputElement],
     //     this[$scene]);
+
+    private _pointerDwn = [0, 0];
+    private _pointerUp = [0, 0];
+
+    handleClick(event: MouseEvent) {
+      const {_pointerDwn, _pointerUp} = this;
+      const d = Math.hypot(_pointerUp[0] - _pointerDwn[0], _pointerUp[1] - _pointerDwn[1]);
+      /* This to allow for a small drag on sensetive input devices */
+      if (d > 4) return;
+
+      const { clientX, clientY } = event;
+
+      const scene = this[$scene];
+      const ndcCoords = scene.getNDC(clientX, clientY);
+      const hit = scene.hitFromPoint(ndcCoords);
+
+      if (hit) {
+        const {object} = hit;
+
+        if (object && object.isObject3D && object.visible) {
+          const detail: ClickDetails = {};
+          const {material, name, geometry} = object as Mesh;
+
+          if (name) {
+            detail.mesh = name;
+          }
+
+          if (geometry) {
+            detail.geometry = geometry.name;
+          }
+
+          if (typeof material !== "undefined" && !Array.isArray(material)) {
+            detail.material = material.name;
+          }
+          this.dispatchEvent(new CustomEvent<ClickDetails>('click', {detail}));
+        }
+      }
+    }
 
     async setCameraFromJSON(json: CameraMeta['object']) {
       // @ts-ignore
@@ -125,6 +170,14 @@ export const LDCameraMixin = <
       if (currentGLTF != null) {
 
       }
+
+      this.addEventListener("pointerdown", e => {
+        this._pointerDwn = [e.offsetX, e.offsetY];
+      });
+      this.addEventListener("pointerup", e => {
+          this._pointerUp = [e.offsetX, e.offsetY];
+      });
+      this.addEventListener('click', this.handleClick);
     }
   }
 
