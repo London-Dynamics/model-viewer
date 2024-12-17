@@ -64,6 +64,8 @@ export const LDPuzzlerMixin = <
                 },
                 { binary: true },
               )
+            } else {
+              res(inputBuffer)
             }
           },
           (error) => {
