@@ -52,21 +52,17 @@ export const LDPuzzlerMixin = <
           inputBuffer,
           '',
           (model) => {
-            if (model.scene) {
-              const exporter = new GLTFExporter()
-              exporter.parse(
-                model.scene,
-                (arrayBuffer) => {
-                  res(arrayBuffer)
-                },
-                function (err) {
-                  console.error(err)
-                },
-                { binary: true },
-              )
-            } else {
-              res(inputBuffer)
-            }
+            const exporter = new GLTFExporter()
+            exporter.parse(
+              model,
+              (arrayBuffer) => {
+                res(arrayBuffer)
+              },
+              function (err) {
+                console.error(err)
+              },
+              { binary: true },
+            )
           },
           (error) => {
             console.error(error)
