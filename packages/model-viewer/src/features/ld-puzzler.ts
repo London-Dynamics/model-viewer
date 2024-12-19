@@ -53,12 +53,9 @@ export const LDPuzzlerMixin = <
           '',
           (model) => {
             if (model.scene) {
-              let lastName = null
               model.scene.traverse((node) => {
-                if (node.isMesh()) {
-                  node.name = lastName
-                } else {
-                  lastName = node.name
+                if (node.children.length === 0 && (!node.name || node.name.length === 0)) {
+                  node.name = node.parent.name
                 }
               })
               const exporter = new GLTFExporter()
