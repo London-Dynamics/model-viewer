@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowJs": true,
     "target": "es2017",
     "module": "es2020",
     "moduleResolution": "node",
@@ -22,6 +23,6 @@
   },
   "include": [
     "./src/**/*.ts"
-  ],
+, "src/features/ld-exporter.js"  ],
   "exclude": []
 }

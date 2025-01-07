@@ -1,3 +1,5 @@
+/* eslint-disable */
+
 import {
   BufferAttribute,
   ClampToEdgeWrapping,
@@ -24,8 +26,8 @@ import {
   CompressedTexture,
   Vector3,
   Quaternion,
-} from "three";
-import { decompress } from "three/examples/jsm/utils/TextureUtils.js";
+} from 'three';
+import {decompress} from 'three/examples/jsm/utils/TextureUtils.js';
 
 /**
  * The KHR_mesh_quantization extension allows these extra attribute component types
@@ -55,7 +57,7 @@ const KHR_mesh_quantization_ExtraAttrTypes = {
   ],
 };
 
-class LDExporter {
+export class LDExporter {
   constructor() {
     this.pluginCallbacks = [];
 
@@ -2912,5 +2914,3 @@ LDExporter.Utils = {
     return clip;
   },
 };
-
-export { LDExporter };

@@ -4,14 +4,14 @@ declare global {
   }
 }
 
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
-import { LDExporter } from "./ld-exporter.js";
+import {GLTFLoader} from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/examples/jsm/loaders/DRACOLoader.js';
+import {LDExporter} from './ld-exporter.js';
 
-import ModelViewerElementBase from "../model-viewer-base.js";
+import ModelViewerElementBase from '../model-viewer-base.js';
 
-import { Constructor } from "../utilities.js";
-import { createSafeObjectUrlFromArrayBuffer } from "../utilities/create_object_url.js";
+import {Constructor} from '../utilities.js';
+import {createSafeObjectUrlFromArrayBuffer} from '../utilities/create_object_url.js';
 
 export declare interface LDPuzzlerInterface {
   setSrcFromBuffer(buffer: ArrayBuffer): void;
@@ -25,7 +25,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         const safeObjectUrl = createSafeObjectUrlFromArrayBuffer(buffer);
 
-        this.setAttribute("src", safeObjectUrl.url);
+        this.setAttribute('src', safeObjectUrl.url);
       } catch (e) {
         console.error(e);
       }
@@ -41,18 +41,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath(
-          "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/"
+          'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/'
         );
         loader.setDRACOLoader(dracoLoader);
 
         loader.parse(
           inputBuffer,
-          "",
+          '',
           (model) => {
             if (model.scene) {
               model.scene.traverse((node) => {
-                if (node.userData["name"]) {
-                  node.name = node.userData["name"];
+                if (node.userData['name']) {
+                  node.name = node.userData['name'];
                 }
               });
               const exporter = new LDExporter();
@@ -64,7 +64,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 function (err) {
                   console.error(err);
                 },
-                { binary: true }
+                {binary: true}
               );
             } else {
               res(inputBuffer);
@@ -80,7 +80,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     connectedCallback() {
       super.connectedCallback();
 
-      if (typeof window !== "undefined") {
+      if (typeof window !== 'undefined') {
         window.deDraco = this.deDraco;
       }
     }
