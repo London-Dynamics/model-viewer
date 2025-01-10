@@ -26,8 +26,10 @@ import {
   CompressedTexture,
   Vector3,
   Quaternion,
-} from 'three';
-import {decompress} from 'three/examples/jsm/utils/TextureUtils.js';
+} from "three";
+import { decompress } from "three/examples/jsm/utils/TextureUtils.js";
+
+const dedupName = /\ \([0-9]+\)$/;
 
 /**
  * The KHR_mesh_quantization extension allows these extra attribute component types
@@ -1676,7 +1678,11 @@ class GLTFWriter {
     }
 
     meshDef.primitives = primitives;
-    meshDef.name = mesh.name;
+    if (dedupName.test(mesh.name)) {
+      meshDef.name = mesh.name.split(" ").slice(0, -1).join(" ");
+    } else {
+      meshDef.name = mesh.name;
+    }
 
     if (!json.meshes) json.meshes = [];
 
