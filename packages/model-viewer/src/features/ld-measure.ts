@@ -208,6 +208,126 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
               corners[4].clone().setX(corners[4].x - length - margin),
             ],
           ],
+          // North Wall A
+          [
+            [
+              corners[0].clone().setZ(corners[0].z - length - margin),
+              corners[3].clone().setZ(corners[3].z - length - margin),
+            ],
+            [
+              corners[0].clone().setZ(corners[0].z - margin),
+              corners[0].clone().setZ(corners[0].z - length - margin),
+            ],
+            [
+              corners[3].clone().setZ(corners[3].z - margin),
+              corners[3].clone().setZ(corners[3].z - length - margin),
+            ],
+          ],
+          // North Wall B
+          [
+            [
+              corners[1].clone().setZ(corners[1].z - length - margin),
+              corners[2].clone().setZ(corners[2].z - length - margin),
+            ],
+            [
+              corners[1].clone().setZ(corners[1].z - margin),
+              corners[1].clone().setZ(corners[1].z - length - margin),
+            ],
+            [
+              corners[2].clone().setZ(corners[2].z - margin),
+              corners[2].clone().setZ(corners[2].z - length - margin),
+            ],
+          ],
+          // East Wall A
+          [
+            [
+              corners[1].clone().setX(corners[1].x + length + margin),
+              corners[2].clone().setX(corners[2].x + length + margin),
+            ],
+            [
+              corners[1].clone().setX(corners[1].x + margin),
+              corners[1].clone().setX(corners[1].x + length + margin),
+            ],
+            [
+              corners[2].clone().setX(corners[2].x + margin),
+              corners[2].clone().setX(corners[2].x + length + margin),
+            ],
+          ],
+          // East Wall B
+          [
+            [
+              corners[5].clone().setX(corners[5].x + length + margin),
+              corners[6].clone().setX(corners[6].x + length + margin),
+            ],
+            [
+              corners[5].clone().setX(corners[5].x + margin),
+              corners[5].clone().setX(corners[5].x + length + margin),
+            ],
+            [
+              corners[6].clone().setX(corners[6].x + margin),
+              corners[6].clone().setX(corners[6].x + length + margin),
+            ],
+          ],
+          // South Wall A
+          [
+            [
+              corners[5].clone().setZ(corners[5].z + length + margin),
+              corners[6].clone().setZ(corners[6].z + length + margin),
+            ],
+            [
+              corners[5].clone().setZ(corners[5].z + margin),
+              corners[5].clone().setZ(corners[5].z + length + margin),
+            ],
+            [
+              corners[6].clone().setZ(corners[6].z + margin),
+              corners[6].clone().setZ(corners[6].z + length + margin),
+            ],
+          ],
+          // South Wall B
+          [
+            [
+              corners[4].clone().setZ(corners[4].z + length + margin),
+              corners[7].clone().setZ(corners[7].z + length + margin),
+            ],
+            [
+              corners[4].clone().setZ(corners[4].z + margin),
+              corners[4].clone().setZ(corners[4].z + length + margin),
+            ],
+            [
+              corners[7].clone().setZ(corners[7].z + margin),
+              corners[7].clone().setZ(corners[7].z + length + margin),
+            ],
+          ],
+          // West Wall A
+          [
+            [
+              corners[4].clone().setX(corners[4].x - length - margin),
+              corners[7].clone().setX(corners[7].x - length - margin),
+            ],
+            [
+              corners[4].clone().setX(corners[4].x - margin),
+              corners[4].clone().setX(corners[4].x - length - margin),
+            ],
+            [
+              corners[7].clone().setX(corners[7].x - margin),
+              corners[7].clone().setX(corners[7].x - length - margin),
+            ],
+          ],
+          // West Wall B
+          [
+            [
+              corners[0].clone().setX(corners[0].x - length - margin),
+              corners[3].clone().setX(corners[3].x - length - margin),
+            ],
+            [
+              corners[0].clone().setX(corners[0].x - margin),
+              corners[0].clone().setX(corners[0].x - length - margin),
+            ],
+            [
+              corners[3].clone().setX(corners[3].x - margin),
+              corners[3].clone().setX(corners[3].x - length - margin),
+            ],
+          ],
         ];
 
         edgeGroups.forEach((group) => {
