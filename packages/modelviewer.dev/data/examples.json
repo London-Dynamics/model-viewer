@@ -356,6 +356,16 @@
     ]
   },
   {
+    "name": "LD Measure",
+    "htmlName": "ld-measure",
+    "examples": [
+      {
+        "htmlId": "measure",
+        "name": "Measure"
+      }
+    ]
+  },
+  {
     "name": "LD Puzzler",
     "htmlName": "ld-puzzler",
     "examples": [
