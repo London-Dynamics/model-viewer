@@ -140,71 +140,72 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
 
         // Define the length of the extension lines
-        const extensionLength = 0.2; // Adjust the length as needed
+        const length = 0.2; // Adjust the length as needed
+        const margin = 0.05; // Margin between dimensions and model. Adjust as needed
 
         const edgeGroups = [
           [
             /* Lower north side */
             /* Dimension line, left extension, right extension */
             [
-              corners[0].clone().setZ(corners[0].z - extensionLength),
-              corners[1].clone().setZ(corners[1].z - extensionLength),
+              corners[0].clone().setZ(corners[0].z - length - margin),
+              corners[1].clone().setZ(corners[1].z - length - margin),
             ],
             [
-              corners[0],
-              corners[0].clone().setZ(corners[0].z - extensionLength),
+              corners[0].clone().setZ(corners[0].z - margin),
+              corners[0].clone().setZ(corners[0].z - length - margin),
             ],
             [
-              corners[1],
-              corners[1].clone().setZ(corners[1].z - extensionLength),
+              corners[1].clone().setZ(corners[1].z - margin),
+              corners[1].clone().setZ(corners[1].z - length - margin),
             ],
           ],
           [
             /* Lower east side */
             /* Dimension line, left extension, right extension */
             [
-              corners[1].clone().setX(corners[1].x + extensionLength),
-              corners[5].clone().setX(corners[5].x + extensionLength),
+              corners[1].clone().setX(corners[1].x + length + margin),
+              corners[5].clone().setX(corners[5].x + length + margin),
             ],
             [
-              corners[1],
-              corners[1].clone().setX(corners[1].x + extensionLength),
+              corners[1].clone().setX(corners[1].x + margin),
+              corners[1].clone().setX(corners[1].x + length + margin),
             ],
             [
-              corners[5],
-              corners[5].clone().setX(corners[5].x + extensionLength),
+              corners[5].clone().setX(corners[5].x + margin),
+              corners[5].clone().setX(corners[5].x + length + margin),
             ],
           ],
           [
             /* Lower south side */
             /* Dimension line, left extension, right extension */
             [
-              corners[4].clone().setZ(corners[4].z + extensionLength),
-              corners[5].clone().setZ(corners[5].z + extensionLength),
+              corners[4].clone().setZ(corners[4].z + length + margin),
+              corners[5].clone().setZ(corners[5].z + length + margin),
             ],
             [
-              corners[4],
-              corners[4].clone().setZ(corners[4].z + extensionLength),
+              corners[4].clone().setZ(corners[4].z + margin),
+              corners[4].clone().setZ(corners[4].z + length + margin),
             ],
             [
-              corners[5],
-              corners[5].clone().setZ(corners[5].z + extensionLength),
+              corners[5].clone().setZ(corners[5].z + margin),
+              corners[5].clone().setZ(corners[5].z + length + margin),
             ],
           ],
           [
             /* Lower west side */
             /* Dimension line, left extension, right extension */
             [
-              corners[0].clone().setX(corners[0].x - extensionLength),
-              corners[4].clone().setX(corners[4].x - extensionLength),
+              corners[0].clone().setX(corners[0].x - length - margin),
+              corners[4].clone().setX(corners[4].x - length - margin),
             ],
             [
-              corners[0],
-              corners[0].clone().setX(corners[0].x - extensionLength),
+              corners[0].clone().setX(corners[0].x - margin),
+              corners[0].clone().setX(corners[0].x - length - margin),
             ],
             [
-              corners[4],
-              corners[4].clone().setX(corners[4].x - extensionLength),
+              corners[4].clone().setX(corners[4].x - margin),
+              corners[4].clone().setX(corners[4].x - length - margin),
             ],
           ],
         ];
