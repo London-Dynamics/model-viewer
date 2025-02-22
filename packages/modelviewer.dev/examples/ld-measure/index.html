@@ -56,6 +56,9 @@
         display: flex;
         flex-direction: row;
       }
+      .items-center {
+        align-items: center;
+      }
       .controls h5 {
         margin: 0 0 0.25em 0;
       }
@@ -118,14 +121,23 @@
                 <span class="font-medium">LD Measure </span>by
                 <a href="https://londondynamics.com" target="_blank"
                   >London Dynamics</a
-                >. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                >. Give the user the ability to measure the size of objects in
+                the scene.
               </h4>
               <div class="heading">
-                <h2 class="demo-title">
-                  The <span class="attribute">FOO</span> attribute and the
-                  <span class="attribute">BAR</span> method lorem ipsum dolor
-                  sit amet.
-                </h2>
+                <h2 class="demo-title">Display measurements</h2>
+                <p>
+                  Toggle measurements by setting
+                  <span class="attribute">measure</span> attribute. The default
+                  is the total bounding box of the scene. If you also want to
+                  measure the size of individual objects, you can set the
+                  <span class="attribute">measure-objects</span> attribute.
+                </p>
+                <p>Default is an empty string.</p>
+                <p>
+                  "*" will let the user click any object. "name1 name2" will let
+                  the user click objects with the names "name1" and "name2".
+                </p>
               </div>
               <example-snippet stamp-to="measure" highlight-as="html">
                 <template>
@@ -137,14 +149,19 @@
                     ar
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
-                    src="../../shared-assets/models/cubes.gltf"
+                    src="../../shared-assets/models/RocketShip.glb"
                     alt="An animated 3D model a bedside lamp"
-                    disable-pan
                   >
-                    <div class="controls flex-row gap-3">
+                    <div class="controls items-center flex-row gap-3">
                       <button type="button" id="toggle-rulers">
-                        Toggle Rulers
+                        Enable Rulers
                       </button>
+                      <span>Measure:</span>
+                      <button type="button" id="measure-scene">Scene</button>
+                      <button type="button" id="measure-objects">
+                        Any Object
+                      </button>
+                      <button type="button" id="measure-object">Box1</button>
                     </div>
                   </model-viewer>
 
@@ -160,10 +177,31 @@
                           rulersOn = !rulersOn;
 
                           if (!rulersOn) {
+                            e.target.textContent = 'Enable Rulers';
                             modelViewer.removeAttribute('measure');
                           } else {
+                            e.target.textContent = 'Disable Rulers';
                             modelViewer.setAttribute('measure', '');
                           }
+                        });
+
+                      document
+                        .getElementById('measure-scene')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', '');
+                        });
+                      document
+                        .getElementById('measure-objects')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', '*');
+                        });
+                      document
+                        .getElementById('measure-object')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute(
+                            'measure-objects',
+                            '"mesh125571997_4"'
+                          );
                         });
                     })();
                   </script>
