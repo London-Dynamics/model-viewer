@@ -13,13 +13,13 @@ import ModelViewerElementBase, {
   $scene,
   $onModelLoad,
   $needsRender,
-  $container,
 } from '../model-viewer-base.js';
 
 import { Constructor } from '../utilities.js';
 import { $controls } from './controls.js';
 import {
   AZIMUTHAL_OCTANT_LABELS,
+  convertMeters,
   HALF_PI,
   QUARTER_PI,
   TAU,
@@ -34,9 +34,7 @@ type LineGroup = {
   lines: LineSegments[];
 };
 
-const $measureWidthElement = Symbol('measureWidthElement');
-const $measureHeightElement = Symbol('measureHeightElement');
-const $measureDepthElement = Symbol('measureDepthElement');
+const $measureContainer = Symbol('measureContainer');
 
 export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
@@ -48,9 +46,21 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: String, attribute: 'measure-objects' })
     measureObjects: string = '';
 
-    protected [$measureWidthElement]: HTMLSpanElement | null = null;
-    protected [$measureHeightElement]: HTMLSpanElement | null = null;
-    protected [$measureDepthElement]: HTMLSpanElement | null = null;
+    // TODO @property measurement-unit: string = 'm';
+    // TODO @property measurement-precision: number = 2;
+    // TODO @property measurement-dimensions: string = '';
+
+    protected [$measureContainer]: HTMLElement = this.shadowRoot!.querySelector(
+      '.slot.ld-measure'
+    ) as HTMLElement;
+
+    protected _measureWidthElement: HTMLElement | null = null;
+    protected _measureHeightElement: HTMLElement | null = null;
+    protected _measureDepthElement: HTMLElement | null = null;
+
+    private _widthElementAnchorIndex: number = -1;
+    private _heightElementAnchorIndex: number = -1;
+    private _depthElementAnchorIndex: number = -1;
 
     private _pointerDwn = [0, 0];
     private _pointerUp = [0, 0];
@@ -58,6 +68,18 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _lastClickedObject: Object3D | null = null;
     private _lastCameraAngle: string = '';
     private _extensionLineLength: number = 0.2;
+
+    private _worldToScreen(position: Vector3): { x: number; y: number } {
+      const width = this[$scene].width;
+      const height = this[$scene].height;
+
+      const vector = position.clone().project(this[$scene].camera);
+
+      return {
+        x: (vector.x * 0.5 + 0.5) * width,
+        y: (vector.y * -0.5 + 0.5) * height,
+      };
+    }
 
     private _updateMarkerVisibility() {
       if (!this._lineGroups.length || !this._lastCameraAngle.length) {
@@ -73,44 +95,69 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const queueForVisibility = [];
 
       const [
-        NORTH,
-        EAST,
-        SOUTH,
-        WEST,
-        NORTH_A,
-        NORTH_B,
-        EAST_A,
-        EAST_B,
-        SOUTH_A,
-        SOUTH_B,
-        WEST_A,
-        WEST_B,
+        NORTH, // 0
+        EAST, // 1
+        SOUTH, // 2
+        WEST, // 3
+        NORTH_A, // 4
+        NORTH_B, // 5
+
+        EAST_A, // 6
+        EAST_B, // 7
+        SOUTH_A, // 8
+        SOUTH_B, // 9
+        WEST_A, // 10
+        WEST_B, // 11
       ] = this._lineGroups;
 
       switch (this._lastCameraAngle) {
         case 'front':
-          queueForVisibility.push(SOUTH, EAST, WEST_A);
+          queueForVisibility.push(SOUTH, WEST_A, EAST);
+          this._widthElementAnchorIndex = 2;
+          this._heightElementAnchorIndex = 10;
+          this._depthElementAnchorIndex = 1;
           break;
         case 'front-right':
-          queueForVisibility.push(SOUTH, EAST, NORTH_B);
+          queueForVisibility.push(SOUTH, NORTH_B, EAST);
+          this._widthElementAnchorIndex = 2;
+          this._heightElementAnchorIndex = 5;
+          this._depthElementAnchorIndex = 1;
           break;
         case 'right':
-          queueForVisibility.push(EAST, NORTH, SOUTH_A);
+          queueForVisibility.push(NORTH, SOUTH_A, EAST);
+          this._widthElementAnchorIndex = 0;
+          this._heightElementAnchorIndex = 8;
+          this._depthElementAnchorIndex = 1;
           break;
         case 'back-right':
-          queueForVisibility.push(EAST, NORTH, WEST_B);
+          queueForVisibility.push(NORTH, WEST_B, EAST);
+          this._widthElementAnchorIndex = 0;
+          this._heightElementAnchorIndex = 11;
+          this._depthElementAnchorIndex = 1;
           break;
         case 'back':
-          queueForVisibility.push(NORTH, WEST, EAST_A);
+          queueForVisibility.push(NORTH, EAST_A, WEST);
+          this._widthElementAnchorIndex = 0;
+          this._heightElementAnchorIndex = 6;
+          this._depthElementAnchorIndex = 3;
           break;
         case 'back-left':
-          queueForVisibility.push(NORTH, WEST, SOUTH_B);
+          queueForVisibility.push(NORTH, SOUTH_B, WEST);
+          this._widthElementAnchorIndex = 0;
+          this._heightElementAnchorIndex = 9;
+          this._depthElementAnchorIndex = 3;
           break;
         case 'left':
-          queueForVisibility.push(WEST, SOUTH, NORTH_A);
+          queueForVisibility.push(SOUTH, NORTH_A, WEST);
+          this._widthElementAnchorIndex = 2;
+          this._heightElementAnchorIndex = 4;
+          this._depthElementAnchorIndex = 3;
           break;
         case 'front-left':
-          queueForVisibility.push(SOUTH, WEST, EAST_B);
+          queueForVisibility.push(SOUTH, EAST_B, WEST);
+          this._widthElementAnchorIndex = 2;
+          this._heightElementAnchorIndex = 7;
+          this._depthElementAnchorIndex = 3;
           break;
       }
 
@@ -121,6 +168,97 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
 
       this[$needsRender]();
+    }
+
+    private _updateMarkerText(boundingBox: Box3) {
+      const size = boundingBox.getSize(new Vector3());
+
+      const unit = 'm';
+      const precision = 2;
+
+      if (this._measureWidthElement) {
+        const value = convertMeters(size.x, unit, precision);
+        this._measureWidthElement.textContent = `${value} ${unit}`;
+        this._measureWidthElement.style.display = 'block';
+        this._measureWidthElement.setAttribute(
+          'aria-label',
+          `Width: ${value} ${unit}`
+        );
+      }
+      if (this._measureHeightElement) {
+        const value = convertMeters(size.y, unit, precision);
+        this._measureHeightElement.textContent = `${value} ${unit}`;
+        this._measureHeightElement.style.display = 'block';
+        this._measureHeightElement.setAttribute(
+          'aria-label',
+          `Width: ${value} ${unit}`
+        );
+      }
+      if (this._measureDepthElement) {
+        const value = convertMeters(size.z, unit, precision);
+        this._measureDepthElement.textContent = `${value} ${unit}`;
+        this._measureDepthElement.style.display = 'block';
+        this._measureDepthElement.setAttribute(
+          'aria-label',
+          `Width: ${value} ${unit}`
+        );
+      }
+    }
+
+    private _updateMarkerPosition() {
+      if (
+        this._widthElementAnchorIndex === -1 ||
+        this._heightElementAnchorIndex === -1 ||
+        this._depthElementAnchorIndex === -1
+      ) {
+        return;
+      }
+
+      if (this._widthElementAnchorIndex !== -1) {
+        const line = this._lineGroups[this._widthElementAnchorIndex].lines[0];
+        const midPoint = new Vector3();
+        line.geometry.computeBoundingBox();
+        line.geometry.boundingBox?.getCenter(midPoint);
+        line.localToWorld(midPoint);
+
+        const screenPosition = this._worldToScreen(midPoint);
+        this._measureWidthElement?.setAttribute(
+          'style',
+          `left: ${screenPosition.x}px; top: ${screenPosition.y}px; transform: translate(-50%, -50%);`
+        );
+      } else {
+        this._measureWidthElement?.setAttribute('style', 'display: none;');
+      }
+      if (this._heightElementAnchorIndex !== -1) {
+        const line = this._lineGroups[this._heightElementAnchorIndex].lines[0];
+        const midPoint = new Vector3();
+        line.geometry.computeBoundingBox();
+        line.geometry.boundingBox?.getCenter(midPoint);
+        line.localToWorld(midPoint);
+
+        const screenPosition = this._worldToScreen(midPoint);
+        this._measureHeightElement?.setAttribute(
+          'style',
+          `left: ${screenPosition.x}px; top: ${screenPosition.y}px; transform: translate(-50%, -50%);`
+        );
+      } else {
+        this._measureHeightElement?.setAttribute('style', 'display: none;');
+      }
+      if (this._depthElementAnchorIndex !== -1) {
+        const line = this._lineGroups[this._depthElementAnchorIndex].lines[0];
+        const midPoint = new Vector3();
+        line.geometry.computeBoundingBox();
+        line.geometry.boundingBox?.getCenter(midPoint);
+        line.localToWorld(midPoint);
+
+        const screenPosition = this._worldToScreen(midPoint);
+        this._measureDepthElement?.setAttribute(
+          'style',
+          `left: ${screenPosition.x}px; top: ${screenPosition.y}px; transform: translate(-50%, -50%);`
+        );
+      } else {
+        this._measureDepthElement?.setAttribute('style', 'display: none;');
+      }
     }
 
     private _getBoundingBox(
@@ -187,6 +325,12 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       this._lineGroups = [];
+      if (this._measureWidthElement)
+        this._measureWidthElement.style.display = 'none';
+      if (this._measureHeightElement)
+        this._measureHeightElement.style.display = 'none';
+      if (this._measureDepthElement)
+        this._measureDepthElement.style.display = 'none';
       this[$needsRender]();
     }
 
@@ -470,6 +614,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
 
       this._updateMarkerVisibility();
+      this._updateMarkerText(boundingBox);
     }
 
     private _measureScene() {
@@ -504,6 +649,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         this._updateMarkerVisibility();
       }
+
+      this._updateMarkerPosition();
     }
 
     handleClick(event: MouseEvent) {
@@ -537,11 +684,15 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private handleNewAttributes() {
       this._clearMeasurements(true);
-
+      if (!!this['measure']) {
+        this.handleCameraChange();
+      }
       if (!this.measureObjects.length && !!this['measure']) {
         this._measureScene();
       }
     }
+
+    //private updateLabelPosition() {}
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
@@ -561,11 +712,48 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.addEventListener('load', this.handleLoad);
 
-      const container = this.shadowRoot?.querySelector('.container');
+      const shadowRoot = this.shadowRoot;
 
-      console.log('container A', container);
+      if (shadowRoot) {
+        const measureWidthSlot = shadowRoot.querySelector(
+          'slot[name="ruler-width"]'
+        ) as HTMLSlotElement;
+        const measureHeightSlot = shadowRoot.querySelector(
+          'slot[name="ruler-height"]'
+        ) as HTMLSlotElement;
+        const measureDepthSlot = shadowRoot.querySelector(
+          'slot[name="ruler-depth"]'
+        ) as HTMLSlotElement;
 
-      console.log('container B', this[$container]);
+        if (measureWidthSlot) {
+          const assignedNodes = measureWidthSlot.assignedNodes({
+            flatten: true,
+          });
+          this._measureWidthElement = assignedNodes.find(
+            (node) => node.nodeType === Node.ELEMENT_NODE
+          ) as HTMLSpanElement;
+        }
+
+        if (measureHeightSlot) {
+          const assignedNodes = measureHeightSlot.assignedNodes({
+            flatten: true,
+          });
+          this._measureHeightElement = assignedNodes.find(
+            (node) => node.nodeType === Node.ELEMENT_NODE
+          ) as HTMLSpanElement;
+        }
+
+        if (measureDepthSlot) {
+          const assignedNodes = measureDepthSlot.assignedNodes({
+            flatten: true,
+          });
+          this._measureDepthElement = assignedNodes.find(
+            (node) => node.nodeType === Node.ELEMENT_NODE
+          ) as HTMLSpanElement;
+        }
+      }
+
+      console.log('this._measureWidthElement', this._measureWidthElement);
     }
 
     disconnectedCallback() {
@@ -574,6 +762,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.removeEventListener('camera-change', this.handleCameraChange);
 
       this.removeEventListener('load', this.handleLoad);
+
+      this._measureWidthElement = null;
+      this._measureHeightElement = null;
+      this._measureDepthElement = null;
     }
 
     [$onModelLoad]() {

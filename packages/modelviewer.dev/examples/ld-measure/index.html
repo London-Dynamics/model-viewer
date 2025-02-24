@@ -100,6 +100,14 @@
         padding-top: 1rem;
         padding-bottom: 1rem;
       }
+      .ld-ruler {
+        position: absolute;
+        font-size: 0.8rem;
+        background-color: #fefefe;
+        padding: 0.1rem 0.5rem;
+        border-radius: 1rem;
+        white-space: nowrap;
+      }
     </style>
 
     <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
@@ -152,6 +160,10 @@
                     src="../../shared-assets/models/RocketShip.glb"
                     alt="An animated 3D model a bedside lamp"
                   >
+                    <div slot="ruler-width" class="ld-ruler"></div>
+                    <div slot="ruler-height" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div>
+
                     <div class="controls items-center flex-row gap-3">
                       <button type="button" id="toggle-rulers">
                         Enable Rulers
