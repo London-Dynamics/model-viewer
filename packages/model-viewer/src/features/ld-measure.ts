@@ -688,6 +688,28 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._updateMarkerPosition();
     }
 
+    private _findObjectByName(name: string): Object3D | null {
+      const scene = this[$scene];
+      let targetObject = null;
+
+      try {
+        scene.traverse((child) => {
+          if (child.name === name) {
+            targetObject = child;
+
+            // Throw an exception to terminate the traversal
+            throw new Error('Object found');
+          }
+        });
+      } catch (e) {
+        if ((e as Error).message !== 'Object found') {
+          throw e; // Re-throw if it's not the expected error
+        }
+      }
+
+      return targetObject;
+    }
+
     handleClick(event: MouseEvent) {
       const { _pointerDwn, _pointerUp } = this;
       const d = Math.hypot(
@@ -719,11 +741,25 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private handleNewAttributes() {
       this._clearMeasurements(true);
-      if (!!this['measure']) {
+
+      const enabled = !!this['measure'];
+
+      if (enabled) {
         this.handleCameraChange();
       }
-      if (!this.measureObjects.length && !!this['measure']) {
+
+      const measureObjects = this.measureObjects
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      if (enabled && !measureObjects.length) {
         this._measureScene();
+      } else if (enabled && measureObjects.length == 1) {
+        const object = this._findObjectByName(measureObjects[0]);
+        if (object) {
+          this._measureObject(object);
+        }
       }
     }
 
