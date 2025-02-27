@@ -152,24 +152,28 @@
                           <button
                             type="button"
                             class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="m"
                           >
                             m
                           </button>
                           <button
                             type="button"
                             class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="cm"
                           >
                             cm
                           </button>
                           <button
                             type="button"
                             class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="in"
                           >
                             in
                           </button>
                           <button
                             type="button"
                             class="mr-2 measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="yd"
                           >
                             yrd
                           </button>
@@ -199,9 +203,9 @@
                           <button
                             type="button"
                             class="measure-override rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
-                            data-dimensions="2 4 16"
+                            data-dimensions="15 3 2"
                           >
-                            2m 4m 16m
+                            15m 3m 2m
                           </button>
                         </div>
                       </div>
@@ -267,7 +271,7 @@
                           el.addEventListener('click', (e) => {
                             modelViewer.setAttribute(
                               'measurement-unit',
-                              e.target.textContent
+                              e.target.getAttribute('data-unit')
                             );
                           });
                         });

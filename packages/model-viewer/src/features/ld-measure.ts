@@ -179,39 +179,111 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$needsRender]();
     }
 
-    private _updateMarkerText(boundingBox: Box3) {
+    private _parseMeasurementOverrides(): Array<{
+      w: number;
+      h: number;
+      d: number;
+    }> {
+      if (!this.measurementOverrides) {
+        return [];
+      }
+
+      return this.measurementOverrides.split(',').map((set) => {
+        const [w, h, d] = set.trim().split(' ').map(Number);
+        return { w, h, d };
+      });
+    }
+
+    private _parseMeasureObjects(): string[] {
+      return this.measureObjects
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+
+    private _updateMarkerText(boundingBox: Box3, object: Object3D) {
+      if (
+        !this._measureWidthElement ||
+        !this._measureHeightElement ||
+        !this._measureDepthElement
+      ) {
+        return;
+      }
+
       const size = boundingBox.getSize(new Vector3());
 
       const unit = this.measurementUnit;
       const precision = this.measurementPrecision;
 
-      if (this._measureWidthElement) {
-        const value = convertMeters(size.x, unit, precision);
-        this._measureWidthElement.textContent = `${value} ${unit}`;
-        this._measureWidthElement.style.display = 'block';
-        this._measureWidthElement.setAttribute(
-          'aria-label',
-          `Width: ${value} ${unit}`
-        );
+      const overrides = this._parseMeasurementOverrides();
+      const measureObjects = this._parseMeasureObjects();
+
+      let value: string | null = null;
+      let width = size.x;
+
+      if (
+        overrides.length &&
+        !measureObjects.length &&
+        this[$scene] === object
+      ) {
+        width = overrides[0].w;
       }
-      if (this._measureHeightElement) {
-        const value = convertMeters(size.y, unit, precision);
-        this._measureHeightElement.textContent = `${value} ${unit}`;
-        this._measureHeightElement.style.display = 'block';
-        this._measureHeightElement.setAttribute(
-          'aria-label',
-          `Width: ${value} ${unit}`
-        );
+
+      if (overrides.length && measureObjects.length == 1) {
+        width = overrides[0].w;
       }
-      if (this._measureDepthElement) {
-        const value = convertMeters(size.z, unit, precision);
-        this._measureDepthElement.textContent = `${value} ${unit}`;
-        this._measureDepthElement.style.display = 'block';
-        this._measureDepthElement.setAttribute(
-          'aria-label',
-          `Width: ${value} ${unit}`
-        );
+
+      value = convertMeters(width, unit, precision);
+      this._measureWidthElement.textContent = `${value} ${unit}`;
+      this._measureWidthElement.style.display = 'block';
+      this._measureWidthElement.setAttribute(
+        'aria-label',
+        `Width: ${value} ${unit}`
+      );
+
+      let height = size.y;
+
+      if (
+        overrides.length &&
+        !measureObjects.length &&
+        this[$scene] === object
+      ) {
+        height = overrides[0].h;
       }
+
+      if (overrides.length && measureObjects.length == 1) {
+        height = overrides[0].h;
+      }
+
+      value = convertMeters(height, unit, precision);
+      this._measureHeightElement.textContent = `${value} ${unit}`;
+      this._measureHeightElement.style.display = 'block';
+      this._measureHeightElement.setAttribute(
+        'aria-label',
+        `Height: ${value} ${unit}`
+      );
+
+      let depth = size.z;
+
+      if (
+        overrides.length &&
+        !measureObjects.length &&
+        this[$scene] === object
+      ) {
+        depth = overrides[0].d;
+      }
+
+      if (overrides.length && measureObjects.length == 1) {
+        depth = overrides[0].d;
+      }
+
+      value = convertMeters(depth, unit, precision);
+      this._measureDepthElement.textContent = `${value} ${unit}`;
+      this._measureDepthElement.style.display = 'block';
+      this._measureDepthElement.setAttribute(
+        'aria-label',
+        `Depth: ${value} ${unit}`
+      );
     }
 
     private _updateMarkerPosition() {
@@ -281,10 +353,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     ): Box3 {
       const boundingBox = new Box3();
 
-      const measureObjects = this.measureObjects
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const measureObjects = this._parseMeasureObjects();
 
       if (measureObjects.length === 0) {
         // Case 1: measureObjects is empty or undefined, measure the entire scene
@@ -649,7 +718,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
 
       this._updateMarkerVisibility();
-      this._updateMarkerText(boundingBox);
+      this._updateMarkerText(boundingBox, object);
     }
 
     private _measureScene() {
@@ -719,7 +788,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       /* This to allow for a small drag on sensetive input devices */
       if (d > 4) return;
 
-      if (!!this['measure'] && this.measureObjects.length > 0) {
+      const measureObjects = this._parseMeasureObjects();
+
+      if (!!this['measure'] && measureObjects.length > 0) {
         this._measureModelAtPoint(event.clientX, event.clientY);
       }
     }
@@ -729,9 +800,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this._clearMeasurements();
 
+      const measureObjects = this._parseMeasureObjects();
+
       // If we already had something selected, make sure the measurements are updated and visible.
       if (!!this['measure']) {
-        if (!this.measureObjects.length) {
+        if (!measureObjects.length) {
           this._measureScene();
         } else if (this._lastClickedObject) {
           this._measureObject(this._lastClickedObject, true);
@@ -748,10 +821,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.handleCameraChange();
       }
 
-      const measureObjects = this.measureObjects
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const measureObjects = this._parseMeasureObjects();
 
       if (enabled && !measureObjects.length) {
         this._measureScene();
@@ -777,7 +847,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (
         (changedProperties.has('measurementUnit') ||
-          changedProperties.has('measurementPrecision')) &&
+          changedProperties.has('measurementPrecision') ||
+          changedProperties.has('measurementOverrides')) &&
         !!this['measure']
       ) {
         this._measureObject(this._lastClickedObject as Object3D, true);
