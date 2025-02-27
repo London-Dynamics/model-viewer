@@ -290,6 +290,15 @@ const templateResult = html` <style>
     #default-exit-webxr-ar-button > svg {
       fill: #fff;
     }
+
+    .ld-measure .ruler {
+      position: absolute;
+      font-size: 0.8rem;
+      background-color: #fefefe;
+      padding: 0.1rem 0.5rem;
+      border-radius: 1rem;
+      white-space: nowrap;
+    }
   </style>
   <div class="container">
     <div class="userInput" tabindex="0" role="img" aria-label="3D model">
@@ -352,13 +361,13 @@ const templateResult = html` <style>
 
     <div class="slot ld-measure">
       <slot name="ruler-width">
-        <div id="default-ruler-width" aria-hidden="true"></div>
+        <div class="ruler" id="default-ruler-width" aria-hidden="true"></div>
       </slot>
       <slot name="ruler-height">
-        <div id="default-ruler-height" aria-hidden="true"></div>
+        <div class="ruler" id="default-ruler-height" aria-hidden="true"></div>
       </slot>
       <slot name="ruler-depth">
-        <div id="default-ruler-depth" aria-hidden="true"></div>
+        <div class="ruler" id="default-ruler-depth" aria-hidden="true"></div>
       </slot>
     </div>
 

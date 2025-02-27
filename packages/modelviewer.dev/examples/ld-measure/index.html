@@ -33,82 +33,19 @@
     />
 
     <style>
-      .controls {
-        position: absolute;
-        bottom: 16px;
-        left: 16px;
-        right: 16px;
-        max-width: unset;
-        transform: unset;
-        pointer-events: auto;
-        border-radius: 4px;
-        background-color: #fff;
-        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
-        padding: 0.5rem 1rem;
-        color: #999;
-      }
-
-      .flex-col {
-        display: flex;
-        flex-direction: column;
-      }
-      .flex-row {
-        display: flex;
-        flex-direction: row;
-      }
-      .items-center {
-        align-items: center;
-      }
-      .controls h5 {
-        margin: 0 0 0.25em 0;
-      }
-      .controls label {
-        color: gray;
-        font-size: 0.6rem;
-        text-transform: uppercase;
-        line-height: 1em;
-      }
-      .controls input {
-        width: 100%;
-      }
-      .controls button {
-        border: 1px solid #ccc;
-        padding: 0.25em 0.5em;
-        border-radius: 4px;
-        background: white;
-        color: #111;
-        cursor: pointer;
-      }
-      .controls button:hover {
-        background: #eee;
-      }
-      .controls button:active {
-        background: cornflowerblue;
-        color: white;
-      }
-      .gap-3 {
-        gap: 1rem;
-      }
-      .p-3 {
-        padding: 1rem;
-      }
-      .px-3 {
-        padding-left: 1rem;
-        padding-right: 1rem;
-      }
-      .py-3 {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-      }
       .ld-ruler {
         position: absolute;
-        font-size: 0.8rem;
-        background-color: #fefefe;
-        padding: 0.1rem 0.5rem;
-        border-radius: 1rem;
+        font-size: 0.5rem;
+        background-color: cornflowerblue;
+        color: white;
+        padding: 0rem 0.4rem;
+        border-radius: 0.2rem;
         white-space: nowrap;
+        font-weight: bold;
       }
     </style>
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 
     <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
     <script
@@ -143,7 +80,7 @@
                 </p>
                 <p>Default is an empty string.</p>
                 <p>
-                  "*" will let the user click any object. "name1 name2" will let
+                  "*" will let the user click any object. "name1,name2" will let
                   the user click objects with the names "name1" and "name2".
                 </p>
               </div>
@@ -157,23 +94,117 @@
                     ar
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
-                    src="../../shared-assets/models/RocketShip.glb"
+                    src="../../shared-assets/models/leanne-ford-table-scene.glb"
                     alt="An animated 3D model a bedside lamp"
                   >
-                    <div slot="ruler-width" class="ld-ruler"></div>
+                    <!-- <div slot="ruler-width" class="ld-ruler"></div>
                     <div slot="ruler-height" class="ld-ruler"></div>
-                    <div slot="ruler-depth" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div> -->
 
-                    <div class="controls items-center flex-row gap-3">
-                      <button type="button" id="toggle-rulers">
-                        Enable Rulers
-                      </button>
-                      <span>Measure:</span>
-                      <button type="button" id="measure-scene">Scene</button>
-                      <button type="button" id="measure-objects">
-                        Any Object
-                      </button>
-                      <button type="button" id="measure-object">Box1</button>
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white rounded shadow p-2 space-y-1">
+                        <div class="flex flex-row items-center gap-1">
+                          <button
+                            type="button"
+                            id="toggle-rulers"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Enable Rulers
+                          </button>
+                        </div>
+                        <div class="flex flex-row items-center gap-1">
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Measure</span
+                          >
+                          <button
+                            type="button"
+                            id="measure-scene"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Scene
+                          </button>
+                          <button
+                            type="button"
+                            id="measure-objects"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Any Object
+                          </button>
+                          <button
+                            type="button"
+                            data-mesh="501693"
+                            class="measure-object rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Table Only
+                          </button>
+                          <button
+                            type="button"
+                            data-mesh="mazz_boucle_dining_chair_by_leanne_ford,c_mazz_boucle_dining_chair_by_leanne_ford"
+                            class="measure-object rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Chairs
+                          </button>
+                        </div>
+                        <div class="flex flex-row items-center gap-1">
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Unit</span
+                          >
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            m
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            cm
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            in
+                          </button>
+                          <button
+                            type="button"
+                            class="mr-2 measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            yrd
+                          </button>
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Decimals</span
+                          >
+                          <input
+                            style="width: 3rem"
+                            type="number"
+                            id="measurePrecision"
+                            value="2"
+                            min="0"
+                            class="border text-xs border-gray-200 px-2 py-0.5 rounded inset-shadow-sm"
+                          />
+                        </div>
+                        <div class="flex flex-row items-center gap-1">
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Dimensions</span
+                          >
+                          <button
+                            type="button"
+                            class="measure-override rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-dimensions=""
+                          >
+                            Auto
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-override rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-dimensions="2 4 16"
+                          >
+                            2m 4m 16m
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </model-viewer>
 
@@ -207,16 +238,85 @@
                         .addEventListener('click', () => {
                           modelViewer.setAttribute('measure-objects', '*');
                         });
+
                       document
-                        .getElementById('measure-object')
-                        .addEventListener('click', () => {
+                        .querySelectorAll('button.measure-object')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measure-objects',
+                              e.target.getAttribute('data-mesh')
+                            );
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-override')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-overrides',
+                              e.target.getAttribute('data-dimensions')
+                            );
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-unit')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-unit',
+                              e.target.textContent
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('measurePrecision')
+                        .addEventListener('change', (e) => {
                           modelViewer.setAttribute(
-                            'measure-objects',
-                            '"mesh125571997_4"'
+                            'measurement-precision',
+                            e.target.value
                           );
                         });
                     })();
                   </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="slots" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Customise labels</h2>
+                <p>
+                  Add slots to customise the labels for the measurements. The
+                  slots are named "ruler-width", "ruler-height", and
+                  "ruler-depth".
+                </p>
+              </div>
+              <example-snippet stamp-to="slots" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo-2"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/leanne-ford-table-scene.glb"
+                    alt="An animated 3D model a bedside lamp"
+                    measure
+                  >
+                    <div slot="ruler-width" class="ld-ruler"></div>
+                    <div slot="ruler-height" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div>
+                  </model-viewer>
                 </template>
               </example-snippet>
             </div>
