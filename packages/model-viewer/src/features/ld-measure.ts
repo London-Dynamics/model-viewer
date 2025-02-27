@@ -229,7 +229,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         width = overrides[0].w;
       }
 
-      if (overrides.length && measureObjects.length == 1) {
+      if (
+        overrides.length &&
+        measureObjects[0] !== '*' &&
+        measureObjects.length == 1
+      ) {
         width = overrides[0].w;
       }
 
@@ -251,7 +255,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         height = overrides[0].h;
       }
 
-      if (overrides.length && measureObjects.length == 1) {
+      if (
+        overrides.length &&
+        measureObjects[0] !== '*' &&
+        measureObjects.length == 1
+      ) {
         height = overrides[0].h;
       }
 
@@ -273,7 +281,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         depth = overrides[0].d;
       }
 
-      if (overrides.length && measureObjects.length == 1) {
+      if (
+        overrides.length &&
+        measureObjects[0] !== '*' &&
+        measureObjects.length == 1
+      ) {
         depth = overrides[0].d;
       }
 
