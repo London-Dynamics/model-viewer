@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   LineBasicMaterial,
   LineSegments,
+  Matrix4,
   Object3D,
   Object3DEventMap,
   Vector3,
@@ -46,9 +47,16 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: String, attribute: 'measure-objects' })
     measureObjects: string = '';
 
-    // TODO @property measurement-unit: string = 'm';
-    // TODO @property measurement-precision: number = 2;
-    // TODO @property measurement-dimensions: string = '';
+    @property({ type: String, attribute: 'measurement-unit' })
+    measurementUnit: string = 'm';
+
+    @property({ type: String, attribute: 'measurement-precision' })
+    measurementPrecision: number = 2;
+
+    @property({ type: String, attribute: 'measurement-overrides' })
+    measurementOverrides: string = '';
+
+    // TODO @property measurement-overrides;
 
     protected [$measureContainer]: HTMLElement = this.shadowRoot!.querySelector(
       '.slot.ld-measure'
@@ -167,14 +175,15 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         });
       });
 
+      this._updateMarkerPosition();
       this[$needsRender]();
     }
 
     private _updateMarkerText(boundingBox: Box3) {
       const size = boundingBox.getSize(new Vector3());
 
-      const unit = 'm';
-      const precision = 2;
+      const unit = this.measurementUnit;
+      const precision = this.measurementPrecision;
 
       if (this._measureWidthElement) {
         const value = convertMeters(size.x, unit, precision);
@@ -211,6 +220,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._heightElementAnchorIndex === -1 ||
         this._depthElementAnchorIndex === -1
       ) {
+        return;
+      }
+
+      if (!this._lineGroups.length) {
         return;
       }
 
@@ -268,24 +281,29 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     ): Box3 {
       const boundingBox = new Box3();
 
-      if (this.measureObjects.length === 0) {
-        // Case 1: clickableMeshNames is empty or undefined, measure the entire scene
+      const measureObjects = this.measureObjects
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      if (measureObjects.length === 0) {
+        // Case 1: measureObjects is empty or undefined, measure the entire scene
         return scene.boundingBox;
-      } else if (this.measureObjects.includes('*')) {
-        // Case 2: clickableMeshNames contains ["*"], expand to the closest clicked on
+      } else if (measureObjects.includes('*')) {
+        // Case 2: measureObjects contains ["*"], expand to the closest clicked on
         boundingBox.expandByObject(object);
       } else {
-        // Case 3: clickableMeshNames has more than 0 items, expand to closest parent if exists
+        // Case 3: measureObjects has more than 0 items, expand to closest parent if exists
         let parentObject = object;
         while (parentObject.parent) {
-          if (this.measureObjects.includes(parentObject.name)) {
+          if (measureObjects.includes(parentObject.name)) {
             boundingBox.setFromObject(parentObject);
             return boundingBox;
           }
 
           parentObject = parentObject.parent;
         }
-        boundingBox.setFromObject(parentObject);
+
         return boundingBox;
       }
 
@@ -298,9 +316,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const size = new Vector3();
       scene.boundingBox.getSize(size);
 
-      const max = Math.min(size.x, size.y, size.z);
+      const min = Math.min(size.x, size.y, size.z);
 
-      this._extensionLineLength = max / 10;
+      this._extensionLineLength = min / 8;
     }
 
     private _clearMeasurements(resetEverything = false) {
@@ -331,66 +349,21 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._measureHeightElement.style.display = 'none';
       if (this._measureDepthElement)
         this._measureDepthElement.style.display = 'none';
+
       this[$needsRender]();
     }
 
-    private _measureObject(object: Object3D, skipLastClickCheck?: boolean) {
-      // @ts-ignore
-      const controls = this[$controls];
-      const scene = this[$scene];
-
-      if (!skipLastClickCheck && object === this._lastClickedObject) {
-        // Skip if the user clicked on the same object as before
-        return;
-      }
-
-      // Update the last clicked object
-      this._lastClickedObject = object;
-
-      this._clearMeasurements();
-
-      const boundingBox = this._getBoundingBox(scene, object);
-
-      // Get the corners of the bounding box in the global coordinate system
-      const min = boundingBox.min.clone();
-      const max = boundingBox.max.clone();
-      const boundingBoxCorners = [
-        new Vector3(min.x, min.y, min.z),
-        new Vector3(max.x, min.y, min.z),
-
-        new Vector3(max.x, max.y, min.z),
-        new Vector3(min.x, max.y, min.z),
-
-        new Vector3(min.x, min.y, max.z),
-        new Vector3(max.x, min.y, max.z),
-
-        new Vector3(max.x, max.y, max.z),
-        new Vector3(min.x, max.y, max.z),
-      ];
-
-      // Transform the corners to the local coordinate system of the hit object
-      const corners = boundingBoxCorners.map((corner) =>
-        object.worldToLocal(corner.clone())
+    private _getEdgeGroups(
+      _corners: Vector3[],
+      length: number,
+      margin: number,
+      object: Object3D
+    ) {
+      const corners = _corners.map((corner) =>
+        corner.clone().applyMatrix4(object.matrixWorld)
       );
 
-      // Create a material for the lines
-      const lineMaterial = new LineBasicMaterial({ color: 0x000000 });
-      lineMaterial.transparent = true;
-      lineMaterial.opacity = 0.75;
-
-      // Enable polygon offset and set the offset values
-      // This to make the lines render on top of the model
-      // not needed if transparent /AvG
-      //lineMaterial.polygonOffset = true;
-      //lineMaterial.polygonOffsetFactor = -1; // Adjust this value as needed
-      //lineMaterial.polygonOffsetUnits = -1; // Adjust this value as needed
-
-      lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
-
-      const length = this._extensionLineLength;
-      const margin = length / 2; // Margin between dimensions and model.
-
-      const edgeGroups = [
+      return [
         [
           /* Lower north side */
           /* Dimension line, left extension, right extension */
@@ -560,6 +533,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
             corners[7].clone().setX(corners[7].x - length - margin),
           ],
         ],
+        // West Wall B
         [
           [
             corners[0].clone().setX(corners[0].x - length - margin),
@@ -574,12 +548,73 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
             corners[3].clone().setX(corners[3].x - length - margin),
           ],
         ],
-        // West Wall B
       ];
+    }
+
+    private _measureObject(object: Object3D, skipLastClickCheck?: boolean) {
+      // @ts-ignore
+      const controls = this[$controls];
+      const scene = this[$scene];
+
+      if (!skipLastClickCheck && object === this._lastClickedObject) {
+        // Skip if the user clicked on the same object as before
+        return;
+      }
+
+      // Update the last clicked object
+      this._lastClickedObject = object;
+
+      this._clearMeasurements();
+
+      const boundingBox = this._getBoundingBox(scene, object);
+
+      if (
+        boundingBox.min.equals(new Vector3(Infinity, Infinity, Infinity)) ||
+        boundingBox.max.equals(new Vector3(-Infinity, -Infinity, -Infinity))
+      ) {
+        console.warn('Bounding box is empty.');
+        return;
+      }
+
+      // Get the corners of the bounding box in the global coordinate system
+      const min = boundingBox.min.clone();
+      const max = boundingBox.max.clone();
+      const boundingBoxCorners = [
+        new Vector3(min.x, min.y, min.z),
+        new Vector3(max.x, min.y, min.z),
+
+        new Vector3(max.x, max.y, min.z),
+        new Vector3(min.x, max.y, min.z),
+
+        new Vector3(min.x, min.y, max.z),
+        new Vector3(max.x, min.y, max.z),
+
+        new Vector3(max.x, max.y, max.z),
+        new Vector3(min.x, max.y, max.z),
+      ];
+
+      const corners = boundingBoxCorners.map((corner) =>
+        object.worldToLocal(corner.clone())
+      );
+
+      // Create a material for the lines
+      const lineMaterial = new LineBasicMaterial({ color: 0x000000 });
+      lineMaterial.transparent = true;
+      lineMaterial.opacity = 0.75;
+      lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
+
+      const length = this._extensionLineLength;
+      const margin = length / 2; // Margin between dimensions and model.
+
+      const edgeGroups = this._getEdgeGroups(corners, length, margin, object);
 
       // Create a parent object to hold the lines
       const lineParent = new Object3D();
       lineParent.name = 'ld-measurements';
+
+      // Apply the inverse transformation to lineParent
+      const inverseMatrix = new Matrix4().copy(object.matrixWorld).invert();
+      lineParent.applyMatrix4(inverseMatrix);
 
       if (object === scene) {
         const target = scene.children.find((child) => child.name === 'Target');
@@ -703,6 +738,14 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         this.handleNewAttributes();
       }
+
+      if (
+        (changedProperties.has('measurementUnit') ||
+          changedProperties.has('measurementPrecision')) &&
+        !!this['measure']
+      ) {
+        this._measureObject(this._lastClickedObject as Object3D, true);
+      }
     }
 
     connectedCallback() {
@@ -752,8 +795,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           ) as HTMLSpanElement;
         }
       }
-
-      console.log('this._measureWidthElement', this._measureWidthElement);
     }
 
     disconnectedCallback() {
