@@ -17,7 +17,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>&lt;model-viewer&gt; LD Camera Examples</title>
+    <title>&lt;model-viewer&gt; LD Lights Examples</title>
     <meta charset="utf-8" />
     <meta
       name="description"
@@ -78,7 +78,6 @@
       }
       .controls button:hover {
         background: #eee;
-
       }
       .controls button:active {
         background: cornflowerblue;
@@ -110,28 +109,25 @@
     <div class="examples-page">
       <div class="sidebar" id="sidenav"></div>
       <div id="toggle"></div>
-
       <div class="examples-container">
         <div class="sample">
-          <div id="get-camera-json" class="demo"></div>
+          <div id="toggle-lights" class="demo"></div>
           <div class="content">
             <div class="wrapper">
               <h4 id="intro">
-                <span class="font-medium">LD Camera </span>by
+                <span class="font-medium">LD Lights </span>by
                 <a href="https://londondynamics.com" target="_blank"
                   >London Dynamics</a
-                >. This page showcases how you can modify the central camera in model-viewer.
+                >. This page showcases how you can control KHR lights features
               </h4>
               <div class="heading">
                 <h2 class="demo-title">
-                  Camera JSON interactions
+                  The <span class="attribute">lights</span> attribute and the
+                  <span class="attribute">toggleLights</span> method allow you
+                  to control light objects in the scene
                 </h2>
-                 <h4></h4>
               </div>
-              <example-snippet
-                stamp-to="get-camera-json"
-                highlight-as="html"
-              >
+              <example-snippet stamp-to="toggle-lights" highlight-as="html">
                 <template>
                   <model-viewer
                     id="three-demo"
@@ -141,76 +137,52 @@
                     ar
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
-                    src="../../shared-assets/models/cubes.gltf"
-                    alt="An animated 3D model two cubes"
+                    src="../../shared-assets/models/lamp.glb"
+                    alt="An animated 3D model a bedside lamp"
+                    tone-mapping="agx"
                   >
-  <div class="controls flex-row gap-3">
-    <button type="button" id="getCameraButton">Get camera meta</button>
-    <button type="button" id="setCameraButton">Set camera from JSON</button>
-  </div>
-</model-viewer>
+                    <div class="controls flex-row gap-3">
+                      <button type="button" id="toggleLights">Turn ON</button>
+                      <button type="button" id="toggleAttribute">
+                        Toggle HTML attribute
+                      </button>
+                    </div>
+                  </model-viewer>
 
-<script type="module">
-  (() => {
-    const modelViewer =
-      document.querySelector('#three-demo');
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector('#three-demo');
 
-    modelViewer.addEventListener('camera-change', (event) => {
-      console.info('Camera changed', event.detail);
-    });
+                      let lightsOn = false;
 
-    modelViewer.addEventListener('click', (event) => {
-      if (typeof event.detail === "object") {
-        console.info('Click', event.detail);
-      }
-    });
+                      const setButtonText = () => {
+                        document.getElementById('toggleLights').innerText =
+                          lightsOn ? 'Turn OFF' : 'Turn ON';
+                      };
 
-    document.getElementById('getCameraButton')
-      .addEventListener('click', () => {
-        const object = modelViewer.getCameraMeta();
+                      document
+                        .getElementById('toggleLights')
+                        .addEventListener('click', (e) => {
+                          const state = modelViewer.toggleLights(!lightsOn);
+                          lightsOn = state;
+                          setButtonText();
+                        });
 
-        console.info("Camera JSON",JSON.stringify(object, null, 2));
-      });
+                      document
+                        .getElementById('toggleAttribute')
+                        .addEventListener('click', (e) => {
+                          lightsOn = !lightsOn;
 
-    document.getElementById('setCameraButton').addEventListener('click', () => {
-      const cameraJSON = {
- "matrix": [
-    1,
-    0,
-    0,
-    0,
-    0,
-    0.9659258262890683,
-    -0.2588190451025207,
-    0,
-    0,
-    0.2588190451025207,
-    0.9659258262890683,
-    0,
-    0,
-    1.500161641239547,
-    5.598679464671904,
-    1
-  ],
-  "up": [
-    0,
-    1,
-    0
-  ],
-  "fov": 33.83851389059542,
-  "zoom": 1,
-  "near": 0.011592358983051795,
-  "far": 11.592358983051795,
-  "focus": 10,
-  "aspect": 0.4628482972136223,
-  "filmGauge": 35,
-  "filmOffset": 0
-      };
+                          if (lightsOn) {
+                            modelViewer.setAttribute('lights', 'true');
+                          } else {
+                            modelViewer.removeAttribute('lights');
+                          }
 
-      modelViewer.setCameraFromJSON(cameraJSON);
-    });
-  })();
-</script>
+                          setButtonText();
+                        });
+                    })();
+                  </script>
                 </template>
               </example-snippet>
             </div>
@@ -218,7 +190,9 @@
         </div>
         <div class="footer">
           <ul></ul>
-          <div style="margin-top:24px;" class="copyright">©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.</div>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
           <div id="footer-links"></div>
         </div>
       </div>
@@ -229,7 +203,7 @@
     ></script>
     <script type="module">
       (() => {
-        init('examples-ld-camera');
+        init('examples-ld_lights');
       })();
       (() => {
         initFooterLinks();

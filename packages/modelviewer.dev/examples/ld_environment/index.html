@@ -1,0 +1,318 @@
+<!--
+/* @license
+ * Copyright 2020 Google Inc. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Environment Examples</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; lighting &amp; environment examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <style>
+      .controls {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 64px;
+        max-width: unset;
+        transform: unset;
+        pointer-events: auto;
+        border-radius: 4px;
+        background-color: rgba(255, 255, 255, 0.8);
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+        padding: 0.5rem 1rem;
+        color: #999;
+      }
+
+      .flex-col {
+        display: flex;
+        flex-direction: column;
+      }
+      .flex-row {
+        display: flex;
+        flex-direction: row;
+      }
+      .controls h5 {
+        margin: 0 0 0.25em 0;
+      }
+      .controls label {
+        color: gray;
+        font-size: 0.6rem;
+        text-transform: uppercase;
+        line-height: 1em;
+      }
+      .controls input {
+        width: 100%;
+      }
+      .controls button {
+        border: 1px solid #ccc;
+        padding: 0.25em 0.5em;
+        border-radius: 4px;
+        background: white;
+        color: #111;
+        cursor: pointer;
+      }
+      .controls button:hover {
+        background: #eee;
+      }
+      .controls button:active {
+        background: cornflowerblue;
+        color: white;
+      }
+      .gap-3 {
+        gap: 1rem;
+      }
+      .p-3 {
+        padding: 1rem;
+      }
+      .px-3 {
+        padding-left: 1rem;
+        padding-right: 1rem;
+      }
+      .py-3 {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="water" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Environment</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. Control the weather like a god
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">
+                  Just add water with the
+                  <span class="attribute">water-texture</span> attribute
+                </h2>
+                <h4>
+                  Adjust water effect with
+                  <span class="attribute">water-distortion-scale</span> and
+                  <span class="attribute">water-size</span>. Add a sky with the
+                  <span class="attribute">sky</span> attribute, set the position
+                  of the sun in the sky with
+                  <span class="attribute">sun-elevation</span> and
+                  <span class="attribute">sun-azimuth</span> (do not mix with
+                  <span class="attribute">skybox-image</span>)
+                </h4>
+              </div>
+              <example-snippet stamp-to="water" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="water-demo"
+                    water-texture="../../shared-assets/normals/waternormals.jpg"
+                    sky
+                    environment-image="
+https://assets.dev.d.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/kloofendal_48d_partly_cloudy_puresky_4k 1.jpg"
+                    alt="A 3D model of a boat in the sea"
+                    src="https://assets.v2.londondynamics.com/1b1c190d-7aa3-4075-9bb2-edb1afe09477/puzzle/6e201b0a-c631-7f92-c13e-1d457b3695b5.glb"
+                    ar
+                    disable-pan
+                    camera-controls
+                    touch-action="pan-y"
+                    camera-orbit="150deg 80deg 105%"
+                    max-camera-orbit="Infinity 89deg auto"
+                    camera-target="auto 0.35m auto"
+                    exposure="1.2"
+                    interaction-prompt="none"
+                  ></model-viewer>
+                  <div class="controls flex-row gap-3">
+                    <div>
+                      <label for="water-distortion-scale"
+                        >Distortion Scale</label
+                      >
+                      <input
+                        type="range"
+                        id="water-distortion-scale"
+                        min="0"
+                        max="20"
+                        step="0.1"
+                        value="3.7"
+                      />
+
+                      <label for="water-size">Water Size</label>
+                      <input
+                        type="range"
+                        id="water-size"
+                        min="0.1"
+                        max="10"
+                        step="0.1"
+                        value="1"
+                      />
+                    </div>
+                    <div>
+                      <label for="sun-elevation">Sun Elevation</label>
+                      <input
+                        type="range"
+                        id="sun-elevation"
+                        min="0"
+                        max="90"
+                        step="0.1"
+                        value="2"
+                      />
+
+                      <label for="sun-azimuth">Sun Azimuth</label>
+                      <input
+                        type="range"
+                        id="sun-azimuth"
+                        min="-180"
+                        max="180"
+                        step="0.1"
+                        value="180"
+                      />
+                    </div>
+                  </div>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector('#water-demo');
+
+                      document
+                        .getElementById('water-distortion-scale')
+                        .addEventListener('input', (event) => {
+                          modelViewer.setAttribute(
+                            'water-distortion-scale',
+                            event.target.value
+                          );
+                        });
+
+                      document
+                        .getElementById('water-size')
+                        .addEventListener('input', (event) => {
+                          modelViewer.setAttribute(
+                            'water-size',
+                            event.target.value
+                          );
+                        });
+
+                      document
+                        .getElementById('sun-elevation')
+                        .addEventListener('input', (event) => {
+                          modelViewer.setAttribute(
+                            'sun-elevation',
+                            event.target.value
+                          );
+                        });
+
+                      document
+                        .getElementById('sun-azimuth')
+                        .addEventListener('input', (event) => {
+                          modelViewer.setAttribute(
+                            'sun-azimuth',
+                            event.target.value
+                          );
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul>
+            <li class="attribution">
+              <a href="https://poly.google.com/view/dLHpzNdygsg">Astronaut</a>
+              by <a href="https://poly.google.com/user/4aEd8rQgKu2">Poly</a>,
+              licensed under
+              <a href="https://creativecommons.org/licenses/by/2.0/">CC-BY</a>.
+            </li>
+
+            <li class="attribution">
+              <a
+                href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/DamagedHelmet"
+                >Damaged Helmet</a
+              >
+              by
+              <a href="https://sketchfab.com/theblueturtle_">theblueturtle_</a>,
+              licensed under
+              <a href="https://creativecommons.org/licenses/by-nc/3.0/us/"
+                >Creative Commons Attribution-NonCommercial</a
+              >.
+            </li>
+
+            <li class="attribution">
+              <a href="https://hdrihaven.com/hdri/?h=small_hangar_01"
+                >small_hangar_01_1k.jpg</a
+              >
+              by <a href="https://hdrihaven.com">HDRI Haven</a>, licensed under
+              <a href="https://hdrihaven.com/p/license.php">CC0</a>.
+            </li>
+
+            <li class="attribution">
+              <a
+                href="https://hdrihaven.com/hdri/?h=whipple_creek_regional_park_04"
+                >whipple_creek_regional_park_04_1k.hdr</a
+              >
+              by <a href="https://hdrihaven.com">HDRI Haven</a>, licensed under
+              <a href="https://hdrihaven.com/p/license.php">CC0</a>.
+            </li>
+          </ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2018-2020 Google Inc. Licensed under the Apache License
+            2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_environment');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+  </body>
+</html>

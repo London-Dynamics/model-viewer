@@ -311,9 +311,9 @@
       }
     ]
   },
-    {
+  {
     "name": "LD Transforms",
-    "htmlName": "ld-transforms",
+    "htmlName": "ld_transforms",
     "examples": [
       {
         "htmlId": "transform-geometry",
@@ -327,7 +327,7 @@
   },
   {
     "name": "LD Environment",
-    "htmlName": "ld-environment",
+    "htmlName": "ld_environment",
     "examples": [
       {
         "htmlId": "water",
@@ -337,7 +337,7 @@
   },
   {
     "name": "LD Lights",
-    "htmlName": "ld-lights",
+    "htmlName": "ld_lights",
     "examples": [
       {
         "htmlId": "toggle-lights",
@@ -347,7 +347,7 @@
   },
   {
     "name": "LD Camera",
-    "htmlName": "ld-camera",
+    "htmlName": "ld_camera",
     "examples": [
       {
         "htmlId": "get-camera-json",
@@ -357,11 +357,15 @@
   },
   {
     "name": "LD Measure",
-    "htmlName": "ld-measure",
+    "htmlName": "ld_measure",
     "examples": [
       {
         "htmlId": "measure",
         "name": "Measure"
+      },
+      {
+        "htmlId": "slots",
+        "name": "Slots"
       }
     ]
   },

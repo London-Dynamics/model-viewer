@@ -7,9 +7,7 @@
         "name": "src",
         "htmlName": "src",
         "description": "The URL to the 3D model. Only <a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0\">glTF</a>/<a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#glb-file-format-specification\">GLB</a> models are supported.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -19,9 +17,7 @@
         "name": "alt",
         "htmlName": "alt",
         "description": "Configures the model with custom text that will be used to describe the model to viewers who use a screen reader or otherwise depend on additional semantic context to understand what they are viewing.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any description"
@@ -31,9 +27,7 @@
         "name": "poster",
         "htmlName": "poster",
         "description": "Displays an image instead of the model, useful for showing the user something before a model is loaded and ready to render.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -43,9 +37,7 @@
         "name": "loading",
         "htmlName": "loading",
         "description": "An enumerable attribute describing under what conditions the model should be preloaded. The supported values are \"auto\", \"lazy\" and \"eager\". Auto is equivalent to lazy, which loads the model when it is near the viewport for <span class='attribute'>reveal=\"auto\"</span>, and when interacted with for <span class='attribute'>reveal=\"interaction\"</span>. Eager loads the model immediately.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "auto",
           "options": "auto, lazy, eager"
@@ -55,9 +47,7 @@
         "name": "reveal",
         "htmlName": "reveal",
         "description": "This attribute controls when the model should be revealed. If <span class='attribute'>reveal</span> is set to \"auto\", the model will be revealed as soon as it is done loading and rendering. If <span class='attribute'>reveal</span> is set to \"manual\", the model will remain hidden until <span class='attribute'>dismissPoster()</span> is called.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "auto",
           "options": "auto, manual"
@@ -789,9 +779,7 @@
         "name": "--min-hotspot-opacity",
         "htmlName": "minHotspotOpacity",
         "description": "Sets the opacity of hidden hotspots.",
-        "links": [
-          "<a href=\"../examples/annotations/\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/annotations/\">Related examples</a>"],
         "default": {
           "default": "0.25",
           "options": "any value between 0 and 1"
@@ -1161,7 +1149,7 @@
   },
   {
     "Title": "LD Transforms",
-    "htmlName": "ld-transforms",
+    "htmlName": "ld_transforms",
     "Methods": [
       {
         "name": "updateMeshPosition(nodeName, newPosition)",
@@ -1249,9 +1237,9 @@
   },
   {
     "Title": "LD Environment",
-    "htmlName": "ld-environment",
+    "htmlName": "ld_environment",
     "Attributes": [
-       {
+      {
         "name": "water-texture",
         "htmlName": "waterTexture",
         "description": "Activate a water texture on the ground plane by providing a normals texture file.",
@@ -1263,9 +1251,9 @@
           "options": "URL to a .jpg file"
         }
       },
-       {
+      {
         "name": "water-distortion-scale",
-        "htmlName": "waterTexture",
+        "htmlName": "waterDistortionScale",
         "description": "Sets the distortion of the model's reflextion in the water texture.",
         "links": [
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
@@ -1277,7 +1265,7 @@
       },
       {
         "name": "water-size",
-        "htmlName": "waterTexture",
+        "htmlName": "waterSize",
         "description": "Sets the size of the waves in the water texture. A large value will make the waves smaller.",
         "links": [
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
@@ -1289,7 +1277,7 @@
       },
       {
         "name": "sky",
-        "htmlName": "waterTexture",
+        "htmlName": "envsky",
         "description": "Add a skybox with option to set the position of the sun.",
         "links": [
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
@@ -1301,7 +1289,7 @@
       },
       {
         "name": "sun-elevation",
-        "htmlName": "waterTexture",
+        "htmlName": "sunElevation",
         "description": "If sky is set, this attribute sets the elevation of the sun in degrees.",
         "links": [
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
@@ -1313,7 +1301,7 @@
       },
       {
         "name": "sun-azimuth",
-        "htmlName": "waterTexture",
+        "htmlName": "sunAzimuth",
         "description": "If sky is set, this attribute sets the azimuth of the sun in degrees.",
         "links": [
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
@@ -1327,9 +1315,9 @@
   },
   {
     "Title": "LD Lights",
-    "htmlName": "ld-lights",
+    "htmlName": "ld_lights",
     "Attributes": [
-       {
+      {
         "name": "lights",
         "htmlName": "lights",
         "description": "Should lights be on?",
@@ -1355,7 +1343,7 @@
   },
   {
     "Title": "LD Camera",
-    "htmlName": "ld-camera",
+    "htmlName": "ld_camera",
     "Methods": [
       {
         "name": "setCameraFromJSON(cameraMetadata)",
@@ -1373,8 +1361,77 @@
     ]
   },
   {
+    "Title": "LD Measure",
+    "htmlName": "ld_measure",
+    "Attributes": [
+      {
+        "name": "measure",
+        "htmlName": "measure",
+        "description": "Toggle dimension lines and label on the model.",
+        "links": [
+          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "measurement-unit",
+        "htmlName": "measureUnit",
+        "description": "The unit to display measurements in.",
+        "links": [
+          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "m",
+          "options": "m, cm, mm, yd, ft, in"
+        }
+      },
+      {
+        "name": "measurement-precision",
+        "htmlName": "measurePrecision",
+        "description": "Number of decimals to round the measurements to.",
+        "links": [
+          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "2",
+          "options": "any number >= 0"
+        }
+      },
+      {
+        "name": "measure-objects",
+        "htmlName": "measureObjects",
+        "description": "If left empty, toggling the measure attribute will measure all objects in the scene. If set to a string, only objects with a matching name will be measured.\n\nTo enable selecting multiple objects, set the attribute to a comma-separated list of object names. If the attribute is set to a single object name, this will be togglable with the measure attribute.",
+        "links": [
+          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty string",
+          "options": "see description above"
+        }
+      },
+      {
+        "name": "measurement-overrides",
+        "htmlName": "measureOverrides",
+        "description": "Override the default measurements for specific objects or the entire scene. The attribute should have the format \"w h d\". If measure-objects is set to either full scene or one object, the attribute should be a single string. If measure-objects is set to multiple objects, the attribute should be a comma-separated list of strings, i.e. \"w1 h1 d1,w2 h2 d2\".",
+        "links": [
+          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty string",
+          "options": "see description above"
+        }
+      }
+    ],
+    "Slots": [
+      {
+        "name": "Dimension Labels",
+        "htmlName": "dimensionLabels",
+        "description": "Customise the dimension labels by adding three elements under <span class=\"attribute\">&lt;model-viewer&gt;</span>. They should look like this: <span class=\"attribute\">&lt;span slot=\"ruler-width\"&gt;Width&lt;/span&gt;</span>, <span class=\"attribute\">&lt;span slot=\"ruler-height\"&gt;Height&lt;/span&gt;</span>, <span class=\"attribute\">&lt;span slot=\"ruler-depth\"&gt;Depth&lt;/span&gt;</span>."
+      }
+    ]
+  },
+  {
     "Title": "LD Puzzler",
-    "htmlName": "ld-puzzler",
+    "htmlName": "ld_puzzler",
     "Methods": [
       {
         "name": "setSrcFromBuffer(ArrayBuffer)",
