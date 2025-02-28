@@ -45,7 +45,7 @@ jobs:
         run: ./packages/modelviewer.dev/scripts/ci-before-deploy.sh
 
       - name: Upload artifact for deployment
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./packages/modelviewer.dev/dist
 
