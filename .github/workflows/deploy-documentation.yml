@@ -1,9 +1,13 @@
-name: Deploy documentation 
+name: Deploy documentation
 
 on:
-  push:
-    branches:
-      - master
+  release:
+    types: [created]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   deploy_github_pages:
@@ -11,36 +15,38 @@ jobs:
     timeout-minutes: 60
 
     steps:
-    - uses: actions/checkout@v3
-      with:
-        submodules: true
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
 
-    - uses: actions/setup-node@v3
-      with:
-        node-version: '16.x'
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-    - name: NPM install
-      run: npm ci
+      - name: NPM install
+        run: npm ci
 
-    # - name: Lint TypeScript sources
-    #   run: npm run lint
+      # - name: Lint TypeScript sources
+      #   run: npm run lint
 
-    - name: Build packages
-      run: npm run build
+      - name: Build packages
+        run: npm run build
 
-    - name: Generate fidelity artifacts 
-      continue-on-error: true
-      uses: GabrielBB/xvfb-action@v1.0
-      with:
-        run: npm run test --workspace=@google/model-viewer-render-fidelity-tools
+      - name: Generate fidelity artifacts
+        continue-on-error: true
+        uses: GabrielBB/xvfb-action@v1.0
+        with:
+          run: npm run test --workspace=@google/model-viewer-render-fidelity-tools
 
-    - name: Stage documentation artifacts
-      run: ./packages/modelviewer.dev/scripts/ci-before-deploy.sh
+      - name: Stage documentation artifacts
+        run: ./packages/modelviewer.dev/scripts/ci-before-deploy.sh
 
-    - name: Deploy to Github Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_branch: gh-pages
-        force_orphan: true
-        publish_dir: ./packages/modelviewer.dev/dist
+      - name: Upload artifact for deployment
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: ./packages/modelviewer.dev/dist
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v2
