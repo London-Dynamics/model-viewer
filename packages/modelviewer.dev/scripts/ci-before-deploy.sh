@@ -103,8 +103,9 @@ mkdir -p $DEPLOY_ROOT/editor/view
 mkdir -p $DEPLOY_ROOT/dist
 mkdir -p $DEPLOY_ROOT/node_modules
 mkdir -p $DEPLOY_ROOT/node_modules/@google
-mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer
-mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer/dist
+mkdir -p $DEPLOY_ROOT/node_modules/@london-dynamics
+mkdir -p $DEPLOY_ROOT/node_modules/@london-dynamics/model-viewer
+mkdir -p $DEPLOY_ROOT/node_modules/@london-dynamics/model-viewer/dist
 mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer-effects
 mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer-effects/dist
 mkdir -p $DEPLOY_ROOT/node_modules/js-beautify
@@ -116,7 +117,7 @@ mkdir -p $DEPLOY_ROOT/node_modules/web-animations-js
 cp ../space-opera/editor/index.html $DEPLOY_ROOT/editor/
 cp ../space-opera/editor/view/index.html $DEPLOY_ROOT/editor/view/
 cp ../space-opera/dist/space-opera.js $DEPLOY_ROOT/dist/
-cp ../model-viewer/dist/* $DEPLOY_ROOT/node_modules/@google/model-viewer/dist/
+cp ../model-viewer/dist/* $DEPLOY_ROOT/node_modules/@london-dynamics/model-viewer/dist/
 cp ../model-viewer-effects/dist/* $DEPLOY_ROOT/node_modules/@google/model-viewer-effects/dist/
 cp -r ../../node_modules/js-beautify/* $DEPLOY_ROOT/node_modules/js-beautify
 cp -r ../../node_modules/web-animations-js/* $DEPLOY_ROOT/node_modules/web-animations-js
