@@ -188,10 +188,18 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         return [];
       }
 
-      return this.measurementOverrides.split(',').map((set) => {
-        const [w, h, d] = set.trim().split(' ').map(Number);
-        return { w, h, d };
-      });
+      return this.measurementOverrides
+        .split(',')
+        .map((set) => {
+          const [w, h, d] = set.trim().split(' ').map(Number);
+
+          if (w === undefined || h === undefined || d === undefined) {
+            return null;
+          }
+
+          return { w, h, d };
+        })
+        .filter((set) => set !== null);
     }
 
     private _parseMeasureObjects(): string[] {
@@ -210,7 +218,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      const size = boundingBox.getSize(new Vector3());
+      const scene = this[$scene];
 
       const unit = this.measurementUnit;
       const precision = this.measurementPrecision;
@@ -218,24 +226,39 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const overrides = this._parseMeasurementOverrides();
       const measureObjects = this._parseMeasureObjects();
 
+      function getPureOrOverriddenValues() {
+        const size = boundingBox.getSize(new Vector3());
+
+        if (overrides.length && !measureObjects.length && object === scene) {
+          return [overrides[0].w, overrides[0].h, overrides[0].d];
+        }
+
+        if (
+          overrides.length &&
+          measureObjects[0] !== '*' &&
+          measureObjects.length == 1
+        ) {
+          return [overrides[0].w, overrides[0].h, overrides[0].d];
+        }
+
+        if (overrides.length && measureObjects.length) {
+          const objectIndex = measureObjects.indexOf(object.name);
+
+          if (objectIndex !== -1 && overrides[objectIndex]) {
+            return [
+              overrides[objectIndex].w,
+              overrides[objectIndex].h,
+              overrides[objectIndex].d,
+            ];
+          }
+        }
+
+        return [size.x, size.y, size.z];
+      }
+
+      const [width, height, depth] = getPureOrOverriddenValues();
+
       let value: string | null = null;
-      let width = size.x;
-
-      if (
-        overrides.length &&
-        !measureObjects.length &&
-        this[$scene] === object
-      ) {
-        width = overrides[0].w;
-      }
-
-      if (
-        overrides.length &&
-        measureObjects[0] !== '*' &&
-        measureObjects.length == 1
-      ) {
-        width = overrides[0].w;
-      }
 
       value = convertMeters(width, unit, precision);
       this._measureWidthElement.textContent = `${value} ${unit}`;
@@ -245,24 +268,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         `Width: ${value} ${unit}`
       );
 
-      let height = size.y;
-
-      if (
-        overrides.length &&
-        !measureObjects.length &&
-        this[$scene] === object
-      ) {
-        height = overrides[0].h;
-      }
-
-      if (
-        overrides.length &&
-        measureObjects[0] !== '*' &&
-        measureObjects.length == 1
-      ) {
-        height = overrides[0].h;
-      }
-
       value = convertMeters(height, unit, precision);
       this._measureHeightElement.textContent = `${value} ${unit}`;
       this._measureHeightElement.style.display = 'block';
@@ -270,24 +275,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         'aria-label',
         `Height: ${value} ${unit}`
       );
-
-      let depth = size.z;
-
-      if (
-        overrides.length &&
-        !measureObjects.length &&
-        this[$scene] === object
-      ) {
-        depth = overrides[0].d;
-      }
-
-      if (
-        overrides.length &&
-        measureObjects[0] !== '*' &&
-        measureObjects.length == 1
-      ) {
-        depth = overrides[0].d;
-      }
 
       value = convertMeters(depth, unit, precision);
       this._measureDepthElement.textContent = `${value} ${unit}`;
@@ -376,7 +363,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       } else {
         // Case 3: measureObjects has more than 0 items, expand to closest parent if exists
         let parentObject = object;
-        while (parentObject.parent) {
+        while (parentObject && parentObject.parent) {
           if (measureObjects.includes(parentObject.name)) {
             boundingBox.setFromObject(parentObject);
             return boundingBox;
