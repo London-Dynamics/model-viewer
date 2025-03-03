@@ -193,13 +193,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         .map((set) => {
           const [w, h, d] = set.trim().split(' ').map(Number);
 
-          if (w === undefined || h === undefined || d === undefined) {
-            return null;
-          }
-
           return { w, h, d };
         })
-        .filter((set) => set !== null);
+        .filter((set) => set.w && set.h && set.d);
     }
 
     private _parseMeasureObjects(): string[] {
