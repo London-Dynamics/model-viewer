@@ -1369,7 +1369,7 @@
         "htmlName": "measure",
         "description": "Toggle dimension lines and label on the model.",
         "links": [
-          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ]
       },
       {
@@ -1377,7 +1377,7 @@
         "htmlName": "measureUnit",
         "description": "The unit to display measurements in.",
         "links": [
-          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
         "default": {
           "default": "m",
@@ -1389,7 +1389,7 @@
         "htmlName": "measurePrecision",
         "description": "Number of decimals to round the measurements to.",
         "links": [
-          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
         "default": {
           "default": "2",
@@ -1401,7 +1401,7 @@
         "htmlName": "measureObjects",
         "description": "If left empty, toggling the measure attribute will measure all objects in the scene. If set to a string, only objects with a matching name will be measured.\n\nTo enable selecting multiple objects, set the attribute to a comma-separated list of object names. If the attribute is set to a single object name, this will be togglable with the measure attribute.",
         "links": [
-          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
         "default": {
           "default": "empty string",
@@ -1413,12 +1413,20 @@
         "htmlName": "measureOverrides",
         "description": "Override the default measurements for specific objects or the entire scene. The attribute should have the format \"w h d\". If measure-objects is set to either full scene or one object, the attribute should be a single string. If measure-objects is set to multiple objects, the attribute should be a comma-separated list of strings, i.e. \"w1 h1 d1,w2 h2 d2\".",
         "links": [
-          "<a href=\"../examples/ld-measure/#measure\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
         "default": {
           "default": "empty string",
           "options": "see description above"
         }
+      },
+      {
+        "name": "disable-measurement-lines",
+        "htmlName": "disableMeasurementLines",
+        "description": "Only show number markers.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ]
       }
     ],
     "Slots": [

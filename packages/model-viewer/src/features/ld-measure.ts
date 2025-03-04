@@ -56,6 +56,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: String, attribute: 'measurement-overrides' })
     measurementOverrides: string = '';
 
+    @property({ type: Boolean, attribute: 'disable-measurement-lines' })
+    disableMeasurementLines: boolean = false;
+
     // TODO @property measurement-overrides;
 
     protected [$measureContainer]: HTMLElement = this.shadowRoot!.querySelector(
@@ -169,11 +172,13 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           break;
       }
 
-      queueForVisibility.forEach((group) => {
-        group.lines.forEach((line) => {
-          line.visible = true;
+      if (!this.disableMeasurementLines) {
+        queueForVisibility.forEach((group) => {
+          group.lines.forEach((line) => {
+            line.visible = true;
+          });
         });
-      });
+      }
 
       this._updateMarkerPosition();
       this[$needsRender]();
@@ -841,7 +846,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (
-        (changedProperties.has('measurementUnit') ||
+        (changedProperties.has('disableMeasurementLines') ||
+          changedProperties.has('measurementUnit') ||
           changedProperties.has('measurementPrecision') ||
           changedProperties.has('measurementOverrides')) &&
         !!this['measure']
