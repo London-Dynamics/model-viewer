@@ -299,7 +299,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      if (this._widthElementAnchorIndex !== -1) {
+      const sceneWidth = this[$scene].width;
+
+      if (this._widthElementAnchorIndex !== -1 && this._measureWidthElement) {
         const line = this._lineGroups[this._widthElementAnchorIndex].lines[0];
         const midPoint = new Vector3();
         line.geometry.computeBoundingBox();
@@ -307,6 +309,12 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         line.localToWorld(midPoint);
 
         const screenPosition = this._worldToScreen(midPoint);
+        const elementWidth = this._measureWidthElement.offsetWidth / 2;
+        screenPosition.x = Math.max(
+          elementWidth,
+          Math.min(screenPosition.x, sceneWidth - elementWidth)
+        );
+
         this._measureWidthElement?.setAttribute(
           'style',
           `left: ${screenPosition.x}px; top: ${screenPosition.y}px; transform: translate(-50%, -50%);`
@@ -314,7 +322,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       } else {
         this._measureWidthElement?.setAttribute('style', 'display: none;');
       }
-      if (this._heightElementAnchorIndex !== -1) {
+      if (this._heightElementAnchorIndex !== -1 && this._measureHeightElement) {
         const line = this._lineGroups[this._heightElementAnchorIndex].lines[0];
         const midPoint = new Vector3();
         line.geometry.computeBoundingBox();
@@ -322,6 +330,13 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         line.localToWorld(midPoint);
 
         const screenPosition = this._worldToScreen(midPoint);
+
+        const elementWidth = this._measureHeightElement.offsetWidth / 2;
+        screenPosition.x = Math.max(
+          elementWidth,
+          Math.min(screenPosition.x, sceneWidth - elementWidth)
+        );
+
         this._measureHeightElement?.setAttribute(
           'style',
           `left: ${screenPosition.x}px; top: ${screenPosition.y}px; transform: translate(-50%, -50%);`
@@ -329,7 +344,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       } else {
         this._measureHeightElement?.setAttribute('style', 'display: none;');
       }
-      if (this._depthElementAnchorIndex !== -1) {
+      if (this._depthElementAnchorIndex !== -1 && this._measureDepthElement) {
         const line = this._lineGroups[this._depthElementAnchorIndex].lines[0];
         const midPoint = new Vector3();
         line.geometry.computeBoundingBox();
@@ -337,6 +352,13 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         line.localToWorld(midPoint);
 
         const screenPosition = this._worldToScreen(midPoint);
+
+        const elementWidth = this._measureDepthElement.offsetWidth / 2;
+        screenPosition.x = Math.max(
+          elementWidth,
+          Math.min(screenPosition.x, sceneWidth - elementWidth)
+        );
+
         this._measureDepthElement?.setAttribute(
           'style',
           `left: ${screenPosition.x}px; top: ${screenPosition.y}px; transform: translate(-50%, -50%);`
@@ -387,7 +409,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const min = Math.min(size.x, size.y, size.z);
 
-      this._extensionLineLength = min / 8;
+      this._extensionLineLength = min / 10;
     }
 
     private _clearMeasurements(resetEverything = false) {
