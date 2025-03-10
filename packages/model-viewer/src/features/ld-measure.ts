@@ -749,19 +749,23 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._measureObject(scene, true);
     }
 
-    private _measureModelAtPoint(x: number, y: number) {
+    objectFromPoint(x: number, y: number): Object3D | null {
       const scene = this[$scene];
       const ndcCoords = scene.getNDC(x, y);
       const hit = scene.hitFromPoint(ndcCoords);
 
-      const object = hit?.object;
+      return hit?.object || null;
+    }
+
+    private _measureModelAtPoint(x: number, y: number) {
+      const object = this.objectFromPoint(x, y);
 
       if (object) {
         this._measureObject(object);
       }
     }
 
-    handleCameraChange() {
+    private _handleCameraChange() {
       /* @ts-ignore */
       const { theta, phi } = this.getCameraOrbit();
 
@@ -801,7 +805,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       return targetObject;
     }
 
-    handleClick(event: MouseEvent) {
+    private _handleClick(event: MouseEvent) {
       const { _pointerDwn, _pointerUp } = this;
       const d = Math.hypot(
         _pointerUp[0] - _pointerDwn[0],
@@ -817,7 +821,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    handleLoad() {
+    private _handleLoad() {
       this._setExtensionLineLength();
 
       this._clearMeasurements();
@@ -840,7 +844,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const enabled = !!this['measure'];
 
       if (enabled) {
-        this.handleCameraChange();
+        this._handleCameraChange();
       }
 
       const measureObjects = this._parseMeasureObjects();
@@ -854,8 +858,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
     }
-
-    //private updateLabelPosition() {}
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
@@ -881,9 +883,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     connectedCallback() {
       super.connectedCallback();
 
-      this.addEventListener('camera-change', this.handleCameraChange);
+      this.addEventListener('camera-change', this._handleCameraChange);
 
-      this.addEventListener('load', this.handleLoad);
+      this.addEventListener('load', this._handleLoad);
 
       const shadowRoot = this.shadowRoot;
 
@@ -930,9 +932,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     disconnectedCallback() {
       super.disconnectedCallback();
 
-      this.removeEventListener('camera-change', this.handleCameraChange);
+      this.removeEventListener('camera-change', this._handleCameraChange);
 
-      this.removeEventListener('load', this.handleLoad);
+      this.removeEventListener('load', this._handleLoad);
 
       this._measureWidthElement = null;
       this._measureHeightElement = null;
@@ -948,7 +950,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.addEventListener('pointerup', (e) => {
         this._pointerUp = [e.offsetX, e.offsetY];
       });
-      this.addEventListener('click', this.handleClick);
+      this.addEventListener('click', this._handleClick);
     }
   }
 
