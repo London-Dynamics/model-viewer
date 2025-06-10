@@ -285,106 +285,101 @@ export class ArtifactCreator {
 
 
   async captureScreenshot(
-      renderer: string, scenarioName: string, dimensions: Dimensions,
-      outputPath: string = join(this.outputDirectory, 'model-viewer.png'),
-      maxTimeInSec: number = -1, quiet: boolean = false) {
+    renderer: string,
+    scenarioName: string,
+    dimensions: Dimensions,
+    outputPath: string = join(this.outputDirectory, 'model-viewer.png'),
+    maxTimeInSec: number = -1,
+    quiet: boolean = false
+) {
     const scaledWidth = dimensions.width;
     const scaledHeight = dimensions.height;
     const rendererConfig = this[$configReader].rendererConfig(renderer);
 
     if (rendererConfig == null) {
-      console.log(`⚠️ Renderer "${
-          renderer}" is not configured. Did you add it to the test config?`);
-      return;
+        console.log(`⚠️ Renderer "${renderer}" is not configured. Did you add it to the test config?`);
+        return;
     }
 
     if (this.browser == null) {
-      console.log(`🚀 Launching browser`);
-      // no-sandbox and disable-setuid-sandbox args to resolve puppeteer browser run error in fidelity tests
-      this.browser = await puppeteer.launch({headless: quiet, args:['--no-sandbox', '--disable-setuid-sandbox']});
+        console.log(`🚀 Launching browser`);
+        this.browser = await puppeteer.launch({ headless: quiet, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     }
 
     const page = await this.browser.newPage();
 
-    const url = `${this.baseUrl}?hide-ui&config=../../config.json&scenario=${
-        encodeURIComponent(scenarioName)}`;
+    const url = `${this.baseUrl}?hide-ui&config=../../config.json&scenario=${encodeURIComponent(scenarioName)}`;
 
     await page.setViewport({
-      width: scaledWidth,
-      height: scaledHeight,
-      deviceScaleFactor: DEVICE_PIXEL_RATIO
+        width: scaledWidth,
+        height: scaledHeight,
+        deviceScaleFactor: DEVICE_PIXEL_RATIO
     });
 
     page.on('error', (error: any) => {
-      console.log(`🚨 ${error}`);
+        console.log(`🚨 ${error}`);
     });
 
     page.on('console', async (message: any) => {
-      const args =
-          await Promise.all(message.args().map((arg: any) => arg.jsonValue()));
+        const args = await Promise.all(message.args().map((arg: any) => arg.jsonValue()));
 
-      if (args.length) {
-        console.log(`➡️`, ...args);
-      }
+        if (args.length) {
+            console.log(`➡️`, ...args);
+        }
     });
 
-    console.log(`🗺  Navigating to ${url}`);
+    console.log(`🖼️ Navigating to ${url}`);
 
     await page.goto(url);
 
-    console.log(
-        `🖌  Rendering ${scenarioName} with ${rendererConfig.description}`);
+    console.log(`✏️ Rendering ${scenarioName} with ${rendererConfig.description}`);
 
-    // NOTE: The function passed to page.evaluate is stringified and eval'd
-    // in a browser context. Importantly, this implies that no external
-    // variables are captured in its closure scope. TypeScript compiler
-    // currently has no mechanism to detect this and will happily tell you
-    // your code is correct when it isn't.
     const evaluateError = await page.evaluate(async (maxTimeInSec: number) => {
-      const modelBecomesReady = new Promise<void>((resolve, reject) => {
-        let timeout: NodeJS.Timeout;
-        if (maxTimeInSec > 0) {
-          timeout = setTimeout(() => {
-            reject(new Error(
-                `Stop capturing screenshot after ${maxTimeInSec} seconds`));
-          }, maxTimeInSec * 1000);
+        const modelBecomesReady = new Promise<void>((resolve, reject) => {
+            let timeout: NodeJS.Timeout;
+            if (maxTimeInSec > 0) {
+                timeout = setTimeout(() => {
+                    reject(new Error(`Stop capturing screenshot after ${maxTimeInSec} seconds`));
+                }, maxTimeInSec * 1000);
+            }
+
+            self.addEventListener('model-ready', () => {
+                if (maxTimeInSec > 0) {
+                    clearTimeout(timeout);
+                }
+                resolve();
+            }, { once: true });
+        });
+
+        try {
+            await modelBecomesReady;
+            return null;
+        } catch (error) {
+            return error.message;
         }
-
-        self.addEventListener('model-ready', () => {
-          if (maxTimeInSec > 0) {
-            clearTimeout(timeout);
-          }
-          resolve();
-        }, {once: true});
-      });
-
-      try {
-        await modelBecomesReady;
-        return null;
-      } catch (error) {
-        return error.message;
-      }
     }, maxTimeInSec);
 
     if (evaluateError) {
-      console.log(evaluateError);
-      await this.browser.close();
-      this.browser = null;
-      throw new Error(evaluateError);
+        console.log(evaluateError);
+        await this.browser.close();
+        this.browser = null;
+        throw new Error(evaluateError);
     }
 
-    console.log(`🖼  Capturing screenshot`);
+    console.log(`🖼️ Capturing screenshot`);
 
     try {
-      await fs.mkdir(this.outputDirectory);
+        await fs.mkdir(this.outputDirectory, { recursive: true });
     } catch (e) {
-      // Ignored...
+        // Ignored...
     }
 
-    const screenshot =
-        await page.screenshot({path: outputPath, omitBackground: true});
+    const screenshot = await page.screenshot({
+        path: `${outputPath}.png`, // Ensure the path ends with .png or another supported extension
+        omitBackground: true,
+    });
 
-    page.close();
+    await page.close();
 
     return screenshot;
   }
