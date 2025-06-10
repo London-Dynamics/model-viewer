@@ -1,0 +1,110 @@
+{
+  "name": "@google/model-viewer-effects",
+  "type": "module",
+  "version": "1.4.0",
+  "description": "Easily add and combine post-processing effects with <model-viewer>!",
+  "repository": "https://github.com/google/model-viewer/tree/master/packages/model-viewer-effects",
+  "bugs": {
+    "url": "https://github.com/google/model-viewer/issues"
+  },
+  "homepage": "https://github.com/google/model-viewer/tree/master/packages/model-viewer-effects#readme",
+  "contributors": [
+    "Adam Beili <adam.v.beili@gmail.com>"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=6.0.0"
+  },
+  "main": "dist/model-viewer-effects.min.js",
+  "module": "lib/model-viewer-effects.js",
+  "files": [
+    "src",
+    "lib",
+    "dist/model-viewer-effects.js",
+    "dist/model-viewer-effects.js.map",
+    "dist/model-viewer-effects.min.js",
+    "dist/model-viewer-effects.min.js.map",
+    "dist/model-viewer-effects-umd.js",
+    "dist/model-viewer-effects-umd.js.map",
+    "dist/model-viewer-effects-umd.min.js",
+    "dist/model-viewer-effects-umd.min.js.map",
+    "dist/model-viewer-effects.d.ts"
+  ],
+  "typings": "lib/model-viewer-effects.d.ts",
+  "types": "lib/model-viewer-effects.d.ts",
+  "scripts": {
+    "clean": "rm -rf ./lib ./dist",
+    "prepare": "if [ ! -L './shared-assets' ]; then ln -s ../shared-assets ./shared-assets; fi && ../shared-assets/scripts/fetch-khronos-gltf-samples.sh",
+    "build": "npm run build:tsc && npm run build:rollup",
+    "build:dev": "npm run build:tsc && npm run build:rollup:dev",
+    "build:tsc": "tsc --incremental",
+    "build:rollup": "rollup -c --environment NODE_ENV:production",
+    "build:rollup:dev": "rollup -c --environment NODE_ENV:development",
+    "prepublishOnly": "npm run build",
+    "test": "web-test-runner --playwright --browsers chromium firefox webkit",
+    "test:ci": "web-test-runner --static-logging --playwright --browsers chromium webkit",
+    "serve": "node_modules/.bin/http-server -c-1",
+    "dev": "npm run build:dev && npm-run-all --parallel 'watch:tsc -- --preserveWatchOutput' 'watch:test' 'serve -- -s'",
+    "watch:tsc": "tsc -w --incremental",
+    "watch:rollup": "rollup -c -w --environment NODE_ENV:production",
+    "watch:rollup:dev": "rollup -c -w --environment NODE_ENV:development",
+    "watch:test": "web-test-runner --node-resolve --playwright --browsers chromium --watch",
+    "build:dev:serve": "npm run build:dev && npm run serve"
+  },
+  "keywords": [
+    "ar",
+    "gltf",
+    "glb",
+    "webar",
+    "webvr",
+    "webxr",
+    "arcore",
+    "arkit",
+    "webaronarcore",
+    "webaronarkit",
+    "augmented reality",
+    "model-viewer",
+    "model-viewer-effects",
+    "3d",
+    "post",
+    "processing",
+    "effect",
+    "filter"
+  ],
+  "dependencies": {
+    "lit": "^3.2.1",
+    "postprocessing": "^6.37.1"
+  },
+  "peerDependencies": {
+    "@google/model-viewer": "^4.1.0"
+  },
+  "devDependencies": {
+    "@google/model-viewer": "^4.1.0",
+    "@rollup/plugin-commonjs": "^28.0.3",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-replace": "^6.0.2",
+    "@types/mocha": "^10.0.10",
+    "@types/pngjs": "^6.0.5",
+    "@types/three": "^0.174.0",
+    "@ungap/event-target": "^0.2.4",
+    "@web/test-runner": "^0.20.0",
+    "@web/test-runner-playwright": "^0.11.0",
+    "chai": "^5.2.0",
+    "@rollup/plugin-swc": "^0.4.0",
+    "@swc/core": "^1.11.8", 
+    "focus-visible": "^5.2.1",
+    "http-server": "^14.1.1",
+    "mocha": "^11.1.0",
+    "npm-run-all": "^4.1.5",
+    "rollup": "^4.35.0",
+    "rollup-plugin-cleanup": "^3.2.1",
+    "rollup-plugin-dts": "^6.1.1",
+    "rollup-plugin-polyfill": "^4.2.0",
+    "@rollup/plugin-terser": "^0.4.4",
+    "three": "^0.174.0",
+    "typescript": "5.8.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

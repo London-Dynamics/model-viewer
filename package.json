@@ -1,0 +1,56 @@
+{
+  "name": "model-viewer-packages",
+  "private": true,
+  "description": "The repository for all <model-viewer> packages",
+  "scripts": {
+    "test": "npm run test --workspaces",
+    "test:ci": "npm run test:ci --workspaces",
+    "format": "find packages/**/src -name '*.ts' | grep -v .d.ts | xargs ./node_modules/.bin/clang-format --verbose -i",
+    "lint": "./node_modules/.bin/eslint \"packages/**/*.ts\"",
+    "lint:fix": "npm run lint -- --fix",
+    "clean": "npm run clean --workspaces",
+    "build": "npm run build --workspaces",
+    "serve": "./node_modules/.bin/http-server -c-1",
+    "update:package-lock": "npm exec -y --workspaces -- npx rimraf package-lock.json node_modules && npx rimraf package-lock.json node_modules && npm install --save && npm run clean --workspaces && node ./scripts/postinstall.js"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "./scripts/pre-commit.sh"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/google/model-viewer.git"
+  },
+  "workspaces": [
+    "packages/model-viewer",
+    "packages/model-viewer-effects",
+    "packages/modelviewer.dev",
+    "packages/render-fidelity-tools",
+    "packages/space-opera"
+  ],
+  "author": "DevXR Contributors",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "bugs": {
+    "url": "https://github.com/google/model-viewer/issues"
+  },
+  "homepage": "https://github.com/google/model-viewer#readme",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.26.1",
+    "@typescript-eslint/parser": "^8.26.1",
+    "clang-format": "^1.8.0",
+    "eslint": "^9.22.0",
+    "eslint-config-google": "^0.14.0",
+    "eslint-plugin-mocha": "^10.5.0",
+    "eslint-plugin-wc": "^2.2.1",
+    "http-server": "^14.1.1",
+    "husky": "^9.1.7",
+    "typescript": "5.8.2"
+  },
+  "dependencies": {
+    "puppeteer": "^24.4.0"
+  }
+}
