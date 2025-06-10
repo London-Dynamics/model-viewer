@@ -314,5 +314,73 @@
         "name": "Custom Effects"
       }
     ]
+  },
+  {
+    "name": "LD Transforms",
+    "htmlName": "ld_transforms",
+    "examples": [
+      {
+        "htmlId": "transform-geometry",
+        "name": "Transform Geometry"
+      },
+      {
+        "htmlId": "transform-scene",
+        "name": "Transform Scene"
+      }
+    ]
+  },
+  {
+    "name": "LD Environment",
+    "htmlName": "ld_environment",
+    "examples": [
+      {
+        "htmlId": "water",
+        "name": "Just Add Water"
+      }
+    ]
+  },
+  {
+    "name": "LD Lights",
+    "htmlName": "ld_lights",
+    "examples": [
+      {
+        "htmlId": "toggle-lights",
+        "name": "Toggle Lights"
+      }
+    ]
+  },
+  {
+    "name": "LD Camera",
+    "htmlName": "ld_camera",
+    "examples": [
+      {
+        "htmlId": "get-camera-json",
+        "name": "Get Camera JSON"
+      }
+    ]
+  },
+  {
+    "name": "LD Measure",
+    "htmlName": "ld_measure",
+    "examples": [
+      {
+        "htmlId": "measure",
+        "name": "Measure"
+      },
+      {
+        "htmlId": "slots",
+        "name": "Slots"
+      }
+    ]
+  },
+  {
+    "name": "LD Puzzler",
+    "htmlName": "ld_puzzler",
+    "examples": [
+      {
+        "htmlId": "array-buffer",
+        "name": "Load from ArrayBuffer"
+      }
+    ]
   }
 ]

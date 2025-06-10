@@ -1,0 +1,424 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Measure Examples</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; scene graph examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <style>
+      .ld-ruler {
+        position: absolute;
+        font-size: 0.5rem;
+        background-color: cornflowerblue;
+        color: white;
+        padding: 0rem 0.4rem;
+        border-radius: 0.2rem;
+        white-space: nowrap;
+        font-weight: bold;
+      }
+    </style>
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+    <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
+    <script
+      src="../../node_modules/focus-visible/dist/focus-visible.js"
+      defer
+    ></script>
+  </head>
+  <body>
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="measure" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Measure </span>by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. Give the user the ability to measure the size of objects in
+                the scene.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Display measurements</h2>
+                <p>
+                  Toggle measurements by setting
+                  <span class="attribute">measure</span> attribute. The default
+                  is the total bounding box of the scene. If you also want to
+                  measure the size of individual objects, you can set the
+                  <span class="attribute">measure-objects</span> attribute.
+                </p>
+                <p>Default is an empty string.</p>
+                <p>
+                  "*" will let the user click any object. "name1,name2" will let
+                  the user click objects with the names "name1" and "name2".
+                </p>
+              </div>
+              <example-snippet stamp-to="measure" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/leanne-ford-table-scene.glb"
+                    alt="An animated 3D model a bedside lamp"
+                  >
+                    <!-- <div slot="ruler-width" class="ld-ruler"></div>
+                    <div slot="ruler-height" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div> -->
+
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white rounded shadow p-2 space-y-1">
+                        <div class="flex flex-row items-center gap-1">
+                          <button
+                            type="button"
+                            id="toggle-rulers"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Enable Rulers
+                          </button>
+                          <button
+                            type="button"
+                            id="toggle-lines"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Disable Lines
+                          </button>
+                        </div>
+                        <div class="flex flex-row items-center gap-1">
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Measure</span
+                          >
+                          <button
+                            type="button"
+                            id="measure-scene"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Scene
+                          </button>
+                          <button
+                            type="button"
+                            id="measure-objects"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Any Object
+                          </button>
+                          <button
+                            type="button"
+                            data-mesh="501693"
+                            class="measure-object rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Table Only
+                          </button>
+                          <button
+                            type="button"
+                            data-mesh="mazz_boucle_dining_chair_by_leanne_ford,c_mazz_boucle_dining_chair_by_leanne_ford"
+                            class="measure-object rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Chairs
+                          </button>
+                        </div>
+                        <div class="flex flex-row items-center gap-1">
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Unit</span
+                          >
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="m"
+                          >
+                            m
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="cm"
+                          >
+                            cm
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="mm"
+                          >
+                            mm
+                          </button>
+                          <button
+                            type="button"
+                            class="mr-2 measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="yd"
+                          >
+                            yd
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="ft"
+                          >
+                            ft
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-unit rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-unit="in"
+                          >
+                            in
+                          </button>
+
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Decimals</span
+                          >
+                          <input
+                            style="width: 2rem"
+                            type="number"
+                            id="measurePrecision"
+                            value="2"
+                            min="0"
+                            class="border text-xs border-gray-200 pl-2 py-0.5 rounded inset-shadow-sm"
+                          />
+                        </div>
+                        <div class="flex flex-row items-center gap-1">
+                          <span class="text-gray-400 uppercase text-xs"
+                            >Dimensions</span
+                          >
+                          <button
+                            type="button"
+                            class="measure-override rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-dimensions=""
+                          >
+                            Auto
+                          </button>
+                          <button
+                            type="button"
+                            class="measure-override rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                            data-dimensions="15 3 2"
+                          >
+                            15m 3m 2m
+                          </button>
+                          <button
+                            type="button"
+                            id="setChairsAndDimensions"
+                            class="rounded border text-xs border-gray-200 px-2 py-0.5 hover:bg-blue-400 hover:text-white"
+                          >
+                            Only chairs 0.5m 1m 0.5m
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector('#three-demo');
+
+                      let rulersOn = false;
+                      let disableLines = false;
+
+                      document
+                        .getElementById('toggle-rulers')
+                        .addEventListener('click', (e) => {
+                          rulersOn = !rulersOn;
+
+                          if (!rulersOn) {
+                            e.target.textContent = 'Enable Rulers';
+                            modelViewer.removeAttribute('measure');
+                          } else {
+                            e.target.textContent = 'Disable Rulers';
+                            modelViewer.setAttribute('measure', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-lines')
+                        .addEventListener('click', (e) => {
+                          disableLines = !disableLines;
+
+                          if (!disableLines) {
+                            e.target.textContent = 'Disable Lines';
+                            modelViewer.removeAttribute(
+                              'disable-measurement-lines'
+                            );
+                          } else {
+                            e.target.textContent = 'Enable Lines';
+                            modelViewer.setAttribute(
+                              'disable-measurement-lines',
+                              ''
+                            );
+                          }
+                        });
+
+                      document
+                        .getElementById('measure-scene')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', '');
+                        });
+                      document
+                        .getElementById('measure-objects')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', '*');
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-object')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measure-objects',
+                              e.target.getAttribute('data-mesh')
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('setChairsAndDimensions')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute(
+                            'measure-objects',
+                            'mazz_boucle_dining_chair_by_leanne_ford,c_mazz_boucle_dining_chair_by_leanne_ford'
+                          );
+
+                          modelViewer.setAttribute(
+                            'measurement-overrides',
+                            '0.4 1 0.4,0.5 1 0.5'
+                          );
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-override')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-overrides',
+                              e.target.getAttribute('data-dimensions')
+                            );
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-unit')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-unit',
+                              e.target.getAttribute('data-unit')
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('measurePrecision')
+                        .addEventListener('change', (e) => {
+                          modelViewer.setAttribute(
+                            'measurement-precision',
+                            e.target.value
+                          );
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="slots" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Customise labels</h2>
+                <p>
+                  Add slots to customise the labels for the measurements. The
+                  slots are named "ruler-width", "ruler-height", and
+                  "ruler-depth".
+                </p>
+              </div>
+              <example-snippet stamp-to="slots" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo-2"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/leanne-ford-table-scene.glb"
+                    alt="An animated 3D model a bedside lamp"
+                    measure
+                  >
+                    <div slot="ruler-width" class="ld-ruler"></div>
+                    <div slot="ruler-height" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div>
+                  </model-viewer>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_measure');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+    <script src="/node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"></script>
+  </body>
+</html>

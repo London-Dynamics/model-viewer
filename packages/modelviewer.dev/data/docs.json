@@ -1195,5 +1195,316 @@
         ]
       }
     ]
+  },
+  {
+    "Title": "LD Transforms",
+    "htmlName": "ld_transforms",
+    "Methods": [
+      {
+        "name": "updateMeshPosition(nodeName, newPosition)",
+        "htmlName": "updateMeshPosition",
+        "description": "Updates the position of a node in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-geometry\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateMeshRotation(nodeName, newRotation)",
+        "htmlName": "updateMeshRotation",
+        "description": "Updates the rotation of a node in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-geometry\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateMeshScale(nodeName, newScale)",
+        "htmlName": "updateMeshScale",
+        "description": "Updates the scale of a node in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-geometry\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateObjectPosition(nodeName, newPosition)",
+        "htmlName": "updateObjectPosition",
+        "description": "Updates the position of an object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-geometry\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateObjectRotation(nodeName, newRotation)",
+        "htmlName": "updateObjectRotation",
+        "description": "Updates the rotation of an object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-geometry\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateObjectScale(nodeName, newScale)",
+        "htmlName": "updateObjectScale",
+        "description": "Updates the scale of an object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-geometry\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateScenePosition(nodeName, newPosition)",
+        "htmlName": "updateScenePosition",
+        "description": "Updates the position of the root object in the scene graph. The position is specified as an array in the form \"[x, y, z]\".",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-scene\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateSceneRotation(nodeName, newRotation)",
+        "htmlName": "updateSceneRotation",
+        "description": "Updates the rotation of the root object in the scene graph. The rotation is specified as an array in the form \"[x, y, z]\", where each angle is in radians.",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-scene\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "updateSceneScale(nodeName, newScale)",
+        "htmlName": "updateSceneScale",
+        "description": "Updates the scale of the root object in the scene graph. The scale is specified as an array in the form \"[x, y, z]\", where each axis is a value from 0 and up. 1 is 100% scale.",
+        "links": [
+          "<a href=\"../examples/ld-transforms/#transform-scene\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getMeshes()",
+        "htmlName": "getMeshes",
+        "description": "Returns an array av all meshes in the scene graph that can be transformed."
+      },
+      {
+        "name": "getObjects()",
+        "htmlName": "getObjects",
+        "description": "Returns an array av all objects in the scene graph that can be transformed."
+      }
+    ]
+  },
+  {
+    "Title": "LD Environment",
+    "htmlName": "ld_environment",
+    "Attributes": [
+      {
+        "name": "water-texture",
+        "htmlName": "waterTexture",
+        "description": "Activate a water texture on the ground plane by providing a normals texture file.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty string",
+          "options": "URL to a .jpg file"
+        }
+      },
+      {
+        "name": "water-distortion-scale",
+        "htmlName": "waterDistortionScale",
+        "description": "Sets the distortion of the model's reflextion in the water texture.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": 3.7,
+          "options": "any number >= 0.0"
+        }
+      },
+      {
+        "name": "water-size",
+        "htmlName": "waterSize",
+        "description": "Sets the size of the waves in the water texture. A large value will make the waves smaller.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": 1.0,
+          "options": "any number >= 0.0"
+        }
+      },
+      {
+        "name": "sky",
+        "htmlName": "envsky",
+        "description": "Add a skybox with option to set the position of the sun.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "sun-elevation",
+        "htmlName": "sunElevation",
+        "description": "If sky is set, this attribute sets the elevation of the sun in degrees.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "2",
+          "options": "any number between 0 and 90"
+        }
+      },
+      {
+        "name": "sun-azimuth",
+        "htmlName": "sunAzimuth",
+        "description": "If sky is set, this attribute sets the azimuth of the sun in degrees.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "180",
+          "options": "any number between -180 and 180"
+        }
+      }
+    ]
+  },
+  {
+    "Title": "LD Lights",
+    "htmlName": "ld_lights",
+    "Attributes": [
+      {
+        "name": "lights",
+        "htmlName": "lights",
+        "description": "Should lights be on?",
+        "links": [
+          "<a href=\"../examples/ld-lights/#toggle-lights\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "Methods": [
+      {
+        "name": "toggleLights()",
+        "htmlName": "toggle-lights",
+        "description": "Toggle lights in scene. If lights are on, they will be turned off, and vice versa. Add a boolean argument to force lights on or off.",
+        "links": [
+          "<a href=\"../examples/ld-lights/#toggle-lights\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
+    "Title": "LD Camera",
+    "htmlName": "ld_camera",
+    "Methods": [
+      {
+        "name": "setCameraFromJSON(cameraMetadata)",
+        "htmlName": "setCameraFromJSON",
+        "description": "TODO",
+        "links": [
+          "<a href=\"../examples/ld-camera/#get-camera-json\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getCameraMeta()",
+        "htmlName": "getCameraMeta",
+        "description": "TODO"
+      }
+    ]
+  },
+  {
+    "Title": "LD Measure",
+    "htmlName": "ld_measure",
+    "Attributes": [
+      {
+        "name": "measure",
+        "htmlName": "measure",
+        "description": "Toggle dimension lines and label on the model.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "measurement-unit",
+        "htmlName": "measureUnit",
+        "description": "The unit to display measurements in.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "m",
+          "options": "m, cm, mm, yd, ft, in"
+        }
+      },
+      {
+        "name": "measurement-precision",
+        "htmlName": "measurePrecision",
+        "description": "Number of decimals to round the measurements to.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "2",
+          "options": "any number >= 0"
+        }
+      },
+      {
+        "name": "measure-objects",
+        "htmlName": "measureObjects",
+        "description": "If left empty, toggling the measure attribute will measure all objects in the scene. If set to a string, only objects with a matching name will be measured.\n\nTo enable selecting multiple objects, set the attribute to a comma-separated list of object names. If the attribute is set to a single object name, this will be togglable with the measure attribute.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty string",
+          "options": "see description above"
+        }
+      },
+      {
+        "name": "measurement-overrides",
+        "htmlName": "measureOverrides",
+        "description": "Override the default measurements for specific objects or the entire scene. The attribute should have the format \"w h d\". If measure-objects is set to either full scene or one object, the attribute should be a single string. If measure-objects is set to multiple objects, the attribute should be a comma-separated list of strings, i.e. \"w1 h1 d1,w2 h2 d2\".",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty string",
+          "options": "see description above"
+        }
+      },
+      {
+        "name": "disable-measurement-lines",
+        "htmlName": "disableMeasurementLines",
+        "description": "Only show number markers.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ]
+      }
+    ],
+    "Methods": [
+      {
+        "name": "objectFromPoint()",
+        "htmlName": "objectFromPoint",
+        "description": "Returns the object at the point in the scene corresponding to the input pixel coordinates given relative to the screen. If no object is hit, the result is null."
+      }
+    ],
+    "Slots": [
+      {
+        "name": "Dimension Labels",
+        "htmlName": "dimensionLabels",
+        "description": "Customise the dimension labels by adding three elements under <span class=\"attribute\">&lt;model-viewer&gt;</span>. They should look like this: <span class=\"attribute\">&lt;span slot=\"ruler-width\"&gt;Width&lt;/span&gt;</span>, <span class=\"attribute\">&lt;span slot=\"ruler-height\"&gt;Height&lt;/span&gt;</span>, <span class=\"attribute\">&lt;span slot=\"ruler-depth\"&gt;Depth&lt;/span&gt;</span>."
+      }
+    ]
+  },
+  {
+    "Title": "LD Puzzler",
+    "htmlName": "ld_puzzler",
+    "Methods": [
+      {
+        "name": "setSrcFromBuffer(ArrayBuffer)",
+        "htmlName": "setSrcFromBuffer",
+        "description": "If you've got an ArrayBuffer, turn it into a src Model Viewer can use.",
+        "links": [
+          "<a href=\"../examples/ld-puzzler/#set-src-from-buffer\">Related examples</a>"
+        ]
+      }
+    ]
   }
 ]

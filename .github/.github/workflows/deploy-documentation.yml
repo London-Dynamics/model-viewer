@@ -1,0 +1,51 @@
+name: Deploy documentation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy_github_pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: NPM install
+        run: npm ci
+
+      # - name: Lint TypeScript sources
+      #   run: npm run lint
+
+      - name: Build packages
+        run: npm run build
+
+      # - name: Generate fidelity artifacts
+      #   continue-on-error: true
+      #   uses: GabrielBB/xvfb-action@v1.0
+      #   with:
+      #     run: npm run test --workspace=@google/model-viewer-render-fidelity-tools
+
+      - name: Stage documentation artifacts
+        run: ./packages/modelviewer.dev/scripts/ci-before-deploy.sh
+
+      - name: Upload artifact for deployment
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./packages/modelviewer.dev/dist
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

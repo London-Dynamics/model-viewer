@@ -291,9 +291,16 @@ export class SmoothControls extends EventDispatcher<{
   /**
    * Sets the near and far planes of the camera.
    */
-  updateNearFar(nearPlane: number, farPlane: number) {
+  // updateNearFar(nearPlane: number, farPlane: number) {
+  //   this.camera.far = farPlane === 0 ? 2 : farPlane;
+  //   this.camera.near = Math.max(nearPlane, this.camera.far / 1000);
+  //   this.camera.updateProjectionMatrix();
+  // }
+
+  // HACK
+  updateNearFar(_: number, farPlane: number) {
     this.camera.far = farPlane === 0 ? 2 : farPlane;
-    this.camera.near = Math.max(nearPlane, this.camera.far / 1000);
+    this.camera.near = 0.1;
     this.camera.updateProjectionMatrix();
   }
 

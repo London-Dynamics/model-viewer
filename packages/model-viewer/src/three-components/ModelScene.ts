@@ -564,9 +564,15 @@ export class ModelScene extends Scene {
     }
   }
 
+  // farRadius() {
+  //   return this.boundingSphere.radius *
+  //       (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1);
+  // }
+
+  // HACK
   farRadius() {
     return this.boundingSphere.radius *
-        (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1);
+        (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1) + 1000;
   }
 
   setGroundedSkybox() {
