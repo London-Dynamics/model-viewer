@@ -116,8 +116,10 @@ FILES_TO_PATCH_WITH_MINIFIED_BUNDLE=($(find "$DEPLOY_ROOT" -type f -name '*.html
 echo "🛠 Patching ${#FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]} HTML files..."
 
 for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
-  echo "🔧 Patching: $file_to_patch"
-  head -20 "$file_to_patch"
+  if [[ "$file_to_patch" == *"loading/index.html" ]]; then
+    echo "🔧 Patching: $file_to_patch"
+    tail -10 "$file_to_patch"
+  fi
 
   # Replace paths like ../../node_modules/... with vendor/
   sed -i.bak 's|\(\.\./\)*node_modules/|vendor/|g' "$file_to_patch"
@@ -129,8 +131,10 @@ for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
   sed -i.bak 's|model-viewer-effects\.js|model-viewer-effects.min.js|g' "$file_to_patch"
   rm "$file_to_patch.bak"
 
-  echo "After patching $file_to_patch:"
-  head -20 "$file_to_patch"
+  if [[ "$file_to_patch" == *"loading/index.html" ]]; then
+    echo "After patching $file_to_patch:"
+    tail -10 "$file_to_patch"
+  fi
 done
 
 echo "✅ Patch complete."
