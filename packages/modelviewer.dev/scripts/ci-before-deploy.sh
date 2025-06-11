@@ -120,23 +120,34 @@ cp -r ../../node_modules/web-animations-js/* $DEPLOY_ROOT/vendor/web-animations-
 
 FILES_TO_PATCH_WITH_MINIFIED_BUNDLE=($(find $DEPLOY_ROOT \( -type d -name node_modules -prune \) -o -type f | grep \.html))
 
+echo "🔍 Checking which files contain node_modules references:"
+grep -r 'node_modules/' "$DEPLOY_ROOT"/*.html || echo "No matches"
+
 for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
-  # Rewrite node_modules paths to vendor equivalents
-  sed -i.bak 's|\(\.\./\)*node_modules/@google/model-viewer|vendor/@google/model-viewer|g' "$file_to_patch"
-  sed -i.bak 's|\(\.\./\)*node_modules/@google/model-viewer-effects|vendor/@google/model-viewer-effects|g' "$file_to_patch"
-  sed -i.bak 's|\(\.\./\)*node_modules/js-beautify|vendor/js-beautify|g' "$file_to_patch"
-  sed -i.bak 's|\(\.\./\)*node_modules/web-animations-js|vendor/web-animations-js|g' "$file_to_patch"
+  # Rewrite long relative path to vendor
+  sed -i.bak -E 's|(\.\./)*node_modules/|vendor/|g' "$file_to_patch"
 
-  # Replace .js → .min.js
-  sed -i.bak 's|model-viewer.js|model-viewer.min.js|g' "$file_to_patch"
-  sed -i.bak 's|model-viewer-module.js|model-viewer-module.min.js|g' "$file_to_patch"
-  sed -i.bak 's|model-viewer-effects.js|model-viewer-effects.min.js|g' "$file_to_patch"
+  diff "$file_to_patch.bak" "$file_to_patch" || echo "No changes to $file_to_patch"
 
+  rm "$file_to_patch.bak"
+
+  # Replace .js files with .min.js
+  sed -i.bak 's|model-viewer\.js|model-viewer.min.js|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  sed -i.bak 's|model-viewer-module\.js|model-viewer-module.min.js|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  sed -i.bak 's|model-viewer-effects\.js|model-viewer-effects.min.js|g' "$file_to_patch"
   rm "$file_to_patch.bak"
 done
 
+echo "✅ Patched files:"
+grep -r 'vendor/@google/model-viewer' "$DEPLOY_ROOT"/*.html || echo "No vendor references found"
+
 echo "📁 Final deploy tree:"
 find $DEPLOY_ROOT | sort
+
 
 # Add a "VERSION" file containing the last git commit message
 git log -n 1 > $DEPLOY_ROOT/VERSION
