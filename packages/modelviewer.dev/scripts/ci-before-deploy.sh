@@ -113,23 +113,36 @@ cp examples/fidelity.html $DEPLOY_ROOT/fidelity/index.html
 cp ../space-opera/editor/index.html $DEPLOY_ROOT/editor/
 cp ../space-opera/editor/view/index.html $DEPLOY_ROOT/editor/view/
 cp ../space-opera/dist/space-opera.js $DEPLOY_ROOT/space-opera.js
-cp ../model-viewer/dist/* $DEPLOY_ROOT/vendor/@google/model-viewer/dist/
-cp ../model-viewer-effects/dist/* $DEPLOY_ROOT/vendor/@google/model-viewer-effects/dist/
-cp -r ../../node_modules/js-beautify/* $DEPLOY_ROOT/vendor/js-beautify
-cp -r ../../node_modules/web-animations-js/* $DEPLOY_ROOT/vendor/web-animations-js
+cp ../model-viewer/dist/* $DEPLOY_ROOT/node_modules/@google/model-viewer/dist/
+cp ../model-viewer-effects/dist/* $DEPLOY_ROOT/node_modules/@google/model-viewer-effects/dist/
+cp -r ../../node_modules/js-beautify/* $DEPLOY_ROOT/node_modules/js-beautify
+cp -r ../../node_modules/web-animations-js/* $DEPLOY_ROOT/node_modules/web-animations-js
 
 FILES_TO_PATCH_WITH_MINIFIED_BUNDLE=($(find $DEPLOY_ROOT \( -type d -name node_modules -prune \) -o -type f | grep \.html))
 
 for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
-  sed -i.bak 's model-viewer.js model-viewer.min.js g' $file_to_patch
-  rm $file_to_patch.bak
-  sed -i.bak 's model-viewer-module.js model-viewer-module.min.js g' $file_to_patch
-  rm $file_to_patch.bak
-  sed -i.bak 's model-viewer-effects.js model-viewer-effects.min.js g' $file_to_patch
-  rm $file_to_patch.bak
-  sed -i.bak 's ../../node_modules/ vendor/ g' $file_to_patch
-  rm $file_to_patch.bak
+  # Rewrite long relative path to vendor
+  sed -i.bak 's|\.\.\(/\.\.\)\{2,\}/node_modules/|vendor/|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  # Replace .js files with .min.js
+  sed -i.bak 's|model-viewer\.js|model-viewer.min.js|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  sed -i.bak 's|model-viewer-module\.js|model-viewer-module.min.js|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  sed -i.bak 's|model-viewer-effects\.js|model-viewer-effects.min.js|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  sed -i.bak 's|\.\.\(/\.\.\)\{2,\}/node_modules/js-beautify/|vendor/js-beautify/|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
+  sed -i.bak 's|\.\.\(/\.\.\)\{2,\}/node_modules/web-animations-js/|vendor/web-animations-js/|g' "$file_to_patch"
+  rm "$file_to_patch.bak"
+
 done
+
 
 echo "📁 Final deploy tree:"
 find $DEPLOY_ROOT | sort
