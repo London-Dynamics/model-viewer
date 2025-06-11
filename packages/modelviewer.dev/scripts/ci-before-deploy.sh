@@ -121,32 +121,22 @@ cp -r ../../node_modules/web-animations-js/* $DEPLOY_ROOT/vendor/web-animations-
 FILES_TO_PATCH_WITH_MINIFIED_BUNDLE=($(find $DEPLOY_ROOT \( -type d -name node_modules -prune \) -o -type f | grep \.html))
 
 for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
-  # Rewrite long relative path to vendor
-  sed -i.bak 's|\(\.\.\/\)\{1,\}node_modules/|vendor/|g' "$file_to_patch"
-  rm "$file_to_patch.bak"
+  # Rewrite node_modules paths to vendor equivalents
+  sed -i.bak 's|\(\.\./\)*node_modules/@google/model-viewer|vendor/@google/model-viewer|g' "$file_to_patch"
+  sed -i.bak 's|\(\.\./\)*node_modules/@google/model-viewer-effects|vendor/@google/model-viewer-effects|g' "$file_to_patch"
+  sed -i.bak 's|\(\.\./\)*node_modules/js-beautify|vendor/js-beautify|g' "$file_to_patch"
+  sed -i.bak 's|\(\.\./\)*node_modules/web-animations-js|vendor/web-animations-js|g' "$file_to_patch"
 
-  # Replace .js files with .min.js
-  sed -i.bak 's|model-viewer\.js|model-viewer.min.js|g' "$file_to_patch"
-  rm "$file_to_patch.bak"
+  # Replace .js → .min.js
+  sed -i.bak 's|model-viewer.js|model-viewer.min.js|g' "$file_to_patch"
+  sed -i.bak 's|model-viewer-module.js|model-viewer-module.min.js|g' "$file_to_patch"
+  sed -i.bak 's|model-viewer-effects.js|model-viewer-effects.min.js|g' "$file_to_patch"
 
-  sed -i.bak 's|model-viewer-module\.js|model-viewer-module.min.js|g' "$file_to_patch"
   rm "$file_to_patch.bak"
-
-  sed -i.bak 's|model-viewer-effects\.js|model-viewer-effects.min.js|g' "$file_to_patch"
-  rm "$file_to_patch.bak"
-
-  sed -i.bak 's|\.\.\(/\.\.\)\{2,\}/node_modules/js-beautify/|vendor/js-beautify/|g' "$file_to_patch"
-  rm "$file_to_patch.bak"
-
-  sed -i.bak 's|\.\.\(/\.\.\)\{2,\}/node_modules/web-animations-js/|vendor/web-animations-js/|g' "$file_to_patch"
-  rm "$file_to_patch.bak"
-
 done
-
 
 echo "📁 Final deploy tree:"
 find $DEPLOY_ROOT | sort
-
 
 # Add a "VERSION" file containing the last git commit message
 git log -n 1 > $DEPLOY_ROOT/VERSION
