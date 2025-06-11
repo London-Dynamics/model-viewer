@@ -100,14 +100,14 @@ set -x
 mkdir -p $DEPLOY_ROOT/fidelity
 mkdir -p $DEPLOY_ROOT/editor
 mkdir -p $DEPLOY_ROOT/editor/view
-mkdir -p $DEPLOY_ROOT/vendor
-mkdir -p $DEPLOY_ROOT/vendor/@google
-mkdir -p $DEPLOY_ROOT/vendor/@google/model-viewer
-mkdir -p $DEPLOY_ROOT/vendor/@google/model-viewer/dist
-mkdir -p $DEPLOY_ROOT/vendor/@google/model-viewer-effects
-mkdir -p $DEPLOY_ROOT/vendor/@google/model-viewer-effects/dist
-mkdir -p $DEPLOY_ROOT/vendor/js-beautify
-mkdir -p $DEPLOY_ROOT/vendor/web-animations-js
+mkdir -p $DEPLOY_ROOT/node_modules
+mkdir -p $DEPLOY_ROOT/node_modules/@google
+mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer
+mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer/dist
+mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer-effects
+mkdir -p $DEPLOY_ROOT/node_modules/@google/model-viewer-effects/dist
+mkdir -p $DEPLOY_ROOT/node_modules/js-beautify
+mkdir -p $DEPLOY_ROOT/node_modules/web-animations-js
 
 cp examples/fidelity.html $DEPLOY_ROOT/fidelity/index.html
 cp ../space-opera/editor/index.html $DEPLOY_ROOT/editor/
