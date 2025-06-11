@@ -142,11 +142,10 @@ for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
   rm "$file_to_patch.bak"
 done
 
-echo "✅ Patched files:"
-grep -r 'vendor/@google/model-viewer' "$DEPLOY_ROOT"/*.html || echo "No vendor references found"
+echo "❌ Files with unpatched node_modules references:"
+grep -r 'node_modules/' "$DEPLOY_ROOT"/*.html || echo "✅ All files patched"
 
-echo "📁 Final deploy tree:"
-find $DEPLOY_ROOT | sort
+grep -r 'model-viewer' "$DEPLOY_ROOT"/*.html
 
 
 # Add a "VERSION" file containing the last git commit message
