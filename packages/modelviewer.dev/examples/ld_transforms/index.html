@@ -17,20 +17,13 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <title>&lt;model-viewer&gt; LD Transforms Examples</title>
-    <meta charset="utf-8" />
-    <meta
-      name="description"
-      content="&lt;model-viewer&gt; scene graph examples"
-    />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>&lt;model-viewer&gt; LD Transforms</title>
+    <meta charset="utf-8">
+    <meta name="description" content="&lt;model-viewer&gt; LD Transforms examples">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
-    <link
-      rel="shortcut icon"
-      type="image/png"
-      href="../../assets/favicon.png"
-    />
+    <link rel="shortcut icon" type="image/png" href="../../assets/favicon.png" />
 
     <style>
       .controls {
@@ -98,12 +91,6 @@
         padding-bottom: 1rem;
       }
     </style>
-
-    <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
-    <script
-      src="../../node_modules/focus-visible/dist/focus-visible.js"
-      defer
-    ></script>
   </head>
   <body>
     <div class="examples-page">
@@ -650,6 +637,7 @@
         </div>
       </div>
     </div>
+
     <script
       type="module"
       src="../../examples/built/docs-and-examples.js"
@@ -671,6 +659,7 @@
       type="module"
       src="../../../model-viewer/dist/model-viewer.js"
     ></script>
-    <script src="/node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"></script>
+    <script type="module" src="../../../../node_modules/@google/model-viewer/dist/model-viewer.js">
+  </script>
   </body>
 </html>
