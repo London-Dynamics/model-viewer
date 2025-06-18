@@ -59,8 +59,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'disable-measurement-lines' })
     disableMeasurementLines: boolean = false;
 
-    // TODO @property measurement-overrides;
-
     protected [$measureContainer]: HTMLElement = this.shadowRoot!.querySelector(
       '.slot.ld-measure'
     ) as HTMLElement;
@@ -211,6 +209,12 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _updateMarkerText(boundingBox: Box3, object: Object3D) {
+      console.log(
+        '_updateMarkerText',
+        boundingBox,
+        object,
+        this._measureWidthElement
+      );
       if (
         !this._measureWidthElement ||
         !this._measureHeightElement ||
@@ -707,6 +711,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const inverseMatrix = new Matrix4().copy(object.matrixWorld).invert();
       lineParent.applyMatrix4(inverseMatrix);
 
+      console.group('_measureObject');
+      console.log('object === scene', object === scene);
+      console.log('scene', scene);
+      console.groupEnd();
+
       if (object === scene) {
         const target = scene.children.find((child) => child.name === 'Target');
         if (target) {
@@ -821,40 +830,44 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    private _handleLoad() {
-      this._setExtensionLineLength();
+    private _modelLoaded = false;
 
-      this._clearMeasurements();
+    private _handleProgress(event: Event) {
+      const progress = (event as any).detail.totalProgress;
+      const reason = (event as any).detail.reason;
 
-      const measureObjects = this._parseMeasureObjects();
-
-      // If we already had something selected, make sure the measurements are updated and visible.
-      if (!!this['measure']) {
-        if (!measureObjects.length) {
-          this._measureScene();
-        } else if (this._lastClickedObject) {
-          this._measureObject(this._lastClickedObject, true);
-        }
+      if (this._modelLoaded && reason === 'model-load' && progress < 1) {
+        this._modelLoaded = false;
       }
     }
 
-    private handleNewAttributes() {
-      this._clearMeasurements(true);
+    private _handleLoad() {
+      this._modelLoaded = true;
+
+      this._setExtensionLineLength();
+
+      this.handleNewAttributes();
+    }
+
+    private handleNewAttributes(resetEverything = false) {
+      this._clearMeasurements(resetEverything);
 
       const enabled = !!this['measure'];
 
       if (enabled) {
         this._handleCameraChange();
-      }
 
-      const measureObjects = this._parseMeasureObjects();
+        const measureObjects = this._parseMeasureObjects();
 
-      if (enabled && !measureObjects.length) {
-        this._measureScene();
-      } else if (enabled && measureObjects.length == 1) {
-        const object = this._findObjectByName(measureObjects[0]);
-        if (object) {
-          this._measureObject(object);
+        if (this._lastClickedObject) {
+          this._measureObject(this._lastClickedObject, true);
+        } else if (!measureObjects.length) {
+          this._measureScene();
+        } else if (measureObjects.length == 1) {
+          const object = this._findObjectByName(measureObjects[0]);
+          if (object) {
+            this._measureObject(object);
+          }
         }
       }
     }
@@ -862,21 +875,21 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
 
-      if (
-        changedProperties.has('measure') ||
-        changedProperties.has('measureObjects')
-      ) {
-        this.handleNewAttributes();
-      }
-
-      if (
-        (changedProperties.has('disableMeasurementLines') ||
-          changedProperties.has('measurementUnit') ||
-          changedProperties.has('measurementPrecision') ||
-          changedProperties.has('measurementOverrides')) &&
-        !!this['measure']
-      ) {
-        this._measureObject(this._lastClickedObject as Object3D, true);
+      if (this._modelLoaded) {
+        if (
+          changedProperties.has('measure') ||
+          changedProperties.has('measureObjects')
+        ) {
+          this.handleNewAttributes(true);
+        } else if (
+          (changedProperties.has('disableMeasurementLines') ||
+            changedProperties.has('measurementUnit') ||
+            changedProperties.has('measurementPrecision') ||
+            changedProperties.has('measurementOverrides')) &&
+          !!this['measure']
+        ) {
+          this.handleNewAttributes();
+        }
       }
     }
 
@@ -884,8 +897,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       super.connectedCallback();
 
       this.addEventListener('camera-change', this._handleCameraChange);
-
       this.addEventListener('load', this._handleLoad);
+      this.addEventListener('progress', this._handleProgress);
 
       const shadowRoot = this.shadowRoot;
 
@@ -933,8 +946,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       super.disconnectedCallback();
 
       this.removeEventListener('camera-change', this._handleCameraChange);
-
       this.removeEventListener('load', this._handleLoad);
+      this.removeEventListener('progress', this._handleProgress);
 
       this._measureWidthElement = null;
       this._measureHeightElement = null;
