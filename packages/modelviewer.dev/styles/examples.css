@@ -495,17 +495,6 @@ h4+h4 {
   border-radius: 0.5rem;
 }
 
-button {
-  font-family: inherit;
-  background-color: #fff;
-  border-radius: 0.2rem;
-  border: none;
-  padding: 0.24em 0.5em;
-  box-shadow: 1px 1px 2px #22222227;
-  cursor: pointer;
-  margin: 0.25em !important;
-}
-
 .sample pre::-webkit-scrollbar {
   width: 0.36rem;
   height: 0.36rem;
