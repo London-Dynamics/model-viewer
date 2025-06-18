@@ -32,26 +32,7 @@
       href="../../assets/favicon.png"
     />
 
-    <style>
-      .ld-ruler {
-        position: absolute;
-        font-size: 0.5rem;
-        background-color: cornflowerblue;
-        color: white;
-        padding: 0rem 0.4rem;
-        border-radius: 0.2rem;
-        white-space: nowrap;
-        font-weight: bold;
-      }
-    </style>
-
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
-
-    <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
-    <script
-      src="../../node_modules/focus-visible/dist/focus-visible.js"
-      defer
-    ></script>
   </head>
   <body>
     <div class="examples-page">
@@ -104,7 +85,9 @@
                     <div class="absolute bottom-0 inset-x-0 p-2">
                       <div class="bg-white shadow-sm rounded-lg">
                         <div class="px-4 py-5">
-                          <h3 class="text-base! m-0! text-gray-900">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
                             Control Panel
                           </h3>
                           <div
@@ -117,7 +100,7 @@
                                 <button
                                   id="toggle-rulers"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-indigo-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
                                   role="switch"
                                   aria-checked="false"
                                   aria-labelledby="enable-rulers-label"
@@ -140,7 +123,7 @@
                                 <button
                                   id="toggle-lines"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-indigo-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
                                   role="switch"
                                   aria-checked="true"
                                   aria-labelledby="enable-lines-label"
@@ -224,7 +207,7 @@
                                   id="measurePrecision"
                                   type="number"
                                   name="measurePrecision"
-                                  class="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-600 sm:text-sm/6"
+                                  class="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6"
                                   placeholder="42"
                                   value="2"
                                   min="0"
@@ -439,13 +422,22 @@
                     ar
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
-                    src="../../shared-assets/models/leanne-ford-table-scene.glb"
+                    src="../../shared-assets/models/textureCubes.gltf"
                     alt="An animated 3D model a bedside lamp"
                     measure
                   >
-                    <div slot="ruler-width" class="ld-ruler"></div>
-                    <div slot="ruler-height" class="ld-ruler"></div>
-                    <div slot="ruler-depth" class="ld-ruler"></div>
+                    <div
+                      slot="ruler-width"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                    <div
+                      slot="ruler-height"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                    <div
+                      slot="ruler-depth"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
                   </model-viewer>
                 </template>
               </example-snippet>
@@ -482,6 +474,6 @@
       type="module"
       src="../../../model-viewer/dist/model-viewer.js"
     ></script>
-    <script src="/node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"></script>
+    <!-- <script src="/node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"></script> -->
   </body>
 </html>
