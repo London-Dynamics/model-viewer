@@ -209,12 +209,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _updateMarkerText(boundingBox: Box3, object: Object3D) {
-      console.log(
-        '_updateMarkerText',
-        boundingBox,
-        object,
-        this._measureWidthElement
-      );
       if (
         !this._measureWidthElement ||
         !this._measureHeightElement ||
@@ -711,15 +705,22 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const inverseMatrix = new Matrix4().copy(object.matrixWorld).invert();
       lineParent.applyMatrix4(inverseMatrix);
 
-      console.group('_measureObject');
-      console.log('object === scene', object === scene);
-      console.log('scene', scene);
-      console.groupEnd();
-
       if (object === scene) {
-        const target = scene.children.find((child) => child.name === 'Target');
-        if (target) {
-          target.add(lineParent);
+        let targetObject: Object3D | undefined;
+
+        try {
+          scene.traverse((child) => {
+            if (child.name === 'Target') {
+              targetObject = child;
+              throw new Error('found target object'); // Stop traversal when found
+            }
+          });
+        } catch (e) {
+          if ((e as Error).message !== 'found target object') throw e;
+        }
+
+        if (targetObject) {
+          targetObject.add(lineParent);
         } else {
           console.warn('Target object not found in the scene.');
           scene.add(lineParent); // Fallback to adding to the scene if Target is not found
