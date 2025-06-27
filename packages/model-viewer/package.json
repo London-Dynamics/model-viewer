@@ -93,6 +93,7 @@
     "@rollup/plugin-commonjs": "^28.0.3",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@rollup/plugin-replace": "^6.0.2",
+    "@types/chai": "^4.3.19",
     "@types/mocha": "^10.0.10",
     "@types/pngjs": "^6.0.5",
     "@types/three": "^0.172.0",
