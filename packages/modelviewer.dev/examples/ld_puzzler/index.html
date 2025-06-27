@@ -23,10 +23,14 @@
       name="description"
       content="&lt;model-viewer&gt; LD Puzzler examples"
     />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
-    <link rel="shortcut icon" type="image/png" href="../../assets/favicon.png" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
 
     <style>
       .controls {
@@ -74,7 +78,6 @@
       }
       .controls button:hover {
         background: #eee;
-
       }
       .controls button:active {
         background: cornflowerblue;
@@ -95,7 +98,6 @@
         padding-bottom: 1rem;
       }
     </style>
-
   </head>
   <body>
     <div class="examples-page">
@@ -110,12 +112,14 @@
                 <span class="font-medium">LD Puzzler</span> by
                 <a href="https://londondynamics.com" target="_blank"
                   >London Dynamics</a
-                >. This page showcases various utility functions used by Client-side Puzzler.
+                >. This page showcases various utility functions used by
+                Client-side Puzzler.
               </h4>
               <div class="heading">
                 <h2 class="demo-title">Buffer, not SRC!</h2>
                 <h4>
-                  <span class="attribute">setSrcFromBuffer()</span> – Update the source from an ArrayBuffer instead of URL.
+                  <span class="attribute">setSrcFromBuffer()</span> – Update the
+                  source from an ArrayBuffer instead of URL.
                 </h4>
               </div>
               <example-snippet
@@ -132,53 +136,78 @@
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
                   >
-  <div id="buffer-swap" class="controls flex-row gap-3">
-    <button type="button" class="load-buffer" data-filename="model_size_485.buffer">📼 Load 485</button>
-    <button type="button" class="load-buffer" data-filename="model_size_510.buffer">📼 Load 510</button>
-  </div>
-</model-viewer>
-<script>
-  function parseArrayBufferString(string) {
-    return new Uint8Array(string.split(",")).buffer;
-  }
-</script>
-<script type="module">
-  (() => {
-    const modelViewer =
-      document.querySelector('#puzzler-demo');
+                    <div id="buffer-swap" class="controls flex-row gap-3">
+                      <button
+                        type="button"
+                        class="load-buffer"
+                        data-filename="model_size_485.buffer"
+                      >
+                        📼 Load 485
+                      </button>
+                      <button
+                        type="button"
+                        class="load-buffer"
+                        data-filename="model_size_510.buffer"
+                      >
+                        📼 Load 510
+                      </button>
+                    </div>
+                  </model-viewer>
+                  <script>
+                    function parseArrayBufferString(string) {
+                      return new Uint8Array(string.split(',')).buffer;
+                    }
+                  </script>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#puzzler-demo');
 
-    document.querySelectorAll('.load-buffer').forEach((button) => {
-      button.addEventListener('click', async (e) => {
-        const {filename} = e.target.dataset;
+                      document
+                        .querySelectorAll('.load-buffer')
+                        .forEach((button) => {
+                          button.addEventListener('click', async (e) => {
+                            const { filename } = e.target.dataset;
 
-        console.log("Fetching buffer string from file: ", filename);
+                            console.log(
+                              'Fetching buffer string from file: ',
+                              filename
+                            );
 
-        const bufferString = await fetch(`../../../shared-assets/buffers/${filename}`)
-          .then((response) => response.text());
+                            const bufferString = await fetch(
+                              `../../../shared-assets/buffers/${filename}`
+                            ).then((response) => response.text());
 
-        console.log("Buffer string fetched: ", bufferString.length, "bytes");
-        console.log("Converting to ArrayBuffer before passing to function...")
+                            console.log(
+                              'Buffer string fetched: ',
+                              bufferString.length,
+                              'bytes'
+                            );
+                            console.log(
+                              'Converting to ArrayBuffer before passing to function...'
+                            );
 
-        const arrayBuffer = parseArrayBufferString(bufferString);
+                            const arrayBuffer =
+                              parseArrayBufferString(bufferString);
 
-        console.log("Done");
+                            console.log('Done');
 
-        modelViewer.setSrcFromBuffer(arrayBuffer);
-      });
-    });
-
-  })();
-</script>
+                            modelViewer.setSrcFromBuffer(arrayBuffer);
+                          });
+                        });
+                    })();
+                  </script>
                 </template>
               </example-snippet>
             </div>
           </div>
         </div>
 
-
         <div class="footer">
           <ul></ul>
-          <div style="margin-top:24px;" class="copyright">©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.</div>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
           <div id="footer-links"></div>
         </div>
       </div>
@@ -203,9 +232,7 @@
     <!-- Loads <model-viewer> on modern browsers: -->
     <script
       type="module"
-      src="../../../model-viewer/dist/model-viewer.js"
+      src="/node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
     ></script>
-    <script type="module" src="../../../../node_modules/@google/model-viewer/dist/model-viewer.js">
-  </script>
   </body>
 </html>
