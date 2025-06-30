@@ -179,9 +179,13 @@ class Cursor extends Object3D {
   }
 }
 
+// Global variable for drop height (in meters)
+const DROP_HEIGHT = 0.5;
+
 export type PlacementOptions = {
   name?: string;
   position?: { x: number; y: number; z: number };
+  mass?: number; // Mass in kg, affects fall speed
 };
 
 export declare interface LDPuzzlerInterface {
@@ -296,23 +300,52 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               (options.name ||
                 `model-${Math.random().toString(36).substring(2, 9)}`);
             if (targetObject) {
-              // Position the model - use options.position if provided, otherwise use floor positioning
+              let finalPosition: { x: number; y: number; z: number };
+
+              // Determine the final floor position
               if (options.position) {
-                gltf.scene.position.set(
-                  options.position.x,
-                  options.position.y,
-                  options.position.z
-                );
+                // Use provided position but ensure Y is at floor level for gravity calculation
+                const floorY = this[$scene].boundingBox
+                  ? this[$scene].boundingBox.min.y
+                  : 0;
+                finalPosition = {
+                  x: options.position.x,
+                  y: floorY,
+                  z: options.position.z,
+                };
               } else {
-                // Position the model at the scene's floor level
+                // Calculate floor position automatically
                 this.positionModelAtFloor(gltf.scene);
+                finalPosition = {
+                  x: gltf.scene.position.x,
+                  y: gltf.scene.position.y,
+                  z: gltf.scene.position.z,
+                };
               }
 
-              // If a target object is found, add the model to it
+              // Set initial position above the final position
+              const dropStartY = finalPosition.y + DROP_HEIGHT;
+              gltf.scene.position.set(
+                finalPosition.x,
+                dropStartY,
+                finalPosition.z
+              );
+
+              // Add model to scene first
               targetObject.add(gltf.scene);
               this[$scene].updateBoundingBox();
               this[$scene].updateShadow();
               this[$needsRender]();
+
+              // Start gravity animation
+              const mass = options.mass || 1.0; // Default mass of 1kg
+              this.animateGravityFall(
+                gltf.scene,
+                dropStartY,
+                finalPosition.y,
+                mass
+              );
+
               console.log('scene', this[$scene]);
               resolve();
             } else {
@@ -376,6 +409,52 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
         );
       });
+    }
+
+    private animateGravityFall(
+      model: Object3D,
+      startY: number,
+      targetY: number,
+      mass: number = 1.0
+    ) {
+      const gravity = 10; // m/s²
+      const timeScale = 1000; // Convert to milliseconds
+
+      // Calculate fall time based on physics: t = sqrt(2h/g)
+      const fallDistance = startY - targetY;
+      const fallTime = Math.sqrt((2 * fallDistance) / gravity) * timeScale;
+
+      // Add some variation based on mass (heavier objects fall slightly faster due to less air resistance)
+      const massModifier = Math.min(1.0 + (mass - 1.0) * 0.1, 2.0);
+      const adjustedFallTime = fallTime / massModifier;
+
+      const startTime = performance.now();
+
+      const animate = (currentTime: number) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / adjustedFallTime, 1.0);
+
+        // Use quadratic easing for realistic gravity acceleration
+        const easedProgress = progress * progress;
+
+        // Calculate current position
+        const currentY = startY - fallDistance * easedProgress;
+        model.position.y = Math.max(currentY, targetY);
+
+        // Trigger render
+        this[$needsRender]();
+
+        // Continue animation if not finished
+        if (progress < 1.0) {
+          requestAnimationFrame(animate);
+        } else {
+          // Ensure final position is exact
+          model.position.y = targetY;
+          this[$needsRender]();
+        }
+      };
+
+      requestAnimationFrame(animate);
     }
 
     connectedCallback() {

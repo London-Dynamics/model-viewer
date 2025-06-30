@@ -136,6 +136,7 @@
                                 class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                                 data-filename="glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
                                 data-name="duck"
+                                data-mass="1"
                               >
                                 🦆
                               </button>
@@ -144,6 +145,7 @@
                                 class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                                 data-filename="Astronaut.glb"
                                 data-name="astronaut"
+                                data-mass="80"
                               >
                                 👨‍🚀
                               </button>
@@ -198,6 +200,7 @@
                                 modelViewer.placeGLB(filePath, {
                                   name: dragData.name || undefined,
                                   position,
+                                  mass: dragData.mass,
                                 });
                               }
                             }
@@ -221,6 +224,7 @@
                             dragData = {
                               filename: e.target.dataset.filename,
                               name: e.target.dataset.name || undefined,
+                              mass: parseFloat(e.target.dataset.mass) || 1.0,
                             };
                             modelViewer.showPlacementCursor();
 
@@ -246,11 +250,12 @@
 
                             const options = {
                               name: e.target.dataset.name || undefined,
+                              mass: parseFloat(e.target.dataset.mass) || 1.0,
                             };
 
                             const filePath = `../../shared-assets/models/${e.target.dataset.filename}`;
 
-                            modelViewer.placeGLB(filename, options);
+                            modelViewer.placeGLB(filePath, options);
                           });
                         });
 
