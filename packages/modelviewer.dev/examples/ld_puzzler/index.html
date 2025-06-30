@@ -60,7 +60,7 @@
               <example-snippet stamp-to="place-glb" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../../shared-assets/models/cube.gltf"
+                    src="../../shared-assets/models/cube.gltf"
                     id="place-glb-demo"
                     camera-controls
                     interaction-prompt="none"
@@ -194,7 +194,7 @@
                                 modelViewer.getPlacementCursorPosition();
                               modelViewer.hidePlacementCursor();
                               if (position) {
-                                const filePath = `../../../shared-assets/models/${dragData.filename}`;
+                                const filePath = `../../shared-assets/models/${dragData.filename}`;
                                 modelViewer.placeGLB(filePath, {
                                   name: dragData.name || undefined,
                                   position,
@@ -248,7 +248,7 @@
                               name: e.target.dataset.name || undefined,
                             };
 
-                            const filePath = `../../../shared-assets/models/${e.target.dataset.filename}`;
+                            const filePath = `../../shared-assets/models/${e.target.dataset.filename}`;
 
                             modelViewer.placeGLB(filename, options);
                           });
@@ -380,7 +380,7 @@
                             );
 
                             const bufferString = await fetch(
-                              `../../../shared-assets/buffers/${filename}`
+                              `../../shared-assets/buffers/${filename}`
                             ).then((response) => response.text());
 
                             console.log(
