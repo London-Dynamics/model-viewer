@@ -40,7 +40,7 @@
       <div id="toggle"></div>
       <div class="examples-container">
         <div class="sample">
-          <div id="set-src-from-buffer" class="demo"></div>
+          <div id="place-glb" class="demo"></div>
           <div class="content">
             <div class="wrapper">
               <h4 id="intro">
@@ -50,6 +50,261 @@
                 >. This page showcases various utility functions used by
                 Client-side Puzzler.
               </h4>
+              <div class="heading">
+                <h2 class="demo-title">Place a GLB into the scene</h2>
+                <h4>
+                  <span class="attribute">placeGLB()</span> – adds more geometry
+                  to the scene.
+                </h4>
+              </div>
+              <example-snippet stamp-to="place-glb" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../../shared-assets/models/cube.gltf"
+                    id="place-glb-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    max-field-of-view="180"
+                    field-of-view="10deg"
+                  >
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div class="flex gap-2">
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-cursor"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="show-cursor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="show-cursor-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Show Cursor</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="follow-mouse"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="follow-mouse-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="follow-mouse-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Follow Mouse</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                            <div class="flex gap-2">
+                              <button
+                                type="button"
+                                class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
+                                data-name="duck"
+                              >
+                                🦆
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="Astronaut.glb"
+                                data-name="astronaut"
+                              >
+                                👨‍🚀
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#place-glb-demo');
+
+                      document
+                        .querySelectorAll('.place-glb')
+                        .forEach((button) => {
+                          let isDragging = false;
+                          let mouseDownTime = 0;
+                          let dragData = null;
+
+                          // Global mouse move listener to track dragging outside button
+                          const handleGlobalMouseMove = (e) => {
+                            if (e.buttons > 0 && dragData) {
+                              // Mouse button is pressed and we have drag data
+                              isDragging = true;
+
+                              modelViewer.updatePlacementCursorPosition(
+                                e.clientX,
+                                e.clientY
+                              );
+                            }
+                          };
+
+                          // Global mouse up listener to handle drop
+                          const handleGlobalMouseUp = (e) => {
+                            if (isDragging && dragData) {
+                              console.log(
+                                'Drop detected at:',
+                                e.clientX,
+                                e.clientY
+                              );
+                              // TODO: Handle drop logic here
+                              // Check if dropped on modelViewer, etc.
+
+                              const position =
+                                modelViewer.getPlacementCursorPosition();
+                              modelViewer.hidePlacementCursor();
+                              if (position) {
+                                const filePath = `../../../shared-assets/models/${dragData.filename}`;
+                                modelViewer.placeGLB(filePath, {
+                                  name: dragData.name || undefined,
+                                  position,
+                                });
+                              }
+                            }
+
+                            // Cleanup
+                            isDragging = false;
+                            dragData = null;
+                            document.removeEventListener(
+                              'mousemove',
+                              handleGlobalMouseMove
+                            );
+                            document.removeEventListener(
+                              'mouseup',
+                              handleGlobalMouseUp
+                            );
+                          };
+
+                          button.addEventListener('mousedown', (e) => {
+                            isDragging = false;
+                            mouseDownTime = Date.now();
+                            dragData = {
+                              filename: e.target.dataset.filename,
+                              name: e.target.dataset.name || undefined,
+                            };
+                            modelViewer.showPlacementCursor();
+
+                            // Add global listeners when mouse down starts
+                            document.addEventListener(
+                              'mousemove',
+                              handleGlobalMouseMove
+                            );
+                            document.addEventListener(
+                              'mouseup',
+                              handleGlobalMouseUp
+                            );
+                          });
+
+                          button.addEventListener('click', async (e) => {
+                            // Don't trigger if user was dragging or if it was a very brief click (potential start of drag)
+                            if (
+                              isDragging ||
+                              Date.now() - mouseDownTime < 100
+                            ) {
+                              return;
+                            }
+
+                            const options = {
+                              name: e.target.dataset.name || undefined,
+                            };
+
+                            const filePath = `../../../shared-assets/models/${e.target.dataset.filename}`;
+
+                            modelViewer.placeGLB(filename, options);
+                          });
+                        });
+
+                      document
+                        .getElementById('toggle-cursor')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.hidePlacementCursor();
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.showPlacementCursor();
+                          }
+                        });
+
+                      // Handle follow mouse toggle
+                      let isFollowingMouse = false;
+
+                      document
+                        .getElementById('follow-mouse')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            isFollowingMouse = false;
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            isFollowingMouse = true;
+                          }
+                        });
+
+                      // Handle mouse movement for cursor tracking
+                      modelViewer.addEventListener('mousemove', (e) => {
+                        if (isFollowingMouse) {
+                          // Pass raw client coordinates - let TypeScript handle the conversion
+                          modelViewer.updatePlacementCursorPosition(
+                            e.clientX,
+                            e.clientY
+                          );
+                        }
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="set-src-from-buffer" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
               <div class="heading">
                 <h2 class="demo-title">Buffer, not SRC!</h2>
                 <h4>
@@ -82,7 +337,7 @@
                           <div
                             class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
                           >
-                            <div class="flex gap-2">
+                            <div class="flex">
                               <button
                                 type="button"
                                 class="load-buffer rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
