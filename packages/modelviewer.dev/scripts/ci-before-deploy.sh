@@ -122,6 +122,8 @@ cp -r ../../node_modules/web-animations-js/* $DEPLOY_ROOT/node_modules/web-anima
 FILES_TO_PATCH_WITH_MINIFIED_BUNDLE=($(find $DEPLOY_ROOT \( -type d -name node_modules -prune \) -o -type f | grep \.html))
 
 for file_to_patch in "${FILES_TO_PATCH_WITH_MINIFIED_BUNDLE[@]}"; do
+  sed -i.bak 's @london-dynamics @google g' $file_to_patch
+  rm $file_to_patch.bak
   sed -i.bak 's model-viewer.js model-viewer.min.js g' $file_to_patch
   rm $file_to_patch.bak
   sed -i.bak 's model-viewer-module.js model-viewer-module.min.js g' $file_to_patch
