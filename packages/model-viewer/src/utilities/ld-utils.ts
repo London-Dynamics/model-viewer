@@ -1,20 +1,30 @@
 export const metersToFeet = (meters: number, precision: number = 1) =>
-  (meters * 3.28084).toFixed(precision);
+  (meters * 3.28084).toFixed(precision) + `'`;
 
 export const metersToInches = (meters: number, precision: number = 1) =>
-  (meters * 39.3701).toFixed(precision);
+  (meters * 39.3701).toFixed(precision) + `"`;
+
+export const metersToFeetAndInches = (
+  meters: number,
+  precision: number = 1
+) => {
+  const feet = Math.floor(parseFloat(metersToFeet(meters, precision)));
+  const inches =
+    Math.round((parseFloat(metersToInches(meters, precision)) % 12) * 10) / 10; // Round to one decimal place
+  return `${feet}' ${inches}"`;
+};
 
 export const metersToYards = (meters: number, precision: number = 1) =>
-  (meters * 1.09361).toFixed(precision);
+  (meters * 1.09361).toFixed(precision) + ' yd';
 
 export const metersToMiles = (meters: number, precision: number = 1) =>
-  (meters * 0.000621371).toFixed(precision);
+  (meters * 0.000621371).toFixed(precision) + ' mi';
 
 export const metersToCentimeters = (meters: number, precision: number = 1) =>
-  (meters * 100).toFixed(precision);
+  (meters * 100).toFixed(precision) + ' cm';
 
 export const metersToMillimeters = (meters: number, precision: number = 1) =>
-  (meters * 1000).toFixed(precision);
+  (meters * 1000).toFixed(precision) + ' mm';
 
 export const convertMeters = (
   meters: number,
@@ -26,6 +36,8 @@ export const convertMeters = (
       return metersToFeet(meters, precision);
     case 'in':
       return metersToInches(meters, precision);
+    case 'ft-in':
+      return metersToFeetAndInches(meters, precision);
     case 'yd':
       return metersToYards(meters, precision);
     case 'mi':
@@ -35,7 +47,7 @@ export const convertMeters = (
     case 'mm':
       return metersToMillimeters(meters, precision);
     default:
-      return meters.toFixed(precision);
+      return meters.toFixed(precision) + ' m';
   }
 };
 
