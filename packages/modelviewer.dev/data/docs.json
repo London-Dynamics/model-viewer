@@ -7,9 +7,7 @@
         "name": "src",
         "htmlName": "src",
         "description": "The URL to the 3D model. Only <a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0\">glTF</a>/<a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#glb-file-format-specification\">GLB</a> models are supported.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -19,9 +17,7 @@
         "name": "alt",
         "htmlName": "alt",
         "description": "Configures the model with custom text that will be used to describe the model to viewers who use a screen reader or otherwise depend on additional semantic context to understand what they are viewing.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any description"
@@ -31,9 +27,7 @@
         "name": "poster",
         "htmlName": "poster",
         "description": "Displays an image instead of the model, useful for showing the user something before a model is loaded and ready to render.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -43,9 +37,7 @@
         "name": "loading",
         "htmlName": "loading",
         "description": "An enumerable attribute describing under what conditions the model should be preloaded. The supported values are \"auto\", \"lazy\" and \"eager\". Auto is equivalent to lazy, which loads the model when it is near the viewport for <span class='attribute'>reveal=\"auto\"</span>, and when interacted with for <span class='attribute'>reveal=\"interaction\"</span>. Eager loads the model immediately.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "auto",
           "options": "auto, lazy, eager"
@@ -55,9 +47,7 @@
         "name": "reveal",
         "htmlName": "reveal",
         "description": "This attribute controls when the model should be revealed. If <span class='attribute'>reveal</span> is set to \"auto\", the model will be revealed as soon as it is done loading and rendering. If <span class='attribute'>reveal</span> is set to \"manual\", the model will remain hidden until <span class='attribute'>dismissPoster()</span> is called.",
-        "links": [
-          "<a href=\"../examples/loading\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
         "default": {
           "default": "auto",
           "options": "auto, manual"
@@ -239,7 +229,7 @@
       },
       {
         "name": "before-render",
-        "htmlName": "before-render",
+        "htmlName": "before_render",
         "description": "Fired when a model is loaded, before the first render frame. Can fire multiple times per <span class=\"attribute\">&lt;model-viewer&gt;</span> if the <span class='attribute'>src</span> attribute is changed."
       },
       {
@@ -491,7 +481,7 @@
       },
       {
         "name": "touch-action",
-        "htmlName": "touch-action",
+        "htmlName": "touch_action",
         "description": "Akin to the CSS touch-action property (which does not work due to some iOS bugs), the default 'pan-y' allows touch users to vertically scroll the <span class=\"attribute\">&lt;model-viewer&gt;</span> element, but can interact if their gesture starts horizontal. Legacy behavior can be achieved with 'none', where all scrolling is prevented, while 'pan-x' is the opposite of 'pan-y'. The normal CSS default 'auto' is not allowed here, as this can be achieved by not including the <span class='attribute'>camera-controls</span> attribute.",
         "default": {
           "default": "pan-y",
@@ -500,7 +490,7 @@
       },
       {
         "name": "disable-zoom",
-        "htmlName": "disable-zoom",
+        "htmlName": "disable_zoom",
         "description": "Disables user zoom when <span class=\"attribute\">camera-controls</span> is enabled (has no effect otherwise). Has the secondary effect of not swallowing mouse wheel events and pinch gestures, so these will then scroll and zoom the page, respectively.",
         "links": [
           "<a href=\"../examples/stagingandcameras/#disableZoom\"><span class='attribute'>disable-zoom</span> example</a>"
@@ -798,9 +788,7 @@
         "name": "--min-hotspot-opacity",
         "htmlName": "minHotspotOpacity",
         "description": "Sets the opacity of hidden hotspots.",
-        "links": [
-          "<a href=\"../examples/annotations/\">Related examples</a>"
-        ],
+        "links": ["<a href=\"../examples/annotations/\">Related examples</a>"],
         "default": {
           "default": "0.25",
           "options": "any value between 0 and 1"
@@ -1075,12 +1063,12 @@
       },
       {
         "name": "append-animation",
-        "htmlName": "append-animation",
+        "htmlName": "append_animation",
         "description": "Dispatched when an animation append to current animation."
       },
       {
         "name": "detach-animation",
-        "htmlName": "detach-animation",
+        "htmlName": "detach_animation",
         "description": "Dispatched when appended animation detached."
       }
     ]
@@ -1382,7 +1370,7 @@
     "Methods": [
       {
         "name": "toggleLights()",
-        "htmlName": "toggle-lights",
+        "htmlName": "toggle_lights",
         "description": "Toggle lights in scene. If lights are on, they will be turned off, and vice versa. Add a boolean argument to force lights on or off.",
         "links": [
           "<a href=\"../examples/ld-lights/#toggle-lights\">Related examples</a>"
@@ -1496,14 +1484,62 @@
   {
     "Title": "LD Puzzler",
     "htmlName": "ld_puzzler",
+    "Attributes": [
+      {
+        "name": "placement-cursor",
+        "htmlName": "placementCursor",
+        "description": "Enables interactive placement cursor that follows mouse movement over the model. When enabled, the cursor shows where a new GLB model would be placed using the placeGLB() method.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "placement-cursor-size",
+        "htmlName": "placementCursorSize",
+        "description": "Controls the diameter of the placement cursor in meters. This visual indicator shows the size of the area where a new model will be placed.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
+        ],
+        "default": {
+          "default": "0.5",
+          "options": "any positive number (meters)"
+        }
+      }
+    ],
     "Methods": [
       {
-        "name": "setSrcFromBuffer(ArrayBuffer)",
+        "name": "setSrcFromBuffer(buffer: ArrayBuffer)",
         "htmlName": "setSrcFromBuffer",
-        "description": "If you've got an ArrayBuffer, turn it into a src Model Viewer can use.",
+        "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",
         "links": [
-          "<a href=\"../examples/ld-puzzler/#set-src-from-buffer\">Related examples</a>"
+          "<a href=\"../examples/ld_puzzler/#set-src-from-buffer\">Related examples</a>"
         ]
+      },
+      {
+        "name": "placeGLB(src: string, options?: PlacementOptions)",
+        "htmlName": "placeGLB",
+        "description": "Dynamically adds a GLB model to the scene with physics-based placement. The model will drop from above and settle on the surface. Options include name, position, and mass for realistic gravity simulation.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getPlacementCursorPosition()",
+        "htmlName": "getPlacementCursorPosition",
+        "description": "Returns the current world position of the placement cursor as an object with x, y, z coordinates in meters. Returns null if the placement cursor is not visible or enabled.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "deDraco(inputBuffer: ArrayBuffer)",
+        "htmlName": "deDraco",
+        "description": "Removes DRACO compression from a GLB file provided as an ArrayBuffer. Returns a Promise that resolves to an uncompressed GLB ArrayBuffer. This is useful for compatibility with systems that don't support DRACO compression.",
+        "links": ["<a href=\"../examples/ld_puzzler\">Related examples</a>"]
       }
     ]
   }

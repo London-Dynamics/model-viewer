@@ -378,8 +378,12 @@
     "htmlName": "ld_puzzler",
     "examples": [
       {
-        "htmlId": "array-buffer",
-        "name": "Load from ArrayBuffer"
+        "htmlId": "place-glb",
+        "name": "Place a GLB into the scene"
+      },
+      {
+        "htmlId": "set-src-from-buffer",
+        "name": "Buffer, not SRC!"
       }
     ]
   }
