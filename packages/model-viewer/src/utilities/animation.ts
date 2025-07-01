@@ -148,17 +148,26 @@ export const animateGravityFall = (
   // Make fall time shorter for better responsiveness (minimum 200ms, max 800ms)
   const adjustedFallTime = Math.max(200, Math.min(800, baseFallTime * 0.7));
 
-  // Bounce parameters based on mass
-  const baseBounceHeight = fallDistance * 0.15; // Reduce bounce height to 15%
+  // Bounce parameters based on mass - increased for better visual feedback
+  const baseBounceHeight = fallDistance * 0.2; // Increase base bounce height to 20%
   const massInverse = 1.0 / Math.max(mass, 0.1);
-  const bounceHeight = baseBounceHeight * Math.min(massInverse * 0.8, 1.0); // More reasonable bounce scaling
+  // Ensure minimum bounce even for heavy objects
+  const minBounceRatio = 0.15; // Minimum 15% of base bounce for any object
+  const bounceHeight =
+    baseBounceHeight *
+    Math.max(minBounceRatio, Math.min(massInverse * 1.2, 1.0));
   const bounceCount = Math.floor(2 + massInverse * 1.5); // 2-4 bounces max
-  const bounceDamping = 0.7 + (mass - 1.0) * 0.05; // Better damping
+  const bounceDamping = 0.65 + (mass - 1.0) * 0.03; // Slightly less damping for more bounce
 
-  // Wobble parameters
-  const wobbleIntensity = Math.min(massInverse * 0.06, 0.1); // Slightly less wobble
-  const wobbleFrequency = 6 + massInverse * 3; // Adjusted frequency
-  const wobbleDuration = 800 + mass * 100; // Shorter wobble duration
+  // Wobble parameters - reduced even further
+  // Heavier objects wobble more (opposite of physics) but very subtly
+  const massWobbleFactor = Math.min(mass / 40.0, 0.6); // Even more subtle increase for heavier objects
+  const wobbleIntensity = Math.min(0.003 + massWobbleFactor * 0.008, 0.015); // Much reduced wobble
+  const wobbleFrequency = 6 + massWobbleFactor * 1.2; // Slightly higher frequency for heavier objects
+  // Longer wobble duration for light objects to avoid abrupt ending
+  const baseDuration = 800;
+  const massAdjustment = mass < 2 ? (2 - mass) * 400 : mass * 60; // Extra time for very light objects
+  const wobbleDuration = baseDuration + massAdjustment;
 
   console.log('Animation parameters:', {
     adjustedFallTime,
@@ -220,7 +229,7 @@ export const animateGravityFall = (
       const bounceElapsed = currentTime - bounceStartTime;
       const bounceTime =
         Math.sqrt((2 * currentBounceHeight) / gravity) * timeScale;
-      const totalBounceTime = bounceTime * 2; // Up and down
+      const totalBounceTime = bounceTime * 2.5; // Slower bounces - increased from 2 to 2.5
 
       if (bounceElapsed < totalBounceTime && currentBounce < bounceCount) {
         // Calculate bounce position
@@ -262,7 +271,9 @@ export const animateGravityFall = (
     const wobbleElapsed = currentTime - wobbleStartTime;
     if (wobbleStartTime > 0 && wobbleElapsed < wobbleDuration) {
       const wobbleProgress = wobbleElapsed / wobbleDuration;
-      const wobbleDecay = Math.pow(1 - wobbleProgress, 2); // Quadratic decay
+      // Smoother decay for light objects, more abrupt for heavy objects
+      const decayPower = mass < 3 ? 3 : 2; // Gentler decay for light objects
+      const wobbleDecay = Math.pow(1 - wobbleProgress, decayPower);
       const wobbleAmount = wobbleIntensity * wobbleDecay;
 
       // Create subtle wobble on X and Z axes
@@ -272,11 +283,18 @@ export const animateGravityFall = (
 
       model.rotation.x = initialRotation.x + wobbleX;
       model.rotation.z = initialRotation.z + wobbleZ;
+
+      // Ensure Y position stays at target during wobble
+      if (bouncePhaseComplete) {
+        model.position.y = targetY;
+      }
     } else if (wobbleStartTime > 0) {
       // Reset rotation to initial values
       model.rotation.x = initialRotation.x;
       model.rotation.y = initialRotation.y;
       model.rotation.z = initialRotation.z;
+      // Ensure final Y position
+      model.position.y = targetY;
     }
 
     // Trigger render
