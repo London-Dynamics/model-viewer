@@ -13,35 +13,57 @@
  * limitations under the License.
  */
 
-import {AnimationMixin} from './features/animation.js';
-import {AnnotationMixin} from './features/annotation.js';
-import {ARMixin} from './features/ar.js';
-import {ControlsMixin} from './features/controls.js';
-import {EnvironmentMixin} from './features/environment.js';
-import {LoadingMixin} from './features/loading.js';
-import {SceneGraphMixin} from './features/scene-graph.js';
-import {StagingMixin} from './features/staging.js';
+import { AnimationMixin } from './features/animation.js';
+import { AnnotationMixin } from './features/annotation.js';
+import { ARMixin } from './features/ar.js';
+import { ControlsMixin } from './features/controls.js';
+import { EnvironmentMixin } from './features/environment.js';
+import { LoadingMixin } from './features/loading.js';
+import { SceneGraphMixin } from './features/scene-graph.js';
+import { StagingMixin } from './features/staging.js';
 
-import {LDTransformsMixin} from './features/ld-transforms.js';
-import {LDEnvironmentMixin} from './features/ld-environment.js';
-import {LDCameraMixin} from './features/ld-camera.js';
-import {LDLightsMixin} from './features/ld-lights.js';
-import {LDPuzzlerMixin} from './features/ld-puzzler.js';
-import {LDMeasureMixin} from './features/ld-measure.js';
+import { LDTransformsMixin } from './features/ld-transforms.js';
+import { LDEnvironmentMixin } from './features/ld-environment/index.js';
+import { LDCameraMixin } from './features/ld-camera.js';
+import { LDLightsMixin } from './features/ld-lights.js';
+import { LDPuzzlerMixin } from './features/ld-puzzler.js';
+import { LDMeasureMixin } from './features/ld-measure.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
 
 // Export these to allow lazy-loaded LottieLoader.js to find what it needs.
 // Requires an import map - "three": "path/to/model-viewer.min.js".
-export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
+export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
-export const ModelViewerElement =
-LDMeasureMixin(LDPuzzlerMixin(LDLightsMixin(LDCameraMixin(LDEnvironmentMixin(LDTransformsMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
-        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase))))))))))))));
+export const ModelViewerElement = LDMeasureMixin(
+  LDPuzzlerMixin(
+    LDLightsMixin(
+      LDCameraMixin(
+        LDEnvironmentMixin(
+          LDTransformsMixin(
+            AnnotationMixin(
+              SceneGraphMixin(
+                StagingMixin(
+                  EnvironmentMixin(
+                    ControlsMixin(
+                      ARMixin(
+                        LoadingMixin(AnimationMixin(ModelViewerElementBase))
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+);
 
 export type ModelViewerElement = InstanceType<typeof ModelViewerElement>;
 
-export type{RGB, RGBA} from './three-components/gltf-instance/gltf-2.0';
+export type { RGB, RGBA } from './three-components/gltf-instance/gltf-2.0';
 
 customElements.define('model-viewer', ModelViewerElement);
 
