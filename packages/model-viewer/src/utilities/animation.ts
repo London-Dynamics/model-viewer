@@ -128,13 +128,6 @@ export const animateGravityFall = (
   // Calculate fall time based on physics: t = sqrt(2h/g)
   const fallDistance = Math.abs(startY - targetY); // Use absolute value for safety
 
-  console.log('animateGravityFall called:', {
-    startY,
-    targetY,
-    fallDistance,
-    mass,
-  });
-
   // Early exit if no fall distance
   if (fallDistance <= 0.001) {
     model.position.y = targetY;
@@ -169,13 +162,6 @@ export const animateGravityFall = (
   const massAdjustment = mass < 2 ? (2 - mass) * 400 : mass * 60; // Extra time for very light objects
   const wobbleDuration = baseDuration + massAdjustment;
 
-  console.log('Animation parameters:', {
-    adjustedFallTime,
-    bounceHeight,
-    bounceCount,
-    wobbleDuration,
-  });
-
   // Store initial rotation for wobble reset
   const initialRotation = {
     x: model.rotation.x,
@@ -193,8 +179,6 @@ export const animateGravityFall = (
 
   const animate = (currentTime: number) => {
     const elapsed = currentTime - startTime;
-    // Debug logging - uncomment for debugging
-    // console.log(`Animation frame: elapsed=${elapsed}ms, currentY=${model.position.y}`);
 
     if (!isInBouncePhase) {
       // Initial fall phase - use different easing for more immediate visual feedback
@@ -322,6 +306,5 @@ export const animateGravityFall = (
     }
   };
 
-  console.log('Starting animation...');
   requestAnimationFrame(animate);
 };
