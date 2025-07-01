@@ -33,6 +33,7 @@ export class Cursor extends Object3D {
     const mesh = new Mesh(geometry, material);
     mesh.rotation.x = -Math.PI / 2; // Rotate to face up
     mesh.position.set(0, 0.01, 0); // Slightly above ground level
+    mesh.castShadow = false; // Cursor should not cast shadows
     this.add(mesh);
 
     /* Add contours around the circle - primary and high-contrast for dark backgrounds */
@@ -59,6 +60,7 @@ export class Cursor extends Object3D {
 
     const contourLine = new LineLoop(contourGeometry, contourMaterial);
     contourLine.position.set(0, 0.011, 0); // Slightly above the circle
+    contourLine.castShadow = false; // Cursor contours should not cast shadows
     this.add(contourLine);
 
     // High-contrast contour for dark backgrounds
@@ -74,6 +76,7 @@ export class Cursor extends Object3D {
       darkContourMaterial
     );
     darkContourLine.position.set(0, 0.012, 0); // Slightly higher than primary contour
+    darkContourLine.castShadow = false; // Cursor contours should not cast shadows
     this.add(darkContourLine);
 
     // Add to target object and position at placement level
