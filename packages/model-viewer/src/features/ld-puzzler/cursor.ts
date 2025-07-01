@@ -14,6 +14,13 @@ import {
 export class Cursor extends Object3D {
   private scene: any = null;
   private targetObject: Object3D | null = null;
+  private radius: number = 0.1;
+  private mesh: Mesh | null = null;
+  private contourLine: LineLoop | null = null;
+  private darkContourLine: LineLoop | null = null;
+  private element: HTMLElement | null = null;
+  private needsRender: (() => void) | null = null;
+  private mouseMoveHandler?: (event: MouseEvent) => void;
 
   constructor(scene: any, targetObject: Object3D, radius: number = 0.1) {
     super();
@@ -21,20 +28,32 @@ export class Cursor extends Object3D {
     this.visible = false;
     this.scene = scene;
     this.targetObject = targetObject;
+    this.radius = radius;
+
+    this.createCursorGeometry();
+
+    // Add to target object and position at placement level
+    targetObject.add(this);
+    this.positionAtPlacementLevel();
+  }
+
+  private createCursorGeometry() {
+    // Clear existing geometry if any
+    this.clear();
 
     /* this should be a flat circle, 0.2m in diameter, slightly darker than white, 50% transparent, placed at the origin */
-    const geometry = new CircleGeometry(radius, 32);
+    const geometry = new CircleGeometry(this.radius, 32);
     const material = new MeshBasicMaterial({
       color: 0xf5f5f5, // Slightly darker than white (WhiteSmoke)
       transparent: true,
       opacity: 0.5,
       depthTest: false,
     });
-    const mesh = new Mesh(geometry, material);
-    mesh.rotation.x = -Math.PI / 2; // Rotate to face up
-    mesh.position.set(0, 0.01, 0); // Slightly above ground level
-    mesh.castShadow = false; // Cursor should not cast shadows
-    this.add(mesh);
+    this.mesh = new Mesh(geometry, material);
+    this.mesh.rotation.x = -Math.PI / 2; // Rotate to face up
+    this.mesh.position.set(0, 0.01, 0); // Slightly above ground level
+    this.mesh.castShadow = false; // Cursor should not cast shadows
+    this.add(this.mesh);
 
     /* Add contours around the circle - primary and high-contrast for dark backgrounds */
     const contourGeometry = new BufferGeometry();
@@ -44,7 +63,11 @@ export class Cursor extends Object3D {
     for (let i = 0; i <= segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
       contourPoints.push(
-        new Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
+        new Vector3(
+          Math.cos(angle) * this.radius,
+          0,
+          Math.sin(angle) * this.radius
+        )
       );
     }
 
@@ -58,10 +81,10 @@ export class Cursor extends Object3D {
       depthTest: false,
     });
 
-    const contourLine = new LineLoop(contourGeometry, contourMaterial);
-    contourLine.position.set(0, 0.011, 0); // Slightly above the circle
-    contourLine.castShadow = false; // Cursor contours should not cast shadows
-    this.add(contourLine);
+    this.contourLine = new LineLoop(contourGeometry, contourMaterial);
+    this.contourLine.position.set(0, 0.011, 0); // Slightly above the circle
+    this.contourLine.castShadow = false; // Cursor contours should not cast shadows
+    this.add(this.contourLine);
 
     // High-contrast contour for dark backgrounds
     const darkContourMaterial = new LineBasicMaterial({
@@ -71,21 +94,76 @@ export class Cursor extends Object3D {
       depthTest: false,
     });
 
-    const darkContourLine = new LineLoop(
+    this.darkContourLine = new LineLoop(
       contourGeometry.clone(),
       darkContourMaterial
     );
-    darkContourLine.position.set(0, 0.012, 0); // Slightly higher than primary contour
-    darkContourLine.castShadow = false; // Cursor contours should not cast shadows
-    this.add(darkContourLine);
-
-    // Add to target object and position at placement level
-    targetObject.add(this);
-    this.positionAtPlacementLevel();
+    this.darkContourLine.position.set(0, 0.012, 0); // Slightly higher than primary contour
+    this.darkContourLine.castShadow = false; // Cursor contours should not cast shadows
+    this.add(this.darkContourLine);
   }
 
   setVisible(visible: boolean) {
     this.visible = visible;
+
+    if (visible && this.element && this.needsRender) {
+      // Enable mouse tracking when visible and tracking is configured
+      this.startMouseTracking();
+    } else {
+      // Disable mouse tracking when not visible
+      this.stopMouseTracking();
+    }
+  }
+
+  setupMouseTracking(element: HTMLElement, needsRender: () => void) {
+    this.element = element;
+    this.needsRender = needsRender;
+
+    // If cursor is already visible, start tracking immediately
+    if (this.visible) {
+      this.startMouseTracking();
+    }
+  }
+
+  private startMouseTracking() {
+    if (!this.mouseMoveHandler && this.element) {
+      this.mouseMoveHandler = (event: MouseEvent) => {
+        this.updatePosition(
+          event.clientX,
+          event.clientY,
+          this.element!,
+          this.needsRender!
+        );
+      };
+      this.element.addEventListener('mousemove', this.mouseMoveHandler);
+    }
+  }
+
+  private stopMouseTracking() {
+    if (this.mouseMoveHandler && this.element) {
+      this.element.removeEventListener('mousemove', this.mouseMoveHandler);
+      this.mouseMoveHandler = undefined;
+    }
+  }
+
+  cleanup() {
+    this.stopMouseTracking();
+    this.element = null;
+    this.needsRender = null;
+  }
+
+  setRadius(newRadius: number) {
+    if (newRadius <= 0) {
+      console.warn('Cursor radius must be greater than 0');
+      return;
+    }
+
+    this.radius = newRadius;
+    this.createCursorGeometry();
+  }
+
+  getRadius(): number {
+    return this.radius;
   }
 
   // Method to position the cursor at the placement level of the scene

@@ -10,6 +10,7 @@ import { Box3, Object3D } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';
+import { property } from 'lit/decorators.js';
 
 import ModelViewerElementBase, {
   $scene,
@@ -31,9 +32,9 @@ export type PlacementOptions = {
 };
 
 export declare interface LDPuzzlerInterface {
+  placementCursor: boolean;
+  placementCursorSize: number;
   setSrcFromBuffer(buffer: ArrayBuffer): void;
-  showPlacementCursor(): void;
-  hidePlacementCursor(): void;
   placeGLB(src: string, options?: PlacementOptions): Promise<void>;
   getPlacementCursorPosition(): { x: number; y: number; z: number } | null;
 }
@@ -42,8 +43,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDPuzzlerInterface> & T => {
   class LDPuzzlerModelViewerElement extends ModelViewerElement {
+    @property({ type: Boolean, attribute: 'placement-cursor' })
+    placementCursor: boolean = false;
+
+    @property({ type: Number, attribute: 'placement-cursor-size' })
+    placementCursorSize: number = 0.5; // Default diameter of 0.5m
+
     private cursor: Cursor | undefined;
     private addedGLBs: Set<Object3D> = new Set(); // Track all added GLBs
+    private _modelLoaded = false;
 
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
@@ -75,32 +83,61 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    showPlacementCursor() {
+    private handlePlacementCursorAttribute() {
+      if (this.placementCursor) {
+        this.enablePlacementCursor();
+      } else {
+        this.disablePlacementCursor();
+      }
+    }
+
+    private handlePlacementCursorSizeAttribute() {
+      if (this.cursor) {
+        // Convert diameter to radius
+        const radius = this.placementCursorSize / 2;
+        this.cursor.setRadius(radius);
+        this[$needsRender]();
+      }
+    }
+
+    private _handleProgress(event: Event) {
+      const progress = (event as any).detail.totalProgress;
+      const reason = (event as any).detail.reason;
+
+      if (this._modelLoaded && reason === 'model-load' && progress < 1) {
+        this._modelLoaded = false;
+      }
+    }
+
+    private _handleLoad() {
+      this._modelLoaded = true;
+      this.handlePlacementCursorAttribute();
+      this.handlePlacementCursorSizeAttribute();
+    }
+
+    private enablePlacementCursor() {
       if (!this.cursor) {
         const targetObject = this.findTargetObject();
         if (targetObject) {
           // Create cursor with scene and target references
-          this.cursor = new Cursor(this[$scene], targetObject, 0.25);
+          // Convert diameter to radius
+          const radius = this.placementCursorSize / 2;
+          this.cursor = new Cursor(this[$scene], targetObject, radius);
+          // Setup mouse tracking configuration
+          this.cursor.setupMouseTracking(this, () => this[$needsRender]());
         }
       }
+
       if (this.cursor) {
-        this.cursor.setVisible(true);
+        this.cursor.setVisible(true); // This will automatically enable mouse tracking
         this[$needsRender]();
       }
     }
 
-    hidePlacementCursor() {
+    private disablePlacementCursor() {
       if (this.cursor) {
-        this.cursor.setVisible(false);
+        this.cursor.setVisible(false); // This will automatically disable mouse tracking
         this[$needsRender]();
-      }
-    }
-
-    updatePlacementCursorPosition(mouseX: number, mouseY: number) {
-      if (this.cursor) {
-        this.cursor.updatePosition(mouseX, mouseY, this, () =>
-          this[$needsRender]()
-        );
       }
     }
 
@@ -287,11 +324,37 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
     }
 
+    updated(changedProperties: Map<string | number | symbol, unknown>) {
+      super.updated(changedProperties);
+
+      if (this._modelLoaded && changedProperties.has('placementCursor')) {
+        this.handlePlacementCursorAttribute();
+      }
+
+      if (this._modelLoaded && changedProperties.has('placementCursorSize')) {
+        this.handlePlacementCursorSizeAttribute();
+      }
+    }
+
     connectedCallback() {
       super.connectedCallback();
 
+      this.addEventListener('load', this._handleLoad);
+      this.addEventListener('progress', this._handleProgress);
+
       if (typeof window !== 'undefined') {
         window.deDraco = this.deDraco;
+      }
+    }
+
+    disconnectedCallback() {
+      super.disconnectedCallback();
+
+      this.removeEventListener('load', this._handleLoad);
+      this.removeEventListener('progress', this._handleProgress);
+
+      if (this.cursor) {
+        this.cursor.cleanup();
       }
     }
   }

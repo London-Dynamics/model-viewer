@@ -106,29 +106,6 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
-                                <button
-                                  id="follow-mouse"
-                                  type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
-                                  role="switch"
-                                  aria-checked="false"
-                                  aria-labelledby="follow-mouse-label"
-                                >
-                                  <span
-                                    aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
-                                  ></span>
-                                </button>
-                                <span
-                                  class="ml-3 text-sm"
-                                  id="follow-mouse-label"
-                                >
-                                  <span class="font-medium text-gray-900"
-                                    >Follow Mouse</span
-                                  >
-                                </span>
-                              </div>
                             </div>
                             <div class="flex gap-2">
                               <button
@@ -173,11 +150,7 @@
                             if (e.buttons > 0 && dragData) {
                               // Mouse button is pressed and we have drag data
                               isDragging = true;
-
-                              modelViewer.updatePlacementCursorPosition(
-                                e.clientX,
-                                e.clientY
-                              );
+                              // Cursor position updates automatically when placement-cursor attribute is set
                             }
                           };
 
@@ -194,7 +167,13 @@
 
                               const position =
                                 modelViewer.getPlacementCursorPosition();
-                              modelViewer.hidePlacementCursor();
+
+                              console.log(
+                                'Placement cursor position:',
+                                position
+                              );
+
+                              modelViewer.removeAttribute('placement-cursor');
                               if (position) {
                                 const filePath = `../../shared-assets/models/${dragData.filename}`;
                                 modelViewer.placeGLB(filePath, {
@@ -226,7 +205,7 @@
                               name: e.target.dataset.name || undefined,
                               mass: parseFloat(e.target.dataset.mass) || 1.0,
                             };
-                            modelViewer.showPlacementCursor();
+                            modelViewer.setAttribute('placement-cursor', '');
 
                             // Add global listeners when mouse down starts
                             document.addEventListener(
@@ -265,39 +244,12 @@
                           const el = e.target;
                           if (el.getAttribute('aria-checked') === 'true') {
                             el.setAttribute('aria-checked', 'false');
-                            modelViewer.hidePlacementCursor();
+                            modelViewer.removeAttribute('placement-cursor');
                           } else {
                             el.setAttribute('aria-checked', 'true');
-                            modelViewer.showPlacementCursor();
+                            modelViewer.setAttribute('placement-cursor', '');
                           }
                         });
-
-                      // Handle follow mouse toggle
-                      let isFollowingMouse = false;
-
-                      document
-                        .getElementById('follow-mouse')
-                        .addEventListener('click', (e) => {
-                          const el = e.target;
-                          if (el.getAttribute('aria-checked') === 'true') {
-                            el.setAttribute('aria-checked', 'false');
-                            isFollowingMouse = false;
-                          } else {
-                            el.setAttribute('aria-checked', 'true');
-                            isFollowingMouse = true;
-                          }
-                        });
-
-                      // Handle mouse movement for cursor tracking
-                      modelViewer.addEventListener('mousemove', (e) => {
-                        if (isFollowingMouse) {
-                          // Pass raw client coordinates - let TypeScript handle the conversion
-                          modelViewer.updatePlacementCursorPosition(
-                            e.clientX,
-                            e.clientY
-                          );
-                        }
-                      });
                     })();
                   </script>
                 </template>
