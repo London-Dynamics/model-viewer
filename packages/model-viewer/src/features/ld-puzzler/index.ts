@@ -21,8 +21,8 @@ import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_objec
 import { animateGravityFall } from '../../utilities/animation.js';
 import { Cursor } from './cursor.js';
 
-// Global variable for drop height (in meters)
-const DROP_HEIGHT = 0.5;
+const DROP_HEIGHT = 0.5; // Height to drop models from when placed
+const LIFT_HEIGHT = 0.1; // Height to lift models to when selected
 
 export type PlacementOptions = {
   name?: string;
@@ -80,7 +80,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const targetObject = this.findTargetObject();
         if (targetObject) {
           // Create cursor with scene and target references
-          this.cursor = new Cursor(this[$scene], targetObject);
+          this.cursor = new Cursor(this[$scene], targetObject, 0.25);
         }
       }
       if (this.cursor) {

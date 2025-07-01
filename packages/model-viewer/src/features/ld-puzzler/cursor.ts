@@ -15,17 +15,15 @@ export class Cursor extends Object3D {
   private scene: any = null;
   private targetObject: Object3D | null = null;
 
-  constructor(scene: any, targetObject: Object3D) {
+  constructor(scene: any, targetObject: Object3D, radius: number = 0.1) {
     super();
     this.name = 'cursor';
     this.visible = false;
     this.scene = scene;
     this.targetObject = targetObject;
 
-    const RADIUS = 0.1; // Radius of the circle
-
     /* this should be a flat circle, 0.2m in diameter, slightly darker than white, 50% transparent, placed at the origin */
-    const geometry = new CircleGeometry(RADIUS, 32);
+    const geometry = new CircleGeometry(radius, 32);
     const material = new MeshBasicMaterial({
       color: 0xf5f5f5, // Slightly darker than white (WhiteSmoke)
       transparent: true,
@@ -45,7 +43,7 @@ export class Cursor extends Object3D {
     for (let i = 0; i <= segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
       contourPoints.push(
-        new Vector3(Math.cos(angle) * RADIUS, 0, Math.sin(angle) * RADIUS)
+        new Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
       );
     }
 
