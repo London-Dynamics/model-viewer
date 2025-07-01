@@ -13,11 +13,12 @@
  * limitations under the License.
  */
 
-import {clamp} from '../utilities.js';
+import { clamp } from '../utilities.js';
+import { Object3D } from 'three';
 
 // Adapted from https://gist.github.com/gre/1650294
 export const easeInOutQuad: TimingFunction = (t: number) =>
-    t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+  t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
 /**
  * A TimingFunction accepts a value from 0-1 and returns a corresponding
@@ -30,30 +31,37 @@ export type TimingFunction = (time: number) => number;
  * two configured number values.
  */
 export const interpolate =
-    (start: number, end: number, ease: TimingFunction = easeInOutQuad):
-        TimingFunction => (time: number) => start + (end - start) * ease(time);
+  (
+    start: number,
+    end: number,
+    ease: TimingFunction = easeInOutQuad
+  ): TimingFunction =>
+  (time: number) =>
+    start + (end - start) * ease(time);
 
 /**
  * Creates a TimingFunction that interpolates through a weighted list
  * of other TimingFunctions ("tracks"). Tracks are interpolated in order, and
  * allocated a percentage of the total time based on their relative weight.
  */
-export const sequence =
-    (tracks: Array<TimingFunction>, weights: Array<number>): TimingFunction => {
-      const cumulativeSum = ((sum: number) => (value: number) => sum += value);
-      const times = weights.map(cumulativeSum(0));
+export const sequence = (
+  tracks: Array<TimingFunction>,
+  weights: Array<number>
+): TimingFunction => {
+  const cumulativeSum = (sum: number) => (value: number) => (sum += value);
+  const times = weights.map(cumulativeSum(0));
 
-      return (time: number) => {
-        time = clamp(time, 0, 1);
-        time *= times[times.length - 1];
-        const i = times.findIndex((val) => val >= time);
+  return (time: number) => {
+    time = clamp(time, 0, 1);
+    time *= times[times.length - 1];
+    const i = times.findIndex((val) => val >= time);
 
-        const start = i < 1 ? 0 : times[i - 1];
-        const end = times[i];
+    const start = i < 1 ? 0 : times[i - 1];
+    const end = times[i];
 
-        return tracks[i]((time - start) / (end - start));
-      }
-    };
+    return tracks[i]((time - start) / (end - start));
+  };
+};
 
 /**
  * A Frame groups a target value, the number of frames to interpolate towards
@@ -85,7 +93,7 @@ export const timeline = (path: Path): TimingFunction => {
 
   for (let i = 0; i < path.keyframes.length; ++i) {
     const keyframe = path.keyframes[i];
-    const {value, frames} = keyframe;
+    const { value, frames } = keyframe;
     const ease = keyframe.ease || easeInOutQuad;
     const track = interpolate(lastValue, value, ease);
 
@@ -95,4 +103,59 @@ export const timeline = (path: Path): TimingFunction => {
   }
 
   return sequence(tracks, weights);
+};
+
+/**
+ * Animates an object falling with gravity physics
+ * @param model The 3D object to animate
+ * @param startY Starting Y position
+ * @param targetY Target Y position (ground level)
+ * @param mass Mass of the object in kg (affects fall speed)
+ * @param onUpdate Callback function to trigger rendering
+ */
+export const animateGravityFall = (
+  model: Object3D,
+  startY: number,
+  targetY: number,
+  mass: number = 1.0,
+  onUpdate: () => void
+): void => {
+  const gravity = 10; // m/s²
+  const timeScale = 1000; // Convert to milliseconds
+
+  // Calculate fall time based on physics: t = sqrt(2h/g)
+  const fallDistance = startY - targetY;
+  const fallTime = Math.sqrt((2 * fallDistance) / gravity) * timeScale;
+
+  // Add some variation based on mass (heavier objects fall slightly faster due to less air resistance)
+  const massModifier = Math.min(1.0 + (mass - 1.0) * 0.1, 2.0);
+  const adjustedFallTime = fallTime / massModifier;
+
+  const startTime = performance.now();
+
+  const animate = (currentTime: number) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / adjustedFallTime, 1.0);
+
+    // Use quadratic easing for realistic gravity acceleration
+    const easedProgress = progress * progress;
+
+    // Calculate current position
+    const currentY = startY - fallDistance * easedProgress;
+    model.position.y = Math.max(currentY, targetY);
+
+    // Trigger render
+    onUpdate();
+
+    // Continue animation if not finished
+    if (progress < 1.0) {
+      requestAnimationFrame(animate);
+    } else {
+      // Ensure final position is exact
+      model.position.y = targetY;
+      onUpdate();
+    }
+  };
+
+  requestAnimationFrame(animate);
 };

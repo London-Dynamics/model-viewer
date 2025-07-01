@@ -31,6 +31,7 @@ import ModelViewerElementBase, {
 
 import { Constructor } from '../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../utilities/create_object_url.js';
+import { animateGravityFall } from '../utilities/animation.js';
 
 class Cursor extends Object3D {
   private scene: any = null;
@@ -339,11 +340,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
               // Start gravity animation
               const mass = options.mass || 1.0; // Default mass of 1kg
-              this.animateGravityFall(
+              animateGravityFall(
                 gltf.scene,
                 dropStartY,
                 finalPosition.y,
-                mass
+                mass,
+                () => this[$needsRender]()
               );
 
               console.log('scene', this[$scene]);
@@ -409,52 +411,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
         );
       });
-    }
-
-    private animateGravityFall(
-      model: Object3D,
-      startY: number,
-      targetY: number,
-      mass: number = 1.0
-    ) {
-      const gravity = 10; // m/s²
-      const timeScale = 1000; // Convert to milliseconds
-
-      // Calculate fall time based on physics: t = sqrt(2h/g)
-      const fallDistance = startY - targetY;
-      const fallTime = Math.sqrt((2 * fallDistance) / gravity) * timeScale;
-
-      // Add some variation based on mass (heavier objects fall slightly faster due to less air resistance)
-      const massModifier = Math.min(1.0 + (mass - 1.0) * 0.1, 2.0);
-      const adjustedFallTime = fallTime / massModifier;
-
-      const startTime = performance.now();
-
-      const animate = (currentTime: number) => {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / adjustedFallTime, 1.0);
-
-        // Use quadratic easing for realistic gravity acceleration
-        const easedProgress = progress * progress;
-
-        // Calculate current position
-        const currentY = startY - fallDistance * easedProgress;
-        model.position.y = Math.max(currentY, targetY);
-
-        // Trigger render
-        this[$needsRender]();
-
-        // Continue animation if not finished
-        if (progress < 1.0) {
-          requestAnimationFrame(animate);
-        } else {
-          // Ensure final position is exact
-          model.position.y = targetY;
-          this[$needsRender]();
-        }
-      };
-
-      requestAnimationFrame(animate);
     }
 
     connectedCallback() {
