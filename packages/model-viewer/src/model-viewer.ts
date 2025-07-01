@@ -26,7 +26,7 @@ import { LDTransformsMixin } from './features/ld-transforms.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
 import { LDCameraMixin } from './features/ld-camera.js';
 import { LDLightsMixin } from './features/ld-lights.js';
-import { LDPuzzlerMixin } from './features/ld-puzzler.js';
+import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
