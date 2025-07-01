@@ -112,13 +112,15 @@ export const timeline = (path: Path): TimingFunction => {
  * @param targetY Target Y position (ground level)
  * @param mass Mass of the object in kg (affects fall speed, bounce, and wobble)
  * @param onUpdate Callback function to trigger rendering
+ * @param onComplete Optional callback function called when animation completes
  */
 export const animateGravityFall = (
   model: Object3D,
   startY: number,
   targetY: number,
   mass: number = 1.0,
-  onUpdate: () => void
+  onUpdate: () => void,
+  onComplete?: () => void
 ): void => {
   const gravity = 9.81; // m/s² - more realistic gravity
   const timeScale = 1000; // Convert to milliseconds
@@ -294,6 +296,11 @@ export const animateGravityFall = (
       model.rotation.y = initialRotation.y;
       model.rotation.z = initialRotation.z;
       onUpdate();
+
+      // Call completion callback if provided
+      if (onComplete) {
+        onComplete();
+      }
     }
   };
 

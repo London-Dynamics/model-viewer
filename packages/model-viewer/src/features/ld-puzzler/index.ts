@@ -43,6 +43,27 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 ): Constructor<LDPuzzlerInterface> & T => {
   class LDPuzzlerModelViewerElement extends ModelViewerElement {
     private cursor: Cursor | undefined;
+    private addedGLBs: Set<Object3D> = new Set(); // Track all added GLBs
+
+    private updateShadowsWithGLBs() {
+      // Create a comprehensive bounding box that includes all added GLBs
+      if (this[$scene].boundingBox && this.addedGLBs.size > 0) {
+        // Start with the original scene bounding box
+        const originalBounds = this[$scene].boundingBox.clone();
+
+        // Expand to include all added GLBs
+        this.addedGLBs.forEach((glb) => {
+          originalBounds.expandByObject(glb);
+        });
+
+        // Update the scene's bounding box and size
+        this[$scene].boundingBox.copy(originalBounds);
+        this[$scene].boundingBox.getSize(this[$scene].size);
+
+        // Force shadow update
+        this[$scene].updateShadow();
+      }
+    }
 
     async setSrcFromBuffer(buffer: ArrayBuffer) {
       try {
@@ -175,8 +196,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
               // Add model to scene first
               targetObject.add(gltf.scene);
-              this[$scene].updateBoundingBox();
-              this[$scene].updateShadow();
+
+              // Track this GLB for shadow calculations
+              this.addedGLBs.add(gltf.scene);
+
+              // Update shadows to include all GLBs
+              this.updateShadowsWithGLBs();
               this[$needsRender]();
 
               // Start gravity animation
@@ -186,7 +211,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 dropStartY,
                 finalPosition.y,
                 mass,
-                () => this[$needsRender]()
+                () => {
+                  this.updateShadowsWithGLBs();
+                  this[$needsRender]();
+                },
+                () => {
+                  // Final shadow update when animation completes
+                  this.updateShadowsWithGLBs();
+                  this[$needsRender]();
+                }
               );
 
               console.log('scene', this[$scene]);
