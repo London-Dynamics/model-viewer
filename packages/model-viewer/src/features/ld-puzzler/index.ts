@@ -19,7 +19,7 @@ import ModelViewerElementBase, {
 
 import { Constructor } from '../../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
-import { animateGravityFall } from '../../utilities/animation.js';
+import { animateGravityFallSmooth } from '../../utilities/animation.js';
 import { Cursor } from './cursor.js';
 
 const DROP_HEIGHT = 0.5; // Height to drop models from when placed
@@ -29,6 +29,7 @@ export type PlacementOptions = {
   name?: string;
   position?: { x: number; y: number; z: number };
   mass?: number; // Mass in kg, affects fall speed
+  floorOffset?: number; // Additional Y offset from calculated floor position (e.g., 0.5 for center-positioned cubes)
 };
 
 export declare interface LDPuzzlerInterface {
@@ -52,17 +53,26 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private cursor: Cursor | undefined;
     private addedGLBs: Set<Object3D> = new Set(); // Track all added GLBs
     private _modelLoaded = false;
+    private originalFloorY: number | undefined; // Store the original floor level
 
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
       if (this[$scene].boundingBox && this.addedGLBs.size > 0) {
+        // Store the original floor level if not already stored
+        if (this.originalFloorY === undefined) {
+          this.originalFloorY = this[$scene].boundingBox.min.y;
+        }
+
         // Start with the original scene bounding box
         const originalBounds = this[$scene].boundingBox.clone();
 
-        // Expand to include all added GLBs
+        // Expand to include all added GLBs, but preserve the original floor level
         this.addedGLBs.forEach((glb) => {
           originalBounds.expandByObject(glb);
         });
+
+        // Preserve the original floor level by ensuring it never goes below the original
+        originalBounds.min.y = this.originalFloorY;
 
         // Update the scene's bounding box and size
         this[$scene].boundingBox.copy(originalBounds);
@@ -169,18 +179,23 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       return targetObject;
     }
 
-    private positionModelAtFloor(model: Object3D) {
+    private positionModelAtFloor(model: Object3D, floorOffset: number = 0) {
       if (!this[$scene] || !this[$scene].boundingBox) return;
+
+      // Store the original floor level if not already stored
+      if (this.originalFloorY === undefined) {
+        this.originalFloorY = this[$scene].boundingBox.min.y;
+      }
 
       // Calculate the model's bounding box
       const modelBoundingBox = new Box3().setFromObject(model);
 
-      // Get the scene's floor level
-      const sceneFloorY = this[$scene].boundingBox.min.y;
+      // Use the original floor level, not the current scene bounding box
+      const sceneFloorY = this.originalFloorY;
 
-      // Calculate how much to move the model so its bottom aligns with the scene floor
+      // Calculate how much to move the model so its bottom aligns with the original floor
       const modelBottomY = modelBoundingBox.min.y;
-      const offsetY = sceneFloorY - modelBottomY;
+      const offsetY = sceneFloorY - modelBottomY + floorOffset;
 
       // Apply the position adjustment
       model.position.y += offsetY;
@@ -205,17 +220,23 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               // Determine the final floor position
               if (options.position) {
                 // Use provided position but ensure Y is at floor level for gravity calculation
-                const floorY = this[$scene].boundingBox
-                  ? this[$scene].boundingBox.min.y
-                  : 0;
+                // Store the original floor level if not already stored
+                if (this.originalFloorY === undefined) {
+                  this.originalFloorY = this[$scene].boundingBox
+                    ? this[$scene].boundingBox.min.y
+                    : 0;
+                }
+
+                const floorY = this.originalFloorY;
+                const floorOffset = options.floorOffset || 0;
                 finalPosition = {
                   x: options.position.x,
-                  y: floorY,
+                  y: floorY + floorOffset,
                   z: options.position.z,
                 };
               } else {
-                // Calculate floor position automatically
-                this.positionModelAtFloor(gltf.scene);
+                // Calculate floor position automatically with optional offset
+                this.positionModelAtFloor(gltf.scene, options.floorOffset || 0);
                 finalPosition = {
                   x: gltf.scene.position.x,
                   y: gltf.scene.position.y,
@@ -243,7 +264,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
               // Start gravity animation
               const mass = options.mass || 1.0; // Default mass of 1kg
-              animateGravityFall(
+              animateGravityFallSmooth(
                 gltf.scene,
                 dropStartY,
                 finalPosition.y,
@@ -259,7 +280,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 }
               );
 
-              console.log('scene', this[$scene]);
               resolve();
             } else {
               reject();

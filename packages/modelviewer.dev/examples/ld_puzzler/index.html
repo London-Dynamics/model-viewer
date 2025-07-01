@@ -126,6 +126,16 @@
                               >
                                 👨‍🚀
                               </button>
+                              <button
+                                type="button"
+                                class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="Cube.gltf"
+                                data-name="cube"
+                                data-mass="10"
+                                data-floor-offset="0.5"
+                              >
+                                🟦
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -157,21 +167,8 @@
                           // Global mouse up listener to handle drop
                           const handleGlobalMouseUp = (e) => {
                             if (isDragging && dragData) {
-                              console.log(
-                                'Drop detected at:',
-                                e.clientX,
-                                e.clientY
-                              );
-                              // TODO: Handle drop logic here
-                              // Check if dropped on modelViewer, etc.
-
                               const position =
                                 modelViewer.getPlacementCursorPosition();
-
-                              console.log(
-                                'Placement cursor position:',
-                                position
-                              );
 
                               modelViewer.removeAttribute('placement-cursor');
                               if (position) {
@@ -180,6 +177,7 @@
                                   name: dragData.name || undefined,
                                   position,
                                   mass: dragData.mass,
+                                  floorOffset: dragData.floorOffset,
                                 });
                               }
                             }
@@ -204,7 +202,10 @@
                               filename: e.target.dataset.filename,
                               name: e.target.dataset.name || undefined,
                               mass: parseFloat(e.target.dataset.mass) || 1.0,
+                              floorOffset:
+                                parseFloat(e.target.dataset.floorOffset) || 0,
                             };
+
                             modelViewer.setAttribute('placement-cursor', '');
 
                             // Add global listeners when mouse down starts
@@ -230,6 +231,8 @@
                             const options = {
                               name: e.target.dataset.name || undefined,
                               mass: parseFloat(e.target.dataset.mass) || 1.0,
+                              floorOffset:
+                                parseFloat(e.target.dataset.floorOffset) || 0,
                             };
 
                             const filePath = `../../shared-assets/models/${e.target.dataset.filename}`;

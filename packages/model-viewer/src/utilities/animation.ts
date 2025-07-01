@@ -308,3 +308,90 @@ export const animateGravityFall = (
 
   requestAnimationFrame(animate);
 };
+
+/**
+ * Animates a 3D model falling with gravity, landing smoothly without bounce or wobble
+ * @param model The 3D model object to animate
+ * @param startY Starting Y position
+ * @param targetY Target Y position where the model should land
+ * @param mass Mass in kg (affects fall speed, higher mass = faster fall)
+ * @param onUpdate Callback function called on each frame for rendering
+ * @param onComplete Optional callback function called when animation completes
+ */
+export const animateGravityFallSmooth = (
+  model: Object3D,
+  startY: number,
+  targetY: number,
+  mass: number = 1.0,
+  onUpdate: () => void,
+  onComplete?: () => void
+): void => {
+  const gravity = 10; // m/s²
+  const timeScale = 1000; // Convert to milliseconds
+
+  // Calculate fall time based on physics: t = sqrt(2h/g)
+  const fallDistance = Math.abs(startY - targetY);
+
+  // Early exit if no fall distance
+  if (fallDistance <= 0.001) {
+    model.position.y = targetY;
+    onUpdate();
+    if (onComplete) {
+      onComplete();
+    }
+    return;
+  }
+
+  // Calculate fall time - make it faster for better visual feedback
+  const baseFallTime = Math.sqrt((2 * fallDistance) / gravity) * timeScale;
+
+  // Adjust fall time based on mass (heavier objects fall faster in this visual representation)
+  // Minimum 200ms, maximum 1000ms for good user experience
+  const massMultiplier = Math.max(0.7, Math.min(1.3, 1.0 / Math.sqrt(mass)));
+  const adjustedFallTime = Math.max(
+    200,
+    Math.min(1000, baseFallTime * massMultiplier)
+  );
+
+  const startTime = performance.now();
+
+  const animate = (currentTime: number) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / adjustedFallTime, 1.0);
+
+    // Use easing for natural-looking gravity acceleration
+    // Starts slow and accelerates (gravity effect)
+    const easedProgress = progress * progress;
+
+    // Calculate current position
+    const currentY =
+      startY > targetY
+        ? startY - fallDistance * easedProgress // Falling down
+        : startY + fallDistance * easedProgress; // Falling up
+
+    // Ensure we don't overshoot the target
+    model.position.y =
+      startY > targetY
+        ? Math.max(currentY, targetY) // Don't go below target when falling down
+        : Math.min(currentY, targetY); // Don't go above target when falling up
+
+    // Trigger render
+    onUpdate();
+
+    // Continue animation if not finished
+    if (progress < 1.0) {
+      requestAnimationFrame(animate);
+    } else {
+      // Ensure final position is exact
+      model.position.y = targetY;
+      onUpdate();
+
+      // Call completion callback if provided
+      if (onComplete) {
+        onComplete();
+      }
+    }
+  };
+
+  requestAnimationFrame(animate);
+};
