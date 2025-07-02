@@ -21,6 +21,7 @@ export class Cursor extends Object3D {
   private element: HTMLElement | null = null;
   private needsRender: (() => void) | null = null;
   private mouseMoveHandler?: (event: MouseEvent) => void;
+  private dragOverHandler?: (event: DragEvent) => void;
   private worldPlacementPosition: Vector3 = new Vector3();
 
   constructor(scene: any, targetObject: Object3D, radius: number = 0.1) {
@@ -136,7 +137,20 @@ export class Cursor extends Object3D {
           this.needsRender!
         );
       };
+
+      this.dragOverHandler = (event: DragEvent) => {
+        // Prevent default to allow drop
+        event.preventDefault();
+        this.updatePosition(
+          event.clientX,
+          event.clientY,
+          this.element!,
+          this.needsRender!
+        );
+      };
+
       this.element.addEventListener('mousemove', this.mouseMoveHandler);
+      this.element.addEventListener('dragover', this.dragOverHandler);
     }
   }
 
@@ -144,6 +158,11 @@ export class Cursor extends Object3D {
     if (this.mouseMoveHandler && this.element) {
       this.element.removeEventListener('mousemove', this.mouseMoveHandler);
       this.mouseMoveHandler = undefined;
+    }
+
+    if (this.dragOverHandler && this.element) {
+      this.element.removeEventListener('dragover', this.dragOverHandler);
+      this.dragOverHandler = undefined;
     }
   }
 
