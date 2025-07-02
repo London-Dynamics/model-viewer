@@ -23,6 +23,9 @@ export class Cursor extends Object3D {
   private mouseMoveHandler?: (event: MouseEvent) => void;
   private dragOverHandler?: (event: DragEvent) => void;
   private worldPlacementPosition: Vector3 = new Vector3();
+  private animationFrameId: number | null = null;
+  private baseRadius: number = 0.1;
+  private animationStartTime: number = 0;
 
   constructor(scene: any, targetObject: Object3D, radius: number = 0.1) {
     super();
@@ -31,6 +34,7 @@ export class Cursor extends Object3D {
     this.scene = scene;
     this.targetObject = targetObject;
     this.radius = radius;
+    this.baseRadius = radius;
 
     this.createCursorGeometry();
 
@@ -46,9 +50,11 @@ export class Cursor extends Object3D {
     if (visible && this.element && this.needsRender) {
       // Enable mouse tracking when visible and tracking is configured
       this.startMouseTracking();
+      this.startAnimation();
     } else {
       // Disable mouse tracking when not visible
       this.stopMouseTracking();
+      this.stopAnimation();
     }
   }
 
@@ -64,6 +70,7 @@ export class Cursor extends Object3D {
 
   cleanup() {
     this.stopMouseTracking();
+    this.stopAnimation();
     this.element = null;
     this.needsRender = null;
   }
@@ -75,6 +82,7 @@ export class Cursor extends Object3D {
     }
 
     this.radius = newRadius;
+    this.baseRadius = newRadius;
     this.createCursorGeometry();
   }
 
@@ -273,5 +281,55 @@ export class Cursor extends Object3D {
     }
 
     needsRender();
+  }
+
+  private startAnimation() {
+    if (this.animationFrameId !== null) {
+      return; // Animation already running
+    }
+
+    this.animationStartTime = performance.now();
+    this.animate();
+  }
+
+  private stopAnimation() {
+    if (this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+
+    // Reset to base radius
+    this.radius = this.baseRadius;
+    this.createCursorGeometry();
+  }
+
+  private animate() {
+    if (!this.visible) {
+      this.stopAnimation();
+      return;
+    }
+
+    const currentTime = performance.now();
+    const elapsed = currentTime - this.animationStartTime;
+
+    // Oscillate with a period of 2 seconds (2000ms)
+    const oscillationPeriod = 2000;
+    const phase = (elapsed % oscillationPeriod) / oscillationPeriod;
+
+    // Create a sine wave that oscillates between -0.1 and +0.1 (10% in each direction)
+    const amplitude = 0.1;
+    const oscillation = Math.sin(phase * 2 * Math.PI) * amplitude;
+
+    // Apply the oscillation to the base radius
+    this.radius = this.baseRadius * (1 + oscillation);
+    this.createCursorGeometry();
+
+    // Trigger a render if needed
+    if (this.needsRender) {
+      this.needsRender();
+    }
+
+    // Schedule the next frame
+    this.animationFrameId = requestAnimationFrame(() => this.animate());
   }
 }
