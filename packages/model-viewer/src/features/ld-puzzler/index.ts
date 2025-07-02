@@ -6,7 +6,17 @@ declare global {
   }
 }
 
-import { Box3, Object3D, Vector3 } from 'three';
+import {
+  Box3,
+  Object3D,
+  Vector3,
+  Raycaster,
+  Vector2,
+  Plane,
+  Mesh,
+  PlaneGeometry,
+  MeshBasicMaterial,
+} from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';
@@ -15,7 +25,9 @@ import { property } from 'lit/decorators.js';
 import ModelViewerElementBase, {
   $scene,
   $needsRender,
+  $canvas,
 } from '../../model-viewer-base.js';
+import { $controls } from '../controls.js';
 
 import { Constructor } from '../../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
@@ -23,7 +35,6 @@ import { animateGravityFallSmooth } from '../../utilities/animation.js';
 import { Cursor } from './cursor.js';
 
 const DROP_HEIGHT = 0.5; // Height to drop models from when placed
-const LIFT_HEIGHT = 0.1; // Height to lift models to when selected
 
 export type PlacementOptions = {
   name?: string;
@@ -54,6 +65,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private addedGLBs: Set<Object3D> = new Set(); // Track all added GLBs
     private _modelLoaded = false;
     private originalFloorY: number | undefined; // Store the original floor level
+
+    // Selection and dragging properties
+    private selectedObject: Object3D | null = null;
+    private isDragging: boolean = false;
+    private dragStartPosition: Vector3 = new Vector3();
+    private dragStartMousePosition: Vector2 = new Vector2();
+    private dragOffset: Vector3 = new Vector3(); // Offset between object center and click point
+    private currentMousePosition: Vector2 = new Vector2();
+    private floorPlane: Plane = new Plane(new Vector3(0, 1, 0), 0);
+    private raycaster: Raycaster = new Raycaster();
+
+    // Mouse tracking
+    private lastClickTime: number = 0;
+    private lastClickPosition: Vector2 = new Vector2();
+    private clickHandler?: (event: MouseEvent) => void;
 
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
@@ -215,7 +241,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             gltf.scene.name =
               'part__' +
               (options.name ||
-                `model-${Math.random().toString(36).substring(2, 9)}`);
+                `part__${Math.random().toString(36).substring(2, 9)}`);
             if (targetObject) {
               let finalPosition: { x: number; y: number; z: number };
 
@@ -346,6 +372,350 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
     }
 
+    private setupDragHandlers() {
+      // Mouse/touch event handlers for custom dragging
+      this.addEventListener('mousedown', this.onMouseDown.bind(this));
+      this.addEventListener('mousemove', this.onMouseMove.bind(this));
+      this.addEventListener('mouseup', this.onMouseUp.bind(this));
+
+      // Touch events for mobile support
+      this.addEventListener('touchstart', this.onTouchStart.bind(this));
+      this.addEventListener('touchmove', this.onTouchMove.bind(this));
+      this.addEventListener('touchend', this.onTouchEnd.bind(this));
+
+      // Prevent context menu on right click
+      this.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    // Camera control state storage
+    private originalSensitivities = {
+      orbit: 1,
+      zoom: 1,
+      pan: 1,
+      input: 1,
+    };
+
+    private onMouseDown(event: MouseEvent) {
+      if (event.button !== 0) return; // Only handle left mouse button
+
+      this.updateMousePosition(event);
+      this.lastClickTime = performance.now();
+      this.lastClickPosition.copy(this.currentMousePosition);
+
+      // Check if we're clicking on the selected object
+      if (this.selectedObject) {
+        const isOnSelectedObject = this.isPointOnObject(
+          this.currentMousePosition,
+          this.selectedObject
+        );
+        if (isOnSelectedObject) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          this.startDragging(event);
+          return;
+        }
+      }
+
+      // Check if we're clicking on any part object to potentially select it
+      const partObject = this.getPartObjectAtPosition(
+        this.currentMousePosition
+      );
+      if (partObject) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        // Selection will be handled on mouseup
+      }
+    }
+
+    private onMouseMove(event: MouseEvent) {
+      this.updateMousePosition(event);
+
+      if (this.isDragging && this.selectedObject) {
+        this.updateDragPosition();
+      }
+    }
+
+    private onMouseUp(event: MouseEvent) {
+      if (this.isDragging) {
+        this.stopDragging();
+      } else {
+        // Handle selection only if we're not dragging and it was a quick click
+        const timeSinceMouseDown = performance.now() - this.lastClickTime;
+        const distanceFromMouseDown = this.currentMousePosition.distanceTo(
+          this.lastClickPosition
+        );
+
+        if (timeSinceMouseDown < 300 && distanceFromMouseDown < 5) {
+          // Check if we clicked on a part object
+          const partObject = this.getPartObjectAtPosition(
+            this.currentMousePosition
+          );
+          if (partObject) {
+            // Handle selection for part objects
+            this.handleSelection(event);
+          } else {
+            // Clicked on empty space - deselect any selected object
+            this.deselectObject();
+          }
+        }
+      }
+      // No need to restore panSensitivity here; controls are unaffected
+    }
+
+    private onTouchStart(event: TouchEvent) {
+      if (event.touches.length === 1) {
+        const touch = event.touches[0];
+        this.updateMousePositionFromTouch(touch);
+        this.lastClickTime = performance.now();
+        this.lastClickPosition.copy(this.currentMousePosition);
+
+        if (this.selectedObject) {
+          const isOnSelectedObject = this.isPointOnObject(
+            this.currentMousePosition,
+            this.selectedObject
+          );
+          if (isOnSelectedObject) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            this.startDragging();
+            return;
+          }
+        }
+
+        // Check if we're touching any part object to potentially select it
+        const partObject = this.getPartObjectAtPosition(
+          this.currentMousePosition
+        );
+        if (partObject) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          // Selection will be handled on touchend
+        }
+      }
+    }
+
+    private onTouchMove(event: TouchEvent) {
+      if (event.touches.length === 1 && this.isDragging) {
+        const touch = event.touches[0];
+        this.updateMousePositionFromTouch(touch);
+        this.updateDragPosition();
+        event.preventDefault();
+      }
+    }
+
+    private onTouchEnd(event: TouchEvent) {
+      if (this.isDragging) {
+        this.stopDragging();
+      } else if (event.changedTouches.length === 1) {
+        // Handle tap selection
+        const touch = event.changedTouches[0];
+        this.updateMousePositionFromTouch(touch);
+
+        const timeSinceMouseDown = performance.now() - this.lastClickTime;
+        const distanceFromMouseDown = this.currentMousePosition.distanceTo(
+          this.lastClickPosition
+        );
+
+        if (timeSinceMouseDown < 300 && distanceFromMouseDown < 5) {
+          this.handleSelection();
+        }
+      }
+    }
+
+    private updateMousePosition(event: MouseEvent) {
+      const rect = this.getBoundingClientRect();
+      this.currentMousePosition.x =
+        ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      this.currentMousePosition.y =
+        -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    private updateMousePositionFromTouch(touch: Touch) {
+      const rect = this.getBoundingClientRect();
+      this.currentMousePosition.x =
+        ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+      this.currentMousePosition.y =
+        -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    private isPointOnObject(mousePosition: Vector2, object: Object3D): boolean {
+      this.raycaster.setFromCamera(mousePosition, this[$scene].camera);
+
+      const intersects = this.raycaster.intersectObject(object, true);
+      return intersects.length > 0;
+    }
+
+    private getPartObjectAtPosition(mousePosition: Vector2): Object3D | null {
+      this.raycaster.setFromCamera(mousePosition, this[$scene].camera);
+
+      const targetObject = this.findTargetObject();
+      if (!targetObject) return null;
+
+      // Get all part objects (those with "part__" prefix)
+      const partObjects: Object3D[] = [];
+      targetObject.traverse((child) => {
+        if (child.name && child.name.startsWith('part__')) {
+          partObjects.push(child);
+        }
+      });
+
+      const intersects = this.raycaster.intersectObjects(partObjects, true);
+
+      if (intersects.length > 0) {
+        // Find the top-level part object (not a child mesh)
+        let selectedPart = intersects[0].object;
+        while (selectedPart.parent && !selectedPart.name.startsWith('part__')) {
+          selectedPart = selectedPart.parent;
+        }
+
+        if (selectedPart.name && selectedPart.name.startsWith('part__')) {
+          return selectedPart;
+        }
+      }
+
+      return null;
+    }
+
+    private startDragging(event?: MouseEvent | TouchEvent) {
+      if (!this.selectedObject) return;
+
+      this.isDragging = true;
+      this.dragStartMousePosition.copy(this.currentMousePosition);
+      this.dragStartPosition.copy(this.selectedObject.position);
+
+      // Calculate the offset between the object position and where we clicked
+      // Cast a ray to the floor plane to find where we clicked
+      this.raycaster.setFromCamera(
+        this.currentMousePosition,
+        this[$scene].camera
+      );
+
+      // Update floor plane to current floor level
+      if (this.originalFloorY !== undefined) {
+        this.floorPlane.constant = -this.originalFloorY;
+      }
+
+      const clickPoint = new Vector3();
+      if (this.raycaster.ray.intersectPlane(this.floorPlane, clickPoint)) {
+        // Calculate offset from object position to click point (only X and Z)
+        this.dragOffset.set(
+          this.selectedObject.position.x - clickPoint.x,
+          0,
+          this.selectedObject.position.z - clickPoint.z
+        );
+      } else {
+        // Fallback: no offset
+        this.dragOffset.set(0, 0, 0);
+      }
+
+      // Store original sensitivities and disable all camera interactions while dragging
+      if (this[$controls]) {
+        this.originalSensitivities.orbit = this[$controls].orbitSensitivity;
+        this.originalSensitivities.zoom = this[$controls].zoomSensitivity;
+        this.originalSensitivities.pan = this[$controls].panSensitivity;
+        this.originalSensitivities.input = this[$controls].inputSensitivity;
+
+        this[$controls].orbitSensitivity = 0;
+        this[$controls].zoomSensitivity = 0;
+        this[$controls].panSensitivity = 0;
+        this[$controls].inputSensitivity = 0;
+      }
+
+      // Change cursor to indicate dragging
+      this.style.cursor = 'grabbing';
+
+      console.log(`Started dragging: ${this.selectedObject.name}`);
+    }
+
+    private updateDragPosition() {
+      if (!this.isDragging || !this.selectedObject) return;
+
+      // Cast ray from current mouse position
+      this.raycaster.setFromCamera(
+        this.currentMousePosition,
+        this[$scene].camera
+      );
+
+      // Find intersection with floor plane
+      const intersectionPoint = new Vector3();
+      if (
+        this.raycaster.ray.intersectPlane(this.floorPlane, intersectionPoint)
+      ) {
+        // Apply the drag offset to maintain the relative position
+        this.selectedObject.position.x =
+          intersectionPoint.x + this.dragOffset.x;
+        this.selectedObject.position.z =
+          intersectionPoint.z + this.dragOffset.z;
+        // Keep the lifted Y position
+        this.selectedObject.position.y = this.originalFloorY || 0;
+
+        this[$scene].updateShadow();
+        this[$needsRender]();
+      }
+    }
+
+    private stopDragging() {
+      if (!this.isDragging) return;
+
+      this.isDragging = false;
+
+      // Restore original sensitivities
+      if (this[$controls]) {
+        this[$controls].orbitSensitivity = this.originalSensitivities.orbit;
+        this[$controls].zoomSensitivity = this.originalSensitivities.zoom;
+        this[$controls].panSensitivity = this.originalSensitivities.pan;
+        this[$controls].inputSensitivity = this.originalSensitivities.input;
+      }
+
+      // Reset cursor
+      this.style.cursor = '';
+    }
+
+    private handleSelection(event?: MouseEvent | TouchEvent) {
+      const selectedPart = this.getPartObjectAtPosition(
+        this.currentMousePosition
+      );
+
+      if (selectedPart) {
+        // Toggle selection if clicking the same object, otherwise select new object
+        if (this.selectedObject === selectedPart) {
+          this.deselectObject();
+        } else {
+          this.selectObject(selectedPart);
+        }
+      } else {
+        this.deselectObject();
+      }
+    }
+
+    private selectObject(object: Object3D) {
+      // Deselect previous object
+      this.deselectObject();
+
+      this.selectedObject = object;
+
+      // Disable camera panning while a part is selected
+      if (this[$controls]) {
+        this[$controls].enablePan = false;
+      }
+
+      this[$needsRender]();
+    }
+
+    private deselectObject() {
+      if (this.selectedObject) {
+        // Lower the object back to its original position
+
+        this.selectedObject = null;
+
+        this[$needsRender]();
+      }
+      // Re-enable camera panning when no part is selected
+      if (this[$controls]) {
+        this[$controls].enablePan = true;
+      }
+    }
+
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
 
@@ -367,6 +737,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (typeof window !== 'undefined') {
         window.deDraco = this.deDraco;
       }
+
+      // Set up custom selection and drag handlers
+      this.setupDragHandlers();
     }
 
     disconnectedCallback() {
@@ -374,6 +747,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.removeEventListener('load', this._handleLoad);
       this.removeEventListener('progress', this._handleProgress);
+
+      // Clean up our custom event handlers
+      this.removeEventListener('mousedown', this.onMouseDown.bind(this));
+      this.removeEventListener('mousemove', this.onMouseMove.bind(this));
+      this.removeEventListener('mouseup', this.onMouseUp.bind(this));
+      this.removeEventListener('touchstart', this.onTouchStart.bind(this));
+      this.removeEventListener('touchmove', this.onTouchMove.bind(this));
+      this.removeEventListener('touchend', this.onTouchEnd.bind(this));
+
+      // Clean up selection state
+      this.deselectObject();
 
       if (this.cursor) {
         this.cursor.cleanup();

@@ -312,8 +312,7 @@ export class Cursor extends Object3D {
     const currentTime = performance.now();
     const elapsed = currentTime - this.animationStartTime;
 
-    // Oscillate with a period of 2 seconds (2000ms)
-    const oscillationPeriod = 2000;
+    const oscillationPeriod = 1500;
     const phase = (elapsed % oscillationPeriod) / oscillationPeriod;
 
     // Create a sine wave that oscillates between -0.1 and +0.1 (10% in each direction)
