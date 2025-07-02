@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-import { Box3, Object3D } from 'three';
+import { Box3, Object3D, Vector3 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';
@@ -153,6 +153,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getPlacementCursorPosition(): { x: number; y: number; z: number } | null {
       if (this.cursor && this.cursor.visible) {
+        // Return the cursor's local position relative to its parent (target object)
+        // This is the coordinate system where objects are placed
         return {
           x: this.cursor.position.x,
           y: this.cursor.position.y,

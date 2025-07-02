@@ -21,6 +21,7 @@ export class Cursor extends Object3D {
   private element: HTMLElement | null = null;
   private needsRender: (() => void) | null = null;
   private mouseMoveHandler?: (event: MouseEvent) => void;
+  private worldPlacementPosition: Vector3 = new Vector3();
 
   constructor(scene: any, targetObject: Object3D, radius: number = 0.1) {
     super();
@@ -210,14 +211,35 @@ export class Cursor extends Object3D {
       const t = (placementY - ray.origin.y) / directionY;
 
       if (t > 0) {
-        // Ray hits the plane in front of camera
-        const intersectionPoint = ray.origin
+        // Ray hits the plane in front of camera (this is in world coordinates)
+        const worldIntersectionPoint = ray.origin
           .clone()
           .add(ray.direction.clone().multiplyScalar(t));
 
-        // Position the cursor at the intersection point
-        this.position.copy(intersectionPoint);
-        this.position.y = placementY + 0.01; // Slightly above the placement surface
+        // Store the world position for placement purposes
+        this.worldPlacementPosition.copy(worldIntersectionPoint);
+
+        // For the cursor visual position, we need to consider its parent (target object)
+        // If cursor is a child of target object, we need to position it relative to target
+        if (this.targetObject) {
+          // Convert world position to target's local space for cursor display
+          const localPosition = worldIntersectionPoint.clone();
+          this.targetObject.worldToLocal(localPosition);
+          this.position.copy(localPosition);
+
+          // Adjust Y position to be relative to target's local coordinate system
+          const targetBoundingBoxMin = new Vector3(
+            0,
+            this.scene.boundingBox?.min.y || 0,
+            0
+          );
+          this.targetObject.worldToLocal(targetBoundingBoxMin);
+          this.position.y = targetBoundingBoxMin.y + 0.01;
+        } else {
+          // No target object, position in world space
+          this.position.copy(worldIntersectionPoint);
+          this.position.y = placementY + 0.01;
+        }
 
         this.setVisible(true);
       } else {
@@ -234,5 +256,9 @@ export class Cursor extends Object3D {
     if (this.targetObject) {
       this.positionAtPlacementLevel();
     }
+  }
+
+  getWorldPlacementPosition(): Vector3 {
+    return this.worldPlacementPosition.clone();
   }
 }
