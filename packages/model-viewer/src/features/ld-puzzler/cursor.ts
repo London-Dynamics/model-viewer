@@ -39,6 +39,54 @@ export class Cursor extends Object3D {
     this.positionAtPlacementLevel();
   }
 
+  // Public API methods
+  setVisible(visible: boolean) {
+    this.visible = visible;
+
+    if (visible && this.element && this.needsRender) {
+      // Enable mouse tracking when visible and tracking is configured
+      this.startMouseTracking();
+    } else {
+      // Disable mouse tracking when not visible
+      this.stopMouseTracking();
+    }
+  }
+
+  setupMouseTracking(element: HTMLElement, needsRender: () => void) {
+    this.element = element;
+    this.needsRender = needsRender;
+
+    // If cursor is already visible, start tracking immediately
+    if (this.visible) {
+      this.startMouseTracking();
+    }
+  }
+
+  cleanup() {
+    this.stopMouseTracking();
+    this.element = null;
+    this.needsRender = null;
+  }
+
+  setRadius(newRadius: number) {
+    if (newRadius <= 0) {
+      console.warn('Cursor radius must be greater than 0');
+      return;
+    }
+
+    this.radius = newRadius;
+    this.createCursorGeometry();
+  }
+
+  getRadius(): number {
+    return this.radius;
+  }
+
+  getWorldPlacementPosition(): Vector3 {
+    return this.worldPlacementPosition.clone();
+  }
+
+  // Private implementation methods
   private createCursorGeometry() {
     // Clear existing geometry if any
     this.clear();
@@ -105,25 +153,10 @@ export class Cursor extends Object3D {
     this.add(this.darkContourLine);
   }
 
-  setVisible(visible: boolean) {
-    this.visible = visible;
-
-    if (visible && this.element && this.needsRender) {
-      // Enable mouse tracking when visible and tracking is configured
-      this.startMouseTracking();
-    } else {
-      // Disable mouse tracking when not visible
-      this.stopMouseTracking();
-    }
-  }
-
-  setupMouseTracking(element: HTMLElement, needsRender: () => void) {
-    this.element = element;
-    this.needsRender = needsRender;
-
-    // If cursor is already visible, start tracking immediately
-    if (this.visible) {
-      this.startMouseTracking();
+  private positionAtPlacementLevel() {
+    if (this.scene && this.scene.boundingBox) {
+      // Position at the minimum Y of the bounding box (placement level)
+      this.position.y = this.scene.boundingBox.min.y;
     }
   }
 
@@ -166,36 +199,7 @@ export class Cursor extends Object3D {
     }
   }
 
-  cleanup() {
-    this.stopMouseTracking();
-    this.element = null;
-    this.needsRender = null;
-  }
-
-  setRadius(newRadius: number) {
-    if (newRadius <= 0) {
-      console.warn('Cursor radius must be greater than 0');
-      return;
-    }
-
-    this.radius = newRadius;
-    this.createCursorGeometry();
-  }
-
-  getRadius(): number {
-    return this.radius;
-  }
-
-  // Method to position the cursor at the placement level of the scene
-  positionAtPlacementLevel() {
-    if (this.scene && this.scene.boundingBox) {
-      // Position at the minimum Y of the bounding box (placement level)
-      this.position.y = this.scene.boundingBox.min.y;
-    }
-  }
-
-  // Update cursor position based on mouse coordinates
-  updatePosition(
+  private updatePosition(
     clientX: number,
     clientY: number,
     element: any,
@@ -269,15 +273,5 @@ export class Cursor extends Object3D {
     }
 
     needsRender();
-  }
-
-  resetPosition() {
-    if (this.targetObject) {
-      this.positionAtPlacementLevel();
-    }
-  }
-
-  getWorldPlacementPosition(): Vector3 {
-    return this.worldPlacementPosition.clone();
   }
 }
