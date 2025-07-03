@@ -20,6 +20,7 @@ import {
   RepeatWrapping,
   SphereGeometry,
   Group,
+  RingGeometry,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -47,7 +48,7 @@ export type PlacementOptions = {
   position?: { x: number; y: number; z: number };
   mass?: number; // Mass in kg, affects fall speed
   floorOffset?: number; // Additional Y offset from calculated floor position (e.g., 0.5 for center-positioned cubes)
-  snapPoints?: { x: number; y: number; z: number }[]; // Optional snap points relative to object center
+  snappingPoints?: { x: number; y: number; z: number }[]; // Optional snap points relative to object center
 };
 
 export declare interface LDPuzzlerInterface {
@@ -77,7 +78,7 @@ export declare interface LDPuzzlerInterface {
  * - "duck" -> groupId: "duck", no instanceId (simple name becomes the groupId)
  *
  * Snap Points:
- * - If no snapPoints are provided in PlacementOptions, default snap points are generated
+ * - If no snappingPoints are provided in PlacementOptions, default snap points are generated
  * - Default snap points are placed at the middle of each side of the object's bounding box (front, back, left, right)
  * - When any object is selected, all snap points for all objects are displayed as white spheres
  * - Snap point spheres have a diameter of 0.1m and are semi-transparent
@@ -140,7 +141,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private outlineEffect: HTMLElement | null = null;
 
     // Snap point system
-    private snapPointSpheres: Set<Mesh> = new Set(); // Track all snap point sphere meshes
+    private snappingPointSpheres: Set<Mesh> = new Set(); // Track all snap point sphere meshes
 
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
@@ -265,7 +266,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const meshes: Object3D[] = [];
 
       objects.forEach((obj) => {
-        if (obj.type === 'Mesh' && obj.name !== 'SnapPointSphere') {
+        if (obj.type === 'Mesh' && obj.name !== 'SnappingPointSphere') {
           // Exclude snap point spheres from outline rendering
           meshes.push(obj);
         } else if (obj.type === 'Group') {
@@ -273,13 +274,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (obj.userData.meshes && Array.isArray(obj.userData.meshes)) {
             // Filter out any snap point spheres from cached meshes
             const filteredMeshes = obj.userData.meshes.filter(
-              (mesh: Object3D) => mesh.name !== 'SnapPointSphere'
+              (mesh: Object3D) => mesh.name !== 'SnappingPointSphere'
             );
             meshes.push(...filteredMeshes);
           } else {
             // Fallback: traverse and collect all mesh children (excluding snap points)
             obj.traverse((child) => {
-              if (child.type === 'Mesh' && child.name !== 'SnapPointSphere') {
+              if (
+                child.type === 'Mesh' &&
+                child.name !== 'SnappingPointSphere'
+              ) {
                 meshes.push(child);
               }
             });
@@ -424,13 +428,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             };
 
             // Handle snap points
-            if (options.snapPoints && options.snapPoints.length > 0) {
+            if (options.snappingPoints && options.snappingPoints.length > 0) {
               // Use provided snap points
-              gltf.scene.userData.snapPoints = options.snapPoints;
+              gltf.scene.userData.snappingPoints = options.snappingPoints;
             } else {
               // Generate default snap points if none provided
               // We'll generate them after the object is positioned and added to the scene
-              gltf.scene.userData.needsDefaultSnapPoints = true;
+              gltf.scene.userData.needsDefaultSnappingPoints = true;
             }
 
             // Pre-cache mesh references for efficient outline selection
@@ -507,10 +511,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 },
                 () => {
                   // Generate default snap points if needed (after object is in final position)
-                  if (gltf.scene.userData.needsDefaultSnapPoints) {
-                    gltf.scene.userData.snapPoints =
-                      this.generateDefaultSnapPoints(gltf.scene);
-                    delete gltf.scene.userData.needsDefaultSnapPoints;
+                  if (gltf.scene.userData.needsDefaultSnappingPoints) {
+                    gltf.scene.userData.snappingPoints =
+                      this.generateDefaultSnappingPoints(gltf.scene);
+                    delete gltf.scene.userData.needsDefaultSnappingPoints;
                   }
 
                   // Final shadow update when animation completes
@@ -914,7 +918,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.updateOutlineSelection();
 
       // Show snap points for all objects when any object is selected
-      this.showAllSnapPoints();
+      this.showAllSnappingPoints();
 
       // Disable camera panning while a part is selected
       if (this[$controls]) {
@@ -933,7 +937,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.updateOutlineSelection();
 
         // Hide snap points when no object is selected
-        this.hideAllSnapPoints();
+        this.hideAllSnappingPoints();
 
         this[$needsRender]();
       }
@@ -1079,7 +1083,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.deselectObject();
 
       // Clean up snap points
-      this.hideAllSnapPoints();
+      this.hideAllSnappingPoints();
 
       if (this.cursor) {
         this.cursor.cleanup();
@@ -1090,7 +1094,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Generate default snap points on the middle of each side of the bounding box.
      * Creates snap points on front, back, left, and right sides (not top or bottom).
      */
-    private generateDefaultSnapPoints(
+    private generateDefaultSnappingPoints(
       object: Object3D
     ): { x: number; y: number; z: number }[] {
       const boundingBox = new Box3().setFromObject(object);
@@ -1115,68 +1119,112 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Create snap point visualizations for a specific object.
      */
-    private createSnapPointsForObject(object: Object3D) {
-      if (!object.userData.snapPoints) return;
+    private createSnappingPointsForObject(object: Object3D) {
+      if (!object.userData.snappingPoints) return;
 
-      const snapPoints = object.userData.snapPoints as {
+      const snappingPoints = object.userData.snappingPoints as {
         x: number;
         y: number;
         z: number;
       }[];
 
-      snapPoints.forEach((localPoint) => {
-        const geometry = new SphereGeometry(SNAP_POINT_DIAMETER / 2, 16, 12);
-        const material = new MeshBasicMaterial({
-          color: 0xffffff, // White color
+      snappingPoints.forEach((localPoint) => {
+        // Create a group to hold both the base sphere and camera-facing outline circles
+        const snapPointGroup = new Group();
+        snapPointGroup.position.set(localPoint.x, localPoint.y, localPoint.z);
+        snapPointGroup.name = 'SnappingPointSphere';
+
+        // Create main bright white sphere (base)
+        const sphereGeometry = new SphereGeometry(
+          SNAP_POINT_DIAMETER / 2,
+          16,
+          12
+        );
+        const sphereMaterial = new MeshBasicMaterial({
+          color: 0xffffff, // Bright white
           transparent: true,
-          opacity: 0.8,
+          opacity: 0.9,
+          emissive: 0x222222, // Slight glow for visibility against dark backgrounds
+          depthTest: false, // Always render on top
         });
+        const sphere = new Mesh(sphereGeometry, sphereMaterial);
+        sphere.renderOrder = 999; // High render order to ensure it renders on top
+        snapPointGroup.add(sphere);
 
-        const sphere = new Mesh(geometry, material);
-        sphere.position.set(localPoint.x, localPoint.y, localPoint.z);
-        sphere.name = 'SnapPointSphere';
+        // Create camera-facing dark outline circles for better visibility
+        // These will always face the camera and provide clear contrast
+        const outlineRadius = (SNAP_POINT_DIAMETER / 2) * 1.15; // Slightly larger than sphere
+        const outlineRingGeometry = new RingGeometry(
+          outlineRadius * 0.85, // Inner radius - creates a thin ring
+          outlineRadius, // Outer radius
+          16 // Segments for smooth circle
+        );
+        const outlineRingMaterial = new MeshBasicMaterial({
+          color: 0x000000, // Black outline
+          transparent: true,
+          opacity: 0.7,
+          side: 2, // DoubleSide to ensure visibility from any angle
+          depthTest: false, // Always render on top
+        });
+        const outlineRing = new Mesh(outlineRingGeometry, outlineRingMaterial);
+        outlineRing.renderOrder = 1000; // Slightly higher than sphere to render on top of it
 
-        // Add sphere directly to the object so it moves with it
-        object.add(sphere);
-        this.snapPointSpheres.add(sphere);
+        // Make the ring always face the camera
+        outlineRing.onBeforeRender = () => {
+          if (this[$scene] && this[$scene].camera) {
+            outlineRing.lookAt(this[$scene].camera.position);
+          }
+        };
+
+        snapPointGroup.add(outlineRing);
+
+        // Add group directly to the object so it moves with it
+        object.add(snapPointGroup);
+        this.snappingPointSpheres.add(sphere);
+        this.snappingPointSpheres.add(outlineRing);
       });
     }
 
     /**
      * Remove snap point visualizations from a specific object.
      */
-    private removeSnapPointsFromObject(object: Object3D) {
-      const spheresToRemove: Mesh[] = [];
+    private removeSnappingPointsFromObject(object: Object3D) {
+      const groupsToRemove: Group[] = [];
 
       object.traverse((child) => {
-        if (child.name === 'SnapPointSphere' && child instanceof Mesh) {
-          spheresToRemove.push(child);
+        if (child.name === 'SnappingPointSphere' && child instanceof Group) {
+          groupsToRemove.push(child);
         }
       });
 
-      spheresToRemove.forEach((sphere) => {
-        object.remove(sphere);
-        this.snapPointSpheres.delete(sphere);
-        sphere.geometry.dispose();
-        if (sphere.material instanceof MeshBasicMaterial) {
-          sphere.material.dispose();
-        }
+      groupsToRemove.forEach((group) => {
+        // Dispose of all meshes in the group
+        group.traverse((child) => {
+          if (child instanceof Mesh) {
+            this.snappingPointSpheres.delete(child);
+            child.geometry.dispose();
+            if (child.material instanceof MeshBasicMaterial) {
+              child.material.dispose();
+            }
+          }
+        });
+        object.remove(group);
       });
     }
 
     /**
      * Show snap points for all objects that have snap points.
      */
-    private showAllSnapPoints() {
-      this.hideAllSnapPoints(); // Clear existing snap points first
+    private showAllSnappingPoints() {
+      this.hideAllSnappingPoints(); // Clear existing snap points first
 
       const targetObject = this.findTargetObject();
       if (!targetObject) return;
 
       // Find all objects with snap points and add visualization spheres to them
       targetObject.traverse((child) => {
-        if (child.userData.isPlacedObject && child.userData.snapPoints) {
-          this.createSnapPointsForObject(child);
+        if (child.userData.isPlacedObject && child.userData.snappingPoints) {
+          this.createSnappingPointsForObject(child);
         }
       });
 
@@ -1186,14 +1234,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Hide all snap point visualizations.
      */
-    private hideAllSnapPoints() {
+    private hideAllSnappingPoints() {
       const targetObject = this.findTargetObject();
       if (!targetObject) return;
 
       // Remove snap points from all objects
       targetObject.traverse((child) => {
         if (child.userData.isPlacedObject) {
-          this.removeSnapPointsFromObject(child);
+          this.removeSnappingPointsFromObject(child);
         }
       });
 
