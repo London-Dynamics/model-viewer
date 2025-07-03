@@ -140,7 +140,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private outlineEffect: HTMLElement | null = null;
 
     // Snap point system
-    private snapPointsGroup: Group | null = null; // Container for all snap point visualizations
     private snapPointSpheres: Set<Mesh> = new Set(); // Track all snap point sphere meshes
 
     private updateShadowsWithGLBs() {
@@ -266,16 +265,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const meshes: Object3D[] = [];
 
       objects.forEach((obj) => {
-        if (obj.type === 'Mesh') {
+        if (obj.type === 'Mesh' && obj.name !== 'SnapPointSphere') {
+          // Exclude snap point spheres from outline rendering
           meshes.push(obj);
         } else if (obj.type === 'Group') {
           // Use pre-cached meshes if available for better performance
           if (obj.userData.meshes && Array.isArray(obj.userData.meshes)) {
-            meshes.push(...obj.userData.meshes);
+            // Filter out any snap point spheres from cached meshes
+            const filteredMeshes = obj.userData.meshes.filter(
+              (mesh: Object3D) => mesh.name !== 'SnapPointSphere'
+            );
+            meshes.push(...filteredMeshes);
           } else {
-            // Fallback: traverse and collect all mesh children
+            // Fallback: traverse and collect all mesh children (excluding snap points)
             obj.traverse((child) => {
-              if (child.type === 'Mesh') {
+              if (child.type === 'Mesh' && child.name !== 'SnapPointSphere') {
                 meshes.push(child);
               }
             });
@@ -1109,36 +1113,55 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Initialize the snap point visualization system.
+     * Create snap point visualizations for a specific object.
      */
-    private setupSnapPointSystem() {
-      if (!this.snapPointsGroup) {
-        this.snapPointsGroup = new Group();
-        this.snapPointsGroup.name = 'SnapPointsGroup';
+    private createSnapPointsForObject(object: Object3D) {
+      if (!object.userData.snapPoints) return;
 
-        const targetObject = this.findTargetObject();
-        if (targetObject) {
-          targetObject.add(this.snapPointsGroup);
-        }
-      }
+      const snapPoints = object.userData.snapPoints as {
+        x: number;
+        y: number;
+        z: number;
+      }[];
+
+      snapPoints.forEach((localPoint) => {
+        const geometry = new SphereGeometry(SNAP_POINT_DIAMETER / 2, 16, 12);
+        const material = new MeshBasicMaterial({
+          color: 0xffffff, // White color
+          transparent: true,
+          opacity: 0.8,
+        });
+
+        const sphere = new Mesh(geometry, material);
+        sphere.position.set(localPoint.x, localPoint.y, localPoint.z);
+        sphere.name = 'SnapPointSphere';
+
+        // Add sphere directly to the object so it moves with it
+        object.add(sphere);
+        this.snapPointSpheres.add(sphere);
+      });
     }
 
     /**
-     * Create a visual snap point sphere.
+     * Remove snap point visualizations from a specific object.
      */
-    private createSnapPointSphere(position: Vector3): Mesh {
-      const geometry = new SphereGeometry(SNAP_POINT_DIAMETER / 2, 16, 12);
-      const material = new MeshBasicMaterial({
-        color: 0xffffff, // White color
-        transparent: true,
-        opacity: 0.8,
+    private removeSnapPointsFromObject(object: Object3D) {
+      const spheresToRemove: Mesh[] = [];
+
+      object.traverse((child) => {
+        if (child.name === 'SnapPointSphere' && child instanceof Mesh) {
+          spheresToRemove.push(child);
+        }
       });
 
-      const sphere = new Mesh(geometry, material);
-      sphere.position.copy(position);
-      sphere.name = 'SnapPointSphere';
-
-      return sphere;
+      spheresToRemove.forEach((sphere) => {
+        object.remove(sphere);
+        this.snapPointSpheres.delete(sphere);
+        sphere.geometry.dispose();
+        if (sphere.material instanceof MeshBasicMaterial) {
+          sphere.material.dispose();
+        }
+      });
     }
 
     /**
@@ -1147,34 +1170,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private showAllSnapPoints() {
       this.hideAllSnapPoints(); // Clear existing snap points first
 
-      if (!this.snapPointsGroup) {
-        this.setupSnapPointSystem();
-      }
-
       const targetObject = this.findTargetObject();
-      if (!targetObject || !this.snapPointsGroup) return;
+      if (!targetObject) return;
 
-      // Find all objects with snap points
+      // Find all objects with snap points and add visualization spheres to them
       targetObject.traverse((child) => {
         if (child.userData.isPlacedObject && child.userData.snapPoints) {
-          const snapPoints = child.userData.snapPoints as {
-            x: number;
-            y: number;
-            z: number;
-          }[];
-
-          snapPoints.forEach((localPoint) => {
-            // Convert local snap point to world position
-            const worldPoint = child.localToWorld(
-              new Vector3(localPoint.x, localPoint.y, localPoint.z)
-            );
-            // Convert world position to target object's local space
-            const targetLocalPoint = targetObject.worldToLocal(worldPoint);
-
-            const sphere = this.createSnapPointSphere(targetLocalPoint);
-            this.snapPointsGroup!.add(sphere);
-            this.snapPointSpheres.add(sphere);
-          });
+          this.createSnapPointsForObject(child);
         }
       });
 
@@ -1185,17 +1187,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Hide all snap point visualizations.
      */
     private hideAllSnapPoints() {
-      if (this.snapPointsGroup) {
-        // Remove all spheres from the group
-        this.snapPointSpheres.forEach((sphere) => {
-          this.snapPointsGroup!.remove(sphere);
-          sphere.geometry.dispose();
-          if (sphere.material instanceof MeshBasicMaterial) {
-            sphere.material.dispose();
-          }
-        });
-        this.snapPointSpheres.clear();
-      }
+      const targetObject = this.findTargetObject();
+      if (!targetObject) return;
+
+      // Remove snap points from all objects
+      targetObject.traverse((child) => {
+        if (child.userData.isPlacedObject) {
+          this.removeSnapPointsFromObject(child);
+        }
+      });
 
       this[$needsRender]();
     }
