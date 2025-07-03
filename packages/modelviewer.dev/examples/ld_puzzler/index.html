@@ -32,6 +32,35 @@
       href="../../assets/favicon.png"
     />
 
+    <!-- ES-Shims for older browsers -->
+    <script
+      async
+      src="https://ga.jspm.io/npm:es-module-shims@1.7.1/dist/es-module-shims.js"
+    ></script>
+
+    <!-- Import Three.js using an import-map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <!-- Import the <model-viewer> component without three bundled -->
+
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
+    ></script>
+
+    <!-- Import the <model-viewer-effects> addon -->
+    <script
+      type="module"
+      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
+    ></script>
+
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
   <body class="ld">
@@ -71,6 +100,14 @@
                     max-field-of-view="180"
                     field-of-view="10deg"
                   >
+                    <effect-composer render-mode="quality">
+                      <outline-effect
+                        color="white"
+                        strength="5"
+                        blend-mode="skip"
+                      ></outline-effect>
+                      <color-grade-effect></color-grade-effect>
+                    </effect-composer>
                     <div class="absolute bottom-0 inset-x-0 p-2">
                       <div class="bg-white shadow-sm rounded-lg">
                         <div class="px-4 py-5">
@@ -393,11 +430,5 @@
 
     <!-- Documentation-specific dependencies: -->
     <script type="module" src="../built/dependencies.js"></script>
-
-    <!-- Loads <model-viewer> on modern browsers: -->
-    <script
-      type="module"
-      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
-    ></script>
   </body>
 </html>

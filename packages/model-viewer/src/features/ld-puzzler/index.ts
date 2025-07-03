@@ -16,6 +16,8 @@ import {
   Mesh,
   PlaneGeometry,
   MeshBasicMaterial,
+  TextureLoader,
+  RepeatWrapping,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -24,6 +26,7 @@ import { property } from 'lit/decorators.js';
 
 import ModelViewerElementBase, {
   $scene,
+  $renderer,
   $needsRender,
   $canvas,
 } from '../../model-viewer-base.js';
@@ -51,6 +54,46 @@ export declare interface LDPuzzlerInterface {
   getPlacementCursorPosition(): { x: number; y: number; z: number } | null;
 }
 
+/**
+ * LDPuzzlerMixin adds interactive object placement and selection functionality to model-viewer.
+ *
+ * Features:
+ * - Object placement with gravity animation
+ * - Click selection with visual outlines (requires model-viewer-effects)
+ * - Drag and drop for selected objects
+ * - Placement cursor for guided positioning
+ * - Name-based object grouping for future multi-selection support
+ *
+ * Object Naming Convention for Grouping:
+ * The 'name' property in PlacementOptions supports special syntax for automatic grouping:
+ * - "chair_01" -> groupId: "chair", instanceId: "01" (underscore separates group from instance)
+ * - "table-wood_large" -> groupId: "table-wood", instanceId: "large" (hyphens allowed in groupId)
+ * - "car#red_001" -> groupId: "car", tags: ["red"], instanceId: "001" (# adds tags)
+ * - "duck" -> groupId: "duck", no instanceId (simple name becomes the groupId)
+ *
+ * Future multi-selection will be able to select all objects by groupId or tags.
+ *
+ * Outline Functionality Requirements:
+ * To enable visual outlines for selected objects, you must include the model-viewer-effects
+ * custom elements in your HTML:
+ *
+ * ```html
+ * <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer-effects/dist/model-viewer-effects.min.js"></script>
+ *
+ * <model-viewer>
+ *   <effect-composer>
+ *     <outline-effect color="white" strength="3" smoothing="1" blend-mode="skip"></outline-effect>
+ *   </effect-composer>
+ * </model-viewer>
+ * ```
+ *
+ * The ld-puzzler component will automatically:
+ * - Set blend-mode="default" when objects are selected (enables outline rendering)
+ * - Set blend-mode="skip" when no objects are selected (disables outline rendering)
+ *
+ * If outline-effect is not present, selection will still work but without visual feedback.
+ */
+
 export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDPuzzlerInterface> & T => {
@@ -68,6 +111,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     // Selection and dragging properties
     private selectedObjects: Object3D[] = [];
+    private selectedGroups: Set<Object3D> = new Set(); // Track selected groups for multi-selection
     private isDragging: boolean = false;
     private dragStartPosition: Vector3 = new Vector3();
     private dragStartMousePosition: Vector2 = new Vector2();
@@ -80,6 +124,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private lastClickTime: number = 0;
     private lastClickPosition: Vector2 = new Vector2();
     private clickHandler?: (event: MouseEvent) => void;
+
+    // Outline system - expects outline-effect element to be present in HTML
+    private outlineEffect: HTMLElement | null = null;
 
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
@@ -149,6 +196,105 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._modelLoaded = true;
       this.handlePlacementCursorAttribute();
       this.handlePlacementCursorSizeAttribute();
+    }
+
+    private setupOutlineSystem() {
+      // Look for an outline-effect element that should be provided by the HTML page
+      this.outlineEffect = this.querySelector('outline-effect');
+
+      if (!this.outlineEffect) {
+        console.warn(
+          'ld-puzzler: No outline-effect element found. Outline functionality will be disabled. Please add <outline-effect> inside your <model-viewer> element.'
+        );
+        return;
+      }
+
+      console.log(
+        'Found outline-effect element, outline functionality enabled'
+      );
+    }
+
+    private updateOutlineSelection() {
+      // Initialize outline system if not already done
+      if (!this.outlineEffect) {
+        this.setupOutlineSystem();
+      }
+
+      if (!this.outlineEffect) return;
+
+      // Update the selection in the outline effect
+      if (this.selectedObjects.length > 0) {
+        // Collect all mesh objects from selected groups/objects for outline rendering
+        const meshesToOutline = this.collectMeshesFromObjects(this.selectedObjects);
+
+        // Set the mesh objects as the selection for outline rendering
+        (this.outlineEffect as any).selection = meshesToOutline;
+        // Use default blend-mode when objects are selected (enable outline rendering)
+        this.outlineEffect.setAttribute('blend-mode', 'default');
+      } else {
+        // When no objects are selected, use skip mode to disable outline completely
+        this.outlineEffect.setAttribute('blend-mode', 'skip');
+        // Clear the selection to avoid any lingering selection state
+        (this.outlineEffect as any).selection = [];
+      }
+
+      this[$needsRender]();
+    }
+
+    /**
+     * Efficiently collect all mesh objects from a list of objects (Groups or Meshes).
+     * This method supports both individual objects and future multi-object selections.
+     */
+    private collectMeshesFromObjects(objects: Object3D[]): Object3D[] {
+      const meshes: Object3D[] = [];
+      
+      objects.forEach((obj) => {
+        if (obj.type === 'Mesh') {
+          meshes.push(obj);
+        } else if (obj.type === 'Group') {
+          // Use pre-cached meshes if available for better performance
+          if (obj.userData.meshes && Array.isArray(obj.userData.meshes)) {
+            meshes.push(...obj.userData.meshes);
+          } else {
+            // Fallback: traverse and collect all mesh children
+            obj.traverse((child) => {
+              if (child.type === 'Mesh') {
+                meshes.push(child);
+              }
+            });
+          }
+        }
+      });
+
+      return meshes;
+    }
+
+    /**
+     * Enhanced method for selecting multiple objects (for future multi-selection support).
+     * Currently supports single selection but designed to be easily extended.
+     */
+    private selectObjects(objects: Object3D[]) {
+      // Clear previous selection
+      this.deselectObject();
+
+      this.selectedObjects = [...objects];
+      
+      // Track groups separately for potential future grouping operations
+      objects.forEach(obj => {
+        if (obj.type === 'Group') {
+          this.selectedGroups.add(obj);
+        }
+      });
+
+      // Update outline selection
+      this.updateOutlineSelection();
+
+      // Disable camera panning while objects are selected
+      if (this[$controls]) {
+        this[$controls].enablePan = false;
+      }
+
+      this[$needsRender]();
     }
 
     private enablePlacementCursor() {
@@ -238,10 +384,30 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         loader.load(
           src,
           (gltf) => {
-            gltf.scene.name =
-              'part__' +
-              (options.name ||
-                `part__${Math.random().toString(36).substring(2, 9)}`);
+            const objectName = options.name || `part__${Math.random().toString(36).substring(2, 9)}`;
+            gltf.scene.name = 'part__' + objectName;
+            
+            // Parse metadata from the object name
+            const nameMetadata = this.parseNameMetadata(objectName);
+            
+            // Add metadata for future grouping and selection optimization
+            gltf.scene.userData = {
+              ...gltf.scene.userData,
+              isPlacedObject: true,
+              groupId: nameMetadata.groupId,
+              tags: nameMetadata.tags,
+              instanceId: nameMetadata.instanceId,
+              placedAt: Date.now()
+            };
+
+            // Pre-cache mesh references for efficient outline selection
+            const meshes: Object3D[] = [];
+            gltf.scene.traverse((child) => {
+              if (child.type === 'Mesh') {
+                meshes.push(child);
+              }
+            });
+            gltf.scene.userData.meshes = meshes;
             if (targetObject) {
               let finalPosition: { x: number; y: number; z: number };
 
@@ -285,6 +451,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
               // Track this GLB for shadow calculations
               this.addedGLBs.add(gltf.scene);
+
+              // Initialize outline system on first GLB placement
+              if (!this.outlineEffect) {
+                this.setupOutlineSystem();
+              }
 
               // Update shadows to include all GLBs
               this.updateShadowsWithGLBs();
@@ -699,6 +870,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.selectedObjects = [object];
 
+      // Update outline selection
+      this.updateOutlineSelection();
+
       // Disable camera panning while a part is selected
       if (this[$controls]) {
         this[$controls].enablePan = false;
@@ -710,6 +884,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private deselectObject() {
       if (this.selectedObjects.length > 0) {
         this.selectedObjects = [];
+        this.selectedGroups.clear(); // Clear group tracking
+
+        // Update outline selection
+        this.updateOutlineSelection();
 
         this[$needsRender]();
       }
@@ -717,6 +895,93 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this[$controls]) {
         this[$controls].enablePan = true;
       }
+    }
+
+    /**
+     * Get all objects by group ID for future multi-object grouping support.
+     */
+    private getObjectsByGroupId(groupId: string): Object3D[] {
+      const objects: Object3D[] = [];
+      const targetObject = this.findTargetObject();
+      if (!targetObject) return objects;
+
+      targetObject.traverse((child) => {
+        if (child.userData.groupId === groupId && child.userData.isPlacedObject) {
+          objects.push(child);
+        }
+      });
+
+      return objects;
+    }
+
+    /**
+     * Get all objects by tags for future batch operations.
+     */
+    private getObjectsByTags(tags: string[]): Object3D[] {
+      const objects: Object3D[] = [];
+      const targetObject = this.findTargetObject();
+      if (!targetObject) return objects;
+
+      targetObject.traverse((child) => {
+        if (child.userData.isPlacedObject && child.userData.tags) {
+          const hasMatchingTag = tags.some(tag => child.userData.tags.includes(tag));
+          if (hasMatchingTag) {
+            objects.push(child);
+          }
+        }
+      });
+
+      return objects;
+    }
+
+    /**
+     * Future method for selecting objects by group ID (for multi-object grouping).
+     */
+    private selectObjectsByGroupId(groupId: string) {
+      const objects = this.getObjectsByGroupId(groupId);
+      if (objects.length > 0) {
+        this.selectObjects(objects);
+      }
+    }
+
+    /**
+     * Parse grouping information from object name.
+     * Supports naming conventions like:
+     * - "chair_01" -> groupId: "chair", instanceId: "01"
+     * - "table-wood_large" -> groupId: "table-wood", instanceId: "large"
+     * - "car#red_001" -> groupId: "car", tags: ["red"], instanceId: "001"
+     */
+    private parseNameMetadata(name: string): {
+      groupId: string;
+      tags: string[];
+      instanceId: string;
+    } {
+      // Extract tags from # syntax: "car#red_001" -> groupId: "car", tags: ["red"], instanceId: "001"
+      const tagMatch = name.match(/^([^#]+)#([^_]+)_(.+)$/);
+      if (tagMatch) {
+        return {
+          groupId: tagMatch[1],
+          tags: [tagMatch[2]],
+          instanceId: tagMatch[3]
+        };
+      }
+
+      // Extract groupId and instanceId from _ syntax: "chair_01" -> groupId: "chair", instanceId: "01"
+      const groupMatch = name.match(/^(.+)_([^_]+)$/);
+      if (groupMatch) {
+        return {
+          groupId: groupMatch[1],
+          tags: [],
+          instanceId: groupMatch[2]
+        };
+      }
+
+      // No special syntax, use the full name as groupId
+      return {
+        groupId: name,
+        tags: [],
+        instanceId: ""
+      };
     }
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
