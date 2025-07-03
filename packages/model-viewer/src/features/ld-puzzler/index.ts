@@ -67,7 +67,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private originalFloorY: number | undefined; // Store the original floor level
 
     // Selection and dragging properties
-    private selectedObject: Object3D | null = null;
+    private selectedObjects: Object3D[] = [];
     private isDragging: boolean = false;
     private dragStartPosition: Vector3 = new Vector3();
     private dragStartMousePosition: Vector2 = new Vector2();
@@ -403,10 +403,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.lastClickPosition.copy(this.currentMousePosition);
 
       // Check if we're clicking on the selected object
-      if (this.selectedObject) {
-        const isOnSelectedObject = this.isPointOnObject(
-          this.currentMousePosition,
-          this.selectedObject
+      if (this.selectedObjects.length) {
+        const isOnSelectedObject = this.selectedObjects.some((obj) =>
+          this.isPointOnObject(this.currentMousePosition, obj)
         );
         if (isOnSelectedObject) {
           event.stopImmediatePropagation();
@@ -430,7 +429,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private onMouseMove(event: MouseEvent) {
       this.updateMousePosition(event);
 
-      if (this.isDragging && this.selectedObject) {
+      if (this.isDragging && this.selectedObjects.length) {
         this.updateDragPosition();
       }
     }
@@ -469,10 +468,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.lastClickTime = performance.now();
         this.lastClickPosition.copy(this.currentMousePosition);
 
-        if (this.selectedObject) {
-          const isOnSelectedObject = this.isPointOnObject(
-            this.currentMousePosition,
-            this.selectedObject
+        if (this.selectedObjects.length) {
+          const isOnSelectedObject = this.selectedObjects.some((obj) =>
+            this.isPointOnObject(this.currentMousePosition, obj)
           );
           if (isOnSelectedObject) {
             event.stopImmediatePropagation();
@@ -577,11 +575,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private startDragging(event?: MouseEvent | TouchEvent) {
-      if (!this.selectedObject) return;
+      if (!this.selectedObjects.length) return;
 
       this.isDragging = true;
       this.dragStartMousePosition.copy(this.currentMousePosition);
-      this.dragStartPosition.copy(this.selectedObject.position);
+      this.dragStartPosition.copy(this.selectedObjects[0].position);
 
       // Calculate the offset between the object position and where we clicked
       // Cast a ray to the floor plane to find where we clicked
@@ -599,9 +597,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this.raycaster.ray.intersectPlane(this.floorPlane, clickPoint)) {
         // Calculate offset from object position to click point (only X and Z)
         this.dragOffset.set(
-          this.selectedObject.position.x - clickPoint.x,
+          this.selectedObjects[0].position.x - clickPoint.x,
           0,
-          this.selectedObject.position.z - clickPoint.z
+          this.selectedObjects[0].position.z - clickPoint.z
         );
       } else {
         // Fallback: no offset
@@ -624,11 +622,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Change cursor to indicate dragging
       this.style.cursor = 'grabbing';
 
-      console.log(`Started dragging: ${this.selectedObject.name}`);
+      console.log(
+        `Started dragging: ${this.selectedObjects
+          .map((obj) => obj.name)
+          .join(', ')}`
+      );
     }
 
     private updateDragPosition() {
-      if (!this.isDragging || !this.selectedObject) return;
+      if (!this.isDragging || this.selectedObjects.length === 0) return;
 
       // Cast ray from current mouse position
       this.raycaster.setFromCamera(
@@ -636,18 +638,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$scene].camera
       );
 
+      const object = this.selectedObjects[0]; // Assuming single selection for now
+
       // Find intersection with floor plane
       const intersectionPoint = new Vector3();
       if (
         this.raycaster.ray.intersectPlane(this.floorPlane, intersectionPoint)
       ) {
         // Apply the drag offset to maintain the relative position
-        this.selectedObject.position.x =
-          intersectionPoint.x + this.dragOffset.x;
-        this.selectedObject.position.z =
-          intersectionPoint.z + this.dragOffset.z;
+        object.position.x = intersectionPoint.x + this.dragOffset.x;
+        object.position.z = intersectionPoint.z + this.dragOffset.z;
         // Keep the lifted Y position
-        this.selectedObject.position.y = this.originalFloorY || 0;
+        object.position.y = this.originalFloorY || 0;
 
         this[$scene].updateShadow();
         this[$needsRender]();
@@ -678,7 +680,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (selectedPart) {
         // Toggle selection if clicking the same object, otherwise select new object
-        if (this.selectedObject === selectedPart) {
+        if (
+          this.selectedObjects.length === 1 &&
+          this.selectedObjects[0] === selectedPart
+        ) {
           this.deselectObject();
         } else {
           this.selectObject(selectedPart);
@@ -692,7 +697,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Deselect previous object
       this.deselectObject();
 
-      this.selectedObject = object;
+      this.selectedObjects = [object];
 
       // Disable camera panning while a part is selected
       if (this[$controls]) {
@@ -703,10 +708,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private deselectObject() {
-      if (this.selectedObject) {
-        // Lower the object back to its original position
-
-        this.selectedObject = null;
+      if (this.selectedObjects.length > 0) {
+        this.selectedObjects = [];
 
         this[$needsRender]();
       }
