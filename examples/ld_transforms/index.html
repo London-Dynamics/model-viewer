@@ -1,0 +1,733 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Transforms</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Transforms examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="transform-geometry" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Transforms</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page showcases how you can control parts of the model on
+                the fly
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Transform Geometry</h2>
+                <h4>
+                  Dynamicly alter position, rotation, and scale of geometry.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="transform-geometry"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="transform-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="An animated 3D model two cubes"
+                  >
+                    <div
+                      id="box-transforms"
+                      class="absolute bottom-0 inset-x-0 p-2"
+                    >
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel (Purple Box)
+                          </h3>
+                          <div
+                            class="mt-2 divide-y *:py-2 -my-2 divide-gray-100"
+                          >
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-2">
+                                <label
+                                  for="rotation-order"
+                                  class="block text-sm/6 font-medium text-gray-900 whitespace-nowrap"
+                                  >Transform Order</label
+                                >
+
+                                <select
+                                  id="rotation-order"
+                                  class="w-full appearance-none rounded-md bg-white py-1 pl-3 pr-3 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6"
+                                >
+                                  <option value="XYZ">XYZ</option>
+                                  <option value="ZXY" selected>ZXY</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="mt-3 text-xs! uppercase">Translate</h4>
+                              <div
+                                class="grid grid-cols-3! grid-rows-none! gap-4! translate"
+                              >
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-translate-xaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >X</label
+                                  >
+                                  <input
+                                    id="box-translate-xaxis"
+                                    type="range"
+                                    min="-1"
+                                    max="1"
+                                    default="0"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-translate-yaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Y</label
+                                  >
+                                  <input
+                                    id="box-translate-yaxis"
+                                    type="range"
+                                    min="-1"
+                                    max="1"
+                                    default="0"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-translate-zaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Z</label
+                                  >
+                                  <input
+                                    id="box-translate-zaxis"
+                                    type="range"
+                                    min="-1"
+                                    max="1"
+                                    default="0"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="mt-3 text-xs! uppercase">Rotation</h4>
+                              <div
+                                class="grid grid-cols-3! grid-rows-none! gap-4! rotate"
+                              >
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-rotate-xaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >X</label
+                                  >
+                                  <input
+                                    id="box-rotate-xaxis"
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    default="0"
+                                    step="1"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-rotate-yaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Y</label
+                                  >
+                                  <input
+                                    id="box-rotate-yaxis"
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    default="0"
+                                    step="1"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-rotate-zaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Z</label
+                                  >
+                                  <input
+                                    id="box-rotate-zaxis"
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    default="0"
+                                    step="1"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="mt-3 text-xs! uppercase">Scale</h4>
+                              <div
+                                class="grid grid-cols-3! grid-rows-none! gap-4! scale"
+                              >
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-scale-xaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >X</label
+                                  >
+                                  <input
+                                    id="box-scale-xaxis"
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    default="1"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-scale-yaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Y</label
+                                  >
+                                  <input
+                                    id="box-scale-yaxis"
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    default="1"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="box-scale-zaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Z</label
+                                  >
+                                  <input
+                                    id="box-scale-zaxis"
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    default="1"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#transform-demo');
+
+                      const degToRad = (deg) => (deg * Math.PI) / 180;
+                      const radToDeg = (rad) => rad * (180 / Math.PI);
+
+                      let rotationOrder = 'ZXY';
+
+                      const rotationOrderSelect =
+                        document.querySelector('#rotation-order');
+
+                      rotationOrderSelect.addEventListener(
+                        'change',
+                        (event) => {
+                          rotationOrder = event.target.value;
+                          console.log('rotationOrder', rotationOrder);
+                        }
+                      );
+
+                      const boxTranslators = modelViewer.querySelectorAll(
+                        '#box-transforms .translate .axis-input'
+                      );
+
+                      const boxRotators = modelViewer.querySelectorAll(
+                        '#box-transforms .rotate .axis-input'
+                      );
+
+                      const boxScalers = modelViewer.querySelectorAll(
+                        '#box-transforms .scale .axis-input'
+                      );
+
+                      boxTranslators.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x = modelViewer.querySelector(
+                            '#box-translate-xaxis'
+                          ).value;
+                          const y = modelViewer.querySelector(
+                            '#box-translate-yaxis'
+                          ).value;
+                          const z = modelViewer.querySelector(
+                            '#box-translate-zaxis'
+                          ).value;
+
+                          modelViewer.updateMeshPosition('Box', [x, y, z]);
+                        });
+                      });
+
+                      boxRotators.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x =
+                            modelViewer.querySelector(
+                              '#box-rotate-xaxis'
+                            ).value;
+                          // modelViewer.querySelector(
+                          //   '#box-rotate-x-value'
+                          // ).innerText = x;
+                          const y =
+                            modelViewer.querySelector(
+                              '#box-rotate-yaxis'
+                            ).value;
+                          // modelViewer.querySelector(
+                          //   '#box-rotate-y-value'
+                          // ).innerText = y;
+                          const z =
+                            modelViewer.querySelector(
+                              '#box-rotate-zaxis'
+                            ).value;
+                          // modelViewer.querySelector(
+                          //   '#box-rotate-z-value'
+                          // ).innerText = z;
+
+                          modelViewer.updateMeshRotation(
+                            'Box',
+                            [degToRad(x), degToRad(y), degToRad(z)],
+                            rotationOrder
+                          );
+                        });
+                      });
+
+                      boxScalers.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x =
+                            modelViewer.querySelector('#box-scale-xaxis').value;
+                          const y =
+                            modelViewer.querySelector('#box-scale-yaxis').value;
+                          const z =
+                            modelViewer.querySelector('#box-scale-zaxis').value;
+
+                          modelViewer.updateMeshScale('Box', [x, y, z]);
+                        });
+                      });
+
+                      modelViewer.addEventListener('load', () => {
+                        console.group('Model Loaded');
+                        console.log('Object3D', modelViewer.getSceneObjects());
+                        console.log('Meshes', modelViewer.getSceneMeshes());
+                        console.groupEnd();
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="transform-scene" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Transform Scene</h2>
+                <h4>
+                  Dynamicly alter position, rotation, and scale of entire scene.
+                </h4>
+              </div>
+              <example-snippet stamp-to="transform-scene" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="transform-scene-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="An animated 3D model two cubes"
+                  >
+                    <div
+                      id="scene-transforms"
+                      class="absolute bottom-0 inset-x-0 p-2"
+                    >
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel (Scene)
+                          </h3>
+                          <div
+                            class="mt-2 divide-y *:py-2 -my-2 divide-gray-100"
+                          >
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-2">
+                                <label
+                                  for="rotation-order"
+                                  class="block text-sm/6 font-medium text-gray-900 whitespace-nowrap"
+                                  >Transform Order</label
+                                >
+
+                                <select
+                                  id="rotation-order"
+                                  class="w-full appearance-none rounded-md bg-white py-1 pl-3 pr-3 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6"
+                                >
+                                  <option value="XYZ">XYZ</option>
+                                  <option value="ZXY" selected>ZXY</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="mt-3 text-xs! uppercase">Translate</h4>
+                              <div
+                                class="grid grid-cols-3! grid-rows-none! gap-4! translate"
+                              >
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-translate-xaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >X</label
+                                  >
+                                  <input
+                                    id="scene-translate-xaxis"
+                                    type="range"
+                                    min="-1"
+                                    max="1"
+                                    default="0"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-translate-yaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Y</label
+                                  >
+                                  <input
+                                    id="scene-translate-yaxis"
+                                    type="range"
+                                    min="-1"
+                                    max="1"
+                                    default="0"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-translate-zaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Z</label
+                                  >
+                                  <input
+                                    id="scene-translate-zaxis"
+                                    type="range"
+                                    min="-1"
+                                    max="1"
+                                    default="0"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="mt-3 text-xs! uppercase">Rotation</h4>
+                              <div
+                                class="grid grid-cols-3! grid-rows-none! gap-4! rotate"
+                              >
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-rotate-xaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >X</label
+                                  >
+                                  <input
+                                    id="scene-rotate-xaxis"
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    default="0"
+                                    step="1"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-rotate-yaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Y</label
+                                  >
+                                  <input
+                                    id="scene-rotate-yaxis"
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    default="0"
+                                    step="1"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-rotate-zaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Z</label
+                                  >
+                                  <input
+                                    id="scene-rotate-zaxis"
+                                    type="range"
+                                    min="-180"
+                                    max="180"
+                                    default="0"
+                                    step="1"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="mt-3 text-xs! uppercase">Scale</h4>
+                              <div
+                                class="grid grid-cols-3! grid-rows-none! gap-4! scale"
+                              >
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-scale-xaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >X</label
+                                  >
+                                  <input
+                                    id="scene-scale-xaxis"
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    default="1"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-scale-yaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Y</label
+                                  >
+                                  <input
+                                    id="scene-scale-yaxis"
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    default="1"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                                <div class="flex items-center gap-2">
+                                  <label
+                                    for="scene-scale-zaxis"
+                                    class="block text-sm font-medium text-gray-400 dark:text-white"
+                                    >Z</label
+                                  >
+                                  <input
+                                    id="scene-scale-zaxis"
+                                    type="range"
+                                    min="0"
+                                    max="2"
+                                    default="1"
+                                    step="0.01"
+                                    class="axis-input w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#transform-scene-demo'
+                      );
+
+                      const sceneTranslators = modelViewer.querySelectorAll(
+                        '#scene-transforms .translate .axis-input'
+                      );
+
+                      const sceneRotators = modelViewer.querySelectorAll(
+                        '#scene-transforms .rotate .axis-input'
+                      );
+
+                      const sceneScalers = modelViewer.querySelectorAll(
+                        '#scene-transforms .scale .axis-input'
+                      );
+
+                      sceneTranslators.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x = modelViewer.querySelector(
+                            '#scene-translate-xaxis'
+                          ).value;
+                          const y = modelViewer.querySelector(
+                            '#scene-translate-yaxis'
+                          ).value;
+                          const z = modelViewer.querySelector(
+                            '#scene-translate-zaxis'
+                          ).value;
+
+                          modelViewer.updateScenePosition([x, y, z]);
+                        });
+                      });
+
+                      sceneRotators.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x = modelViewer.querySelector(
+                            '#scene-rotate-xaxis'
+                          ).value;
+                          const y = modelViewer.querySelector(
+                            '#scene-rotate-yaxis'
+                          ).value;
+                          const z = modelViewer.querySelector(
+                            '#scene-rotate-zaxis'
+                          ).value;
+
+                          modelViewer.updateSceneRotation([
+                            x * Math.PI,
+                            y * Math.PI,
+                            z * Math.PI,
+                          ]);
+                        });
+                      });
+
+                      sceneScalers.forEach((input) => {
+                        input.addEventListener('input', (event) => {
+                          const x =
+                            modelViewer.querySelector(
+                              '#scene-scale-xaxis'
+                            ).value;
+                          const y =
+                            modelViewer.querySelector(
+                              '#scene-scale-yaxis'
+                            ).value;
+                          const z =
+                            modelViewer.querySelector(
+                              '#scene-scale-zaxis'
+                            ).value;
+
+                          modelViewer.updateSceneScale([x, y, z]);
+                        });
+                      });
+
+                      modelViewer.addEventListener('load', () => {
+                        console.group('Model Loaded');
+                        console.log('Object3D', modelViewer.getSceneObjects());
+                        console.log('Meshes', modelViewer.getSceneMeshes());
+                        console.groupEnd();
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_transforms');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>
