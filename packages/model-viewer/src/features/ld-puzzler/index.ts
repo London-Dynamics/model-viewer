@@ -225,7 +225,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Update the selection in the outline effect
       if (this.selectedObjects.length > 0) {
         // Collect all mesh objects from selected groups/objects for outline rendering
-        const meshesToOutline = this.collectMeshesFromObjects(this.selectedObjects);
+        const meshesToOutline = this.collectMeshesFromObjects(
+          this.selectedObjects
+        );
 
         // Set the mesh objects as the selection for outline rendering
         (this.outlineEffect as any).selection = meshesToOutline;
@@ -247,7 +249,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private collectMeshesFromObjects(objects: Object3D[]): Object3D[] {
       const meshes: Object3D[] = [];
-      
+
       objects.forEach((obj) => {
         if (obj.type === 'Mesh') {
           meshes.push(obj);
@@ -278,9 +280,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.deselectObject();
 
       this.selectedObjects = [...objects];
-      
+
       // Track groups separately for potential future grouping operations
-      objects.forEach(obj => {
+      objects.forEach((obj) => {
         if (obj.type === 'Group') {
           this.selectedGroups.add(obj);
         }
@@ -384,12 +386,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         loader.load(
           src,
           (gltf) => {
-            const objectName = options.name || `part__${Math.random().toString(36).substring(2, 9)}`;
+            const objectName =
+              options.name ||
+              `part__${Math.random().toString(36).substring(2, 9)}`;
             gltf.scene.name = 'part__' + objectName;
-            
+
             // Parse metadata from the object name
             const nameMetadata = this.parseNameMetadata(objectName);
-            
+
             // Add metadata for future grouping and selection optimization
             gltf.scene.userData = {
               ...gltf.scene.userData,
@@ -397,7 +401,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               groupId: nameMetadata.groupId,
               tags: nameMetadata.tags,
               instanceId: nameMetadata.instanceId,
-              placedAt: Date.now()
+              placedAt: Date.now(),
             };
 
             // Pre-cache mesh references for efficient outline selection
@@ -906,7 +910,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!targetObject) return objects;
 
       targetObject.traverse((child) => {
-        if (child.userData.groupId === groupId && child.userData.isPlacedObject) {
+        if (
+          child.userData.groupId === groupId &&
+          child.userData.isPlacedObject
+        ) {
           objects.push(child);
         }
       });
@@ -924,7 +931,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       targetObject.traverse((child) => {
         if (child.userData.isPlacedObject && child.userData.tags) {
-          const hasMatchingTag = tags.some(tag => child.userData.tags.includes(tag));
+          const hasMatchingTag = tags.some((tag) =>
+            child.userData.tags.includes(tag)
+          );
           if (hasMatchingTag) {
             objects.push(child);
           }
@@ -962,7 +971,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return {
           groupId: tagMatch[1],
           tags: [tagMatch[2]],
-          instanceId: tagMatch[3]
+          instanceId: tagMatch[3],
         };
       }
 
@@ -972,7 +981,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return {
           groupId: groupMatch[1],
           tags: [],
-          instanceId: groupMatch[2]
+          instanceId: groupMatch[2],
         };
       }
 
@@ -980,7 +989,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       return {
         groupId: name,
         tags: [],
-        instanceId: ""
+        instanceId: '',
       };
     }
 
