@@ -930,7 +930,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$controls].enablePan = false;
       }
 
+      // Force a render to ensure proper orientation
       this[$needsRender]();
+
+      // Also force refresh orientation on the next frame to ensure camera position is stable
+      requestAnimationFrame(() => {
+        const targetObject = this.findTargetObject();
+        if (targetObject) {
+          targetObject.traverse((child) => {
+            if (child.userData.isPlacedObject) {
+              this.refreshSnappingPointOrientation(child);
+            }
+          });
+          this[$needsRender]();
+        }
+      });
     }
 
     private deselectObject() {
@@ -1205,10 +1219,28 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const outlineRing = new Mesh(outlineRingGeometry, outlineRingMaterial);
         outlineRing.renderOrder = 1000; // Slightly higher than sphere to render on top of it
 
-        // Make the ring always face the camera
-        outlineRing.onBeforeRender = () => {
-          if (this[$scene] && this[$scene].camera) {
-            outlineRing.lookAt(this[$scene].camera.position);
+        // Store reference to the model-viewer element for camera access
+        const modelViewer = this;
+
+        // Make the ring always face the camera with simple lookAt
+        outlineRing.onBeforeRender = function (renderer, scene, camera) {
+          try {
+            // Check if we have all required objects and they're visible
+            if (!modelViewer[$scene] || !modelViewer[$scene].camera) return;
+            if (!this.visible || !this.parent?.visible) return;
+
+            // Use the actual camera passed to onBeforeRender, which is more reliable
+            const activeCamera = camera || modelViewer[$scene].camera;
+
+            // Get camera world position
+            const cameraPosition = new Vector3();
+            activeCamera.getWorldPosition(cameraPosition);
+
+            // Make ring look at camera - simple and effective
+            this.lookAt(cameraPosition);
+          } catch (error) {
+            // Silently handle any errors to prevent disrupting the render loop
+            console.warn('Error in snapping point camera-facing logic:', error);
           }
         };
 
@@ -1252,19 +1284,76 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Show snap points for all objects that have snap points.
      */
     private showAllSnappingPoints() {
-      this.hideAllSnappingPoints(); // Clear existing snap points first
-
       const targetObject = this.findTargetObject();
       if (!targetObject) return;
 
-      // Find all objects with snap points and add visualization spheres to them
+      // Find all objects with snap points and create visualization spheres if they don't exist
       targetObject.traverse((child) => {
         if (child.userData.isPlacedObject && child.userData.snappingPoints) {
-          this.createSnappingPointsForObject(child);
+          // Check if this object already has snapping point visualizations
+          let hasSnappingPoints = false;
+          child.traverse((grandchild) => {
+            if (grandchild.name === 'SnappingPointSphere') {
+              hasSnappingPoints = true;
+            }
+          });
+
+          // Only create snapping points if they don't already exist
+          if (!hasSnappingPoints) {
+            this.createSnappingPointsForObject(child);
+          } else {
+            // Make existing snapping points visible and refresh camera-facing logic
+            this.setSnappingPointsVisibility(child, true);
+            this.refreshSnappingPointOrientation(child);
+          }
         }
       });
 
       this[$needsRender]();
+    }
+
+    /**
+     * Refresh the camera-facing orientation of snapping points for an object.
+     * This ensures the rings properly face the camera after being shown/hidden.
+     */
+    private refreshSnappingPointOrientation(object: Object3D) {
+      if (!this[$scene] || !this[$scene].camera) return;
+
+      const camera = this[$scene].camera;
+      const cameraPosition = new Vector3();
+      camera.getWorldPosition(cameraPosition);
+
+      object.traverse((child) => {
+        if (child.name === 'SnappingPointSphere' && child instanceof Group) {
+          child.traverse((grandchild) => {
+            if (
+              grandchild instanceof Mesh &&
+              grandchild.geometry instanceof RingGeometry
+            ) {
+              // Force the ring to face the camera immediately using lookAt
+              try {
+                grandchild.lookAt(cameraPosition);
+              } catch (error) {
+                console.warn(
+                  'Error refreshing snapping point orientation:',
+                  error
+                );
+              }
+            }
+          });
+        }
+      });
+    }
+
+    /**
+     * Set visibility of snap points for a specific object.
+     */
+    private setSnappingPointsVisibility(object: Object3D, visible: boolean) {
+      object.traverse((child) => {
+        if (child.name === 'SnappingPointSphere' && child instanceof Group) {
+          child.visible = visible;
+        }
+      });
     }
 
     /**
@@ -1274,17 +1363,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
       if (!targetObject) return;
 
-      // Remove snap points from all objects
+      // Hide snap points from all objects instead of removing them
       targetObject.traverse((child) => {
         if (child.userData.isPlacedObject) {
-          this.removeSnappingPointsFromObject(child);
+          this.setSnappingPointsVisibility(child, false);
         }
       });
 
       this[$needsRender]();
     }
-
-    // ...existing code...
   }
 
   return LDPuzzlerModelViewerElement;
