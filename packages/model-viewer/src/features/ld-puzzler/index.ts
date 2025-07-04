@@ -8,6 +8,7 @@ declare global {
 
 import {
   Box3,
+  BoxGeometry,
   Object3D,
   Vector3,
   Raycaster,
@@ -678,6 +679,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const targetObject = this.findTargetObject();
 
+      const visualizationBox = this.createVisualizationBox(
+        { x: 1, y: 1, z: 1 },
+        options.position ?? { x: 0, y: 0, z: 0 }
+      );
+      targetObject.add(visualizationBox);
+
       return new Promise((resolve, reject) => {
         loader.load(
           src,
@@ -801,7 +808,22 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               reject();
             }
           },
-          undefined, // Progress callback removed
+          (xhr) => {
+            console.log(
+              `Loading model: ${Math.round((xhr.loaded / xhr.total) * 100)}%`
+            );
+            if (xhr.loaded === xhr.total) {
+              // Fade out and remove the visualization box when animation completes
+              const visualizationBox = targetObject.children.find(
+                (child) => child.name === 'VisualizationBox'
+              );
+              if (visualizationBox && visualizationBox instanceof Mesh) {
+                this.fadeOutVisualizationBox(visualizationBox, 300, () => {
+                  targetObject.remove(visualizationBox);
+                });
+              }
+            }
+          },
           (error) => {
             console.error('Error loading GLB:', error);
             reject(error);
@@ -1711,13 +1733,108 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       return true;
     }
 
-    [$tick](time: number, delta: number) {
-      super[$tick](time, delta);
+    /**
+     * Create a visualization box that shows the placement position and size of a GLB.
+     * The box will be semi-transparent and positioned at the same location as the GLB.
+     */
+    private createVisualizationBox(
+      size: {
+        x: number;
+        y: number;
+        z: number;
+      },
+      position: { x: number; y: number; z: number }
+    ): Mesh {
+      // Create box geometry with the same dimensions as the GLB
+      const boxGeometry = new BoxGeometry(size.x, size.y, size.z);
 
-      // Update snapping point slots if they're visible
-      if (this.snappingPointsVisible) {
-        this.updateSnappingPointSlots();
+      // Create a semi-transparent material for the filled box
+      const boxMaterial = new MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3, // Semi-transparent
+        side: 2, // DoubleSide to ensure visibility from all angles
+      });
+
+      // Create the visualization box using a filled mesh
+      const visualizationBox = new Mesh(boxGeometry, boxMaterial);
+      visualizationBox.name = 'VisualizationBox';
+      visualizationBox.position.set(position.x, 0, position.z);
+      this.startVisualizationBoxPulse(visualizationBox);
+      return visualizationBox;
+    }
+    /**
+     * Fade out a visualization box smoothly over time.
+     */
+    private fadeOutVisualizationBox(
+      visualizationBox: Mesh,
+      duration: number = 500,
+      onComplete?: () => void
+    ) {
+      if (!(visualizationBox.material instanceof MeshBasicMaterial)) {
+        onComplete?.();
+        return;
       }
+
+      const startOpacity = visualizationBox.material.opacity;
+      const startTime = performance.now();
+
+      const animate = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Use ease-in function for smooth animation
+        const easeIn = Math.pow(progress, 3);
+        const currentOpacity = startOpacity * (1 - easeIn);
+
+        visualizationBox.material.opacity = currentOpacity;
+        this[$needsRender]();
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          onComplete?.();
+        }
+      };
+
+      requestAnimationFrame(animate);
+    }
+
+    /**
+     * Start a slow pulsing animation for the visualization box.
+     * Pulses the opacity and scale to create a breathing effect.
+     */
+    private startVisualizationBoxPulse(visualizationBox: Mesh) {
+      if (!(visualizationBox.material instanceof MeshBasicMaterial)) {
+        return;
+      }
+
+      const startTime = performance.now();
+      const pulseDuration = 2000; // 2 seconds for a complete pulse cycle
+      const minOpacity = 0.15;
+      const maxOpacity = 0.5;
+
+      const animate = () => {
+        // Check if the visualization box is still in the scene
+        if (!visualizationBox.parent) {
+          return; // Stop animation if box was removed
+        }
+
+        const elapsed = performance.now() - startTime;
+        const progress = (elapsed % pulseDuration) / pulseDuration;
+        const pulseValue = Math.sin(progress * Math.PI * 2) * 0.5 + 0.5;
+
+        const currentOpacity =
+          minOpacity + (maxOpacity - minOpacity) * pulseValue;
+        visualizationBox.material.opacity = currentOpacity;
+
+        this[$needsRender]();
+
+        requestAnimationFrame(animate);
+      };
+
+      // Start the animation
+      requestAnimationFrame(animate);
     }
   }
 
