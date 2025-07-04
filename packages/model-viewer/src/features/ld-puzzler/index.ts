@@ -1836,6 +1836,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Start the animation
       requestAnimationFrame(animate);
     }
+
+    [$tick](time: number, delta: number) {
+      super[$tick](time, delta);
+
+      // Update snapping point slots if they're visible
+      if (this.snappingPointsVisible) {
+        this.updateSnappingPointSlots();
+      }
+    }
   }
 
   return LDPuzzlerModelViewerElement;

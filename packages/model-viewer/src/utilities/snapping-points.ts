@@ -421,6 +421,13 @@ export function createSnappedGroup(
   group.userData = { ...object1.userData, ...group.userData };
   group.userData.isPlacedObject = true;
 
+  // Clear snapping points from the group itself - snapping points should come from child objects
+  delete group.userData.snappingPoints;
+
+  // Mark child objects to not be treated as standalone placed objects in snapping point visualization
+  object1.userData.isInGroup = true;
+  object2.userData.isInGroup = true;
+
   // Cache meshes for outline system performance
   group.userData.meshes = [];
   group.traverse((child) => {
