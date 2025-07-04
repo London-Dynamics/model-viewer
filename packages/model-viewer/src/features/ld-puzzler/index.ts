@@ -304,25 +304,22 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const meshes: Object3D[] = [];
 
       objects.forEach((obj) => {
-        if (obj.type === 'Mesh' && obj.name !== 'SnappingPointSphere') {
-          // Exclude snap point spheres from outline rendering
+        if (obj.type === 'Mesh' && !this.isSnappingPointMesh(obj)) {
+          // Exclude snap point meshes from outline rendering
           meshes.push(obj);
         } else if (obj.type === 'Group' || obj.userData.isSnappedGroup) {
           // Handle both regular Groups and snapped groups (which might be Object3D type)
           // Use pre-cached meshes if available for better performance
           if (obj.userData.meshes && Array.isArray(obj.userData.meshes)) {
-            // Filter out any snap point spheres from cached meshes
+            // Filter out any snap point meshes from cached meshes
             const filteredMeshes = obj.userData.meshes.filter(
-              (mesh: Object3D) => mesh.name !== 'SnappingPointSphere'
+              (mesh: Object3D) => !this.isSnappingPointMesh(mesh)
             );
             meshes.push(...filteredMeshes);
           } else {
             // Fallback: traverse and collect all mesh children (excluding snap points)
             obj.traverse((child) => {
-              if (
-                child.type === 'Mesh' &&
-                child.name !== 'SnappingPointSphere'
-              ) {
+              if (child.type === 'Mesh' && !this.isSnappingPointMesh(child)) {
                 meshes.push(child);
               }
             });
@@ -331,6 +328,27 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
 
       return meshes;
+    }
+
+    /**
+     * Check if a mesh is part of a snapping point visualization
+     */
+    private isSnappingPointMesh(mesh: Object3D): boolean {
+      // Check if the mesh itself is named as a snapping point
+      if (mesh.name === 'SnappingPointSphere') {
+        return true;
+      }
+
+      // Check if the mesh is a child of a snapping point group
+      let parent = mesh.parent;
+      while (parent) {
+        if (parent.name === 'SnappingPointSphere') {
+          return true;
+        }
+        parent = parent.parent;
+      }
+
+      return false;
     }
 
     /**
@@ -1196,7 +1214,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       group.userData.meshes = [];
       group.traverse((child) => {
-        if (child.type === 'Mesh' && child.name !== 'SnappingPointSphere') {
+        if (child.type === 'Mesh' && !this.isSnappingPointMesh(child)) {
           group.userData.meshes.push(child);
         }
       });

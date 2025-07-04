@@ -425,12 +425,33 @@ export function createSnappedGroup(
   // Cache meshes for outline system performance
   group.userData.meshes = [];
   group.traverse((child) => {
-    if (child.type === 'Mesh' && child.name !== 'SnappingPointSphere') {
+    if (child.type === 'Mesh' && !isSnappingPointMesh(child)) {
       group.userData.meshes.push(child);
     }
   });
 
   return group;
+}
+
+/**
+ * Check if a mesh is part of a snapping point visualization
+ */
+function isSnappingPointMesh(mesh: Object3D): boolean {
+  // Check if the mesh itself is named as a snapping point
+  if (mesh.name === 'SnappingPointSphere') {
+    return true;
+  }
+
+  // Check if the mesh is a child of a snapping point group
+  let parent = mesh.parent;
+  while (parent) {
+    if (parent.name === 'SnappingPointSphere') {
+      return true;
+    }
+    parent = parent.parent;
+  }
+
+  return false;
 }
 
 /**
