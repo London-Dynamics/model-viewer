@@ -267,6 +267,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.selectedObjects
         );
 
+        console.log('🔍 Outline Debug:', {
+          selectedObjects: this.selectedObjects.map((obj) => ({
+            name: obj.name,
+            type: obj.type,
+            isSnappedGroup: obj.userData.isSnappedGroup,
+            hasCachedMeshes: !!(
+              obj.userData.meshes && obj.userData.meshes.length
+            ),
+          })),
+          meshesToOutline: meshesToOutline.map((mesh) => ({
+            name: mesh.name,
+            type: mesh.type,
+          })),
+        });
+
         // Set the mesh objects as the selection for outline rendering
         (this.outlineEffect as any).selection = meshesToOutline;
         // Use default blend-mode when objects are selected (enable outline rendering)
@@ -292,7 +307,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (obj.type === 'Mesh' && obj.name !== 'SnappingPointSphere') {
           // Exclude snap point spheres from outline rendering
           meshes.push(obj);
-        } else if (obj.type === 'Group') {
+        } else if (obj.type === 'Group' || obj.userData.isSnappedGroup) {
+          // Handle both regular Groups and snapped groups (which might be Object3D type)
           // Use pre-cached meshes if available for better performance
           if (obj.userData.meshes && Array.isArray(obj.userData.meshes)) {
             // Filter out any snap point spheres from cached meshes
@@ -1128,6 +1144,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         group2.parent.remove(group2);
       }
 
+      // Update the mesh cache for group1 after merging
+      this.updateGroupMeshCache(group1);
+
       // Update selection to group1
       this.selectedObjects = [group1];
     }
@@ -1163,8 +1182,33 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       connection.draggedPoint.isUsed = true;
       connection.targetPoint.isUsed = true;
 
+      // Update the mesh cache for the group after adding new object
+      this.updateGroupMeshCache(group);
+
       // Update selection to the group
       this.selectedObjects = [group];
+    }
+    /**
+     * Update the mesh cache for a group after its structure has changed
+     */
+    private updateGroupMeshCache(group: Object3D) {
+      if (!group.userData.isSnappedGroup) return;
+
+      group.userData.meshes = [];
+      group.traverse((child) => {
+        if (child.type === 'Mesh' && child.name !== 'SnappingPointSphere') {
+          group.userData.meshes.push(child);
+        }
+      });
+
+      console.log('🔄 Updated mesh cache for group:', {
+        groupName: group.name,
+        meshCount: group.userData.meshes.length,
+        meshes: group.userData.meshes.map((m: Object3D) => ({
+          name: m.name,
+          type: m.type,
+        })),
+      });
     }
 
     private handleSelection(event?: MouseEvent | TouchEvent) {

@@ -390,8 +390,8 @@ export function createSnappedGroup(
   snapPoint1: SnappingPoint,
   snapPoint2: SnappingPoint
 ): Object3D {
-  // Create a new group to contain both objects
-  const group = new Object3D();
+  // Create a new group to contain both objects - use Group type for proper recognition
+  const group = new Group();
   group.name = `SnappedGroup_${Date.now()}`;
   group.userData.isSnappedGroup = true;
   group.userData.snapConnections = [
@@ -421,6 +421,14 @@ export function createSnappedGroup(
   // Copy userData from one of the objects to maintain properties
   group.userData = { ...object1.userData, ...group.userData };
   group.userData.isPlacedObject = true;
+
+  // Cache meshes for outline system performance
+  group.userData.meshes = [];
+  group.traverse((child) => {
+    if (child.type === 'Mesh' && child.name !== 'SnappingPointSphere') {
+      group.userData.meshes.push(child);
+    }
+  });
 
   return group;
 }
