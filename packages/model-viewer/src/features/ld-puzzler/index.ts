@@ -18,9 +18,6 @@ import {
   MeshBasicMaterial,
   TextureLoader,
   RepeatWrapping,
-  SphereGeometry,
-  Group,
-  RingGeometry,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -38,15 +35,23 @@ import { $controls } from '../controls.js';
 import { Constructor } from '../../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
 import { animateGravityFallSmooth } from '../../utilities/animation.js';
+import {
+  SnappingPoint,
+  generateDefaultSnappingPoints,
+  createSnappingPointsForObject,
+  removeSnappingPointsFromObject,
+  setSnappingPointsVisibility,
+  refreshSnappingPointOrientation,
+  showAllSnappingPoints,
+  hideAllSnappingPoints,
+  SNAP_POINT_DIAMETER,
+} from '../../utilities/snapping-points.js';
 import { Cursor } from './cursor.js';
 
 const DROP_HEIGHT = 0.5; // Height to drop models from when placed
-const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in meters
 
-export type SnappingPoint = {
-  position: { x: number; y: number; z: number };
-  rotation: { x: number; y: number; z: number };
-};
+// Re-export SnappingPoint type for external use
+export type { SnappingPoint };
 
 export type PlacementOptions = {
   name?: string;
@@ -518,7 +523,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                   // Generate default snap points if needed (after object is in final position)
                   if (gltf.scene.userData.needsDefaultSnappingPoints) {
                     gltf.scene.userData.snappingPoints =
-                      this.generateDefaultSnappingPoints(gltf.scene);
+                      generateDefaultSnappingPoints(gltf.scene);
                     delete gltf.scene.userData.needsDefaultSnappingPoints;
                   }
 
@@ -923,7 +928,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.updateOutlineSelection();
 
       // Show snap points for all objects when any object is selected
-      this.showAllSnappingPoints();
+      const targetObject = this.findTargetObject();
+      if (targetObject) {
+        showAllSnappingPoints(
+          targetObject,
+          () => this[$scene]?.camera || null,
+          this.snappingPointSpheres
+        );
+      }
 
       // Disable camera panning while a part is selected
       if (this[$controls]) {
@@ -936,10 +948,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Also force refresh orientation on the next frame to ensure camera position is stable
       requestAnimationFrame(() => {
         const targetObject = this.findTargetObject();
-        if (targetObject) {
+        if (targetObject && this[$scene]?.camera) {
           targetObject.traverse((child) => {
             if (child.userData.isPlacedObject) {
-              this.refreshSnappingPointOrientation(child);
+              refreshSnappingPointOrientation(child, this[$scene].camera);
             }
           });
           this[$needsRender]();
@@ -956,7 +968,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.updateOutlineSelection();
 
         // Hide snap points when no object is selected
-        this.hideAllSnappingPoints();
+        const targetObject = this.findTargetObject();
+        if (targetObject) {
+          hideAllSnappingPoints(targetObject);
+        }
 
         this[$needsRender]();
       }
@@ -1102,275 +1117,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.deselectObject();
 
       // Clean up snap points
-      this.hideAllSnappingPoints();
+      const targetObject = this.findTargetObject();
+      if (targetObject) {
+        hideAllSnappingPoints(targetObject);
+      }
 
       if (this.cursor) {
         this.cursor.cleanup();
       }
-    }
-
-    /**
-     * Generate default snap points on the middle of each side of the bounding box.
-     * Creates snap points on front, back, left, and right sides (not top or bottom).
-     */
-    private generateDefaultSnappingPoints(object: Object3D): SnappingPoint[] {
-      const boundingBox = new Box3().setFromObject(object);
-      const center = boundingBox.getCenter(new Vector3());
-      const size = boundingBox.getSize(new Vector3());
-
-      // Convert to local coordinates relative to object center
-      const localCenter = object.worldToLocal(center.clone());
-
-      return [
-        // Front side (positive Z)
-        {
-          position: {
-            x: localCenter.x,
-            y: localCenter.y,
-            z: localCenter.z + size.z / 2,
-          },
-          rotation: { x: 0, y: 0, z: 0 },
-        },
-        // Back side (negative Z)
-        {
-          position: {
-            x: localCenter.x,
-            y: localCenter.y,
-            z: localCenter.z - size.z / 2,
-          },
-          rotation: { x: 0, y: Math.PI, z: 0 },
-        },
-        // Right side (positive X)
-        {
-          position: {
-            x: localCenter.x + size.x / 2,
-            y: localCenter.y,
-            z: localCenter.z,
-          },
-          rotation: { x: 0, y: Math.PI / 2, z: 0 },
-        },
-        // Left side (negative X)
-        {
-          position: {
-            x: localCenter.x - size.x / 2,
-            y: localCenter.y,
-            z: localCenter.z,
-          },
-          rotation: { x: 0, y: -Math.PI / 2, z: 0 },
-        },
-      ];
-    }
-
-    /**
-     * Create snap point visualizations for a specific object.
-     */
-    private createSnappingPointsForObject(object: Object3D) {
-      if (!object.userData.snappingPoints) return;
-
-      const snappingPoints = object.userData.snappingPoints as SnappingPoint[];
-
-      snappingPoints.forEach((snapPoint) => {
-        // Create a group to hold both the base sphere and camera-facing outline circles
-        const snapPointGroup = new Group();
-        snapPointGroup.position.set(
-          snapPoint.position.x,
-          snapPoint.position.y,
-          snapPoint.position.z
-        );
-        snapPointGroup.rotation.set(
-          snapPoint.rotation.x,
-          snapPoint.rotation.y,
-          snapPoint.rotation.z
-        );
-        snapPointGroup.name = 'SnappingPointSphere';
-
-        // Create main bright white sphere (base)
-        const sphereGeometry = new SphereGeometry(
-          SNAP_POINT_DIAMETER / 2,
-          16,
-          12
-        );
-        const sphereMaterial = new MeshBasicMaterial({
-          color: 0xffffff, // Bright white
-          transparent: true,
-          opacity: 0.9,
-          emissive: 0x222222, // Slight glow for visibility against dark backgrounds
-          depthTest: false, // Always render on top
-        });
-        const sphere = new Mesh(sphereGeometry, sphereMaterial);
-        sphere.renderOrder = 999; // High render order to ensure it renders on top
-        snapPointGroup.add(sphere);
-
-        // Create camera-facing dark outline circles for better visibility
-        // These will always face the camera and provide clear contrast
-        const outlineRadius = (SNAP_POINT_DIAMETER / 2) * 1.15; // Slightly larger than sphere
-        const outlineRingGeometry = new RingGeometry(
-          outlineRadius * 0.85, // Inner radius - creates a thin ring
-          outlineRadius, // Outer radius
-          16 // Segments for smooth circle
-        );
-        const outlineRingMaterial = new MeshBasicMaterial({
-          color: 0x000000, // Black outline
-          transparent: true,
-          opacity: 0.7,
-          side: 2, // DoubleSide to ensure visibility from any angle
-          depthTest: false, // Always render on top
-        });
-        const outlineRing = new Mesh(outlineRingGeometry, outlineRingMaterial);
-        outlineRing.renderOrder = 1000; // Slightly higher than sphere to render on top of it
-
-        // Store reference to the model-viewer element for camera access
-        const modelViewer = this;
-
-        // Make the ring always face the camera with simple lookAt
-        outlineRing.onBeforeRender = function (renderer, scene, camera) {
-          try {
-            // Check if we have all required objects and they're visible
-            if (!modelViewer[$scene] || !modelViewer[$scene].camera) return;
-            if (!this.visible || !this.parent?.visible) return;
-
-            // Use the actual camera passed to onBeforeRender, which is more reliable
-            const activeCamera = camera || modelViewer[$scene].camera;
-
-            // Get camera world position
-            const cameraPosition = new Vector3();
-            activeCamera.getWorldPosition(cameraPosition);
-
-            // Make ring look at camera - simple and effective
-            this.lookAt(cameraPosition);
-          } catch (error) {
-            // Silently handle any errors to prevent disrupting the render loop
-            console.warn('Error in snapping point camera-facing logic:', error);
-          }
-        };
-
-        snapPointGroup.add(outlineRing);
-
-        // Add group directly to the object so it moves with it
-        object.add(snapPointGroup);
-        this.snappingPointSpheres.add(sphere);
-        this.snappingPointSpheres.add(outlineRing);
-      });
-    }
-
-    /**
-     * Remove snap point visualizations from a specific object.
-     */
-    private removeSnappingPointsFromObject(object: Object3D) {
-      const groupsToRemove: Group[] = [];
-
-      object.traverse((child) => {
-        if (child.name === 'SnappingPointSphere' && child instanceof Group) {
-          groupsToRemove.push(child);
-        }
-      });
-
-      groupsToRemove.forEach((group) => {
-        // Dispose of all meshes in the group
-        group.traverse((child) => {
-          if (child instanceof Mesh) {
-            this.snappingPointSpheres.delete(child);
-            child.geometry.dispose();
-            if (child.material instanceof MeshBasicMaterial) {
-              child.material.dispose();
-            }
-          }
-        });
-        object.remove(group);
-      });
-    }
-
-    /**
-     * Show snap points for all objects that have snap points.
-     */
-    private showAllSnappingPoints() {
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return;
-
-      // Find all objects with snap points and create visualization spheres if they don't exist
-      targetObject.traverse((child) => {
-        if (child.userData.isPlacedObject && child.userData.snappingPoints) {
-          // Check if this object already has snapping point visualizations
-          let hasSnappingPoints = false;
-          child.traverse((grandchild) => {
-            if (grandchild.name === 'SnappingPointSphere') {
-              hasSnappingPoints = true;
-            }
-          });
-
-          // Only create snapping points if they don't already exist
-          if (!hasSnappingPoints) {
-            this.createSnappingPointsForObject(child);
-          } else {
-            // Make existing snapping points visible and refresh camera-facing logic
-            this.setSnappingPointsVisibility(child, true);
-            this.refreshSnappingPointOrientation(child);
-          }
-        }
-      });
-
-      this[$needsRender]();
-    }
-
-    /**
-     * Refresh the camera-facing orientation of snapping points for an object.
-     * This ensures the rings properly face the camera after being shown/hidden.
-     */
-    private refreshSnappingPointOrientation(object: Object3D) {
-      if (!this[$scene] || !this[$scene].camera) return;
-
-      const camera = this[$scene].camera;
-      const cameraPosition = new Vector3();
-      camera.getWorldPosition(cameraPosition);
-
-      object.traverse((child) => {
-        if (child.name === 'SnappingPointSphere' && child instanceof Group) {
-          child.traverse((grandchild) => {
-            if (
-              grandchild instanceof Mesh &&
-              grandchild.geometry instanceof RingGeometry
-            ) {
-              // Force the ring to face the camera immediately using lookAt
-              try {
-                grandchild.lookAt(cameraPosition);
-              } catch (error) {
-                console.warn(
-                  'Error refreshing snapping point orientation:',
-                  error
-                );
-              }
-            }
-          });
-        }
-      });
-    }
-
-    /**
-     * Set visibility of snap points for a specific object.
-     */
-    private setSnappingPointsVisibility(object: Object3D, visible: boolean) {
-      object.traverse((child) => {
-        if (child.name === 'SnappingPointSphere' && child instanceof Group) {
-          child.visible = visible;
-        }
-      });
-    }
-
-    /**
-     * Hide all snap point visualizations.
-     */
-    private hideAllSnappingPoints() {
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return;
-
-      // Hide snap points from all objects instead of removing them
-      targetObject.traverse((child) => {
-        if (child.userData.isPlacedObject) {
-          this.setSnappingPointsVisibility(child, false);
-        }
-      });
-
-      this[$needsRender]();
     }
   }
 
