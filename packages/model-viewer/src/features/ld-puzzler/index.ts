@@ -45,6 +45,12 @@ import {
   showAllSnappingPoints,
   hideAllSnappingPoints,
   SNAP_POINT_DIAMETER,
+  DEFAULT_SNAP_ATTRACTION,
+  getSnappingPointWorldPosition,
+  findSnappingConnections,
+  createSnappedGroup,
+  isInSnappedGroup,
+  getSnappedGroup,
 } from '../../utilities/snapping-points.js';
 import { Cursor } from './cursor.js';
 
@@ -152,6 +158,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     // Snap point system
     private snappingPointSpheres: Set<Mesh> = new Set(); // Track all snap point sphere meshes
+    private snappingEnabled: boolean = true; // Allow disabling snapping
+    private pendingSnapConnection: {
+      draggedObject: Object3D;
+      targetObject: Object3D;
+      draggedPoint: SnappingPoint;
+      targetPoint: SnappingPoint;
+    } | null = null;
 
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
@@ -870,21 +883,130 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (
         this.raycaster.ray.intersectPlane(this.floorPlane, intersectionPoint)
       ) {
-        // Apply the drag offset to maintain the relative position
-        object.position.x = intersectionPoint.x + this.dragOffset.x;
-        object.position.z = intersectionPoint.z + this.dragOffset.z;
-        // Keep the lifted Y position
-        object.position.y = this.originalFloorY || 0;
+        // Calculate the desired position with drag offset
+        const desiredX = intersectionPoint.x + this.dragOffset.x;
+        const desiredZ = intersectionPoint.z + this.dragOffset.z;
+        const desiredY = this.originalFloorY || 0;
+
+        // Set the position (might be overridden by snapping)
+        object.position.set(desiredX, desiredY, desiredZ);
+
+        // Check for snapping if enabled
+        this.pendingSnapConnection = null;
+        if (this.snappingEnabled) {
+          this.checkAndApplySnapping(object, intersectionPoint);
+        }
 
         this[$scene].updateShadow();
         this[$needsRender]();
       }
     }
 
+    private checkAndApplySnapping(
+      draggedObject: Object3D,
+      intersectionPoint: Vector3
+    ) {
+      // Find snappable objects within the dragged object (could be a group or single object)
+      const snappableObjects: Object3D[] = [];
+      if (draggedObject.userData.isSnappedGroup) {
+        // If it's a group, check all child objects for snapping
+        draggedObject.traverse((child) => {
+          if (child.userData.isPlacedObject && child.userData.snappingPoints) {
+            snappableObjects.push(child);
+          }
+        });
+      } else if (draggedObject.userData.snappingPoints) {
+        // Single object
+        snappableObjects.push(draggedObject);
+      }
+
+      if (snappableObjects.length === 0) return;
+
+      const targetObject = this.findTargetObject();
+      if (!targetObject) return;
+
+      let bestConnection: {
+        draggedObject: Object3D;
+        targetObject: Object3D;
+        draggedPoint: SnappingPoint;
+        targetPoint: SnappingPoint;
+        distance: number;
+      } | null = null;
+
+      // Check snapping from any snappable object to any target
+      snappableObjects.forEach((snappableObj) => {
+        targetObject.traverse((child) => {
+          if (
+            child.userData.isPlacedObject &&
+            child !== snappableObj &&
+            !this.areObjectsInSameGroup(snappableObj, child) &&
+            child.userData.snappingPoints
+          ) {
+            const connections = findSnappingConnections(snappableObj, child);
+            if (connections.length > 0) {
+              const closest = connections[0];
+              if (
+                !bestConnection ||
+                closest.distance < bestConnection.distance
+              ) {
+                bestConnection = {
+                  draggedObject: snappableObj,
+                  targetObject: child,
+                  draggedPoint: closest.draggedPoint,
+                  targetPoint: closest.targetPoint,
+                  distance: closest.distance,
+                };
+              }
+            }
+          }
+        });
+      });
+
+      if (bestConnection) {
+        // Calculate the offset needed to align the snap points
+        const draggedWorldPos = getSnappingPointWorldPosition(
+          bestConnection.draggedObject,
+          bestConnection.draggedPoint
+        );
+        const targetWorldPos = getSnappingPointWorldPosition(
+          bestConnection.targetObject,
+          bestConnection.targetPoint
+        );
+
+        // Move the entire dragged object/group so the snap points align
+        const offset = targetWorldPos.sub(draggedWorldPos);
+        draggedObject.position.add(offset);
+
+        // Store the pending connection for completion on drag end
+        this.pendingSnapConnection = {
+          draggedObject: bestConnection.draggedObject,
+          targetObject: bestConnection.targetObject,
+          draggedPoint: bestConnection.draggedPoint,
+          targetPoint: bestConnection.targetPoint,
+        };
+
+        console.log(
+          `Snapping ${bestConnection.draggedObject.name} to ${bestConnection.targetObject.name}`
+        );
+      }
+    }
+
+    private areObjectsInSameGroup(obj1: Object3D, obj2: Object3D): boolean {
+      const group1 = getSnappedGroup(obj1);
+      const group2 = getSnappedGroup(obj2);
+      return group1 !== null && group1 === group2;
+    }
+
     private stopDragging() {
       if (!this.isDragging) return;
 
       this.isDragging = false;
+
+      // Complete any pending snap connection
+      if (this.pendingSnapConnection) {
+        this.completeSnapConnection(this.pendingSnapConnection);
+        this.pendingSnapConnection = null;
+      }
 
       // Restore original sensitivities
       if (this[$controls]) {
@@ -898,20 +1020,171 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.style.cursor = '';
     }
 
+    private completeSnapConnection(connection: {
+      draggedObject: Object3D;
+      targetObject: Object3D;
+      draggedPoint: SnappingPoint;
+      targetPoint: SnappingPoint;
+    }) {
+      // Get the groups these objects belong to (if any)
+      const draggedGroup = getSnappedGroup(connection.draggedObject);
+      const targetGroup = getSnappedGroup(connection.targetObject);
+
+      // Determine what objects we're actually connecting
+      const objectToConnect1 = draggedGroup || connection.draggedObject;
+      const objectToConnect2 = targetGroup || connection.targetObject;
+
+      // If both objects are already in groups, we need to merge the groups
+      if (draggedGroup && targetGroup) {
+        this.mergeSnappedGroups(draggedGroup, targetGroup, connection);
+      } else if (draggedGroup && !targetGroup) {
+        // Add target object to existing dragged group
+        this.addObjectToSnappedGroup(
+          draggedGroup,
+          connection.targetObject,
+          connection
+        );
+      } else if (!draggedGroup && targetGroup) {
+        // Add dragged object to existing target group
+        this.addObjectToSnappedGroup(
+          targetGroup,
+          connection.draggedObject,
+          connection
+        );
+      } else {
+        // Create a new group from two individual objects
+        const snappedGroup = createSnappedGroup(
+          connection.draggedObject,
+          connection.targetObject,
+          connection.draggedPoint,
+          connection.targetPoint
+        );
+        this.selectedObjects = [snappedGroup];
+      }
+
+      // Update outline selection
+      this.updateOutlineSelection();
+
+      // Refresh snap points since the objects are now grouped
+      const targetObject = this.findTargetObject();
+      if (targetObject) {
+        hideAllSnappingPoints(targetObject);
+        showAllSnappingPoints(
+          targetObject,
+          () => this[$scene]?.camera || null,
+          this.snappingPointSpheres
+        );
+      }
+
+      // Force a render to show the new group state
+      this[$needsRender]();
+
+      console.log(
+        `Completed snap: ${connection.draggedObject.name} + ${connection.targetObject.name}`
+      );
+    }
+
+    private mergeSnappedGroups(
+      group1: Object3D,
+      group2: Object3D,
+      connection: {
+        draggedObject: Object3D;
+        targetObject: Object3D;
+        draggedPoint: SnappingPoint;
+        targetPoint: SnappingPoint;
+      }
+    ) {
+      // Move all objects from group2 into group1
+      const objectsToMove = [...group2.children];
+      objectsToMove.forEach((obj) => {
+        group2.remove(obj);
+        group1.add(obj);
+      });
+
+      // Add the connection to group1's snap connections
+      if (!group1.userData.snapConnections) {
+        group1.userData.snapConnections = [];
+      }
+      group1.userData.snapConnections.push({
+        object1: connection.draggedObject,
+        object2: connection.targetObject,
+        snapPoint1: { ...connection.draggedPoint },
+        snapPoint2: { ...connection.targetPoint },
+      });
+
+      // Copy over any existing connections from group2
+      if (group2.userData.snapConnections) {
+        group1.userData.snapConnections.push(
+          ...group2.userData.snapConnections
+        );
+      }
+
+      // Mark the snap points as used
+      connection.draggedPoint.isUsed = true;
+      connection.targetPoint.isUsed = true;
+
+      // Remove group2 from its parent
+      if (group2.parent) {
+        group2.parent.remove(group2);
+      }
+
+      // Update selection to group1
+      this.selectedObjects = [group1];
+    }
+
+    private addObjectToSnappedGroup(
+      group: Object3D,
+      newObject: Object3D,
+      connection: {
+        draggedObject: Object3D;
+        targetObject: Object3D;
+        draggedPoint: SnappingPoint;
+        targetPoint: SnappingPoint;
+      }
+    ) {
+      // Remove the new object from its current parent and add to group
+      if (newObject.parent) {
+        newObject.parent.remove(newObject);
+      }
+      group.add(newObject);
+
+      // Add the connection to the group's snap connections
+      if (!group.userData.snapConnections) {
+        group.userData.snapConnections = [];
+      }
+      group.userData.snapConnections.push({
+        object1: connection.draggedObject,
+        object2: connection.targetObject,
+        snapPoint1: { ...connection.draggedPoint },
+        snapPoint2: { ...connection.targetPoint },
+      });
+
+      // Mark the snap points as used
+      connection.draggedPoint.isUsed = true;
+      connection.targetPoint.isUsed = true;
+
+      // Update selection to the group
+      this.selectedObjects = [group];
+    }
+
     private handleSelection(event?: MouseEvent | TouchEvent) {
       const selectedPart = this.getPartObjectAtPosition(
         this.currentMousePosition
       );
 
       if (selectedPart) {
-        // Toggle selection if clicking the same object, otherwise select new object
+        // Check if the object is part of a snapped group
+        const snappedGroup = getSnappedGroup(selectedPart);
+        const objectToSelect = snappedGroup || selectedPart;
+
+        // Toggle selection if clicking the same object/group, otherwise select new object/group
         if (
           this.selectedObjects.length === 1 &&
-          this.selectedObjects[0] === selectedPart
+          this.selectedObjects[0] === objectToSelect
         ) {
           this.deselectObject();
         } else {
-          this.selectObject(selectedPart);
+          this.selectObject(objectToSelect);
         }
       } else {
         this.deselectObject();
@@ -1125,6 +1398,57 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this.cursor) {
         this.cursor.cleanup();
       }
+    }
+
+    // Public API for snapping control
+    public setSnappingEnabled(enabled: boolean) {
+      this.snappingEnabled = enabled;
+    }
+
+    public getSnappingEnabled(): boolean {
+      return this.snappingEnabled;
+    }
+
+    // Future ungroup functionality
+    public ungroupSelectedObject(): boolean {
+      if (this.selectedObjects.length !== 1) return false;
+
+      const selectedObject = this.selectedObjects[0];
+      if (!selectedObject.userData.isSnappedGroup) return false;
+
+      return this.ungroupSnappedGroup(selectedObject);
+    }
+
+    private ungroupSnappedGroup(group: Object3D): boolean {
+      if (!group.userData.snapConnections) return false;
+
+      // Restore the snap points to unused state
+      group.userData.snapConnections.forEach((connection: any) => {
+        if (connection.snapPoint1) connection.snapPoint1.isUsed = false;
+        if (connection.snapPoint2) connection.snapPoint2.isUsed = false;
+      });
+
+      // Move all child objects back to the parent
+      const parent = group.parent;
+      const childObjects = [...group.children];
+
+      childObjects.forEach((child) => {
+        group.remove(child);
+        if (parent) {
+          parent.add(child);
+        }
+      });
+
+      // Remove the group itself
+      if (parent) {
+        parent.remove(group);
+      }
+
+      // Clear selection
+      this.deselectObject();
+
+      console.log(`Ungrouped: ${group.name}`);
+      return true;
     }
   }
 

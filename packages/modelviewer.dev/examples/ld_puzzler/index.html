@@ -79,6 +79,20 @@
                 >. This page showcases various utility functions used by
                 Client-side Puzzler.
               </h4>
+              <div
+                class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4"
+              >
+                <h5 class="font-medium text-blue-900 mb-2">
+                  🧩 Snapping Feature
+                </h5>
+                <p class="text-sm text-blue-700">
+                  <strong>New!</strong> Objects now snap together when their
+                  snap points come close. Click objects to see white snap
+                  points, then drag objects near each other to snap them
+                  together. Snapped objects move as a group and can be ungrouped
+                  using the red button below.
+                </p>
+              </div>
               <div class="heading">
                 <h2 class="demo-title">Place a GLB into the scene</h2>
                 <h4>
@@ -91,6 +105,7 @@
                   <model-viewer
                     src="../../shared-assets/models/cube.gltf"
                     id="place-glb-demo"
+                    ld-puzzler
                     camera-controls
                     interaction-prompt="none"
                     autoplay
@@ -145,6 +160,31 @@
                               </div>
                             </div>
                             <div class="flex gap-2">
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-snapping"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-snapping-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-snapping-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Enable Snapping</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                            <div class="flex gap-2">
                               <button
                                 type="button"
                                 class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
@@ -172,6 +212,14 @@
                                 data-floor-offset="0.5"
                               >
                                 🟦
+                              </button>
+                              <button
+                                id="ungroup-selected"
+                                type="button"
+                                class="rounded-lg bg-red-50 px-3 py-3 text-sm font-semibold text-red-700 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-100"
+                                title="Ungroup selected snapped objects"
+                              >
+                                🔗💥 Ungroup
                               </button>
                             </div>
                           </div>
@@ -288,6 +336,42 @@
                           } else {
                             el.setAttribute('aria-checked', 'true');
                             modelViewer.setAttribute('placement-cursor', '');
+                          }
+                        });
+
+                      // Snapping toggle handler
+                      document
+                        .getElementById('toggle-snapping')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.setSnappingEnabled?.(false);
+                            console.log('Snapping disabled');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.setSnappingEnabled?.(true);
+                            console.log('Snapping enabled');
+                          }
+                        });
+
+                      // Ungroup button handler
+                      document
+                        .getElementById('ungroup-selected')
+                        .addEventListener('click', (e) => {
+                          const result =
+                            modelViewer.ungroupSelectedObject?.() ?? false;
+                          if (result) {
+                            console.log(
+                              '✅ Successfully ungrouped selected object'
+                            );
+                          } else {
+                            console.log(
+                              '❌ No grouped object selected or ungrouping failed'
+                            );
                           }
                         });
                     })();

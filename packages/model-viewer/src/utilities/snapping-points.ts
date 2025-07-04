@@ -15,7 +15,13 @@ export const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in met
 export type SnappingPoint = {
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
+  attraction?: number;
+  attracts?: string[];
+  isAttractedTo?: string[];
+  isUsed?: boolean; // Track if this snap point is already connected
 };
+
+export const DEFAULT_SNAP_ATTRACTION = SNAP_POINT_DIAMETER * 2;
 
 /**
  * Generate default snap points on the middle of each side of the bounding box.
@@ -40,6 +46,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z + size.z / 2,
       },
       rotation: { x: 0, y: 0, z: 0 },
+      attraction: DEFAULT_SNAP_ATTRACTION,
     },
     // Back side (negative Z)
     {
@@ -49,6 +56,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z - size.z / 2,
       },
       rotation: { x: 0, y: Math.PI, z: 0 },
+      attraction: DEFAULT_SNAP_ATTRACTION,
     },
     // Right side (positive X)
     {
@@ -58,6 +66,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z,
       },
       rotation: { x: 0, y: Math.PI / 2, z: 0 },
+      attraction: DEFAULT_SNAP_ATTRACTION,
     },
     // Left side (negative X)
     {
@@ -67,6 +76,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z,
       },
       rotation: { x: 0, y: -Math.PI / 2, z: 0 },
+      attraction: DEFAULT_SNAP_ATTRACTION,
     },
   ];
 }
@@ -289,4 +299,148 @@ export function hideAllSnappingPoints(rootObject: Object3D) {
       setSnappingPointsVisibility(child, false);
     }
   });
+}
+
+/**
+ * Get world position of a snapping point on an object
+ */
+export function getSnappingPointWorldPosition(
+  object: Object3D,
+  snapPoint: SnappingPoint
+): Vector3 {
+  const localPos = new Vector3(
+    snapPoint.position.x,
+    snapPoint.position.y,
+    snapPoint.position.z
+  );
+  return object.localToWorld(localPos);
+}
+
+/**
+ * Find potential snapping connections between two objects
+ */
+export function findSnappingConnections(
+  draggedObject: Object3D,
+  targetObject: Object3D
+): Array<{
+  draggedPoint: SnappingPoint;
+  targetPoint: SnappingPoint;
+  distance: number;
+}> {
+  if (
+    !draggedObject.userData.snappingPoints ||
+    !targetObject.userData.snappingPoints
+  ) {
+    return [];
+  }
+
+  const draggedPoints = draggedObject.userData
+    .snappingPoints as SnappingPoint[];
+  const targetPoints = targetObject.userData.snappingPoints as SnappingPoint[];
+  const connections: Array<{
+    draggedPoint: SnappingPoint;
+    targetPoint: SnappingPoint;
+    distance: number;
+  }> = [];
+
+  draggedPoints.forEach((draggedPoint) => {
+    // Skip already used snap points
+    if (draggedPoint.isUsed) return;
+
+    targetPoints.forEach((targetPoint) => {
+      // Skip already used snap points
+      if (targetPoint.isUsed) return;
+
+      const draggedWorldPos = getSnappingPointWorldPosition(
+        draggedObject,
+        draggedPoint
+      );
+      const targetWorldPos = getSnappingPointWorldPosition(
+        targetObject,
+        targetPoint
+      );
+      const distance = draggedWorldPos.distanceTo(targetWorldPos);
+
+      const draggedAttraction =
+        draggedPoint.attraction ?? DEFAULT_SNAP_ATTRACTION;
+      const targetAttraction =
+        targetPoint.attraction ?? DEFAULT_SNAP_ATTRACTION;
+      const maxAttraction = Math.max(draggedAttraction, targetAttraction);
+
+      if (distance <= maxAttraction) {
+        connections.push({
+          draggedPoint,
+          targetPoint,
+          distance,
+        });
+      }
+    });
+  });
+
+  // Sort by distance (closest first)
+  return connections.sort((a, b) => a.distance - b.distance);
+}
+
+/**
+ * Create a snapped group from two objects
+ */
+export function createSnappedGroup(
+  object1: Object3D,
+  object2: Object3D,
+  snapPoint1: SnappingPoint,
+  snapPoint2: SnappingPoint
+): Object3D {
+  // Create a new group to contain both objects
+  const group = new Object3D();
+  group.name = `SnappedGroup_${Date.now()}`;
+  group.userData.isSnappedGroup = true;
+  group.userData.snapConnections = [
+    {
+      object1,
+      object2,
+      snapPoint1: { ...snapPoint1 },
+      snapPoint2: { ...snapPoint2 },
+    },
+  ];
+
+  // Remove objects from their current parent and add to group
+  const parent = object1.parent;
+  if (parent) {
+    parent.remove(object1);
+    parent.remove(object2);
+    parent.add(group);
+  }
+
+  group.add(object1);
+  group.add(object2);
+
+  // Mark the snap points as used
+  snapPoint1.isUsed = true;
+  snapPoint2.isUsed = true;
+
+  // Copy userData from one of the objects to maintain properties
+  group.userData = { ...object1.userData, ...group.userData };
+  group.userData.isPlacedObject = true;
+
+  return group;
+}
+
+/**
+ * Check if an object is part of a snapped group
+ */
+export function isInSnappedGroup(object: Object3D): boolean {
+  return object.parent?.userData.isSnappedGroup === true;
+}
+
+/**
+ * Get the snapped group containing an object, if any
+ */
+export function getSnappedGroup(object: Object3D): Object3D | null {
+  if (object.userData.isSnappedGroup) {
+    return object;
+  }
+  if (object.parent?.userData.isSnappedGroup) {
+    return object.parent;
+  }
+  return null;
 }
