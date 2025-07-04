@@ -43,12 +43,17 @@ import { Cursor } from './cursor.js';
 const DROP_HEIGHT = 0.5; // Height to drop models from when placed
 const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in meters
 
+export type SnappingPoint = {
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+};
+
 export type PlacementOptions = {
   name?: string;
   position?: { x: number; y: number; z: number };
   mass?: number; // Mass in kg, affects fall speed
   floorOffset?: number; // Additional Y offset from calculated floor position (e.g., 0.5 for center-positioned cubes)
-  snappingPoints?: { x: number; y: number; z: number }[]; // Optional snap points relative to object center
+  snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
 };
 
 export declare interface LDPuzzlerInterface {
@@ -1094,9 +1099,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Generate default snap points on the middle of each side of the bounding box.
      * Creates snap points on front, back, left, and right sides (not top or bottom).
      */
-    private generateDefaultSnappingPoints(
-      object: Object3D
-    ): { x: number; y: number; z: number }[] {
+    private generateDefaultSnappingPoints(object: Object3D): SnappingPoint[] {
       const boundingBox = new Box3().setFromObject(object);
       const center = boundingBox.getCenter(new Vector3());
       const size = boundingBox.getSize(new Vector3());
@@ -1106,13 +1109,41 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       return [
         // Front side (positive Z)
-        { x: localCenter.x, y: localCenter.y, z: localCenter.z + size.z / 2 },
+        {
+          position: {
+            x: localCenter.x,
+            y: localCenter.y,
+            z: localCenter.z + size.z / 2,
+          },
+          rotation: { x: 0, y: 0, z: 0 },
+        },
         // Back side (negative Z)
-        { x: localCenter.x, y: localCenter.y, z: localCenter.z - size.z / 2 },
+        {
+          position: {
+            x: localCenter.x,
+            y: localCenter.y,
+            z: localCenter.z - size.z / 2,
+          },
+          rotation: { x: 0, y: Math.PI, z: 0 },
+        },
         // Right side (positive X)
-        { x: localCenter.x + size.x / 2, y: localCenter.y, z: localCenter.z },
+        {
+          position: {
+            x: localCenter.x + size.x / 2,
+            y: localCenter.y,
+            z: localCenter.z,
+          },
+          rotation: { x: 0, y: Math.PI / 2, z: 0 },
+        },
         // Left side (negative X)
-        { x: localCenter.x - size.x / 2, y: localCenter.y, z: localCenter.z },
+        {
+          position: {
+            x: localCenter.x - size.x / 2,
+            y: localCenter.y,
+            z: localCenter.z,
+          },
+          rotation: { x: 0, y: -Math.PI / 2, z: 0 },
+        },
       ];
     }
 
@@ -1122,16 +1153,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private createSnappingPointsForObject(object: Object3D) {
       if (!object.userData.snappingPoints) return;
 
-      const snappingPoints = object.userData.snappingPoints as {
-        x: number;
-        y: number;
-        z: number;
-      }[];
+      const snappingPoints = object.userData.snappingPoints as SnappingPoint[];
 
-      snappingPoints.forEach((localPoint) => {
+      snappingPoints.forEach((snapPoint) => {
         // Create a group to hold both the base sphere and camera-facing outline circles
         const snapPointGroup = new Group();
-        snapPointGroup.position.set(localPoint.x, localPoint.y, localPoint.z);
+        snapPointGroup.position.set(
+          snapPoint.position.x,
+          snapPoint.position.y,
+          snapPoint.position.z
+        );
+        snapPointGroup.rotation.set(
+          snapPoint.rotation.x,
+          snapPoint.rotation.y,
+          snapPoint.rotation.z
+        );
         snapPointGroup.name = 'SnappingPointSphere';
 
         // Create main bright white sphere (base)
