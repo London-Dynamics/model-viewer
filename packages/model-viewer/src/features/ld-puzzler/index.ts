@@ -18,6 +18,7 @@ import {
   MeshBasicMaterial,
   TextureLoader,
   RepeatWrapping,
+  Euler,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -29,6 +30,7 @@ import ModelViewerElementBase, {
   $renderer,
   $needsRender,
   $canvas,
+  $tick,
 } from '../../model-viewer-base.js';
 import { $controls } from '../controls.js';
 
@@ -38,12 +40,6 @@ import { animateGravityFallSmooth } from '../../utilities/animation.js';
 import {
   SnappingPoint,
   generateDefaultSnappingPoints,
-  createSnappingPointsForObject,
-  removeSnappingPointsFromObject,
-  setSnappingPointsVisibility,
-  refreshSnappingPointOrientation,
-  showAllSnappingPoints,
-  hideAllSnappingPoints,
   SNAP_POINT_DIAMETER,
   DEFAULT_SNAP_ATTRACTION,
   getSnappingPointWorldPosition,
@@ -166,6 +162,243 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       targetPoint: SnappingPoint;
     } | null = null;
 
+    // Slot-based snapping point rendering
+    private snappingPointSlots: Map<string, HTMLElement> = new Map();
+    private snappingPointsVisible: boolean = false;
+
+    /**
+     * Updates the visibility and positioning of snapping point slot elements.
+     * Creates DOM elements for each visible snapping point and positions them
+     * at the correct 2D screen coordinates. Also applies opacity based on
+     * whether the snapping point is facing the camera or behind the model.
+     */
+    private updateSnappingPointSlots() {
+      if (!this.snappingPointsVisible) {
+        // Hide all existing slots
+        this.snappingPointSlots.forEach((element) => {
+          element.style.display = 'none';
+        });
+        return;
+      }
+
+      const scene = this[$scene];
+      const camera = scene.getCamera();
+      if (!camera) return;
+
+      // Clear all existing slots first
+      this.snappingPointSlots.forEach((element) => {
+        element.style.display = 'none';
+      });
+
+      // Find all objects with snapping points and create/update slots
+      const snappingPointsFound: Array<{
+        objectId: string;
+        pointIndex: number;
+        worldPosition: Vector3;
+        normal: Vector3;
+        visible: boolean;
+        facingCamera: boolean;
+      }> = [];
+
+      // Search through the scene for objects with snapping points
+      const targetObject = this.findTargetObject();
+      if (targetObject) {
+        targetObject.traverse((child) => {
+          if (child.userData.isPlacedObject && child.userData.snappingPoints) {
+            const snappingPoints = child.userData
+              .snappingPoints as SnappingPoint[];
+
+            snappingPoints.forEach((snapPoint, index) => {
+              // Skip used snap points
+              if (snapPoint.isUsed) return;
+
+              // Calculate world position
+              const localPos = new Vector3(
+                snapPoint.position.x,
+                snapPoint.position.y,
+                snapPoint.position.z
+              );
+              const worldPos = child.localToWorld(localPos.clone());
+
+              // Calculate normal from rotation
+              const rotation = new Euler(
+                snapPoint.rotation.x,
+                snapPoint.rotation.y,
+                snapPoint.rotation.z
+              );
+              const normal = new Vector3(0, 0, 1); // Default forward direction
+              normal.applyEuler(rotation);
+
+              // Transform normal to world space
+              const worldNormal = normal
+                .clone()
+                .transformDirection(child.matrixWorld);
+
+              // Calculate view vector (from snapping point to camera)
+              const viewVector = new Vector3();
+              viewVector.copy(scene.getCamera().position);
+              viewVector.sub(worldPos);
+
+              // Determine if facing camera using dot product
+              const dotProduct = viewVector.dot(worldNormal);
+              const facingCamera = dotProduct > 0;
+
+              // Project to screen coordinates
+              const vector = worldPos.clone();
+              vector.project(camera);
+
+              const widthHalf = scene.width / 2;
+              const heightHalf = scene.height / 2;
+
+              const screenX = vector.x * widthHalf + widthHalf;
+              const screenY = -(vector.y * heightHalf) + heightHalf;
+
+              // Check if point is visible (in front of camera and within screen bounds)
+              const visible =
+                vector.z < 1 &&
+                screenX >= 0 &&
+                screenX <= scene.width &&
+                screenY >= 0 &&
+                screenY <= scene.height;
+
+              if (visible) {
+                snappingPointsFound.push({
+                  objectId: child.uuid,
+                  pointIndex: index,
+                  worldPosition: worldPos,
+                  normal: worldNormal,
+                  visible: true,
+                  facingCamera: facingCamera,
+                });
+              }
+            });
+          }
+        });
+      }
+
+      // Update slots for all visible snapping points
+      snappingPointsFound.forEach((snapPointInfo) => {
+        const slotKey = `${snapPointInfo.objectId}_${snapPointInfo.pointIndex}`;
+        let element = this.snappingPointSlots.get(slotKey);
+
+        if (!element) {
+          // Create completely independent snapping point elements
+          // Don't clone from slots to avoid inheriting hotspot CSS
+          element = document.createElement('div');
+          element.className = 'ld-snapping-point';
+          element.setAttribute('aria-hidden', 'true');
+
+          // Check if we should use custom styling from slot
+          const shadowRoot = this.shadowRoot;
+          let useCustomStyling = false;
+
+          if (shadowRoot) {
+            const snappingPointSlot = shadowRoot.querySelector(
+              'slot[name="snapping-point"]'
+            ) as HTMLSlotElement;
+            if (snappingPointSlot) {
+              const assignedNodes = snappingPointSlot.assignedNodes({
+                flatten: true,
+              });
+              const customElement = assignedNodes.find(
+                (node) => node.nodeType === Node.ELEMENT_NODE
+              ) as HTMLElement;
+
+              if (customElement) {
+                // Copy classes but filter out any hotspot-related ones
+                const customClasses = customElement.className
+                  .split(' ')
+                  .filter(
+                    (cls) =>
+                      !cls.includes('hotspot') && !cls.includes('annotation')
+                  )
+                  .join(' ');
+                element.className = `ld-snapping-point ${customClasses}`;
+                useCustomStyling = true;
+              }
+            }
+          }
+
+          // Apply default styling if no custom styling
+          if (!useCustomStyling) {
+            element.style.cssText =
+              'width: 10px; height: 10px; border-radius: 50%; background-color: #fff; border: 2px solid #333; box-shadow: 0 0 4px rgba(0,0,0,0.5);';
+          }
+
+          // Add to the shadow DOM container for proper positioning
+          const container = shadowRoot?.querySelector('.container');
+          if (container) {
+            container.appendChild(element);
+          } else {
+            // Fallback to light DOM
+            this.appendChild(element);
+          }
+          this.snappingPointSlots.set(slotKey, element);
+        }
+
+        // Calculate screen position relative to the canvas
+        const vector = snapPointInfo.worldPosition.clone();
+        vector.project(camera);
+
+        const widthHalf = scene.width / 2;
+        const heightHalf = scene.height / 2;
+
+        const screenX = vector.x * widthHalf + widthHalf;
+        const screenY = -(vector.y * heightHalf) + heightHalf;
+
+        // Calculate opacity based on depth - points further back have lower opacity
+        // Similar to hotspot behavior: use CSS custom properties for opacity control
+        const depth = vector.z; // 0 = at camera, 1 = at far plane
+        const isBackfacing = depth > 0.5; // Consider points in back half as "behind"
+
+        // Use CSS custom properties similar to hotspots
+        const maxOpacity =
+          getComputedStyle(this).getPropertyValue(
+            '--max-snapping-point-opacity'
+          ) || '1';
+        const minOpacity =
+          getComputedStyle(this).getPropertyValue(
+            '--min-snapping-point-opacity'
+          ) || '0.4';
+        const opacity = isBackfacing ? minOpacity : maxOpacity;
+
+        // Position the element absolutely within the canvas container
+        element.style.display = 'block';
+        element.style.position = 'absolute';
+        element.style.left = `${screenX - 5}px`; // Center the 10px wide element
+        element.style.top = `${screenY - 5}px`; // Center the 10px tall element
+        element.style.zIndex = '1000';
+        element.style.pointerEvents = 'none'; // Don't interfere with mouse events
+
+        // Apply opacity based on whether the snapping point is facing the camera
+        if (snapPointInfo.facingCamera) {
+          element.style.setProperty('opacity', '1', 'important'); // Full opacity when facing camera
+        } else {
+          element.style.setProperty('opacity', '0.25', 'important'); // Reduced opacity when behind model
+        }
+        // Set transition for smooth opacity changes
+        element.style.setProperty('transition', 'opacity 0.3s', 'important');
+      });
+    }
+
+    /**
+     * Show or hide snapping point slots
+     */
+    private setSnappingPointSlotsVisible(visible: boolean) {
+      this.snappingPointsVisible = visible;
+      this.updateSnappingPointSlots();
+    }
+
+    /**
+     * Remove all snapping point slots
+     */
+    private clearSnappingPointSlots() {
+      this.snappingPointSlots.forEach((element) => {
+        element.remove();
+      });
+      this.snappingPointSlots.clear();
+    }
+
     private updateShadowsWithGLBs() {
       // Create a comprehensive bounding box that includes all added GLBs
       if (this[$scene].boundingBox && this.addedGLBs.size > 0) {
@@ -247,9 +480,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      console.log(
-        'Found outline-effect element, outline functionality enabled'
-      );
+      // Outline effect element found, functionality enabled
     }
 
     private updateOutlineSelection() {
@@ -266,21 +497,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const meshesToOutline = this.collectMeshesFromObjects(
           this.selectedObjects
         );
-
-        console.log('🔍 Outline Debug:', {
-          selectedObjects: this.selectedObjects.map((obj) => ({
-            name: obj.name,
-            type: obj.type,
-            isSnappedGroup: obj.userData.isSnappedGroup,
-            hasCachedMeshes: !!(
-              obj.userData.meshes && obj.userData.meshes.length
-            ),
-          })),
-          meshesToOutline: meshesToOutline.map((mesh) => ({
-            name: mesh.name,
-            type: mesh.type,
-          })),
-        });
 
         // Set the mesh objects as the selection for outline rendering
         (this.outlineEffect as any).selection = meshesToOutline;
@@ -585,11 +801,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               reject();
             }
           },
-          (xhr) => {
-            console.log(
-              `Loading model: ${Math.round((xhr.loaded / xhr.total) * 100)}%`
-            );
-          },
+          undefined, // Progress callback removed
           (error) => {
             console.error('Error loading GLB:', error);
             reject(error);
@@ -641,6 +853,19 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             console.error(error);
           }
         );
+      });
+    }
+
+    private hideCustomSnappingPointSlots() {
+      // Find all custom snapping-point slots in the light DOM and hide them by default
+      const customSlots = this.querySelectorAll('[slot="snapping-point"]');
+      customSlots.forEach((slot) => {
+        const element = slot as HTMLElement;
+        // Store original visibility and hide the element
+        element.dataset.originalDisplay = element.style.display || '';
+        element.style.visibility = 'hidden';
+        element.style.position = 'absolute';
+        element.style.left = '-9999px';
       });
     }
 
@@ -894,11 +1119,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Change cursor to indicate dragging
       this.style.cursor = 'grabbing';
 
-      console.log(
-        `Started dragging: ${this.selectedObjects
-          .map((obj) => obj.name)
-          .join(', ')}`
-      );
+      // Dragging started for selected objects
     }
 
     private updateDragPosition() {
@@ -1019,9 +1240,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           targetPoint: bestConnection.targetPoint,
         };
 
-        console.log(
-          `Snapping ${bestConnection.draggedObject.name} to ${bestConnection.targetObject.name}`
-        );
+        // Objects snapped together
       }
     }
 
@@ -1102,20 +1321,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Refresh snap points since the objects are now grouped
       const targetObject = this.findTargetObject();
       if (targetObject) {
-        hideAllSnappingPoints(targetObject);
-        showAllSnappingPoints(
-          targetObject,
-          () => this[$scene]?.camera || null,
-          this.snappingPointSpheres
-        );
+        // Use slot-based rendering instead of Three.js meshes
+        this.setSnappingPointSlotsVisible(false);
+        this.setSnappingPointSlotsVisible(true);
       }
 
       // Force a render to show the new group state
       this[$needsRender]();
 
-      console.log(
-        `Completed snap: ${connection.draggedObject.name} + ${connection.targetObject.name}`
-      );
+      // Snap connection completed
     }
 
     private mergeSnappedGroups(
@@ -1219,14 +1433,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       });
 
-      console.log('🔄 Updated mesh cache for group:', {
-        groupName: group.name,
-        meshCount: group.userData.meshes.length,
-        meshes: group.userData.meshes.map((m: Object3D) => ({
-          name: m.name,
-          type: m.type,
-        })),
-      });
+      // Mesh cache updated for group
     }
 
     private handleSelection(event?: MouseEvent | TouchEvent) {
@@ -1265,11 +1472,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Show snap points for all objects when any object is selected
       const targetObject = this.findTargetObject();
       if (targetObject) {
-        showAllSnappingPoints(
-          targetObject,
-          () => this[$scene]?.camera || null,
-          this.snappingPointSpheres
-        );
+        // Use slot-based rendering instead of Three.js meshes
+        this.setSnappingPointSlotsVisible(true);
       }
 
       // Disable camera panning while a part is selected
@@ -1280,18 +1484,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Force a render to ensure proper orientation
       this[$needsRender]();
 
-      // Also force refresh orientation on the next frame to ensure camera position is stable
-      requestAnimationFrame(() => {
-        const targetObject = this.findTargetObject();
-        if (targetObject && this[$scene]?.camera) {
-          targetObject.traverse((child) => {
-            if (child.userData.isPlacedObject) {
-              refreshSnappingPointOrientation(child, this[$scene].camera);
-            }
-          });
-          this[$needsRender]();
-        }
-      });
+      // Slot-based snapping points update automatically in the tick method
     }
 
     private deselectObject() {
@@ -1305,7 +1498,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Hide snap points when no object is selected
         const targetObject = this.findTargetObject();
         if (targetObject) {
-          hideAllSnappingPoints(targetObject);
+          // Use slot-based rendering instead of Three.js meshes
+          this.setSnappingPointSlotsVisible(false);
         }
 
         this[$needsRender]();
@@ -1430,6 +1624,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         window.deDraco = this.deDraco;
       }
 
+      // Hide any existing custom snapping-point slots by default
+      this.hideCustomSnappingPointSlots();
+
       // Set up custom selection and drag handlers
       this.setupDragHandlers();
     }
@@ -1454,7 +1651,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Clean up snap points
       const targetObject = this.findTargetObject();
       if (targetObject) {
-        hideAllSnappingPoints(targetObject);
+        // Clean up slot-based rendering
+        this.clearSnappingPointSlots();
       }
 
       if (this.cursor) {
@@ -1509,8 +1707,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Clear selection
       this.deselectObject();
 
-      console.log(`Ungrouped: ${group.name}`);
+      // Group successfully ungrouped
       return true;
+    }
+
+    [$tick](time: number, delta: number) {
+      super[$tick](time, delta);
+
+      // Update snapping point slots if they're visible
+      if (this.snappingPointsVisible) {
+        this.updateSnappingPointSlots();
+      }
     }
   }
 

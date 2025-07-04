@@ -299,6 +299,16 @@ const templateResult = html` <style>
       border-radius: 1rem;
       white-space: nowrap;
     }
+
+    .snapping-point {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(0, 0, 0, 0.5);
+      background-color: #fefefe;
+      display: none;
+}
   </style>
   <div class="container">
     <div class="userInput" tabindex="0" role="img" aria-label="3D model">
@@ -368,6 +378,12 @@ const templateResult = html` <style>
       </slot>
       <slot name="ruler-depth">
         <div class="ruler" id="default-ruler-depth" aria-hidden="true"></div>
+      </slot>
+    </div>
+
+    <div class="slot snapping-points">
+      <slot name="snapping-point">
+        <div class="snapping-point" aria-hidden="true"></div
       </slot>
     </div>
 

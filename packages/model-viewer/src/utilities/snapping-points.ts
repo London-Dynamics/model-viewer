@@ -157,7 +157,6 @@ export function createSnappingPointsForObject(
         this.lookAt(cameraPosition);
       } catch (error) {
         // Silently handle any errors to prevent disrupting the render loop
-        console.warn('Error in snapping point camera-facing logic:', error);
       }
     };
 
@@ -238,7 +237,7 @@ export function refreshSnappingPointOrientation(
           try {
             grandchild.lookAt(cameraPosition);
           } catch (error) {
-            console.warn('Error refreshing snapping point orientation:', error);
+            // Silently handle errors
           }
         }
       });
