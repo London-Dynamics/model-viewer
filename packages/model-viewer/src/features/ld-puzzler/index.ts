@@ -1326,7 +1326,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Calculate the desired position with drag offset
         const desiredX = intersectionPoint.x + this.dragOffset.x;
         const desiredZ = intersectionPoint.z + this.dragOffset.z;
-        const desiredY = this.originalFloorY || 0;
+
+        // For groups, preserve the current Y position to maintain internal object relationships
+        // For individual objects, use floor positioning
+        const desiredY = object.userData.isSnappedGroup
+          ? object.position.y // Preserve current Y for groups
+          : this.originalFloorY || 0; // Use floor Y for individual objects
 
         // Set the position (might be overridden by snapping)
         object.position.set(desiredX, desiredY, desiredZ);
