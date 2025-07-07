@@ -17,7 +17,7 @@ export type SnappingPoint = {
   rotation: { x: number; y: number; z: number };
   attraction?: number;
   attracts?: string[];
-  isAttractedTo?: string[];
+  attractedTo?: string[];
   isUsed?: boolean; // Track if this snap point is already connected
 };
 
@@ -413,18 +413,20 @@ export function createSnappedGroup(
   group.add(object1);
   group.add(object2);
 
-  // Mark the snap points as used
-  snapPoint1.isUsed = true;
-  snapPoint2.isUsed = true;
+  // Don't mark the original snap points as used - keep them visible
+  // The connection information is stored in snapConnections for ungrouping
+  // snapPoint1.isUsed = true;
+  // snapPoint2.isUsed = true;
 
-  // Copy userData from one of the objects to maintain properties
+  // Copy userData from one of the objects to maintain properties, but exclude snapping points
   group.userData = { ...object1.userData, ...group.userData };
   group.userData.isPlacedObject = true;
 
-  // Clear snapping points from the group itself - snapping points should come from child objects
+  // Ensure the group itself doesn't have snapping points - only its children should
   delete group.userData.snappingPoints;
 
   // Mark child objects to not be treated as standalone placed objects in snapping point visualization
+  // but preserve their snapping points for after ungrouping
   object1.userData.isInGroup = true;
   object2.userData.isInGroup = true;
 

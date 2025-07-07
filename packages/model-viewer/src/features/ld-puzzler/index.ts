@@ -20,6 +20,7 @@ import {
   TextureLoader,
   RepeatWrapping,
   Euler,
+  Quaternion,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -167,6 +168,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private snappingPointSlots: Map<string, HTMLElement> = new Map();
     private snappingPointsVisible: boolean = false;
 
+    // Slot-based ungroup button rendering
+    private ungroupSlot: HTMLElement | null = null;
+    private ungroupSlotVisible: boolean = false;
+
     /**
      * Updates the visibility and positioning of snapping point slot elements.
      * Creates DOM elements for each visible snapping point and positions them
@@ -205,12 +210,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
       if (targetObject) {
         targetObject.traverse((child) => {
+          // Show snapping points for all placed objects, whether grouped or not
           if (child.userData.isPlacedObject && child.userData.snappingPoints) {
             const snappingPoints = child.userData
               .snappingPoints as SnappingPoint[];
 
             snappingPoints.forEach((snapPoint, index) => {
-              // Skip used snap points
+              // Skip used snap points (this check is still useful for other scenarios)
               if (snapPoint.isUsed) return;
 
               // Calculate world position
@@ -368,7 +374,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         element.style.position = 'absolute';
         element.style.left = `${screenX - 5}px`; // Center the 10px wide element
         element.style.top = `${screenY - 5}px`; // Center the 10px tall element
-        element.style.zIndex = '1000';
+        element.style.zIndex = '10';
         element.style.pointerEvents = 'none'; // Don't interfere with mouse events
 
         // Apply opacity based on whether the snapping point is facing the camera
@@ -398,6 +404,163 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         element.remove();
       });
       this.snappingPointSlots.clear();
+    }
+
+    /**
+     * Updates the visibility and positioning of the ungroup slot element.
+     * Shows the ungroup button at the connection point between two snapped objects.
+     */
+    private updateUngroupSlot() {
+      if (!this.ungroupSlotVisible || this.selectedObjects.length === 0) {
+        // Hide ungroup slot
+        if (this.ungroupSlot) {
+          this.ungroupSlot.style.display = 'none';
+        }
+        return;
+      }
+
+      const scene = this[$scene];
+      const camera = scene.getCamera();
+      if (!camera) return;
+
+      // Find the selected group and its connection point
+      const selectedGroup = this.selectedObjects[0];
+      if (
+        !selectedGroup.userData.isSnappedGroup ||
+        !selectedGroup.userData.snapConnections
+      ) {
+        if (this.ungroupSlot) {
+          this.ungroupSlot.style.display = 'none';
+        }
+        return;
+      }
+
+      // Get the first snap connection to determine where to place the ungroup button
+      const snapConnection = selectedGroup.userData.snapConnections[0];
+      if (!snapConnection) {
+        if (this.ungroupSlot) {
+          this.ungroupSlot.style.display = 'none';
+        }
+        return;
+      }
+
+      // Calculate the midpoint between the two connected snap points
+      const point1WorldPos = getSnappingPointWorldPosition(
+        snapConnection.object1,
+        snapConnection.snapPoint1
+      );
+      const point2WorldPos = getSnappingPointWorldPosition(
+        snapConnection.object2,
+        snapConnection.snapPoint2
+      );
+
+      const midpoint = new Vector3();
+      midpoint.addVectors(point1WorldPos, point2WorldPos);
+      midpoint.multiplyScalar(0.5);
+
+      // Project to screen coordinates
+      const vector = midpoint.clone();
+      vector.project(camera);
+
+      const widthHalf = scene.width / 2;
+      const heightHalf = scene.height / 2;
+
+      const screenX = vector.x * widthHalf + widthHalf;
+      const screenY = -(vector.y * heightHalf) + heightHalf;
+
+      // Check if point is visible (in front of camera and within screen bounds)
+      const visible =
+        vector.z < 1 &&
+        screenX >= 0 &&
+        screenX <= scene.width &&
+        screenY >= 0 &&
+        screenY <= scene.height;
+
+      if (visible) {
+        if (!this.ungroupSlot) {
+          // Create the ungroup slot element
+          this.ungroupSlot = document.createElement('div');
+          this.ungroupSlot.className = 'ld-ungroup-slot';
+          this.ungroupSlot.setAttribute('aria-hidden', 'true');
+
+          // Check if we should use custom styling from slot
+          const shadowRoot = this.shadowRoot;
+          if (shadowRoot) {
+            const ungroupSlotElement = shadowRoot.querySelector(
+              'slot[name="snapping-ungroup"]'
+            ) as HTMLSlotElement;
+            if (ungroupSlotElement) {
+              const assignedNodes = ungroupSlotElement.assignedNodes({
+                flatten: true,
+              });
+              const customElement = assignedNodes.find(
+                (node) => node.nodeType === Node.ELEMENT_NODE
+              ) as HTMLElement;
+
+              if (customElement) {
+                // Copy classes and content from custom slot
+                const customClasses = customElement.className
+                  .split(' ')
+                  .filter(
+                    (cls) =>
+                      !cls.includes('hotspot') && !cls.includes('annotation')
+                  )
+                  .join(' ');
+                this.ungroupSlot.className = `ld-ungroup-slot ${customClasses}`;
+                this.ungroupSlot.innerHTML = customElement.innerHTML;
+              }
+            }
+          }
+
+          // Add click handler for ungrouping
+          this.ungroupSlot.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.ungroupSelectedObject();
+          });
+
+          // Position the element absolutely
+          this.ungroupSlot.style.position = 'absolute';
+          this.ungroupSlot.style.pointerEvents = 'auto';
+          this.ungroupSlot.style.cursor = 'pointer';
+          this.ungroupSlot.style.zIndex = '100';
+
+          // Add to the shadow DOM container for proper positioning (same as snapping points)
+          const container = this.shadowRoot?.querySelector('.container');
+          if (container) {
+            container.appendChild(this.ungroupSlot);
+          } else {
+            // Fallback to light DOM
+            this.appendChild(this.ungroupSlot);
+          }
+        }
+
+        // Update position
+        this.ungroupSlot.style.left = `${screenX}px`;
+        this.ungroupSlot.style.top = `${screenY}px`;
+        this.ungroupSlot.style.transform = 'translate(-50%, -50%)';
+        this.ungroupSlot.style.display = 'flex';
+      } else if (this.ungroupSlot) {
+        this.ungroupSlot.style.display = 'none';
+      }
+    }
+
+    /**
+     * Show or hide the ungroup slot
+     */
+    private setUngroupSlotVisible(visible: boolean) {
+      this.ungroupSlotVisible = visible;
+      this.updateUngroupSlot();
+    }
+
+    /**
+     * Remove the ungroup slot
+     */
+    private clearUngroupSlot() {
+      if (this.ungroupSlot) {
+        this.ungroupSlot.remove();
+        this.ungroupSlot = null;
+      }
     }
 
     private updateShadowsWithGLBs() {
@@ -1348,6 +1511,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setSnappingPointSlotsVisible(true);
       }
 
+      // Show ungroup slot since we now have a grouped object selected
+      if (
+        this.selectedObjects.length > 0 &&
+        this.selectedObjects[0].userData.isSnappedGroup
+      ) {
+        this.setUngroupSlotVisible(true);
+      }
+
       // Force a render to show the new group state
       this[$needsRender]();
 
@@ -1498,6 +1669,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setSnappingPointSlotsVisible(true);
       }
 
+      // Show ungroup slot if a grouped object is selected
+      if (
+        this.selectedObjects.length > 0 &&
+        this.selectedObjects[0].userData.isSnappedGroup
+      ) {
+        this.setUngroupSlotVisible(true);
+      }
+
       // Disable camera panning while a part is selected
       if (this[$controls]) {
         this[$controls].enablePan = false;
@@ -1523,6 +1702,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           // Use slot-based rendering instead of Three.js meshes
           this.setSnappingPointSlotsVisible(false);
         }
+
+        // Hide ungroup slot when no object is selected
+        this.setUngroupSlotVisible(false);
 
         this[$needsRender]();
       }
@@ -1675,6 +1857,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (targetObject) {
         // Clean up slot-based rendering
         this.clearSnappingPointSlots();
+        this.clearUngroupSlot();
       }
 
       if (this.cursor) {
@@ -1704,30 +1887,68 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private ungroupSnappedGroup(group: Object3D): boolean {
       if (!group.userData.snapConnections) return false;
 
-      // Restore the snap points to unused state
-      group.userData.snapConnections.forEach((connection: any) => {
-        if (connection.snapPoint1) connection.snapPoint1.isUsed = false;
-        if (connection.snapPoint2) connection.snapPoint2.isUsed = false;
-      });
+      // No need to restore snap points since we don't mark them as used anymore
+      // group.userData.snapConnections.forEach((connection: any) => {
+      //   if (connection.snapPoint1) connection.snapPoint1.isUsed = false;
+      //   if (connection.snapPoint2) connection.snapPoint2.isUsed = false;
+      // });
 
-      // Move all child objects back to the parent
-      const parent = group.parent;
+      // Move all child objects back to the target object (where objects should live)
+      const targetObject = this.findTargetObject();
       const childObjects = [...group.children];
+      const ungroupedObjects: Object3D[] = [];
 
       childObjects.forEach((child) => {
+        // Save the world position and rotation before removing from group
+        const worldPosition = new Vector3();
+        const worldQuaternion = new Quaternion();
+        const worldScale = new Vector3();
+        child.getWorldPosition(worldPosition);
+        child.getWorldQuaternion(worldQuaternion);
+        child.getWorldScale(worldScale);
+
         group.remove(child);
-        if (parent) {
-          parent.add(child);
+        if (targetObject) {
+          targetObject.add(child);
+
+          // Convert world position to local space of the target object
+          targetObject.worldToLocal(worldPosition);
+          child.position.copy(worldPosition);
+          child.quaternion.copy(worldQuaternion);
+          child.scale.copy(worldScale);
+
+          // Ensure the child is marked as a placed object with snapping points
+          child.userData.isPlacedObject = true;
+          // Remove any group-related flags
+          delete child.userData.isInGroup;
+
+          ungroupedObjects.push(child);
         }
       });
 
       // Remove the group itself
-      if (parent) {
-        parent.remove(group);
+      if (group.parent) {
+        group.parent.remove(group);
       }
 
-      // Clear selection
-      this.deselectObject();
+      // Select one of the ungrouped objects to show snapping points
+      // This allows immediate re-snapping
+      if (ungroupedObjects.length > 0) {
+        this.selectObject(ungroupedObjects[0]);
+
+        // Force an explicit update of snapping point slots after a brief delay
+        // to ensure the ungrouped objects are properly processed
+        setTimeout(() => {
+          this.setSnappingPointSlotsVisible(true);
+          this.updateSnappingPointSlots();
+        }, 10);
+      } else {
+        // Fallback: clear selection
+        this.deselectObject();
+      }
+
+      // Trigger render update
+      this[$needsRender]();
 
       // Group successfully ungrouped
       return true;
@@ -1843,6 +2064,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Update snapping point slots if they're visible
       if (this.snappingPointsVisible) {
         this.updateSnappingPointSlots();
+      }
+
+      // Update ungroup slot if it's visible
+      if (this.ungroupSlotVisible) {
+        this.updateUngroupSlot();
       }
     }
   }

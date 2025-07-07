@@ -275,21 +275,7 @@ const templateResult = html` <style>
       display: none;
     }
 
-    #default-exit-webxr-ar-button {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: absolute;
-      top: env(safe-area-inset-top, 16px);
-      right: 16px;
-      width: 40px;
-      height: 40px;
-      box-sizing: border-box;
-    }
 
-    #default-exit-webxr-ar-button > svg {
-      fill: #fff;
-    }
 
     .ld-measure .ruler {
       position: absolute;
@@ -308,6 +294,20 @@ const templateResult = html` <style>
       border: 1px solid rgba(0, 0, 0, 0.5);
       background-color: #fefefe;
       display: none;
+      z-index: 10;
+}
+    .snapping-ungroup {
+      position: absolute;
+      font-size: 1rem;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 2rem;
+      border: 1px solid rgba(0, 0, 0, 0.5);
+      background-color: #fefefe;
+      align-items: center;
+      justify-content: center;
+      display: none;
+      z-index: 100;
 }
   </style>
   <div class="container">
@@ -384,6 +384,12 @@ const templateResult = html` <style>
     <div class="slot snapping-points">
       <slot name="snapping-point">
         <div class="snapping-point" aria-hidden="true"></div
+      </slot>
+    </div>
+
+    <div class="slot snapping-ungroup">
+      <slot name="snapping-ungroup">
+        <div class="snapping-ungroup" aria-hidden="true">⛓️‍💥</div>
       </slot>
     </div>
 

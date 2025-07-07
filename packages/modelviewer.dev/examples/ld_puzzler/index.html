@@ -62,6 +62,16 @@
     ></script>
 
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+    <style>
+      .snapping-ungroup {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background-color: white;
+      }
+    </style>
   </head>
   <body class="ld">
     <div class="examples-page">
@@ -102,10 +112,9 @@
                     max-field-of-view="180"
                     field-of-view="10deg"
                   >
-                    <!--div
-                      slot="snapping-ungroup"
-                      class="absolute rounded-full bg-white"
-                    ></div-->
+                    <div slot="snapping-ungroup" class="snapping-ungroup">
+                      ⛓️‍💥
+                    </div>
                     <effect-composer render-mode="quality">
                       <outline-effect
                         color="white"
