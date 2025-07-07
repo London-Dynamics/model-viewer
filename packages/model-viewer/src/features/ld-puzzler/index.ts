@@ -172,6 +172,203 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private ungroupSlot: HTMLElement | null = null;
     private ungroupSlotVisible: boolean = false;
 
+    // Slot-based rotation controls rendering
+    private rotationSlots: Map<string, HTMLElement> = new Map();
+    private rotationSlotsVisible: boolean = false;
+
+    // Animation properties for rotation
+    private isAnimatingRotation = false;
+    private rotationAnimation: {
+      object: Object3D;
+      startRotation: number;
+      targetRotation: number;
+      startTime: number;
+      duration: number;
+    } | null = null;
+
+    private updateRotationSlots() {
+      if (!this.rotationSlotsVisible || this.selectedObjects.length === 0) {
+        // Hide all existing slots
+        this.rotationSlots.forEach((element) => {
+          element.style.display = 'none';
+        });
+        return;
+      }
+
+      const scene = this[$scene];
+      const camera = scene.getCamera();
+      if (!camera) return;
+
+      // Clear all existing slots first
+      this.rotationSlots.forEach((element) => {
+        element.style.display = 'none';
+      });
+
+      // Get the selected object (assuming single selection)
+      const selectedObject = this.selectedObjects[0];
+      if (!selectedObject) return;
+
+      // Calculate object center for rotation control positioning
+      const objectCenter = new Vector3();
+      const boundingBox = new Box3().setFromObject(selectedObject);
+      boundingBox.getCenter(objectCenter);
+
+      // Define rotation control positions relative to object center
+      const rotationControlPositions = [
+        {
+          name: 'rotate-left',
+          offset: new Vector3(-1, 0, 0), // Left side
+          rotation: 'counter-clockwise'
+        },
+        {
+          name: 'rotate-right',
+          offset: new Vector3(1, 0, 0), // Right side
+          rotation: 'clockwise'
+        }
+      ];
+
+      rotationControlPositions.forEach((controlInfo) => {
+        const worldPosition = objectCenter.clone().add(controlInfo.offset);
+
+        // Project to screen coordinates
+        const vector = worldPosition.clone();
+        vector.project(camera);
+
+        const widthHalf = scene.width / 2;
+        const heightHalf = scene.height / 2;
+
+        const screenX = vector.x * widthHalf + widthHalf;
+        const screenY = -(vector.y * heightHalf) + heightHalf;
+
+        // Check if point is visible (in front of camera and within screen bounds)
+        const visible =
+          vector.z < 1 &&
+          screenX >= -50 &&
+          screenX <= scene.width + 50 &&
+          screenY >= -50 &&
+          screenY <= scene.height + 50;
+
+        if (visible) {
+          const slotKey = `${selectedObject.uuid}_${controlInfo.name}`;
+          let element = this.rotationSlots.get(slotKey);
+
+          if (!element) {
+            // Create rotation control element
+            element = document.createElement('div');
+            element.className = `ld-rotation-control ld-rotation-${controlInfo.name}`;
+            element.setAttribute('aria-hidden', 'true');
+            element.setAttribute('data-rotation', controlInfo.rotation);
+            element.setAttribute('data-is-rotation-slot', 'true'); // Mark as rotation slot
+
+            // Check if we should use custom styling from slot
+            const shadowRoot = this.shadowRoot;
+            let useCustomStyling = false;
+
+            if (shadowRoot) {
+              const rotationSlot = shadowRoot.querySelector(
+                `slot[name="rotation-${controlInfo.name}"]`
+              ) as HTMLSlotElement;
+              if (rotationSlot) {
+                const assignedNodes = rotationSlot.assignedNodes({
+                  flatten: true,
+                });
+                const customElement = assignedNodes.find(
+                  (node) => node.nodeType === Node.ELEMENT_NODE
+                ) as HTMLElement;
+
+                if (customElement) {
+                  // Copy classes but filter out any conflicting ones
+                  const customClasses = customElement.className
+                    .split(' ')
+                    .filter(
+                      (cls) =>
+                        !cls.includes('hotspot') && !cls.includes('annotation')
+                    )
+                    .join(' ');
+                  element.className = `ld-rotation-control ld-rotation-${controlInfo.name} ${customClasses}`;
+                  element.innerHTML = customElement.innerHTML;
+                  useCustomStyling = true;
+                }
+              }
+            }
+
+            // Apply default styling if no custom styling
+            if (!useCustomStyling) {
+              element.style.cssText =
+                'width: 24px; height: 24px; border-radius: 50%; background-color: #4285f4; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.3); cursor: pointer;';
+
+              // Add rotation arrow icon
+              const arrow = document.createElement('div');
+
+              // Create appropriate arrow SVG based on rotation direction
+              const leftArrowSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M14 18l1.41-1.41L10.83 12l4.58-4.59L14 6l-6 6z"/></svg>';
+              const rightArrowSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>';
+
+              const arrowSvg = controlInfo.rotation === 'counter-clockwise' ? leftArrowSvg : rightArrowSvg;
+
+              console.log('controlInfo.rotation', controlInfo.rotation)
+
+              arrow.style.cssText = `
+                width: 100%; height: 100%; 
+                background-image: url('data:image/svg+xml;utf8,${arrowSvg}');
+                background-size: contain; background-repeat: no-repeat; background-position: center;
+              `;
+
+              element.appendChild(arrow);
+            }
+
+            // Add click event listener for rotation
+            element.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation(); // Prevent any other event listeners
+              this.handleRotationClick(controlInfo.rotation, selectedObject);
+            });
+
+            // Also prevent mouse events from bubbling
+            element.addEventListener('mousedown', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+            });
+
+            element.addEventListener('mouseup', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+            });
+
+            // Add to the shadow DOM container for proper positioning
+            const container = shadowRoot?.querySelector('.container');
+            if (container) {
+              container.appendChild(element);
+            } else {
+              // Fallback to light DOM
+              this.appendChild(element);
+            }
+            this.rotationSlots.set(slotKey, element);
+          }
+
+          // Position the element absolutely within the canvas container
+          element.style.display = 'block';
+          element.style.position = 'absolute';
+          element.style.left = `${screenX - 12}px`; // Center the 24px wide element
+          element.style.top = `${screenY - 12}px`; // Center the 24px tall element
+          element.style.zIndex = '15';
+          element.style.pointerEvents = 'auto'; // Enable click events
+          element.style.cursor = 'pointer'; // Show pointer cursor
+
+          // Apply opacity based on depth
+          const depth = vector.z;
+          const isBackfacing = depth > 0.5;
+          const opacity = isBackfacing ? '0.4' : '1';
+          element.style.setProperty('opacity', opacity, 'important');
+          element.style.setProperty('transition', 'opacity 0.3s', 'important');
+        }
+      });
+    }
+
+
     /**
      * Updates the visibility and positioning of snapping point slot elements.
      * Creates DOM elements for each visible snapping point and positions them
@@ -1675,6 +1872,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setSnappingPointSlotsVisible(true);
       }
 
+      // Show rotation slots for the selected object
+      this.setRotationSlotsVisible(true);
+
       // Show ungroup slot if a grouped object is selected
       if (
         this.selectedObjects.length > 0 &&
@@ -1707,6 +1907,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (targetObject) {
           // Use slot-based rendering instead of Three.js meshes
           this.setSnappingPointSlotsVisible(false);
+        }
+
+        // Hide rotation slots when no object is selected
+        this.setRotationSlotsVisible(false);
+
+        // Stop any active rotation animation
+        if (this.isAnimatingRotation) {
+          this.isAnimatingRotation = false;
+          this.rotationAnimation = null;
         }
 
         // Hide ungroup slot when no object is selected
@@ -1858,11 +2067,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Clean up selection state
       this.deselectObject();
 
+      // Clean up any active rotation animation
+      if (this.isAnimatingRotation) {
+        this.isAnimatingRotation = false;
+        this.rotationAnimation = null;
+      }
+
       // Clean up snap points
       const targetObject = this.findTargetObject();
       if (targetObject) {
         // Clean up slot-based rendering
         this.clearSnappingPointSlots();
+        this.clearRotationSlots();
         this.clearUngroupSlot();
       }
 
@@ -2023,7 +2239,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           onComplete?.();
         }
       };
-
       requestAnimationFrame(animate);
     }
 
@@ -2064,12 +2279,145 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       requestAnimationFrame(animate);
     }
 
+    /**
+     * Show or hide rotation slots
+     */
+    private setRotationSlotsVisible(visible: boolean) {
+      this.rotationSlotsVisible = visible;
+      this.updateRotationSlots();
+    }
+
+    /**
+     * Remove all rotation slots
+     */
+    private clearRotationSlots() {
+      this.rotationSlots.forEach((element) => {
+        element.remove();
+      });
+      this.rotationSlots.clear();
+    }
+
+    /**
+     * Handle rotation slot click events
+     */
+    private handleRotationClick(direction: string, object: Object3D) {
+      if (!object || this.isAnimatingRotation) return;
+
+      const rotationAmount = Math.PI / 2;
+      const currentRotation = object.rotation.y;
+      let targetRotation: number;
+
+      // Calculate target rotation based on direction
+      if (direction === 'clockwise') {
+        targetRotation = currentRotation + rotationAmount;
+      } else if (direction === 'counter-clockwise') {
+        targetRotation = currentRotation - rotationAmount;
+      } else {
+        return;
+      }
+
+      // Start the rotation animation
+      this.startRotationAnimation(object, currentRotation, targetRotation);
+
+      // Optional: Dispatch a custom event for external listeners
+      this.dispatchEvent(new CustomEvent('object-rotation-started', {
+        detail: {
+          object: object,
+          direction: direction,
+          targetRotation: targetRotation
+        }
+      }));
+    }
+
+    /**
+     * Start a smooth rotation animation
+     */
+    private startRotationAnimation(object: Object3D, startRotation: number, targetRotation: number) {
+      this.isAnimatingRotation = true;
+      this.rotationAnimation = {
+        object: object,
+        startRotation: startRotation,
+        targetRotation: targetRotation,
+        startTime: performance.now(),
+        duration: 500 // Animation duration in milliseconds
+      };
+    }
+
+    /**
+     * Update the rotation animation
+     */
+    private updateRotationAnimation(currentTime: number) {
+      if (!this.isAnimatingRotation || !this.rotationAnimation) {
+        return;
+      }
+
+      const { object, startRotation, targetRotation, startTime, duration } = this.rotationAnimation;
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Use ease-out cubic easing for smooth animation
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+      // Interpolate between start and target rotation
+      const currentRotation = startRotation + (targetRotation - startRotation) * easeProgress;
+      object.rotation.y = currentRotation;
+
+      // Update shadows during animation
+      this.updateShadowsWithGLBs();
+
+      // Force a render to show the rotation
+      this[$needsRender]();
+
+      // Check if animation is complete
+      if (progress >= 1) {
+        this.finishRotationAnimation();
+      }
+    }
+
+    /**
+     * Finish the rotation animation
+     */
+    private finishRotationAnimation() {
+      if (!this.rotationAnimation) return;
+
+      const { object, targetRotation } = this.rotationAnimation;
+
+      // Ensure final rotation is exact
+      object.rotation.y = targetRotation;
+
+      // Clean up animation state
+      this.isAnimatingRotation = false;
+      this.rotationAnimation = null;
+
+      // Final render and shadow update
+      this.updateShadowsWithGLBs();
+      this[$needsRender]();
+
+      // Dispatch completion event
+      this.dispatchEvent(new CustomEvent('object-rotation-completed', {
+        detail: {
+          object: object,
+          finalRotation: targetRotation
+        }
+      }));
+    }
+
     [$tick](time: number, delta: number) {
       super[$tick](time, delta);
+
+      // Update rotation animation if active
+      if (this.isAnimatingRotation) {
+        this.updateRotationAnimation(time);
+      }
 
       // Update snapping point slots if they're visible
       if (this.snappingPointsVisible) {
         this.updateSnappingPointSlots();
+      }
+
+      // Update rotation slots if they're visible
+      if (this.rotationSlotsVisible) {
+        this.updateRotationSlots();
       }
 
       // Update ungroup slot if it's visible
