@@ -21,6 +21,8 @@ import {
   RepeatWrapping,
   Euler,
   Quaternion,
+  ShaderMaterial,
+  Color
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -217,12 +219,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const rotationControlPositions = [
         {
           name: 'rotate-left',
-          offset: new Vector3(-1, 0, 0), // Left side
+          offset: new Vector3(-0.75, 0, 0), // Left side
           rotation: 'counter-clockwise'
         },
         {
           name: 'rotate-right',
-          offset: new Vector3(1, 0, 0), // Right side
+          offset: new Vector3(0.75, 0, 0), // Right side
           rotation: 'clockwise'
         }
       ];
@@ -294,24 +296,24 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             // Apply default styling if no custom styling
             if (!useCustomStyling) {
-              element.style.cssText =
-                'width: 24px; height: 24px; border-radius: 50%; background-color: #4285f4; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.3); cursor: pointer;';
+              element.style.cssText = 'height: 24px; width: 24px; border-radius: 50%; background-color: #fff; border: 1px solid #333; box-shadow: 0 0 2px rgba(0,0,0,0.5);';
 
-              // Add rotation arrow icon
+              // Add rotation arrow icon using Unicode characters with cross-browser centering
               const arrow = document.createElement('div');
 
-              // Create appropriate arrow SVG based on rotation direction
-              const leftArrowSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M14 18l1.41-1.41L10.83 12l4.58-4.59L14 6l-6 6z"/></svg>';
-              const rightArrowSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>';
-
-              const arrowSvg = controlInfo.rotation === 'counter-clockwise' ? leftArrowSvg : rightArrowSvg;
-
-              console.log('controlInfo.rotation', controlInfo.rotation)
+              // Use Unicode characters for both rotations
+              if (controlInfo.rotation === 'counter-clockwise') {
+                // Use Unicode character ↺ (U+21BA) for left rotation
+                arrow.textContent = '↺';
+              } else {
+                // Use Unicode character ↻ (U+21BB) for right rotation
+                arrow.textContent = '↻';
+              }
 
               arrow.style.cssText = `
-                width: 100%; height: 100%; 
-                background-image: url('data:image/svg+xml;utf8,${arrowSvg}');
-                background-size: contain; background-repeat: no-repeat; background-position: center;
+                display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;
+                font-size: 20px; color: #333; line-height: 1;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
               `;
 
               element.appendChild(arrow);
