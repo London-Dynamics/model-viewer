@@ -100,7 +100,7 @@
               <example-snippet stamp-to="place-glb" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/cube.gltf"
+                    src="../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
                     id="place-glb-demo"
                     ld-puzzler
                     camera-controls
@@ -111,6 +111,7 @@
                     shadow-intensity="1"
                     max-field-of-view="180"
                     field-of-view="10deg"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                   >
                     <div slot="snapping-ungroup" class="snapping-ungroup">
                       ⛓️‍💥
@@ -187,39 +188,39 @@
                             <div class="flex gap-2">
                               <button
                                 type="button"
-                                class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-                                data-filename="glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
-                                data-name="duck"
-                                data-mass="1"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_corner_left.glb"
+                                data-name="corner-l"
+                                data-mass="20"
                               >
-                                🦆
+                                L Corner
                               </button>
                               <button
                                 type="button"
-                                class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-                                data-filename="Astronaut.glb"
-                                data-name="astronaut"
-                                data-mass="80"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_corner_right.glb"
+                                data-name="corner-r"
+                                data-mass="20"
                               >
-                                👨‍🚀
+                                R Corner
                               </button>
                               <button
                                 type="button"
-                                class="place-glb rounded-lg bg-white px-3 py-3 text-[32px] font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
-                                data-filename="Cube.gltf"
-                                data-name="cube"
-                                data-mass="10"
-                                data-floor-offset="0.5"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_middle.glb"
+                                data-name="middle"
+                                data-mass="20"
                               >
-                                🟦
+                                Middle
                               </button>
                               <button
-                                id="ungroup-selected"
                                 type="button"
-                                class="rounded-lg bg-red-50 px-3 py-3 text-sm font-semibold text-red-700 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-100"
-                                title="Ungroup selected snapped objects"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_chaise.glb"
+                                data-name="chaise"
+                                data-mass="20"
                               >
-                                🔗💥 Ungroup
+                                Chaise
                               </button>
                             </div>
                           </div>
