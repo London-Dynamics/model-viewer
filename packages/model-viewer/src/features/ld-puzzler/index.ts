@@ -1342,7 +1342,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.checkAndApplySnapping(object, intersectionPoint);
         }
 
-        this[$scene].updateShadow();
+        this.updateShadowsWithGLBs();
+
         this[$needsRender]();
       }
     }
