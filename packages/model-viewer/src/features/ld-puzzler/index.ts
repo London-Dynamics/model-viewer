@@ -21,6 +21,7 @@ import {
   RepeatWrapping,
   Euler,
   Quaternion,
+  Group,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -169,8 +170,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private snappingPointsVisible: boolean = false;
 
     // Slot-based ungroup button rendering
-    private ungroupSlot: HTMLElement | null = null;
-    private ungroupSlotVisible: boolean = false;
+    // Break link slot management for multiple connection points
+    private breakLinkSlots: Map<string, HTMLElement> = new Map();
+    private breakLinkSlotsVisible: boolean = false;
 
     /**
      * Updates the visibility and positioning of snapping point slot elements.
@@ -410,12 +412,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Updates the visibility and positioning of the ungroup slot element.
      * Shows the ungroup button at the connection point between two snapped objects.
      */
-    private updateUngroupSlot() {
-      if (!this.ungroupSlotVisible || this.selectedObjects.length === 0) {
-        // Hide ungroup slot
-        if (this.ungroupSlot) {
-          this.ungroupSlot.style.display = 'none';
-        }
+
+    /**
+     * Updates the visibility and positioning of break link slot elements.
+     * Creates DOM elements for each snap connection and positions them
+     * at the center point between the connected objects.
+     */
+    private updateBreakLinkSlots() {
+      if (!this.breakLinkSlotsVisible || this.selectedObjects.length === 0) {
+        // Hide all break link slots if not visible or no selection
+        this.breakLinkSlots.forEach((slot) => {
+          slot.style.display = 'none';
+        });
         return;
       }
 
@@ -423,144 +431,499 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const camera = scene.getCamera();
       if (!camera) return;
 
-      // Find the selected group and its connection point
       const selectedGroup = this.selectedObjects[0];
       if (
         !selectedGroup.userData.isSnappedGroup ||
         !selectedGroup.userData.snapConnections
       ) {
-        if (this.ungroupSlot) {
-          this.ungroupSlot.style.display = 'none';
-        }
+        // Hide all slots if selected object is not a group
+        this.breakLinkSlots.forEach((slot) => {
+          slot.style.display = 'none';
+        });
         return;
       }
 
-      // Get the first snap connection to determine where to place the ungroup button
-      const snapConnection = selectedGroup.userData.snapConnections[0];
-      if (!snapConnection) {
-        if (this.ungroupSlot) {
-          this.ungroupSlot.style.display = 'none';
-        }
-        return;
-      }
+      selectedGroup.userData.snapConnections.forEach(
+        (snapConnection: any, index: number) => {
+          const connectionId = `connection-${index}`;
 
-      // Calculate the midpoint between the two connected snap points
-      const point1WorldPos = getSnappingPointWorldPosition(
-        snapConnection.object1,
-        snapConnection.snapPoint1
-      );
-      const point2WorldPos = getSnappingPointWorldPosition(
-        snapConnection.object2,
-        snapConnection.snapPoint2
-      );
+          if (!snapConnection.object1 || !snapConnection.object2) {
+            return;
+          }
 
-      const midpoint = new Vector3();
-      midpoint.addVectors(point1WorldPos, point2WorldPos);
-      midpoint.multiplyScalar(0.5);
+          // Get the midpoint between the two snapping points
+          const point1WorldPos = getSnappingPointWorldPosition(
+            snapConnection.object1,
+            snapConnection.snapPoint1
+          );
+          const point2WorldPos = getSnappingPointWorldPosition(
+            snapConnection.object2,
+            snapConnection.snapPoint2
+          );
 
-      // Project to screen coordinates
-      const vector = midpoint.clone();
-      vector.project(camera);
+          // Calculate midpoint
+          const midpoint = new Vector3();
+          midpoint.addVectors(point1WorldPos, point2WorldPos);
+          midpoint.multiplyScalar(0.5);
 
-      const widthHalf = scene.width / 2;
-      const heightHalf = scene.height / 2;
+          // Project to screen coordinates
+          const vector = midpoint.clone();
+          vector.project(camera);
 
-      const screenX = vector.x * widthHalf + widthHalf;
-      const screenY = -(vector.y * heightHalf) + heightHalf;
+          const widthHalf = scene.width / 2;
+          const heightHalf = scene.height / 2;
 
-      // Check if point is visible (in front of camera and within screen bounds)
-      const visible =
-        vector.z < 1 &&
-        screenX >= 0 &&
-        screenX <= scene.width &&
-        screenY >= 0 &&
-        screenY <= scene.height;
+          const screenX = vector.x * widthHalf + widthHalf;
+          const screenY = -(vector.y * heightHalf) + heightHalf;
 
-      if (visible) {
-        if (!this.ungroupSlot) {
-          // Create the ungroup slot element
-          this.ungroupSlot = document.createElement('div');
-          this.ungroupSlot.className = 'ld-ungroup-slot';
-          this.ungroupSlot.setAttribute('aria-hidden', 'true');
+          // Check if the point is visible on screen
+          const visible =
+            vector.z < 1 &&
+            screenX >= 0 &&
+            screenX <= scene.width &&
+            screenY >= 0 &&
+            screenY <= scene.height;
 
-          // Check if we should use custom styling from slot
-          const shadowRoot = this.shadowRoot;
-          if (shadowRoot) {
-            const ungroupSlotElement = shadowRoot.querySelector(
-              'slot[name="snapping-ungroup"]'
-            ) as HTMLSlotElement;
-            if (ungroupSlotElement) {
-              const assignedNodes = ungroupSlotElement.assignedNodes({
-                flatten: true,
-              });
-              const customElement = assignedNodes.find(
-                (node) => node.nodeType === Node.ELEMENT_NODE
-              ) as HTMLElement;
+          if (visible) {
+            let breakLinkSlot = this.breakLinkSlots.get(connectionId);
 
-              if (customElement) {
-                // Copy classes and content from custom slot
-                const customClasses = customElement.className
-                  .split(' ')
-                  .filter(
-                    (cls) =>
-                      !cls.includes('hotspot') && !cls.includes('annotation')
-                  )
-                  .join(' ');
-                this.ungroupSlot.className = `ld-ungroup-slot ${customClasses}`;
-                this.ungroupSlot.innerHTML = customElement.innerHTML;
+            if (!breakLinkSlot) {
+              // Create the break link slot element
+              breakLinkSlot = document.createElement('div');
+              breakLinkSlot.className = 'ld-break-link-slot';
+              breakLinkSlot.setAttribute('aria-hidden', 'true');
+
+              // Check if we should use custom styling from slot
+              const shadowRoot = this.shadowRoot;
+              if (shadowRoot) {
+                const breakLinkSlotElement = shadowRoot.querySelector(
+                  'slot[name="snapping-break-link"]'
+                ) as HTMLSlotElement;
+                if (breakLinkSlotElement) {
+                  const assignedNodes = breakLinkSlotElement.assignedNodes({
+                    flatten: true,
+                  });
+                  const customElement = assignedNodes.find(
+                    (node) => node.nodeType === Node.ELEMENT_NODE
+                  ) as HTMLElement;
+
+                  if (customElement) {
+                    // Copy classes and content from custom slot
+                    const customClasses = customElement.className
+                      .split(' ')
+                      .filter(
+                        (cls) =>
+                          !cls.includes('hotspot') &&
+                          !cls.includes('annotation')
+                      )
+                      .join(' ');
+                    breakLinkSlot.className = `ld-break-link-slot ${customClasses}`;
+                    breakLinkSlot.innerHTML = customElement.innerHTML;
+                  }
+                }
               }
+
+              // Add click handler for breaking this specific connection
+              breakLinkSlot.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                this.breakSpecificConnection(connectionId);
+              });
+
+              // Position the element absolutely
+              breakLinkSlot.style.position = 'absolute';
+              breakLinkSlot.style.pointerEvents = 'auto';
+              breakLinkSlot.style.cursor = 'pointer';
+              breakLinkSlot.style.zIndex = '100';
+
+              // Add to the shadow DOM container for proper positioning
+              const container = this.shadowRoot?.querySelector('.container');
+              if (container) {
+                container.appendChild(breakLinkSlot);
+              } else {
+                // Fallback to light DOM
+                this.appendChild(breakLinkSlot);
+              }
+
+              this.breakLinkSlots.set(connectionId, breakLinkSlot);
+            }
+
+            // Update position
+            breakLinkSlot.style.left = `${screenX}px`;
+            breakLinkSlot.style.top = `${screenY}px`;
+            breakLinkSlot.style.transform = 'translate(-50%, -50%)';
+            breakLinkSlot.style.display = 'flex';
+          } else {
+            // Hide the slot if not visible
+            const breakLinkSlot = this.breakLinkSlots.get(connectionId);
+            if (breakLinkSlot) {
+              breakLinkSlot.style.display = 'none';
             }
           }
+        }
+      );
+    }
 
-          // Add click handler for ungrouping
-          this.ungroupSlot.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.ungroupSelectedObject();
+    /**
+     * Show or hide the break link slots
+     */
+    private setBreakLinkSlotsVisible(visible: boolean) {
+      this.breakLinkSlotsVisible = visible;
+      this.updateBreakLinkSlots();
+    }
+
+    /**
+     * Remove all break link slots
+     */
+    private clearBreakLinkSlots() {
+      this.breakLinkSlots.forEach((slot) => {
+        slot.remove();
+      });
+      this.breakLinkSlots.clear();
+    }
+
+    /**
+     * Break a specific connection identified by its ID
+     */
+    private breakSpecificConnection(connectionId: string) {
+      if (this.selectedObjects.length !== 1) return;
+
+      const selectedGroup = this.selectedObjects[0];
+      if (
+        !selectedGroup.userData.isSnappedGroup ||
+        !selectedGroup.userData.snapConnections
+      ) {
+        return;
+      }
+
+      // Parse the connection index from the ID
+      const index = parseInt(connectionId.replace('connection-', ''));
+      const connections = selectedGroup.userData.snapConnections;
+
+      if (index < 0 || index >= connections.length) {
+        return;
+      }
+
+      const connectionToBreak = connections[index];
+
+      // Mark the snap points as no longer used
+      if (connectionToBreak.snapPoint1) {
+        connectionToBreak.snapPoint1.isUsed = false;
+      }
+      if (connectionToBreak.snapPoint2) {
+        connectionToBreak.snapPoint2.isUsed = false;
+      }
+
+      // Remove this connection from the group's connections
+      connections.splice(index, 1);
+
+      // Clear break link slots immediately to prevent floating buttons
+      this.clearBreakLinkSlots();
+      this.setBreakLinkSlotsVisible(false);
+
+      // If this was the last connection, ungroup everything
+      if (connections.length === 0) {
+        this.ungroupSelectedObject();
+        return;
+      }
+
+      // Otherwise, we need to reorganize the group structure
+      this.reorganizeGroupAfterBreakLink(selectedGroup, connectionToBreak);
+
+      // Trigger render update
+      this[$needsRender]();
+    }
+
+    /**
+     * Reorganize the group structure after breaking a specific link
+     */
+    private reorganizeGroupAfterBreakLink(
+      group: Object3D,
+      brokenConnection: any
+    ) {
+      const targetObject = this.findTargetObject();
+      if (!targetObject) return;
+
+      // Find which objects are still connected through remaining connections
+      const remainingConnections = group.userData.snapConnections;
+      const connectedObjectSets: Set<Object3D>[] = [];
+
+      // Build connected component sets
+      remainingConnections.forEach((connection: any) => {
+        const obj1 = connection.object1;
+        const obj2 = connection.object2;
+
+        // Find if either object is already in a set
+        let set1 = connectedObjectSets.find((set) => set.has(obj1));
+        let set2 = connectedObjectSets.find((set) => set.has(obj2));
+
+        if (set1 && set2 && set1 !== set2) {
+          // Merge the two sets
+          set2.forEach((obj) => set1!.add(obj));
+          const index = connectedObjectSets.indexOf(set2);
+          connectedObjectSets.splice(index, 1);
+        } else if (set1) {
+          set1.add(obj2);
+        } else if (set2) {
+          set2.add(obj1);
+        } else {
+          // Create new set with both objects
+          const newSet = new Set([obj1, obj2]);
+          connectedObjectSets.push(newSet);
+        }
+      });
+
+      // Get all child objects and save their world transforms before removing them
+      const childObjects = [...group.children];
+      const worldTransforms = new Map();
+
+      // Save world transforms for all objects while they're still in the original group
+      childObjects.forEach((child) => {
+        const worldPosition = new Vector3();
+        const worldQuaternion = new Quaternion();
+        const worldScale = new Vector3();
+        child.getWorldPosition(worldPosition);
+        child.getWorldQuaternion(worldQuaternion);
+        child.getWorldScale(worldScale);
+        worldTransforms.set(child, {
+          position: worldPosition,
+          quaternion: worldQuaternion,
+          scale: worldScale,
+        });
+      });
+
+      // Make sure all child objects are accounted for in some set
+      // Objects not in any remaining connections become individual objects
+      childObjects.forEach((child) => {
+        const isInAnySet = connectedObjectSets.some((set) => set.has(child));
+        if (!isInAnySet) {
+          // Create a singleton set for this object
+          const singletonSet = new Set([child]);
+          connectedObjectSets.push(singletonSet);
+        }
+      });
+
+      // Remove all children from the current group
+      childObjects.forEach((child) => group.remove(child));
+
+      // Remove the current group from its parent
+      if (group.parent) {
+        group.parent.remove(group);
+      }
+
+      // Clear selection before creating new groups
+      this.selectedObjects = [];
+
+      if (connectedObjectSets.length === 1) {
+        // All remaining objects are still connected - create one new group
+        const newGroup = new Group();
+        newGroup.name = `SnappedGroup_${Date.now()}`;
+        newGroup.userData.isSnappedGroup = true;
+
+        // Add to target first
+        targetObject.add(newGroup);
+
+        connectedObjectSets[0].forEach((obj) => {
+          // Get saved world transform
+          const transform = worldTransforms.get(obj);
+          if (transform) {
+            // Add to new group
+            newGroup.add(obj);
+
+            // Convert world position to new group's local coordinate system
+            const localPosition = transform.position.clone();
+            newGroup.worldToLocal(localPosition);
+            obj.position.copy(localPosition);
+            obj.quaternion.copy(transform.quaternion);
+            obj.scale.copy(transform.scale);
+          } else {
+            newGroup.add(obj);
+          }
+        });
+
+        // Copy the remaining connections to the new group
+        newGroup.userData.snapConnections = [...remainingConnections];
+
+        // Copy other userData from the original group
+        newGroup.userData.isPlacedObject = true;
+        newGroup.userData.meshes = [];
+        newGroup.traverse((child) => {
+          if (child.type === 'Mesh' && child.name !== 'SnappingPointSphere') {
+            newGroup.userData.meshes.push(child);
+          }
+        });
+
+        // Select the new group
+        this.selectObject(newGroup);
+      } else if (connectedObjectSets.length > 1) {
+        // Multiple disconnected groups - create separate groups
+        let firstGroupOrObject: Object3D | null = null;
+
+        connectedObjectSets.forEach((objectSet) => {
+          if (objectSet.size > 1) {
+            // Create a new group for multiple connected objects
+            const newGroup = new Group();
+            newGroup.name = `SnappedGroup_${Date.now()}`;
+            newGroup.userData.isSnappedGroup = true;
+
+            // Add to target first
+            targetObject.add(newGroup);
+
+            objectSet.forEach((obj) => {
+              // Get saved world transform
+              const transform = worldTransforms.get(obj);
+              if (transform) {
+                // Add to new group
+                newGroup.add(obj);
+
+                // Convert world position to new group's local coordinate system
+                const localPosition = transform.position.clone();
+                newGroup.worldToLocal(localPosition);
+                obj.position.copy(localPosition);
+                obj.quaternion.copy(transform.quaternion);
+                obj.scale.copy(transform.scale);
+              } else {
+                newGroup.add(obj);
+              }
+            });
+
+            // Find connections that belong to this group
+            const groupConnections = remainingConnections.filter(
+              (connection: any) =>
+                objectSet.has(connection.object1) &&
+                objectSet.has(connection.object2)
+            );
+            newGroup.userData.snapConnections = groupConnections;
+
+            // Set up group userData
+            newGroup.userData.isPlacedObject = true;
+            newGroup.userData.meshes = [];
+            newGroup.traverse((child) => {
+              if (
+                child.type === 'Mesh' &&
+                child.name !== 'SnappingPointSphere'
+              ) {
+                newGroup.userData.meshes.push(child);
+              }
+            });
+
+            if (!firstGroupOrObject) {
+              firstGroupOrObject = newGroup;
+            }
+          } else {
+            // Single object - add directly to target using the same logic as ungroupSnappedGroup
+            const obj = objectSet.values().next().value;
+
+            // Get saved world transform
+            const transform = worldTransforms.get(obj);
+            if (transform) {
+              // Add to target and restore transform
+              targetObject.add(obj);
+
+              // Convert world position to local space of the target object
+              const localPosition = transform.position.clone();
+              targetObject.worldToLocal(localPosition);
+              obj.position.copy(localPosition);
+              obj.quaternion.copy(transform.quaternion);
+              obj.scale.copy(transform.scale);
+            } else {
+              targetObject.add(obj);
+            }
+
+            // Restore as individual placed object
+            obj.userData.isPlacedObject = true;
+            delete obj.userData.isInGroup;
+
+            // Ensure meshes array is set up for individual objects
+            obj.userData.meshes = [];
+            obj.traverse((child) => {
+              if (
+                child.type === 'Mesh' &&
+                child.name !== 'SnappingPointSphere'
+              ) {
+                obj.userData.meshes.push(child);
+              }
+            });
+
+            // Reset snapping points to fresh defaults for orphaned objects
+            // This ensures all snapping points are available for new connections
+            obj.userData.snappingPoints = generateDefaultSnappingPoints(obj);
+
+            if (!firstGroupOrObject) {
+              firstGroupOrObject = obj;
+            }
+          }
+        });
+
+        // Select the first object/group
+        if (firstGroupOrObject) {
+          this.selectObject(firstGroupOrObject);
+        }
+      } else {
+        // No remaining connections - place all objects individually using the same logic as ungroupSnappedGroup
+        childObjects.forEach((child) => {
+          // Get saved world transform
+          const transform = worldTransforms.get(child);
+          if (transform) {
+            // Add to target and restore transform
+            targetObject.add(child);
+
+            // Convert world position to local space of the target object
+            const localPosition = transform.position.clone();
+            targetObject.worldToLocal(localPosition);
+            child.position.copy(localPosition);
+            child.quaternion.copy(transform.quaternion);
+            child.scale.copy(transform.scale);
+          } else {
+            targetObject.add(child);
+          }
+
+          child.userData.isPlacedObject = true;
+          delete child.userData.isInGroup;
+
+          // Ensure meshes array is set up for individual objects
+          child.userData.meshes = [];
+          child.traverse((grandchild) => {
+            if (
+              grandchild.type === 'Mesh' &&
+              grandchild.name !== 'SnappingPointSphere'
+            ) {
+              child.userData.meshes.push(grandchild);
+            }
           });
 
-          // Position the element absolutely
-          this.ungroupSlot.style.position = 'absolute';
-          this.ungroupSlot.style.pointerEvents = 'auto';
-          this.ungroupSlot.style.cursor = 'pointer';
-          this.ungroupSlot.style.zIndex = '100';
+          // Reset snapping points to fresh defaults for orphaned objects
+          // This ensures all snapping points are available for new connections
+          child.userData.snappingPoints = generateDefaultSnappingPoints(child);
+        });
 
-          // Add to the shadow DOM container for proper positioning (same as snapping points)
-          const container = this.shadowRoot?.querySelector('.container');
-          if (container) {
-            container.appendChild(this.ungroupSlot);
-          } else {
-            // Fallback to light DOM
-            this.appendChild(this.ungroupSlot);
-          }
+        // Select the first object
+        if (childObjects.length > 0) {
+          this.selectObject(childObjects[0]);
+        }
+      }
+
+      // Force update of snapping point slots and break link slots after reorganization
+      setTimeout(() => {
+        // Always update snapping points for all objects
+        this.setSnappingPointSlotsVisible(true);
+        this.updateSnappingPointSlots();
+
+        // Show break link slots if we still have a group selected
+        if (
+          this.selectedObjects.length > 0 &&
+          this.selectedObjects[0].userData.isSnappedGroup
+        ) {
+          this.setBreakLinkSlotsVisible(true);
+          this.updateBreakLinkSlots();
+        } else {
+          // Hide break link slots if no group is selected
+          this.setBreakLinkSlotsVisible(false);
         }
 
-        // Update position
-        this.ungroupSlot.style.left = `${screenX}px`;
-        this.ungroupSlot.style.top = `${screenY}px`;
-        this.ungroupSlot.style.transform = 'translate(-50%, -50%)';
-        this.ungroupSlot.style.display = 'flex';
-      } else if (this.ungroupSlot) {
-        this.ungroupSlot.style.display = 'none';
-      }
-    }
-
-    /**
-     * Show or hide the ungroup slot
-     */
-    private setUngroupSlotVisible(visible: boolean) {
-      this.ungroupSlotVisible = visible;
-      this.updateUngroupSlot();
-    }
-
-    /**
-     * Remove the ungroup slot
-     */
-    private clearUngroupSlot() {
-      if (this.ungroupSlot) {
-        this.ungroupSlot.remove();
-        this.ungroupSlot = null;
-      }
+        // Force re-render to ensure all snapping points are visible
+        this.dispatchEvent(new CustomEvent('render'));
+      }, 10);
     }
 
     private updateShadowsWithGLBs() {
@@ -1517,12 +1880,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setSnappingPointSlotsVisible(true);
       }
 
-      // Show ungroup slot since we now have a grouped object selected
+      // Show break link slots since we now have a grouped object selected
       if (
         this.selectedObjects.length > 0 &&
         this.selectedObjects[0].userData.isSnappedGroup
       ) {
-        this.setUngroupSlotVisible(true);
+        this.setBreakLinkSlotsVisible(true);
       }
 
       // Force a render to show the new group state
@@ -1541,11 +1904,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         targetPoint: SnappingPoint;
       }
     ) {
-      // Move all objects from group2 into group1
+      // Move all objects from group2 into group1, preserving world positions
       const objectsToMove = [...group2.children];
       objectsToMove.forEach((obj) => {
+        // Save world position before moving
+        const worldPosition = new Vector3();
+        const worldQuaternion = new Quaternion();
+        const worldScale = new Vector3();
+        obj.getWorldPosition(worldPosition);
+        obj.getWorldQuaternion(worldQuaternion);
+        obj.getWorldScale(worldScale);
+
         group2.remove(obj);
         group1.add(obj);
+
+        // Convert world position to group1's local coordinate system
+        group1.worldToLocal(worldPosition);
+        obj.position.copy(worldPosition);
+        obj.quaternion.copy(worldQuaternion);
+        obj.scale.copy(worldScale);
       });
 
       // Add the connection to group1's snap connections
@@ -1592,11 +1969,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         targetPoint: SnappingPoint;
       }
     ) {
+      // Save the world position before removing from current parent
+      const worldPosition = new Vector3();
+      const worldQuaternion = new Quaternion();
+      const worldScale = new Vector3();
+      newObject.getWorldPosition(worldPosition);
+      newObject.getWorldQuaternion(worldQuaternion);
+      newObject.getWorldScale(worldScale);
+
       // Remove the new object from its current parent and add to group
       if (newObject.parent) {
         newObject.parent.remove(newObject);
       }
       group.add(newObject);
+
+      // Convert world position to group's local coordinate system
+      group.worldToLocal(worldPosition);
+      newObject.position.copy(worldPosition);
+      newObject.quaternion.copy(worldQuaternion);
+      newObject.scale.copy(worldScale);
 
       // Add the connection to the group's snap connections
       if (!group.userData.snapConnections) {
@@ -1675,12 +2066,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setSnappingPointSlotsVisible(true);
       }
 
-      // Show ungroup slot if a grouped object is selected
+      // Show break link slots if a grouped object is selected
       if (
         this.selectedObjects.length > 0 &&
         this.selectedObjects[0].userData.isSnappedGroup
       ) {
-        this.setUngroupSlotVisible(true);
+        this.setBreakLinkSlotsVisible(true);
       }
 
       // Disable camera panning while a part is selected
@@ -1709,8 +2100,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.setSnappingPointSlotsVisible(false);
         }
 
-        // Hide ungroup slot when no object is selected
-        this.setUngroupSlotVisible(false);
+        // Hide break link slots when no object is selected
+        this.setBreakLinkSlotsVisible(false);
 
         this[$needsRender]();
       }
@@ -1863,7 +2254,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (targetObject) {
         // Clean up slot-based rendering
         this.clearSnappingPointSlots();
-        this.clearUngroupSlot();
+        this.clearBreakLinkSlots();
       }
 
       if (this.cursor) {
@@ -1927,6 +2318,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           child.userData.isPlacedObject = true;
           // Remove any group-related flags
           delete child.userData.isInGroup;
+
+          // Ensure snapping points are preserved and restored if needed
+          if (!child.userData.snappingPoints) {
+            // If snapping points are missing, try to restore from defaults
+            child.userData.snappingPoints =
+              generateDefaultSnappingPoints(child);
+          }
 
           ungroupedObjects.push(child);
         }
@@ -2072,9 +2470,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.updateSnappingPointSlots();
       }
 
-      // Update ungroup slot if it's visible
-      if (this.ungroupSlotVisible) {
-        this.updateUngroupSlot();
+      // Update break link slots if they're visible
+      if (this.breakLinkSlotsVisible) {
+        this.updateBreakLinkSlots();
       }
     }
   }

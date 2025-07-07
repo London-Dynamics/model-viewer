@@ -296,7 +296,7 @@ const templateResult = html` <style>
       display: none;
       z-index: 10;
 }
-    .snapping-ungroup {
+    .snapping-break-link {
       position: absolute;
       font-size: 1rem;
       width: 2rem;
@@ -387,9 +387,9 @@ const templateResult = html` <style>
       </slot>
     </div>
 
-    <div class="slot snapping-ungroup">
-      <slot name="snapping-ungroup">
-        <div class="snapping-ungroup" aria-hidden="true">⛓️‍💥</div>
+    <div class="slot snapping-break-link">
+      <slot name="snapping-break-link">
+        <div class="snapping-break-link" aria-hidden="true">⛓️‍💥</div>
       </slot>
     </div>
 
