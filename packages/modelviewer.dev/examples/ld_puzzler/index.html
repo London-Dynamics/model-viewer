@@ -358,23 +358,6 @@
                             console.log('Snapping enabled');
                           }
                         });
-
-                      // Ungroup button handler
-                      document
-                        .getElementById('ungroup-selected')
-                        .addEventListener('click', (e) => {
-                          const result =
-                            modelViewer.ungroupSelectedObject?.() ?? false;
-                          if (result) {
-                            console.log(
-                              '✅ Successfully ungrouped selected object'
-                            );
-                          } else {
-                            console.log(
-                              '❌ No grouped object selected or ungrouping failed'
-                            );
-                          }
-                        });
                     })();
                   </script>
                 </template>
