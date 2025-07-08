@@ -52,6 +52,7 @@ import {
   getSnappedGroup,
 } from '../../utilities/snapping-points.js';
 import { Cursor } from './cursor.js';
+import { updateSlots, createSlotElement, SlotUpdateItem } from './slots.js';
 
 const DROP_HEIGHT = 0.5; // Height to drop models from when placed
 
@@ -174,27 +175,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private breakLinkSlots: Map<string, HTMLElement> = new Map();
     private breakLinkSlotsVisible: boolean = false;
 
-
     // Slot-based rotation controls rendering
     private rotationSlots: Map<string, HTMLElement> = new Map();
     private rotationSlotsVisible: boolean = false;
 
     // Animation properties for rotation
-    private isAnimatingRotation = false;
-    private rotationAnimation: {
-      object: Object3D;
-      startRotation: number;
-      targetRotation: number;
-      startTime: number;
-      duration: number;
-      isGroup?: boolean;
-      groupCenter?: Vector3;
-      originalPosition?: Vector3;
-    } | null = null;
 
     private updateRotationSlots() {
       if (!this.rotationSlotsVisible || this.selectedObjects.length === 0) {
-        // Hide all existing slots
         this.rotationSlots.forEach((element) => {
           element.style.display = 'none';
         });
@@ -205,175 +193,103 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const camera = scene.getCamera();
       if (!camera) return;
 
-      // Clear all existing slots first
-      this.rotationSlots.forEach((element) => {
-        element.style.display = 'none';
-      });
-
-      // Get the selected object (assuming single selection)
       const selectedObject = this.selectedObjects[0];
       if (!selectedObject) return;
 
-      // Calculate object center for rotation control positioning
       const objectCenter = new Vector3();
       const boundingBox = new Box3().setFromObject(selectedObject);
       boundingBox.getCenter(objectCenter);
 
-      // Define rotation control positions relative to object center
       const rotationControlPositions = [
         {
           name: 'rotate-left',
-          offset: new Vector3(-0.75, 0, 0), // Left side
-          rotation: 'counter-clockwise'
+          offset: new Vector3(-0.75, 0, 0),
+          rotation: 'counter-clockwise',
         },
         {
           name: 'rotate-right',
-          offset: new Vector3(0.75, 0, 0), // Right side
-          rotation: 'clockwise'
-        }
+          offset: new Vector3(0.75, 0, 0),
+          rotation: 'clockwise',
+        },
       ];
 
-      rotationControlPositions.forEach((controlInfo) => {
-        const worldPosition = objectCenter.clone().add(controlInfo.offset);
+      const slotItems: SlotUpdateItem[] = rotationControlPositions.map(
+        (controlInfo) => {
+          return {
+            name: `${selectedObject.uuid}_${controlInfo.name}`,
+            worldPosition: objectCenter.clone().add(controlInfo.offset),
+            data: { rotation: controlInfo.rotation },
+          };
+        }
+      );
 
-        // Project to screen coordinates
-        const vector = worldPosition.clone();
-        vector.project(camera);
+      updateSlots(slotItems, {
+        slotMap: this.rotationSlots,
+        owner: this,
+        container: this.shadowRoot?.querySelector('.container'),
+        scene,
+        camera,
+        onCreate: (item) => {
+          const controlInfo = rotationControlPositions.find((info) =>
+            item.name.includes(info.name)
+          );
+          if (!controlInfo) return document.createElement('div'); // Should not happen
 
-        const widthHalf = scene.width / 2;
-        const heightHalf = scene.height / 2;
-
-        const screenX = vector.x * widthHalf + widthHalf;
-        const screenY = -(vector.y * heightHalf) + heightHalf;
-
-        // Check if point is visible (in front of camera and within screen bounds)
-        const visible =
-          vector.z < 1 &&
-          screenX >= -50 &&
-          screenX <= scene.width + 50 &&
-          screenY >= -50 &&
-          screenY <= scene.height + 50;
-
-        if (visible) {
-          const slotKey = `${selectedObject.uuid}_${controlInfo.name}`;
-          let element = this.rotationSlots.get(slotKey);
-
-          if (!element) {
-            // Create rotation control element
-            element = document.createElement('div');
-            element.className = `ld-rotation-control ld-rotation-${controlInfo.name}`;
-            element.setAttribute('aria-hidden', 'true');
-            element.setAttribute('data-rotation', controlInfo.rotation);
-            element.setAttribute('data-is-rotation-slot', 'true'); // Mark as rotation slot
-
-            // Check if we should use custom styling from slot
-            const shadowRoot = this.shadowRoot;
-            let useCustomStyling = false;
-
-            if (shadowRoot) {
-              const rotationSlot = shadowRoot.querySelector(
-                `slot[name="rotation-${controlInfo.name}"]`
-              ) as HTMLSlotElement;
-              if (rotationSlot) {
-                const assignedNodes = rotationSlot.assignedNodes({
-                  flatten: true,
-                });
-                const customElement = assignedNodes.find(
-                  (node) => node.nodeType === Node.ELEMENT_NODE
-                ) as HTMLElement;
-
-                if (customElement) {
-                  // Copy classes but filter out any conflicting ones
-                  const customClasses = customElement.className
-                    .split(' ')
-                    .filter(
-                      (cls) =>
-                        !cls.includes('hotspot') && !cls.includes('annotation')
-                    )
-                    .join(' ');
-                  element.className = `ld-rotation-control ld-rotation-${controlInfo.name} ${customClasses}`;
-                  element.innerHTML = customElement.innerHTML;
-                  useCustomStyling = true;
-                }
-              }
-            }
-
-            // Apply default styling if no custom styling
-            if (!useCustomStyling) {
-              element.style.cssText = 'height: 24px; width: 24px; border-radius: 50%; background-color: #fff; border: 1px solid #333; box-shadow: 0 0 2px rgba(0,0,0,0.5);';
-
-              // Add rotation arrow icon
-              const arrow = document.createElement('div');
-
-              // Use Unicode characters for both rotations
-              if (controlInfo.rotation === 'counter-clockwise') {
-                // Use Unicode character ↺ (U+21BA) for left rotation
-                arrow.textContent = '↺';
-              } else {
-                // Use Unicode character ↻ (U+21BB) for right rotation
-                arrow.textContent = '↻';
-              }
-              arrow.style.cssText = `
-               display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;
-                font-size: 20px; color: #333; line-height: 1;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-              `;
-
-              element.appendChild(arrow);
-            }
-
-            // Add click event listener for rotation
-            element.addEventListener('click', (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              event.stopImmediatePropagation(); // Prevent any other event listeners
-              this.handleRotationClick(controlInfo.rotation, selectedObject);
-            });
-
-            // Also prevent mouse events from bubbling
-            element.addEventListener('mousedown', (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              event.stopImmediatePropagation();
-            });
-
-            element.addEventListener('mouseup', (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              event.stopImmediatePropagation();
-            });
-
-            // Add to the shadow DOM container for proper positioning
-            const container = shadowRoot?.querySelector('.container');
-            if (container) {
-              container.appendChild(element);
-            } else {
-              // Fallback to light DOM
-              this.appendChild(element);
-            }
-            this.rotationSlots.set(slotKey, element);
+          const defaultArrow = document.createElement('div');
+          if (controlInfo.rotation === 'counter-clockwise') {
+            defaultArrow.textContent = '↺';
+          } else {
+            defaultArrow.textContent = '↻';
           }
+          defaultArrow.style.cssText = `
+            display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;
+            font-size: 20px; color: #333; line-height: 1;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+          `;
 
-          // Position the element absolutely within the canvas container
-          element.style.display = 'block';
-          element.style.position = 'absolute';
-          element.style.left = `${screenX - 12}px`; // Center the 24px wide element
-          element.style.top = `${screenY - 12}px`; // Center the 24px tall element
-          element.style.zIndex = '15';
-          element.style.pointerEvents = 'auto'; // Enable click events
-          element.style.cursor = 'pointer'; // Show pointer cursor
+          const element = createSlotElement(
+            `ld-rotation-control ld-rotation-${controlInfo.name}`,
+            'height: 24px; width: 24px; border-radius: 50%; background-color: #fff; border: 1px solid #333; box-shadow: 0 0 2px rgba(0,0,0,0.5);',
+            `rotation-${controlInfo.name}`,
+            this.shadowRoot,
+            defaultArrow.outerHTML
+          );
 
-          // Apply opacity based on depth
+          element.setAttribute('data-rotation', controlInfo.rotation);
+          element.setAttribute('data-is-rotation-slot', 'true');
+
+          element.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            this.handleRotationClick(controlInfo.rotation, selectedObject);
+          });
+
+          // Prevent mouse events from bubbling up to model-viewer
+          ['mousedown', 'mouseup'].forEach((eventName) => {
+            element.addEventListener(eventName, (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+            });
+          });
+
+          element.style.pointerEvents = 'auto';
+          element.style.cursor = 'pointer';
+
+          return element;
+        },
+        onUpdate: (element, item) => {
+          const vector = item.worldPosition.clone().project(camera);
           const depth = vector.z;
           const isBackfacing = depth > 0.5;
           const opacity = isBackfacing ? '0.4' : '1';
           element.style.setProperty('opacity', opacity, 'important');
           element.style.setProperty('transition', 'opacity 0.3s', 'important');
-        }
+          element.style.zIndex = '15';
+        },
       });
     }
-
-
 
     /**
      * Updates the visibility and positioning of snapping point slot elements.
@@ -383,7 +299,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private updateSnappingPointSlots() {
       if (!this.snappingPointsVisible) {
-        // Hide all existing slots
         this.snappingPointSlots.forEach((element) => {
           element.style.display = 'none';
         });
@@ -394,35 +309,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const camera = scene.getCamera();
       if (!camera) return;
 
-      // Clear all existing slots first
-      this.snappingPointSlots.forEach((element) => {
-        element.style.display = 'none';
-      });
-
-      // Find all objects with snapping points and create/update slots
-      const snappingPointsFound: Array<{
-        objectId: string;
-        pointIndex: number;
-        worldPosition: Vector3;
-        normal: Vector3;
-        visible: boolean;
-        facingCamera: boolean;
-      }> = [];
-
-      // Search through the scene for objects with snapping points
+      const snappingPointsFound: SlotUpdateItem[] = [];
       const targetObject = this.findTargetObject();
+
       if (targetObject) {
         targetObject.traverse((child) => {
-          // Show snapping points for all placed objects, whether grouped or not
           if (child.userData.isPlacedObject && child.userData.snappingPoints) {
             const snappingPoints = child.userData
               .snappingPoints as SnappingPoint[];
-
             snappingPoints.forEach((snapPoint, index) => {
-              // Skip used snap points (this check is still useful for other scenarios)
               if (snapPoint.isUsed) return;
 
-              // Calculate world position
               const localPos = new Vector3(
                 snapPoint.position.x,
                 snapPoint.position.y,
@@ -430,164 +327,56 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               );
               const worldPos = child.localToWorld(localPos.clone());
 
-              // Calculate normal from rotation
               const rotation = new Euler(
                 snapPoint.rotation.x,
                 snapPoint.rotation.y,
                 snapPoint.rotation.z
               );
-              const normal = new Vector3(0, 0, 1); // Default forward direction
-              normal.applyEuler(rotation);
-
-              // Transform normal to world space
+              const normal = new Vector3(0, 0, 1).applyEuler(rotation);
               const worldNormal = normal
                 .clone()
                 .transformDirection(child.matrixWorld);
 
-              // Calculate view vector (from snapping point to camera)
-              const viewVector = new Vector3();
-              viewVector.copy(scene.getCamera().position);
-              viewVector.sub(worldPos);
-
-              // Determine if facing camera using dot product
+              const viewVector = new Vector3()
+                .copy(camera.position)
+                .sub(worldPos);
               const dotProduct = viewVector.dot(worldNormal);
               const facingCamera = dotProduct > 0;
 
-              // Project to screen coordinates
-              const vector = worldPos.clone();
-              vector.project(camera);
-
-              const widthHalf = scene.width / 2;
-              const heightHalf = scene.height / 2;
-
-              const screenX = vector.x * widthHalf + widthHalf;
-              const screenY = -(vector.y * heightHalf) + heightHalf;
-
-              // Check if point is visible (in front of camera and within screen bounds)
-              const visible =
-                vector.z < 1 &&
-                screenX >= 0 &&
-                screenX <= scene.width &&
-                screenY >= 0 &&
-                screenY <= scene.height;
-
-              if (visible) {
-                snappingPointsFound.push({
-                  objectId: child.uuid,
-                  pointIndex: index,
-                  worldPosition: worldPos,
-                  normal: worldNormal,
-                  visible: true,
-                  facingCamera: facingCamera,
-                });
-              }
+              snappingPointsFound.push({
+                name: `${child.uuid}_${index}`,
+                worldPosition: worldPos,
+                isFacingCamera: facingCamera,
+              });
             });
           }
         });
       }
 
-      // Update slots for all visible snapping points
-      snappingPointsFound.forEach((snapPointInfo) => {
-        const slotKey = `${snapPointInfo.objectId}_${snapPointInfo.pointIndex}`;
-        let element = this.snappingPointSlots.get(slotKey);
-
-        if (!element) {
-          // Create completely independent snapping point elements
-          // Don't clone from slots to avoid inheriting hotspot CSS
-          element = document.createElement('div');
-          element.className = 'ld-snapping-point';
-          element.setAttribute('aria-hidden', 'true');
-
-          // Check if we should use custom styling from slot
-          const shadowRoot = this.shadowRoot;
-          let useCustomStyling = false;
-
-          if (shadowRoot) {
-            const snappingPointSlot = shadowRoot.querySelector(
-              'slot[name="snapping-point"]'
-            ) as HTMLSlotElement;
-            if (snappingPointSlot) {
-              const assignedNodes = snappingPointSlot.assignedNodes({
-                flatten: true,
-              });
-              const customElement = assignedNodes.find(
-                (node) => node.nodeType === Node.ELEMENT_NODE
-              ) as HTMLElement;
-
-              if (customElement) {
-                // Copy classes but filter out any hotspot-related ones
-                const customClasses = customElement.className
-                  .split(' ')
-                  .filter(
-                    (cls) =>
-                      !cls.includes('hotspot') && !cls.includes('annotation')
-                  )
-                  .join(' ');
-                element.className = `ld-snapping-point ${customClasses}`;
-                useCustomStyling = true;
-              }
-            }
-          }
-
-          // Apply default styling if no custom styling
-          if (!useCustomStyling) {
-            element.style.cssText =
-              'width: 10px; height: 10px; border-radius: 50%; background-color: #fff; border: 2px solid #333; box-shadow: 0 0 4px rgba(0,0,0,0.5);';
-          }
-
-          // Add to the shadow DOM container for proper positioning
-          const container = shadowRoot?.querySelector('.container');
-          if (container) {
-            container.appendChild(element);
+      updateSlots(snappingPointsFound, {
+        slotMap: this.snappingPointSlots,
+        owner: this,
+        container: this.shadowRoot?.querySelector('.container'),
+        scene,
+        camera,
+        onCreate: (item) => {
+          const element = createSlotElement(
+            'ld-snapping-point',
+            'width: 10px; height: 10px; border-radius: 50%; background-color: #fff; border: 2px solid #333; box-shadow: 0 0 4px rgba(0,0,0,0.5);',
+            'snapping-point',
+            this.shadowRoot
+          );
+          element.style.pointerEvents = 'none';
+          return element;
+        },
+        onUpdate: (element, item) => {
+          if (item.isFacingCamera) {
+            element.style.setProperty('opacity', '1', 'important');
           } else {
-            // Fallback to light DOM
-            this.appendChild(element);
+            element.style.setProperty('opacity', '0.25', 'important');
           }
-          this.snappingPointSlots.set(slotKey, element);
-        }
-
-        // Calculate screen position relative to the canvas
-        const vector = snapPointInfo.worldPosition.clone();
-        vector.project(camera);
-
-        const widthHalf = scene.width / 2;
-        const heightHalf = scene.height / 2;
-
-        const screenX = vector.x * widthHalf + widthHalf;
-        const screenY = -(vector.y * heightHalf) + heightHalf;
-
-        // Calculate opacity based on depth - points further back have lower opacity
-        // Similar to hotspot behavior: use CSS custom properties for opacity control
-        const depth = vector.z; // 0 = at camera, 1 = at far plane
-        const isBackfacing = depth > 0.5; // Consider points in back half as "behind"
-
-        // Use CSS custom properties similar to hotspots
-        const maxOpacity =
-          getComputedStyle(this).getPropertyValue(
-            '--max-snapping-point-opacity'
-          ) || '1';
-        const minOpacity =
-          getComputedStyle(this).getPropertyValue(
-            '--min-snapping-point-opacity'
-          ) || '0.4';
-        const opacity = isBackfacing ? minOpacity : maxOpacity;
-
-        // Position the element absolutely within the canvas container
-        element.style.display = 'block';
-        element.style.position = 'absolute';
-        element.style.left = `${screenX - 5}px`; // Center the 10px wide element
-        element.style.top = `${screenY - 5}px`; // Center the 10px tall element
-        element.style.zIndex = '10';
-        element.style.pointerEvents = 'none'; // Don't interfere with mouse events
-
-        // Apply opacity based on whether the snapping point is facing the camera
-        if (snapPointInfo.facingCamera) {
-          element.style.setProperty('opacity', '1', 'important'); // Full opacity when facing camera
-        } else {
-          element.style.setProperty('opacity', '0.25', 'important'); // Reduced opacity when behind model
-        }
-        // Set transition for smooth opacity changes
-        element.style.setProperty('transition', 'opacity 0.3s', 'important');
+          element.style.setProperty('transition', 'opacity 0.3s', 'important');
+        },
       });
     }
 
@@ -621,7 +410,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private updateBreakLinkSlots() {
       if (!this.breakLinkSlotsVisible || this.selectedObjects.length === 0) {
-        // Hide all break link slots if not visible or no selection
         this.breakLinkSlots.forEach((slot) => {
           slot.style.display = 'none';
         });
@@ -637,22 +425,19 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         !selectedGroup.userData.isSnappedGroup ||
         !selectedGroup.userData.snapConnections
       ) {
-        // Hide all slots if selected object is not a group
         this.breakLinkSlots.forEach((slot) => {
           slot.style.display = 'none';
         });
         return;
       }
 
-      selectedGroup.userData.snapConnections.forEach(
-        (snapConnection: any, index: number) => {
+      const slotItems: SlotUpdateItem[] = selectedGroup.userData.snapConnections
+        .map((snapConnection: any, index: number) => {
           const connectionId = `connection-${index}`;
-
           if (!snapConnection.object1 || !snapConnection.object2) {
-            return;
+            return null;
           }
 
-          // Get the midpoint between the two snapping points
           const point1WorldPos = getSnappingPointWorldPosition(
             snapConnection.object1,
             snapConnection.snapPoint1
@@ -662,107 +447,56 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             snapConnection.snapPoint2
           );
 
-          // Calculate midpoint
-          const midpoint = new Vector3();
-          midpoint.addVectors(point1WorldPos, point2WorldPos);
-          midpoint.multiplyScalar(0.5);
+          const midpoint = new Vector3()
+            .addVectors(point1WorldPos, point2WorldPos)
+            .multiplyScalar(0.5);
 
-          // Project to screen coordinates
-          const vector = midpoint.clone();
-          vector.project(camera);
+          return {
+            name: connectionId,
+            worldPosition: midpoint,
+            data: { connectionId },
+          };
+        })
+        .filter((item) => item !== null) as SlotUpdateItem[];
 
-          const widthHalf = scene.width / 2;
-          const heightHalf = scene.height / 2;
+      updateSlots(slotItems, {
+        slotMap: this.breakLinkSlots,
+        owner: this,
+        container: this.shadowRoot?.querySelector('.container'),
+        scene,
+        camera,
+        onCreate: (item) => {
+          const defaultIcon = document.createElement('div');
+          defaultIcon.textContent = '✖'; // Unicode for a heavy multiplication x
+          defaultIcon.style.cssText = `
+                display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;
+                font-size: 16px; color: #fff; line-height: 1;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            `;
 
-          const screenX = vector.x * widthHalf + widthHalf;
-          const screenY = -(vector.y * heightHalf) + heightHalf;
+          const element = createSlotElement(
+            'ld-break-link',
+            'width: 24px; height: 24px; border-radius: 50%; background-color: #c00; border: 1px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.5);',
+            'break-link',
+            this.shadowRoot,
+            defaultIcon.outerHTML
+          );
 
-          // Check if the point is visible on screen
-          const visible =
-            vector.z < 1 &&
-            screenX >= 0 &&
-            screenX <= scene.width &&
-            screenY >= 0 &&
-            screenY <= scene.height;
+          element.style.pointerEvents = 'auto';
+          element.style.cursor = 'pointer';
 
-          if (visible) {
-            let breakLinkSlot = this.breakLinkSlots.get(connectionId);
+          element.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.breakSpecificConnection(item.data.connectionId);
+          });
 
-            if (!breakLinkSlot) {
-              // Create the break link slot element
-              breakLinkSlot = document.createElement('div');
-              breakLinkSlot.className = 'ld-break-link-slot';
-              breakLinkSlot.setAttribute('aria-hidden', 'true');
-
-              // Check if we should use custom styling from slot
-              const shadowRoot = this.shadowRoot;
-              if (shadowRoot) {
-                const breakLinkSlotElement = shadowRoot.querySelector(
-                  'slot[name="snapping-break-link"]'
-                ) as HTMLSlotElement;
-                if (breakLinkSlotElement) {
-                  const assignedNodes = breakLinkSlotElement.assignedNodes({
-                    flatten: true,
-                  });
-                  const customElement = assignedNodes.find(
-                    (node) => node.nodeType === Node.ELEMENT_NODE
-                  ) as HTMLElement;
-
-                  if (customElement) {
-                    // Copy classes and content from custom slot
-                    const customClasses = customElement.className
-                      .split(' ')
-                      .filter(
-                        (cls) =>
-                          !cls.includes('hotspot') &&
-                          !cls.includes('annotation')
-                      )
-                      .join(' ');
-                    breakLinkSlot.className = `ld-break-link-slot ${customClasses}`;
-                    breakLinkSlot.innerHTML = customElement.innerHTML;
-                  }
-                }
-              }
-
-              // Add click handler for breaking this specific connection
-              breakLinkSlot.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.breakSpecificConnection(connectionId);
-              });
-
-              // Position the element absolutely
-              breakLinkSlot.style.position = 'absolute';
-              breakLinkSlot.style.pointerEvents = 'auto';
-              breakLinkSlot.style.cursor = 'pointer';
-              breakLinkSlot.style.zIndex = '100';
-
-              // Add to the shadow DOM container for proper positioning
-              const container = this.shadowRoot?.querySelector('.container');
-              if (container) {
-                container.appendChild(breakLinkSlot);
-              } else {
-                // Fallback to light DOM
-                this.appendChild(breakLinkSlot);
-              }
-
-              this.breakLinkSlots.set(connectionId, breakLinkSlot);
-            }
-
-            // Update position
-            breakLinkSlot.style.left = `${screenX}px`;
-            breakLinkSlot.style.top = `${screenY}px`;
-            breakLinkSlot.style.transform = 'translate(-50%, -50%)';
-            breakLinkSlot.style.display = 'flex';
-          } else {
-            // Hide the slot if not visible
-            const breakLinkSlot = this.breakLinkSlots.get(connectionId);
-            if (breakLinkSlot) {
-              breakLinkSlot.style.display = 'none';
-            }
-          }
-        }
-      );
+          return element;
+        },
+        onUpdate: (element, item) => {
+          element.style.zIndex = '20'; // Ensure it's on top
+        },
+      });
     }
 
     /**
@@ -2656,7 +2390,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private startVisualizationBoxPulse(visualizationBox: Mesh) {
       if (!(visualizationBox.material instanceof MeshBasicMaterial)) {
-        console.warn('Visualization box material is not MeshBasicMaterial:', visualizationBox.material);
+        console.warn(
+          'Visualization box material is not MeshBasicMaterial:',
+          visualizationBox.material
+        );
         return;
       }
 
@@ -2681,7 +2418,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const pulseValue = Math.sin(progress * Math.PI * 2) * 0.5 + 0.5;
 
         // Animate opacity
-        const currentOpacity = minOpacity + (maxOpacity - minOpacity) * pulseValue;
+        const currentOpacity =
+          minOpacity + (maxOpacity - minOpacity) * pulseValue;
         material.opacity = currentOpacity;
 
         // Force material to update
@@ -2728,7 +2466,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const currentRotation = object.rotation.y;
       let targetRotation: number;
 
-
       // Calculate target rotation based on direction
       if (direction === 'clockwise') {
         targetRotation = currentRotation - rotationAmount;
@@ -2738,11 +2475,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      console.log('targetRotation', targetRotation)
+      console.log('targetRotation', targetRotation);
 
       // For groups, we need to handle rotation around the group's center
       if (object.userData.isSnappedGroup) {
-        this.rotateGroupAroundCenter(object, currentRotation, targetRotation, direction);
+        this.rotateGroupAroundCenter(
+          object,
+          currentRotation,
+          targetRotation,
+          direction
+        );
       } else {
         // For individual objects, use the normal rotation animation
         this.startRotationAnimation(object, currentRotation, targetRotation);
@@ -2752,7 +2494,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Rotate a group around its center point
      */
-    private rotateGroupAroundCenter(group: Object3D, startRotation: number, targetRotation: number, direction: string) {
+    private rotateGroupAroundCenter(
+      group: Object3D,
+      startRotation: number,
+      targetRotation: number,
+      direction: string
+    ) {
       // Calculate the group's bounding box to find its center
       const boundingBox = new Box3().setFromObject(group);
       const center = boundingBox.getCenter(new Vector3());
@@ -2776,21 +2523,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         duration: 500,
         isGroup: true,
         groupCenter: center,
-        originalPosition: originalPosition
+        originalPosition: originalPosition,
       };
     }
 
     /**
      * Start a smooth rotation animation
      */
-    private startRotationAnimation(object: Object3D, startRotation: number, targetRotation: number) {
+    private startRotationAnimation(
+      object: Object3D,
+      startRotation: number,
+      targetRotation: number
+    ) {
       this.isAnimatingRotation = true;
       this.rotationAnimation = {
         object: object,
         startRotation: startRotation,
         targetRotation: targetRotation,
         startTime: performance.now(),
-        duration: 500 // Animation duration in milliseconds
+        duration: 500, // Animation duration in milliseconds
       };
     }
 
@@ -2802,7 +2553,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      const { object, startRotation, targetRotation, startTime, duration } = this.rotationAnimation;
+      const { object, startRotation, targetRotation, startTime, duration } =
+        this.rotationAnimation;
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
 
@@ -2810,10 +2562,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const easeProgress = 1 - Math.pow(1 - progress, 3);
 
       // Interpolate between start and target rotation
-      const currentRotation = startRotation + (targetRotation - startRotation) * easeProgress;
+      const currentRotation =
+        startRotation + (targetRotation - startRotation) * easeProgress;
 
       // Handle group rotation around center vs individual object rotation
-      if (this.rotationAnimation.isGroup && this.rotationAnimation.groupCenter && this.rotationAnimation.originalPosition) {
+      if (
+        this.rotationAnimation.isGroup &&
+        this.rotationAnimation.groupCenter &&
+        this.rotationAnimation.originalPosition
+      ) {
         // For groups, rotate around the group's center
         const { groupCenter, originalPosition } = this.rotationAnimation;
 
@@ -2865,7 +2622,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Final render and shadow update
       this.updateShadowsWithGLBs();
       this[$needsRender]();
-
     }
 
     [$tick](time: number, delta: number) {
