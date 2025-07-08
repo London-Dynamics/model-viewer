@@ -385,17 +385,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private setSnappingPointSlotsVisible(visible: boolean) {
       this.snappingPointsVisible = visible;
-      this.updateSnappingPointSlots();
     }
 
     /**
      * Remove all snapping point slots
      */
     private clearSnappingPointSlots() {
-      this.snappingPointSlots.forEach((element) => {
-        element.remove();
-      });
-      this.snappingPointSlots.clear();
+      this.clearSlots(this.snappingPointSlots);
     }
 
     /**
@@ -504,17 +500,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private setBreakLinkSlotsVisible(visible: boolean) {
       this.breakLinkSlotsVisible = visible;
-      this.updateBreakLinkSlots();
     }
 
     /**
      * Remove all break link slots
      */
     private clearBreakLinkSlots() {
-      this.breakLinkSlots.forEach((slot) => {
-        slot.remove();
-      });
-      this.breakLinkSlots.clear();
+      this.clearSlots(this.breakLinkSlots);
     }
 
     /**
@@ -2206,9 +2198,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
       if (targetObject) {
         // Clean up slot-based rendering
-        this.clearSnappingPointSlots();
-        this.clearRotationSlots();
-        this.clearBreakLinkSlots();
+        this.clearSlots(this.snappingPointSlots);
+        this.clearSlots(this.rotationSlots);
+        this.clearSlots(this.breakLinkSlots);
       }
 
       if (this.cursor) {
@@ -2438,22 +2430,30 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       requestAnimationFrame(animate);
     }
 
+    private updateAllSlots() {
+      if (this.rotationSlotsVisible) {
+        this.updateRotationSlots();
+      }
+      if (this.snappingPointsVisible) {
+        this.updateSnappingPointSlots();
+      }
+      if (this.breakLinkSlotsVisible) {
+        this.updateBreakLinkSlots();
+      }
+    }
+
     /**
      * Show or hide rotation slots
      */
     private setRotationSlotsVisible(visible: boolean) {
       this.rotationSlotsVisible = visible;
-      this.updateRotationSlots();
     }
 
     /**
      * Remove all rotation slots
      */
     private clearRotationSlots() {
-      this.rotationSlots.forEach((element) => {
-        element.remove();
-      });
-      this.rotationSlots.clear();
+      this.clearSlots(this.rotationSlots);
     }
 
     /**
@@ -2632,20 +2632,19 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.updateRotationAnimation(time);
       }
 
-      // Update rotation slots if they're visible
-      if (this.rotationSlotsVisible) {
-        this.updateRotationSlots();
-      }
+      this.updateAllSlots();
+    }
 
-      // Update snapping point slots if they're visible
-      if (this.snappingPointsVisible) {
-        this.updateSnappingPointSlots();
-      }
-
-      // Update break link slots if they're visible
-      if (this.breakLinkSlotsVisible) {
-        this.updateBreakLinkSlots();
-      }
+    /**
+     * Generic helper to clear and remove slot elements from a given map.
+     */
+    private clearSlots(slotMap: Map<string, HTMLElement>) {
+      slotMap.forEach((element) => {
+        if (element.parentElement) {
+          element.parentElement.removeChild(element);
+        }
+      });
+      slotMap.clear();
     }
   }
 
