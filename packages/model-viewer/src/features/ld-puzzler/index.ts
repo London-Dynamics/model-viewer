@@ -1128,6 +1128,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     async placeGLB(src: string, options: PlacementOptions = {}): Promise<void> {
+      this.deselectObject();
       const loader = new GLTFLoader();
 
       const targetObject = this.findTargetObject();
@@ -2431,15 +2432,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private updateAllSlots() {
-      if (this.rotationSlotsVisible) {
-        this.updateRotationSlots();
-      }
-      if (this.snappingPointsVisible) {
-        this.updateSnappingPointSlots();
-      }
-      if (this.breakLinkSlotsVisible) {
-        this.updateBreakLinkSlots();
-      }
+      this.updateRotationSlots();
+      this.updateSnappingPointSlots();
+      this.updateBreakLinkSlots();
     }
 
     /**
