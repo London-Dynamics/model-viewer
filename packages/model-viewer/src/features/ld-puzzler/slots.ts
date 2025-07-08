@@ -70,9 +70,7 @@ export function updateSlots(
 
       onUpdate(element, item);
     }
-  });
-
-  // Hide slots that are no longer visible
+  }); // Hide slots that are no longer visible
   slotMap.forEach((element, name) => {
     if (!visibleSlots.has(name)) {
       element.style.display = 'none';
@@ -82,28 +80,37 @@ export function updateSlots(
 
 export function createSlotElement(
   className: string,
-  defaultStyle: string,
+  _defaultStyle: string,
   customSlotName: string | null,
   shadowRoot: ShadowRoot | null,
   innerHTML: string | null = null
 ): HTMLElement {
   const element = document.createElement('div');
-  element.className = className;
+  // Don't add className to wrapper div - it's just for positioning
   element.setAttribute('aria-hidden', 'true');
 
-  let useCustomStyling = false;
   if (shadowRoot && customSlotName) {
     const slot = shadowRoot.querySelector(
       `slot[name="${customSlotName}"]`
     ) as HTMLSlotElement;
+
     if (slot) {
+      // First check for assigned nodes (user-provided content)
       const assignedNodes = slot.assignedNodes({ flatten: true });
-      const customElement = assignedNodes.find(
-        (node) => node.nodeType === Node.ELEMENT_NODE
-      ) as HTMLElement;
+      const customElement = assignedNodes.find((node) => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return false;
+        const element = node as HTMLElement;
+        // Skip hidden elements or elements positioned off-screen
+        return !(
+          element.style.visibility === 'hidden' ||
+          element.style.left === '-9999px' ||
+          element.style.display === 'none' ||
+          (element.offsetWidth === 0 && element.offsetHeight === 0)
+        );
+      }) as HTMLElement;
 
       if (customElement) {
-        // Copy classes but filter out any conflicting ones
+        // User provided custom content, use it and apply className to wrapper
         const customClasses = customElement.className
           .split(' ')
           .filter(
@@ -112,16 +119,23 @@ export function createSlotElement(
           .join(' ');
         element.className = `${className} ${customClasses}`;
         element.innerHTML = customElement.innerHTML;
-        useCustomStyling = true;
+        return element;
+      }
+
+      // If no visible assigned nodes, check for default template content in the slot
+      // This is the default content that appears when no content is slotted
+      const defaultContent = slot.innerHTML;
+      if (defaultContent && defaultContent.trim()) {
+        // Use slot template content directly - it already has proper styling classes
+        element.innerHTML = defaultContent;
+        return element;
       }
     }
   }
 
-  if (!useCustomStyling) {
-    element.style.cssText = defaultStyle;
-    if (innerHTML) {
-      element.innerHTML = innerHTML;
-    }
+  // Fallback: use provided innerHTML or empty
+  if (innerHTML) {
+    element.innerHTML = innerHTML;
   }
 
   return element;

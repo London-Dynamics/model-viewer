@@ -226,7 +226,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       updateSlots(slotItems, {
         slotMap: this.rotationSlots,
         owner: this,
-        container: this.shadowRoot?.querySelector('.container'),
+        container: this.shadowRoot?.querySelector('.slot.ld-puzzler'),
         scene,
         camera,
         onCreate: (item) => {
@@ -235,24 +235,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           );
           if (!controlInfo) return document.createElement('div'); // Should not happen
 
-          const defaultArrow = document.createElement('div');
-          if (controlInfo.rotation === 'counter-clockwise') {
-            defaultArrow.textContent = '↺';
-          } else {
-            defaultArrow.textContent = '↻';
-          }
-          defaultArrow.style.cssText = `
-            display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;
-            font-size: 20px; color: #333; line-height: 1;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-          `;
-
           const element = createSlotElement(
             `ld-rotation-control ld-rotation-${controlInfo.name}`,
-            'height: 24px; width: 24px; border-radius: 50%; background-color: #fff; border: 1px solid #333; box-shadow: 0 0 2px rgba(0,0,0,0.5);',
-            `rotation-${controlInfo.name}`,
+            '', // No inline styles - handled by CSS
+            controlInfo.name === 'rotate-left'
+              ? 'rotation-left'
+              : 'rotation-right',
             this.shadowRoot,
-            defaultArrow.outerHTML
+            null // Content handled by slot template
           );
 
           element.setAttribute('data-rotation', controlInfo.rotation);
@@ -274,19 +264,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             });
           });
 
-          element.style.pointerEvents = 'auto';
-          element.style.cursor = 'pointer';
-
           return element;
         },
         onUpdate: (element, item) => {
           const vector = item.worldPosition.clone().project(camera);
           const depth = vector.z;
           const isBackfacing = depth > 0.5;
-          const opacity = isBackfacing ? '0.4' : '1';
-          element.style.setProperty('opacity', opacity, 'important');
-          element.style.setProperty('transition', 'opacity 0.3s', 'important');
-          element.style.zIndex = '15';
+
+          if (isBackfacing) {
+            element.classList.add('back-facing');
+          } else {
+            element.classList.remove('back-facing');
+          }
         },
       });
     }
@@ -356,26 +345,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       updateSlots(snappingPointsFound, {
         slotMap: this.snappingPointSlots,
         owner: this,
-        container: this.shadowRoot?.querySelector('.container'),
+        container: this.shadowRoot?.querySelector('.slot.ld-puzzler'),
         scene,
         camera,
         onCreate: (item) => {
           const element = createSlotElement(
             'ld-snapping-point',
-            'width: 10px; height: 10px; border-radius: 50%; background-color: #fff; border: 2px solid #333; box-shadow: 0 0 4px rgba(0,0,0,0.5);',
+            '', // No inline styles - handled by CSS
             'snapping-point',
-            this.shadowRoot
+            this.shadowRoot,
+            null // Content handled by slot template
           );
-          element.style.pointerEvents = 'none';
           return element;
         },
         onUpdate: (element, item) => {
           if (item.isFacingCamera) {
-            element.style.setProperty('opacity', '1', 'important');
+            element.classList.remove('back-facing');
           } else {
-            element.style.setProperty('opacity', '0.25', 'important');
+            element.classList.add('back-facing');
           }
-          element.style.setProperty('transition', 'opacity 0.3s', 'important');
         },
       });
     }
@@ -385,6 +373,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private setSnappingPointSlotsVisible(visible: boolean) {
       this.snappingPointsVisible = visible;
+      this.updateSnappingPointSlots();
     }
 
     /**
@@ -458,28 +447,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       updateSlots(slotItems, {
         slotMap: this.breakLinkSlots,
         owner: this,
-        container: this.shadowRoot?.querySelector('.container'),
+        container: this.shadowRoot?.querySelector('.slot.ld-puzzler'),
         scene,
         camera,
         onCreate: (item) => {
-          const defaultIcon = document.createElement('div');
-          defaultIcon.textContent = '✖'; // Unicode for a heavy multiplication x
-          defaultIcon.style.cssText = `
-                display: flex; justify-content: center; align-items: center; width: 100%; height: 100%;
-                font-size: 16px; color: #fff; line-height: 1;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            `;
-
           const element = createSlotElement(
             'ld-break-link',
-            'width: 24px; height: 24px; border-radius: 50%; background-color: #c00; border: 1px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.5);',
+            '', // No inline styles - handled by CSS
             'break-link',
             this.shadowRoot,
-            defaultIcon.outerHTML
+            null // Content handled by slot template
           );
-
-          element.style.pointerEvents = 'auto';
-          element.style.cursor = 'pointer';
 
           element.addEventListener('click', (event) => {
             event.preventDefault();
@@ -500,6 +478,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private setBreakLinkSlotsVisible(visible: boolean) {
       this.breakLinkSlotsVisible = visible;
+      this.updateBreakLinkSlots();
     }
 
     /**
@@ -1263,9 +1242,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             }
           },
           (xhr) => {
-            console.log(
-              `Loading model: ${Math.round((xhr.loaded / xhr.total) * 100)}%`
-            );
             if (xhr.loaded === xhr.total) {
               // Fade out and remove the visualization box when animation completes
               const visualizationBox = targetObject.children.find(
@@ -2442,6 +2418,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     private setRotationSlotsVisible(visible: boolean) {
       this.rotationSlotsVisible = visible;
+      this.updateRotationSlots();
     }
 
     /**
@@ -2469,8 +2446,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       } else {
         return;
       }
-
-      console.log('targetRotation', targetRotation);
 
       // For groups, we need to handle rotation around the group's center
       if (object.userData.isSnappedGroup) {

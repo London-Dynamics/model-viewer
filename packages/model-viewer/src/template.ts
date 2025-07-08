@@ -20,295 +20,321 @@ import ControlsPrompt from './assets/controls-svg.js';
 import ARGlyph from './assets/view-in-ar-material-svg.js';
 
 const templateResult = html` <style>
-    :host {
-      display: block;
-      position: relative;
-      contain: strict;
-      width: 300px;
-      height: 150px;
-    }
+       :host {
+         display: block;
+         position: relative;
+         contain: strict;
+         width: 300px;
+         height: 150px;
+       }
 
-    .container {
-      position: relative;
-      overflow: hidden;
-    }
+       .container {
+         position: relative;
+         overflow: hidden;
+       }
 
-    .userInput {
-      width: 100%;
-      height: 100%;
-      display: none;
-      position: relative;
-      outline-offset: -1px;
-      outline-width: 1px;
-    }
+       .userInput {
+         width: 100%;
+         height: 100%;
+         display: none;
+         position: relative;
+         outline-offset: -1px;
+         outline-width: 1px;
+       }
 
-    canvas {
-      position: absolute;
-      display: none;
-      pointer-events: none;
-      /* NOTE(cdata): Chrome 76 and below apparently have a bug
-   * that causes our canvas not to display pixels unless it is
-   * on its own render layer
-   * @see https://github.com/google/model-viewer/pull/755#issuecomment-536597893
-   */
-      transform: translateZ(0);
-    }
+       canvas {
+         position: absolute;
+         display: none;
+         pointer-events: none;
+         /* NOTE(cdata): Chrome 76 and below apparently have a bug
+      * that causes our canvas not to display pixels unless it is
+      * on its own render layer
+      * @see https://github.com/google/model-viewer/pull/755#issuecomment-536597893
+      */
+         transform: translateZ(0);
+       }
 
-    .show {
-      display: block;
-    }
+       .show {
+         display: block;
+       }
 
-    /* Adapted from HTML5 Boilerplate
- *
- * @see https://github.com/h5bp/html5-boilerplate/blob/ceb4620c78fc82e13534fc44202a3f168754873f/dist/css/main.css#L122-L133 */
-    .screen-reader-only {
-      border: 0;
-      left: 0;
-      top: 0;
-      clip: rect(0, 0, 0, 0);
-      height: 1px;
-      margin: -1px;
-      overflow: hidden;
-      padding: 0;
-      position: absolute;
-      white-space: nowrap;
-      width: 1px;
-      pointer-events: none;
-    }
+       /* Adapted from HTML5 Boilerplate
+    *
+    * @see https://github.com/h5bp/html5-boilerplate/blob/ceb4620c78fc82e13534fc44202a3f168754873f/dist/css/main.css#L122-L133 */
+       .screen-reader-only {
+         border: 0;
+         left: 0;
+         top: 0;
+         clip: rect(0, 0, 0, 0);
+         height: 1px;
+         margin: -1px;
+         overflow: hidden;
+         padding: 0;
+         position: absolute;
+         white-space: nowrap;
+         width: 1px;
+         pointer-events: none;
+       }
 
-    .slot {
-      position: absolute;
-      pointer-events: none;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }
+       .slot {
+         position: absolute;
+         pointer-events: none;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+       }
 
-    .slot > * {
-      pointer-events: initial;
-    }
+       .slot > * {
+         pointer-events: initial;
+       }
 
-    .annotation-wrapper ::slotted(*) {
-      opacity: var(--max-hotspot-opacity, 1);
-      transition: opacity 0.3s;
-    }
+       .annotation-wrapper ::slotted(*) {
+         opacity: var(--max-hotspot-opacity, 1);
+         transition: opacity 0.3s;
+       }
 
-    .pointer-tumbling .annotation-wrapper ::slotted(*) {
-      pointer-events: none;
-    }
+       .pointer-tumbling .annotation-wrapper ::slotted(*) {
+         pointer-events: none;
+       }
 
-    .annotation-wrapper ::slotted(*) {
-      pointer-events: initial;
-    }
+       .annotation-wrapper ::slotted(*) {
+         pointer-events: initial;
+       }
 
-    .annotation-wrapper.hide ::slotted(*) {
-      opacity: var(--min-hotspot-opacity, 0.25);
-    }
+       .annotation-wrapper.hide ::slotted(*) {
+         opacity: var(--min-hotspot-opacity, 0.25);
+       }
 
-    .slot.poster {
-      display: none;
-      background-color: inherit;
-    }
+       .slot.poster {
+         display: none;
+         background-color: inherit;
+       }
 
-    .slot.poster.show {
-      display: inherit;
-    }
+       .slot.poster.show {
+         display: inherit;
+       }
 
-    .slot.poster > * {
-      pointer-events: initial;
-    }
+       .slot.poster > * {
+         pointer-events: initial;
+       }
 
-    .slot.poster:not(.show) > * {
-      pointer-events: none;
-    }
+       .slot.poster:not(.show) > * {
+         pointer-events: none;
+       }
 
-    #default-poster {
-      width: 100%;
-      height: 100%;
-      /* The default poster is a <button> so we need to set display
-   * to prevent it from being affected by text-align: */
-      display: block;
-      position: absolute;
-      border: none;
-      padding: 0;
-      background-size: contain;
-      background-repeat: no-repeat;
-      background-position: center;
-      background-color: #fff0;
-    }
+       #default-poster {
+         width: 100%;
+         height: 100%;
+         /* The default poster is a <button> so we need to set display
+      * to prevent it from being affected by text-align: */
+         display: block;
+         position: absolute;
+         border: none;
+         padding: 0;
+         background-size: contain;
+         background-repeat: no-repeat;
+         background-position: center;
+         background-color: #fff0;
+       }
 
-    #default-progress-bar {
-      display: block;
-      position: relative;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      overflow: hidden;
-    }
+       #default-progress-bar {
+         display: block;
+         position: relative;
+         width: 100%;
+         height: 100%;
+         pointer-events: none;
+         overflow: hidden;
+       }
 
-    #default-progress-bar > .bar {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: var(--progress-bar-height, 5px);
-      background-color: var(--progress-bar-color, rgba(0, 0, 0, 0.4));
-      transition: transform 0.09s;
-      transform-origin: top left;
-      transform: scaleX(0);
-      overflow: hidden;
-    }
+       #default-progress-bar > .bar {
+         position: absolute;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: var(--progress-bar-height, 5px);
+         background-color: var(--progress-bar-color, rgba(0, 0, 0, 0.4));
+         transition: transform 0.09s;
+         transform-origin: top left;
+         transform: scaleX(0);
+         overflow: hidden;
+       }
 
-    #default-progress-bar > .bar.hide {
-      transition: opacity 0.3s 1s;
-      opacity: 0;
-    }
+       #default-progress-bar > .bar.hide {
+         transition: opacity 0.3s 1s;
+         opacity: 0;
+       }
 
-    .centered {
-      align-items: center;
-      justify-content: center;
-    }
+       .centered {
+         align-items: center;
+         justify-content: center;
+       }
 
-    .cover {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
+       .cover {
+         position: absolute;
+         top: 0;
+         left: 0;
+         width: 100%;
+         height: 100%;
+         pointer-events: none;
+       }
 
-    .slot.interaction-prompt {
-      display: var(--interaction-prompt-display, flex);
-      overflow: hidden;
-      opacity: 0;
-      will-change: opacity;
-      transition: opacity 0.3s;
-    }
+       .slot.interaction-prompt {
+         display: var(--interaction-prompt-display, flex);
+         overflow: hidden;
+         opacity: 0;
+         will-change: opacity;
+         transition: opacity 0.3s;
+       }
 
-    .slot.interaction-prompt.visible {
-      opacity: 1;
-    }
+       .slot.interaction-prompt.visible {
+         opacity: 1;
+       }
 
-    .animated-container {
-      will-change: transform, opacity;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
+       .animated-container {
+         will-change: transform, opacity;
+         opacity: 0;
+         transition: opacity 0.3s;
+       }
 
-    .slot.interaction-prompt > * {
-      pointer-events: none;
-    }
+       .slot.interaction-prompt > * {
+         pointer-events: none;
+       }
 
-    .slot.ar-button {
-      -moz-user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      user-select: none;
+       .slot.ar-button {
+         -moz-user-select: none;
+         -webkit-tap-highlight-color: transparent;
+         user-select: none;
 
-      display: var(--ar-button-display, block);
-    }
+         display: var(--ar-button-display, block);
+       }
 
-    .slot.ar-button:not(.enabled) {
-      display: none;
-    }
+       .slot.ar-button:not(.enabled) {
+         display: none;
+       }
 
-    .fab {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-sizing: border-box;
-      width: 40px;
-      height: 40px;
-      cursor: pointer;
-      background-color: #fff;
-      box-shadow: 0px 0px 4px rgba(0, 0, 0, 0.15);
-      border-radius: 100px;
-    }
+       .fab {
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         box-sizing: border-box;
+         width: 40px;
+         height: 40px;
+         cursor: pointer;
+         background-color: #fff;
+         box-shadow: 0px 0px 4px rgba(0, 0, 0, 0.15);
+         border-radius: 100px;
+       }
 
-    .fab > * {
-      opacity: 0.87;
-    }
+       .fab > * {
+         opacity: 0.87;
+       }
 
-    #default-ar-button {
-      position: absolute;
-      bottom: 16px;
-      right: 16px;
-      transform: scale(var(--ar-button-scale, 1));
-      transform-origin: bottom right;
-    }
+       #default-ar-button {
+         position: absolute;
+         bottom: 16px;
+         right: 16px;
+         transform: scale(var(--ar-button-scale, 1));
+         transform-origin: bottom right;
+       }
 
-    .slot.pan-target {
-      display: block;
-      position: absolute;
-      width: 0;
-      height: 0;
-      left: 50%;
-      top: 50%;
-      transform: translate3d(-50%, -50%, 0);
-      background-color: transparent;
-      opacity: 0;
-      transition: opacity 0.3s;
-    }
+       .slot.pan-target {
+         display: block;
+         position: absolute;
+         width: 0;
+         height: 0;
+         left: 50%;
+         top: 50%;
+         transform: translate3d(-50%, -50%, 0);
+         background-color: transparent;
+         opacity: 0;
+         transition: opacity 0.3s;
+       }
 
-    #default-pan-target {
-      width: 6px;
-      height: 6px;
-      border-radius: 6px;
-      border: 1px solid white;
-      box-shadow: 0px 0px 2px 1px rgba(0, 0, 0, 0.8);
-    }
+       #default-pan-target {
+         width: 6px;
+         height: 6px;
+         border-radius: 6px;
+         border: 1px solid white;
+         box-shadow: 0px 0px 2px 1px rgba(0, 0, 0, 0.8);
+       }
 
-    .slot.default {
-      pointer-events: none;
-    }
+       .slot.default {
+         pointer-events: none;
+       }
 
-    .slot.progress-bar {
-      pointer-events: none;
-    }
+       .slot.progress-bar {
+         pointer-events: none;
+       }
 
-    .slot.exit-webxr-ar-button {
-      pointer-events: none;
-    }
+       .slot.exit-webxr-ar-button {
+         pointer-events: none;
+       }
 
-    .slot.exit-webxr-ar-button:not(.enabled) {
-      display: none;
-    }
+       .slot.exit-webxr-ar-button:not(.enabled) {
+         display: none;
+       }
 
+       .ld-measure .ruler {
+         position: absolute;
+         font-size: 0.8rem;
+         background-color: #fefefe;
+         padding: 0.1rem 0.5rem;
+         border-radius: 1rem;
+         white-space: nowrap;
+       }
 
+       /* Hide the ld-puzzler slot template content by default */
+       .slot.ld-puzzler > slot {
+         display: none;
+       }
 
-    .ld-measure .ruler {
-      position: absolute;
-      font-size: 0.8rem;
-      background-color: #fefefe;
-      padding: 0.1rem 0.5rem;
-      border-radius: 1rem;
-      white-space: nowrap;
-    }
+       /* LD Puzzler Styles */
+       .ld-puzzler .ld-snapping-point {
+         width: 10px;
+         height: 10px;
+         border-radius: 50%;
+         background-color: #fefefe;
+         box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+         pointer-events: none;
+       }
 
-    .snapping-point {
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      border-radius: 10px;
-      border: 1px solid rgba(0, 0, 0, 0.5);
-      background-color: #fefefe;
-      display: none;
-      z-index: 10;
-}
-    .snapping-break-link {
-      position: absolute;
-      font-size: 1rem;
-      width: 2rem;
-      height: 2rem;
-      border-radius: 2rem;
-      border: 1px solid rgba(0, 0, 0, 0.5);
-      background-color: #fefefe;
-      align-items: center;
-      justify-content: center;
-      display: none;
-      z-index: 100;
-}
+       .ld-puzzler .back-facing .ld-snapping-point {
+          opacity: 0.4;
+       }
+
+       .ld-puzzler .ld-rotation-control {
+         height: 24px;
+         width: 24px;
+         border-radius: 50%;
+         background-color: #fefefe;
+         box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+         pointer-events: auto;
+         cursor: pointer;
+         display: flex;
+         justify-content: center;
+         align-items: center;
+       }
+
+       .ld-puzzler .ld-break-link {
+         width: 24px;
+         height: 24px;
+         border-radius: 50%;
+         background-color: #fefefe;
+         box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+         pointer-events: auto;
+         cursor: pointer;
+         display: flex;
+         justify-content: center;
+         align-items: center;
+       }
+
+       .ld-puzzler .default-icon {
+         font-size: 16px;
+         color: #333;
+         line-height: 1;
+         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
+         sans-serif;}
   </style>
   <div class="container">
     <div class="userInput" tabindex="0" role="img" aria-label="3D model">
@@ -381,15 +407,24 @@ const templateResult = html` <style>
       </slot>
     </div>
 
-    <div class="slot snapping-points">
+    <div class="slot ld-puzzler">
       <slot name="snapping-point">
-        <div class="snapping-point" aria-hidden="true"></div
+        <div class="ld-snapping-point" aria-hidden="true"></div>
       </slot>
-    </div>
-
-    <div class="slot snapping-break-link">
-      <slot name="snapping-break-link">
-        <div class="snapping-break-link" aria-hidden="true">⛓️‍💥</div>
+      <slot name="rotation-left">
+        <div class="ld-rotation-control" aria-hidden="true">
+          <div class="default-icon">↺</div>
+        </div>
+      </slot>
+      <slot name="rotation-right">
+        <div class="ld-rotation-control" aria-hidden="true">
+          <div class="default-icon">↻</div>
+        </div>
+      </slot>
+      <slot name="break-link">
+        <div class="ld-break-link" aria-hidden="true">
+          <div class="default-icon">✖</div>
+        </div>
       </slot>
     </div>
 
