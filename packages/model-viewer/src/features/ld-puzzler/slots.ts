@@ -79,7 +79,7 @@ export function updateSlots(
 }
 
 export function createSlotElement(
-  className: string,
+  _className: string,
   _defaultStyle: string,
   customSlotName: string | null,
   shadowRoot: ShadowRoot | null,
@@ -100,25 +100,17 @@ export function createSlotElement(
       const customElement = assignedNodes.find((node) => {
         if (node.nodeType !== Node.ELEMENT_NODE) return false;
         const element = node as HTMLElement;
-        // Skip hidden elements or elements positioned off-screen
+        // Only skip elements that are explicitly hidden via CSS
         return !(
           element.style.visibility === 'hidden' ||
-          element.style.left === '-9999px' ||
-          element.style.display === 'none' ||
-          (element.offsetWidth === 0 && element.offsetHeight === 0)
+          element.style.display === 'none'
         );
       }) as HTMLElement;
 
       if (customElement) {
-        // User provided custom content, use it and apply className to wrapper
-        const customClasses = customElement.className
-          .split(' ')
-          .filter(
-            (cls) => !cls.includes('hotspot') && !cls.includes('annotation')
-          )
-          .join(' ');
-        element.className = `${className} ${customClasses}`;
-        element.innerHTML = customElement.innerHTML;
+        // User provided custom content, use it directly without adding original className
+        // The wrapper div will only handle positioning, not styling
+        element.innerHTML = customElement.outerHTML;
         return element;
       }
 

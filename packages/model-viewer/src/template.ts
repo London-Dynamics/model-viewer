@@ -409,21 +409,33 @@ const templateResult = html` <style>
 
     <div class="slot ld-puzzler">
       <slot name="snapping-point">
-        <div class="ld-snapping-point" aria-hidden="true"></div>
+        <div
+          class="ld-snapping-point"
+          part="ld-snapping-point"
+          aria-hidden="true"
+        ></div>
       </slot>
       <slot name="rotation-left">
-        <div class="ld-rotation-control" aria-hidden="true">
-          <div class="default-icon">↺</div>
+        <div
+          class="ld-rotation-control"
+          part="ld-rotation-control ld-rotation-left"
+          aria-hidden="true"
+        >
+          <div class="default-icon" part="ld-rotation-icon">↺</div>
         </div>
       </slot>
       <slot name="rotation-right">
-        <div class="ld-rotation-control" aria-hidden="true">
-          <div class="default-icon">↻</div>
+        <div
+          class="ld-rotation-control"
+          part="ld-rotation-control ld-rotation-right"
+          aria-hidden="true"
+        >
+          <div class="default-icon" part="ld-rotation-icon">↻</div>
         </div>
       </slot>
       <slot name="break-link">
-        <div class="ld-break-link" aria-hidden="true">
-          <div class="default-icon">✖</div>
+        <div class="ld-break-link" part="ld-break-link" aria-hidden="true">
+          <div class="default-icon" part="ld-break-link-icon">✖</div>
         </div>
       </slot>
     </div>

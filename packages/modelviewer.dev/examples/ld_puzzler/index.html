@@ -64,12 +64,55 @@
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 
     <style>
-      .snapping-break-link {
-        position: absolute;
-        width: 30px;
-        height: 30px;
+      /* Light DOM CSS classes for custom slot content */
+
+      /* CSS Parts - Style shadow DOM elements from light DOM */
+      #default-ui-demo::part(ld-snapping-point) {
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
-        background-color: white;
+        background-color: gold;
+        border: 2px solid orange;
+      }
+
+      #default-ui-demo::part(ld-rotation-control) {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background-color: forestgreen;
+        border: 2px solid darkgreen;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      }
+
+      #default-ui-demo::part(ld-rotation-control):hover {
+        transform: scale(1.1);
+      }
+
+      #default-ui-demo::part(ld-rotation-icon) {
+        color: white;
+        font-size: 16px;
+        font-weight: bold;
+      }
+
+      #default-ui-demo::part(ld-break-link) {
+        width: 28px;
+        height: 28px;
+        border-radius: 4px;
+        background-color: crimson;
+        border: 2px solid darkred;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+      }
+
+      #default-ui-demo::part(ld-break-link):hover {
+        background-color: red;
+      }
+
+      #default-ui-demo::part(ld-break-link-icon) {
+        color: white;
+        font-size: 14px;
+        font-weight: bold;
       }
     </style>
   </head>
@@ -113,9 +156,6 @@
                     field-of-view="10deg"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                   >
-                    <div slot="snapping-break-link" class="snapping-break-link">
-                      ⛓️‍💥
-                    </div>
                     <effect-composer render-mode="quality">
                       <outline-effect
                         color="white"
@@ -360,6 +400,54 @@
                         });
                     })();
                   </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="css-parts-demo" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">CSS Parts Styling</h2>
+                <h4>
+                  <span class="attribute">::part()</span> – Style default UI
+                  elements from light DOM using CSS parts.
+                </h4>
+                <p>
+                  This example uses CSS parts to style the default UI elements
+                  from the light DOM. Check the CSS in the page head to see how
+                  <code>::part()</code> selectors work.
+                </p>
+              </div>
+              <example-snippet stamp-to="css-parts-demo" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
+                    id="default-ui-demo"
+                    ld-puzzler
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    max-field-of-view="180"
+                    field-of-view="10deg"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                  >
+                    <!-- No custom slot content - using default UI elements styled via CSS parts -->
+                    <effect-composer render-mode="quality">
+                      <outline-effect
+                        color="white"
+                        strength="5"
+                        blend-mode="skip"
+                      ></outline-effect>
+                      <color-grade-effect></color-grade-effect>
+                    </effect-composer>
+                  </model-viewer>
                 </template>
               </example-snippet>
             </div>
