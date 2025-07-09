@@ -160,7 +160,7 @@
               <example-snippet stamp-to="place-glb" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
+                    src="../../shared-assets/models/empty.glb"
                     id="place-glb-demo"
                     ld-puzzler
                     camera-controls
@@ -298,6 +298,14 @@
                               >
                                 ↻
                               </button>
+                              <button
+                                type="button"
+                                id="delete-selected"
+                                class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                title="Delete selected objects"
+                              >
+                                🗑
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -309,6 +317,10 @@
                     (() => {
                       const modelViewer =
                         document.querySelector('#place-glb-demo');
+
+                      modelViewer.addEventListener('load', () => {
+                        modelViewer.deleteObjectByFileName('empty.glb');
+                      });
 
                       document
                         .querySelectorAll('.place-glb')
@@ -444,6 +456,11 @@
                         .getElementById('rotate-right')
                         .addEventListener('click', (e) => {
                           modelViewer.rotateSelected(-90);
+                        });
+                      document
+                        .getElementById('delete-selected')
+                        .addEventListener('click', (e) => {
+                          modelViewer.deleteSelected();
                         });
 
                       // Prevent all clicks in control panel from propagating to model-viewer

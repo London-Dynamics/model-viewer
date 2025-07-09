@@ -76,6 +76,7 @@ export declare interface LDPuzzlerInterface {
   getPlacementCursorPosition(): { x: number; y: number; z: number } | null;
   rotateSelected(deg?: number): void;
   deleteSelected(): void;
+  deleteObjectByFileName(filename: string): void;
 }
 
 /**
@@ -1112,6 +1113,70 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       model.position.y += offsetY;
     }
 
+    private removeObject3D(object3D) {
+      if (!(object3D instanceof Object3D)) return false;
+
+      // for better memory management and performance
+      if (object3D.geometry) object3D.geometry.dispose();
+
+      if (object3D.material) {
+        if (object3D.material instanceof Array) {
+          // for better memory management and performance
+          object3D.material.forEach((material) => material.dispose());
+        } else {
+          // for better memory management and performance
+          object3D.material.dispose();
+        }
+      }
+      object3D.removeFromParent(); // the parent might be the scene or another Object3D, but it is sure to be removed this way
+      return true;
+    }
+
+    private deleteObject(object: Object3D) {
+      try {
+        // Remove the object from the scene
+        this.removeObject3D(object);
+
+        // If it's a GLB, remove it from the addedGLBs set
+        if (object.userData.isPlacedObject) {
+          this.addedGLBs.delete(object);
+        }
+
+        // Clear selection
+        this.deselectObject();
+
+        // Update shadows after deletion
+        this.updateShadowsWithGLBs();
+        this[$needsRender]();
+      } catch (e) {
+        console.error('Error deleting object:', e);
+      }
+    }
+
+    public deleteObjectByFileName(filename: string) {
+      try {
+        this[$scene].traverse((child) => {
+          if (child.userData?.filename === filename) {
+            this.deleteObject(child);
+            throw new Error('Object deleted'); // Stop traversal after deletion
+          }
+        });
+      } catch (e) {
+        if ((e as Error).message !== 'Object deleted') {
+          throw e; // Re-throw if it's not the expected error
+        }
+      }
+    }
+
+    public deleteSelected() {
+      if (this.selectedObjects.length === 0) return;
+
+      // Delete each selected object
+      this.selectedObjects.forEach((object) => {
+        this.deleteObject(object);
+      });
+    }
+
     async rotateSelected(deg) {
       if (this.selectedObjects.length === 0) return;
       const selectedObject = this.selectedObjects[0];
@@ -1624,7 +1689,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.checkAndApplySnapping(object, intersectionPoint);
         }
 
-        this.updateShadowsWithGLBs();
+        this[$scene].updateShadow();
 
         this[$needsRender]();
       }
