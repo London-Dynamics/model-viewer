@@ -1139,6 +1139,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               options.name ||
               `part__${Math.random().toString(36).substring(2, 9)}`;
             gltf.scene.name = 'part__' + objectName;
+            gltf.scene.userData['filepath'] = src;
+            gltf.scene.userData['name'] = objectName;
 
             // Parse metadata from the object name
             const nameMetadata = this.parseNameMetadata(objectName);
