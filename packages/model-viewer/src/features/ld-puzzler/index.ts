@@ -186,108 +186,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     // Animation properties for rotation
 
-    private updateRotationSlots() {
-      if (!this.rotationSlotsVisible || this.selectedObjects.length === 0) {
-        this.rotationSlots.forEach((element) => {
-          element.style.display = 'none';
-        });
-        return;
-      }
-
-      const scene = this[$scene];
-      const camera = scene.getCamera();
-      if (!camera) return;
-
-      const selectedObject = this.selectedObjects[0];
-      if (!selectedObject) return;
-
-      const objectCenter = new Vector3();
-      const boundingBox = new Box3().setFromObject(selectedObject);
-      boundingBox.getCenter(objectCenter);
-
-      const rotationControlPositions = [
-        {
-          name: 'rotate-left',
-          offset: new Vector3(-0.75, 0, 0),
-          rotation: '90',
-        },
-        {
-          name: 'rotate-right',
-          offset: new Vector3(0.75, 0, 0),
-          rotation: '-90',
-        },
-      ];
-
-      const slotItems: SlotUpdateItem[] = rotationControlPositions.map(
-        (controlInfo) => {
-          return {
-            name: `${selectedObject.uuid}_${controlInfo.name}`,
-            worldPosition: objectCenter.clone().add(controlInfo.offset),
-            data: { rotation: controlInfo.rotation },
-          };
-        }
-      );
-
-      updateSlots(slotItems, {
-        slotMap: this.rotationSlots,
-        owner: this,
-        container: this.shadowRoot?.querySelector('.slot.ld-puzzler'),
-        scene,
-        camera,
-        onCreate: (item) => {
-          const controlInfo = rotationControlPositions.find((info) =>
-            item.name.includes(info.name)
-          );
-          if (!controlInfo) return document.createElement('div'); // Should not happen
-
-          const element = createSlotElement(
-            `ld-rotation-control ld-rotation-${controlInfo.name}`,
-            '', // No inline styles - handled by CSS
-            controlInfo.name === 'rotate-left'
-              ? 'rotation-left'
-              : 'rotation-right',
-            this.shadowRoot,
-            null // Content handled by slot template
-          );
-
-          element.setAttribute('data-rotation', controlInfo.rotation);
-          element.setAttribute('data-is-rotation-slot', 'true');
-
-          element.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            this.rotateObject(
-              MathUtils.degToRad(parseFloat(controlInfo.rotation)),
-              selectedObject
-            );
-          });
-
-          // Prevent mouse events from bubbling up to model-viewer
-          ['mousedown', 'mouseup'].forEach((eventName) => {
-            element.addEventListener(eventName, (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              event.stopImmediatePropagation();
-            });
-          });
-
-          return element;
-        },
-        onUpdate: (element, item) => {
-          const vector = item.worldPosition.clone().project(camera);
-          const depth = vector.z;
-          const isBackfacing = depth > 0.5;
-
-          if (isBackfacing) {
-            element.classList.add('back-facing');
-          } else {
-            element.classList.remove('back-facing');
-          }
-        },
-      });
-    }
-
     /**
      * Updates the visibility and positioning of snapping point slot elements.
      * Creates DOM elements for each visible snapping point and positions them
@@ -2051,9 +1949,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setSnappingPointSlotsVisible(true);
       }
 
-      // Show rotation slots for the selected object
-      this.setRotationSlotsVisible(true);
-
       // Show break link slots if a grouped object is selected
       if (
         this.selectedObjects.length > 0 &&
@@ -2089,9 +1984,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           // Use slot-based rendering instead of Three.js meshes
           this.setSnappingPointSlotsVisible(false);
         }
-
-        // Hide rotation slots when no object is selected
-        this.setRotationSlotsVisible(false);
 
         // Stop any active rotation animation
         if (this.isAnimatingRotation) {
@@ -2259,7 +2151,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (targetObject) {
         // Clean up slot-based rendering
         this.clearSlots(this.snappingPointSlots);
-        this.clearSlots(this.rotationSlots);
         this.clearSlots(this.breakLinkSlots);
       }
 
@@ -2491,24 +2382,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private updateAllSlots() {
-      this.updateRotationSlots();
       this.updateSnappingPointSlots();
       this.updateBreakLinkSlots();
-    }
-
-    /**
-     * Show or hide rotation slots
-     */
-    private setRotationSlotsVisible(visible: boolean) {
-      this.rotationSlotsVisible = visible;
-      this.updateRotationSlots();
-    }
-
-    /**
-     * Remove all rotation slots
-     */
-    private clearRotationSlots() {
-      this.clearSlots(this.rotationSlots);
     }
 
     /**
