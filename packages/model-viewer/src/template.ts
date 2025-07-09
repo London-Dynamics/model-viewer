@@ -291,11 +291,6 @@ const templateResult = html` <style>
 
        /* LD Puzzler Styles */
        .ld-puzzler .ld-snapping-point {
-         width: 10px;
-         height: 10px;
-         border-radius: 50%;
-         background-color: #fefefe;
-         box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
          pointer-events: none;
        }
 
@@ -304,37 +299,21 @@ const templateResult = html` <style>
        }
 
        .ld-puzzler .ld-rotation-control {
-         height: 24px;
-         width: 24px;
-         border-radius: 50%;
-         background-color: #fefefe;
-         box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
-         pointer-events: auto;
-         cursor: pointer;
-         display: flex;
-         justify-content: center;
-         align-items: center;
+
        }
 
        .ld-puzzler .ld-break-link {
-         width: 24px;
-         height: 24px;
-         border-radius: 50%;
-         background-color: #fefefe;
-         box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
-         pointer-events: auto;
-         cursor: pointer;
-         display: flex;
-         justify-content: center;
-         align-items: center;
+
+        pointer-events: auto;
+
        }
 
        .ld-puzzler .default-icon {
          font-size: 16px;
-         color: #333;
          line-height: 1;
          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
-         sans-serif;}
+         sans-serif;
+        }
   </style>
   <div class="container">
     <div class="userInput" tabindex="0" role="img" aria-label="3D model">
