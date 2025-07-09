@@ -298,6 +298,12 @@ const templateResult = html` <style>
           opacity: 0.4;
        }
 
+       .ld-puzzler .ld-modular-controls {
+         pointer-events: auto;
+         position: absolute;
+         z-index: 100;
+       }
+
        .ld-puzzler .ld-rotation-control {
 
        }
@@ -391,6 +397,13 @@ const templateResult = html` <style>
         <div
           class="ld-snapping-point"
           part="ld-snapping-point"
+          aria-hidden="true"
+        ></div>
+      </slot>
+      <slot name="modular-controls">
+        <div
+          class="ld-modular-controls"
+          part="ld-modular-controls"
           aria-hidden="true"
         ></div>
       </slot>

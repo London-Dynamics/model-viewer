@@ -28,6 +28,7 @@ import { LDCameraMixin } from './features/ld-camera.js';
 import { LDLightsMixin } from './features/ld-lights.js';
 import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
+import { FloatingControlsMixin } from './features/ld-floating-controls.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
 
@@ -35,19 +36,21 @@ import ModelViewerElementBase from './model-viewer-base.js';
 // Requires an import map - "three": "path/to/model-viewer.min.js".
 export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
-export const ModelViewerElement = LDMeasureMixin(
-  LDPuzzlerMixin(
-    LDLightsMixin(
-      LDCameraMixin(
-        LDEnvironmentMixin(
-          LDTransformsMixin(
-            AnnotationMixin(
-              SceneGraphMixin(
-                StagingMixin(
-                  EnvironmentMixin(
-                    ControlsMixin(
-                      ARMixin(
-                        LoadingMixin(AnimationMixin(ModelViewerElementBase))
+const ModelViewerElementImpl = FloatingControlsMixin(
+  LDMeasureMixin(
+    LDPuzzlerMixin(
+      LDLightsMixin(
+        LDCameraMixin(
+          LDEnvironmentMixin(
+            LDTransformsMixin(
+              AnnotationMixin(
+                SceneGraphMixin(
+                  StagingMixin(
+                    EnvironmentMixin(
+                      ControlsMixin(
+                        ARMixin(
+                          LoadingMixin(AnimationMixin(ModelViewerElementBase))
+                        )
                       )
                     )
                   )
@@ -61,7 +64,8 @@ export const ModelViewerElement = LDMeasureMixin(
   )
 );
 
-export type ModelViewerElement = InstanceType<typeof ModelViewerElement>;
+export const ModelViewerElement = ModelViewerElementImpl;
+export type ModelViewerElement = InstanceType<typeof ModelViewerElementImpl>;
 
 export type { RGB, RGBA } from './three-components/gltf-instance/gltf-2.0';
 

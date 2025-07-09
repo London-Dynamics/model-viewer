@@ -37,6 +37,7 @@ import ModelViewerElementBase, {
   $tick,
 } from '../../model-viewer-base.js';
 import { $controls } from '../controls.js';
+import { $selectObjectForControls } from '../ld-floating-controls.js';
 
 import { Constructor } from '../../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
@@ -2065,6 +2066,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this[$controls]) {
         this[$controls].enablePan = false;
       }
+
+      this[$selectObjectForControls](object);
 
       // Force a render to ensure proper orientation
       this[$needsRender]();

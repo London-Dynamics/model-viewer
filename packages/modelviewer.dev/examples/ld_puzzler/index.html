@@ -172,7 +172,37 @@
                     max-field-of-view="180"
                     field-of-view="10deg"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    floating-controls-enabled
                   >
+                    <div slot="modular-controls">
+                      <div
+                        id="modular-controls"
+                        class="flex items-center justify-between"
+                      >
+                        <button
+                          type="button"
+                          id="rotate-left"
+                          class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        >
+                          ↺
+                        </button>
+                        <button
+                          type="button"
+                          id="rotate-right"
+                          class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        >
+                          ↻
+                        </button>
+                        <button
+                          type="button"
+                          id="delete-selected"
+                          class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          title="Delete selected objects"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </div>
                     <effect-composer render-mode="quality">
                       <outline-effect
                         color="white"
@@ -219,8 +249,7 @@
                                   >
                                 </span>
                               </div>
-                            </div>
-                            <div class="flex gap-2">
+
                               <div class="flex items-center">
                                 <button
                                   id="toggle-snapping"
@@ -228,7 +257,7 @@
                                   class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
                                   role="switch"
                                   aria-checked="true"
-                                  aria-labelledby="enable-snapping-label"
+                                  aria-labelledby="enable-controls-label"
                                 >
                                   <span
                                     aria-hidden="true"
@@ -237,10 +266,34 @@
                                 </button>
                                 <span
                                   class="ml-3 text-sm"
-                                  id="enable-snapping-label"
+                                  id="enable-controls-label"
                                 >
                                   <span class="font-medium text-gray-900"
                                     >Enable Snapping</span
+                                  >
+                                </span>
+                              </div>
+
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-controls"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-controls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-controls-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Floating Controls</span
                                   >
                                 </span>
                               </div>
@@ -283,7 +336,7 @@
                                 Chaise
                               </button>
                             </div>
-                            <div class="flex gap-2">
+                            <!--                <div class="flex gap-2">
                               <button
                                 type="button"
                                 id="rotate-left"
@@ -306,7 +359,7 @@
                               >
                                 🗑
                               </button>
-                            </div>
+                            </div> -->
                           </div>
                         </div>
                       </div>
@@ -448,20 +501,61 @@
                         });
 
                       document
-                        .getElementById('rotate-left')
+                        .getElementById('toggle-controls')
                         .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.floatingControlsEnabled?.(false);
+                            console.log('Floating controls disabled');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.floatingControlsEnabled?.(true);
+                            console.log('Floating controls enabled');
+                          }
+                        });
+
+                      const rotateLeftButton =
+                        document.getElementById('rotate-left');
+                      if (rotateLeftButton) {
+                        rotateLeftButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
                           modelViewer.rotateSelected(90);
                         });
-                      document
-                        .getElementById('rotate-right')
-                        .addEventListener('click', (e) => {
+                        rotateLeftButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const rotateRightButton =
+                        document.getElementById('rotate-right');
+                      if (rotateLeftButton) {
+                        rotateRightButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
                           modelViewer.rotateSelected(-90);
                         });
-                      document
-                        .getElementById('delete-selected')
-                        .addEventListener('click', (e) => {
+                        rotateRightButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const deleteSelectedButton =
+                        document.getElementById('delete-selected');
+                      if (deleteSelectedButton) {
+                        deleteSelectedButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
                           modelViewer.deleteSelected();
                         });
+                        deleteSelectedButton.addEventListener(
+                          'mouseup',
+                          (e) => {
+                            e.stopPropagation();
+                          }
+                        );
+                      }
 
                       // Prevent all clicks in control panel from propagating to model-viewer
                       const panel = document.getElementById('control-panel');
