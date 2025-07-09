@@ -181,7 +181,10 @@
                       ></outline-effect>
                       <color-grade-effect></color-grade-effect>
                     </effect-composer>
-                    <div class="absolute bottom-0 inset-x-0 p-2">
+                    <div
+                      class="absolute bottom-0 inset-x-0 p-2"
+                      id="control-panel"
+                    >
                       <div class="bg-white shadow-sm rounded-lg">
                         <div class="px-4 py-5">
                           <h3
@@ -278,6 +281,22 @@
                                 data-mass="20"
                               >
                                 Chaise
+                              </button>
+                            </div>
+                            <div class="flex gap-2">
+                              <button
+                                type="button"
+                                id="rotate-left"
+                                class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              >
+                                ↺
+                              </button>
+                              <button
+                                type="button"
+                                id="rotate-right"
+                                class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              >
+                                ↻
                               </button>
                             </div>
                           </div>
@@ -415,6 +434,40 @@
                             console.log('Snapping enabled');
                           }
                         });
+
+                      document
+                        .getElementById('rotate-left')
+                        .addEventListener('click', (e) => {
+                          modelViewer.rotateSelected(90);
+                        });
+                      document
+                        .getElementById('rotate-right')
+                        .addEventListener('click', (e) => {
+                          modelViewer.rotateSelected(-90);
+                        });
+
+                      // Prevent all clicks in control panel from propagating to model-viewer
+                      const panel = document.getElementById('control-panel');
+
+                      panel.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        // Force stop any model-viewer event handling
+                        return false;
+                      });
+
+                      // Also handle mousedown/mouseup to prevent model-viewer from capturing these
+                      panel.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        return false;
+                      });
+
+                      panel.addEventListener('mouseup', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        return false;
+                      });
                     })();
                   </script>
                 </template>

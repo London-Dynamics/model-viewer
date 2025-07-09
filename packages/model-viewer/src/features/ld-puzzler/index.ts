@@ -9,19 +9,20 @@ declare global {
 import {
   Box3,
   BoxGeometry,
-  Object3D,
-  Vector3,
-  Raycaster,
-  Vector2,
-  Plane,
-  Mesh,
-  PlaneGeometry,
-  MeshBasicMaterial,
-  TextureLoader,
-  RepeatWrapping,
   Euler,
-  Quaternion,
   Group,
+  MathUtils,
+  Mesh,
+  MeshBasicMaterial,
+  Object3D,
+  Plane,
+  PlaneGeometry,
+  Quaternion,
+  Raycaster,
+  RepeatWrapping,
+  TextureLoader,
+  Vector2,
+  Vector3,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -73,6 +74,8 @@ export declare interface LDPuzzlerInterface {
   setSrcFromBuffer(buffer: ArrayBuffer): void;
   placeGLB(src: string, options?: PlacementOptions): Promise<void>;
   getPlacementCursorPosition(): { x: number; y: number; z: number } | null;
+  rotateSelected(deg?: number): void;
+  deleteSelected(): void;
 }
 
 /**
@@ -204,12 +207,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         {
           name: 'rotate-left',
           offset: new Vector3(-0.75, 0, 0),
-          rotation: 'counter-clockwise',
+          rotation: '90',
         },
         {
           name: 'rotate-right',
           offset: new Vector3(0.75, 0, 0),
-          rotation: 'clockwise',
+          rotation: '-90',
         },
       ];
 
@@ -252,7 +255,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
-            this.handleRotationClick(controlInfo.rotation, selectedObject);
+            this.rotateObject(
+              MathUtils.degToRad(parseFloat(controlInfo.rotation)),
+              selectedObject
+            );
           });
 
           // Prevent mouse events from bubbling up to model-viewer
@@ -1104,6 +1110,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Apply the position adjustment
       model.position.y += offsetY;
+    }
+
+    async rotateSelected(deg) {
+      if (this.selectedObjects.length === 0) return;
+      const selectedObject = this.selectedObjects[0];
+
+      this.rotateObject(MathUtils.degToRad(deg), selectedObject);
     }
 
     async placeGLB(src: string, options: PlacementOptions = {}): Promise<void> {
@@ -2431,21 +2444,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Handle rotation slot click events
      */
-    private handleRotationClick(direction: string, object: Object3D) {
+    private rotateObject(rad: number, object: Object3D) {
       if (!object || this.isAnimatingRotation) return;
 
-      const rotationAmount = Math.PI / 2;
       const currentRotation = object.rotation.y;
       let targetRotation: number;
 
-      // Calculate target rotation based on direction
-      if (direction === 'clockwise') {
-        targetRotation = currentRotation - rotationAmount;
-      } else if (direction === 'counter-clockwise') {
-        targetRotation = currentRotation + rotationAmount;
-      } else {
-        return;
-      }
+      targetRotation = currentRotation + rad;
+
+      console.log(
+        `Rotating object ${object.name} from ${currentRotation} to ${targetRotation}`
+      );
 
       // For groups, we need to handle rotation around the group's center
       if (object.userData.isSnappedGroup) {
