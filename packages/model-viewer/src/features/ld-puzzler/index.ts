@@ -1994,6 +1994,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Hide break link slots when no object is selected
         this.setBreakLinkSlotsVisible(false);
 
+        this[$selectObjectForControls](null);
+
         this[$needsRender]();
       }
       // Re-enable camera panning when no part is selected
