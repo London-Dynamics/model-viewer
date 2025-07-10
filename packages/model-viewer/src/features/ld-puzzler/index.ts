@@ -1033,19 +1033,19 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private deleteObject(object: Object3D) {
       try {
-        // Remove the object from the scene
-        this.removeObject3D(object);
+        // Clear selection
+        this.deselectObject();
 
         // If it's a GLB, remove it from the addedGLBs set
         if (object.userData.isPlacedObject) {
           this.addedGLBs.delete(object);
         }
 
-        // Clear selection
-        this.deselectObject();
+        // Remove the object from the scene
+        this.removeObject3D(object);
 
         // Update shadows after deletion
-        this.updateShadowsWithGLBs();
+        this[$scene].updateShadow();
         this[$needsRender]();
       } catch (e) {
         console.error('Error deleting object:', e);
