@@ -430,7 +430,8 @@
                             if (isDragging && dragData) {
                               const position = modelViewer.getCursorPosition();
 
-                              modelViewer.removeAttribute('floor-cursor');
+                              modelViewer.removeAttribute('floor-disc-cursor');
+                              modelViewer.removeAttribute('floor-arrow-cursor');
                               if (position) {
                                 const filePath = `../../shared-assets/models/${dragData.filename}`;
                                 modelViewer.placeGLB(filePath, {
@@ -466,7 +467,8 @@
                                 parseFloat(e.target.dataset.floorOffset) || 0,
                             };
 
-                            modelViewer.setAttribute('floor-cursor', '');
+                            modelViewer.setAttribute('floor-arrow-cursor', '');
+                            modelViewer.setAttribute('floor-disc-cursor', '');
 
                             // Add global listeners when mouse down starts
                             document.addEventListener(

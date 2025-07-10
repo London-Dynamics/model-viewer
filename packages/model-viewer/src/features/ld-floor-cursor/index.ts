@@ -27,8 +27,6 @@ import { Cursor as DiscCursor } from './CursorDisc.js';
 const $arrowCursor = Symbol('arrowCursor');
 const $discCursor = Symbol('discCursor');
 const $updateCursors = Symbol('updateCursors');
-const $getArrowCursorPosition = Symbol('getArrowCursorPosition');
-const $getDiscCursorPosition = Symbol('getDiscCursorPosition');
 const $setArrowCursorVisible = Symbol('setArrowCursorVisible');
 const $setDiscCursorVisible = Symbol('setDiscCursorVisible');
 
@@ -87,12 +85,12 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     // Public API methods
-    getArrowCursorPosition(): Vector3 | null {
-      return this[$getArrowCursorPosition]();
+    [$getCursorPosition](): Vector3 | null {
+      return this.getDiscCursorPosition() || this.getArrowCursorPosition();
     }
 
-    getDiscCursorPosition(): Vector3 | null {
-      return this[$getDiscCursorPosition]();
+    getCursorPosition(): Vector3 | null {
+      return this[$getCursorPosition]();
     }
 
     setArrowCursorVisible(visible: boolean): void {
@@ -104,14 +102,14 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     // Symbol methods
-    [$getArrowCursorPosition](): Vector3 | null {
+    getArrowCursorPosition(): Vector3 | null {
       if (this[$arrowCursor]) {
         return this[$arrowCursor].getPosition();
       }
       return null;
     }
 
-    [$getDiscCursorPosition](): Vector3 | null {
+    getDiscCursorPosition(): Vector3 | null {
       if (this[$discCursor]) {
         return this[$discCursor].getPosition();
       }
@@ -215,8 +213,7 @@ export interface CursorInterface {
   floorDiscCursor: boolean;
   floorArrowCursorSize: number;
   floorDiscCursorSize: number;
-  getArrowCursorPosition(): Vector3 | null;
-  getDiscCursorPosition(): Vector3 | null;
+  getCursorPosition(): Vector3 | null;
   setArrowCursorVisible(visible: boolean): void;
   setDiscCursorVisible(visible: boolean): void;
 }
