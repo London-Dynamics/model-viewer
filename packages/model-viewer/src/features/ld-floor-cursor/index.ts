@@ -21,7 +21,8 @@ import ModelViewerElementBase, {
   $tick,
 } from '../../model-viewer-base.js';
 import { Constructor } from '../../utilities.js';
-import { Cursor } from './CursorDisc.js';
+import { Cursor } from './CursorArrow.js';
+import { Cursor as DiscCursor } from './CursorDisc.js';
 
 const $cursor = Symbol('cursor');
 const $updateCursor = Symbol('updateCursor');
@@ -132,8 +133,11 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
           const radius = this.floorCursorSize / 2; // Convert diameter to radius
 
           this[$cursor] = new Cursor(scene, targetObject, radius);
+          const disc = new DiscCursor(scene, targetObject, radius);
           this[$cursor].setVisible(true);
           this[$cursor].setupMouseTracking(this, () => this[$needsRender]());
+          disc.setVisible(true);
+          disc.setupMouseTracking(this, () => this[$needsRender]());
           this[$needsRender]();
         }
       } catch (error) {

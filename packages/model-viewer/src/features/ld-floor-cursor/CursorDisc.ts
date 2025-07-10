@@ -10,6 +10,8 @@ import {
 } from 'three';
 import { Cursor as CursorBase } from './Cursor';
 
+const OSCILLATION_PERIOD = 1500; // 1.5 seconds for a full oscillation
+
 export class Cursor extends CursorBase {
   private baseRadius: number = 0.1;
   private contourLine: LineLoop | null = null;
@@ -118,25 +120,25 @@ export class Cursor extends CursorBase {
     }
   }
 
-  tick(_: any, delta: number) {
-    if (this.visible) {
-      this.elapsedTime += delta;
+  tick(_: number, delta: number) {
+    if (!this.visible) return;
 
-      const oscillationPeriod = 1500;
-      const phase = (this.elapsedTime % oscillationPeriod) / oscillationPeriod;
+    this.elapsedTime += delta;
 
-      // Create a sine wave that oscillates between -0.1 and +0.1 (10% in each direction)
-      const amplitude = 0.1;
-      const oscillation = Math.sin(phase * 2 * Math.PI) * amplitude;
+    const oscillationPeriod = OSCILLATION_PERIOD;
+    const phase = (this.elapsedTime % oscillationPeriod) / oscillationPeriod;
 
-      // Apply the oscillation to the base radius
-      this.radius = this.baseRadius * (1 + oscillation);
-      this.createCursorGeometry();
+    // Create a sine wave that oscillates between -0.1 and +0.1 (10% in each direction)
+    const amplitude = 0.1;
+    const oscillation = Math.sin(phase * 2 * Math.PI) * amplitude;
 
-      // Tell the renderer that we need it to update
-      if (this.needsRender) {
-        this.needsRender();
-      }
+    // Apply the oscillation to the base radius
+    this.radius = this.baseRadius * (1 + oscillation);
+    this.createCursorGeometry();
+
+    // Tell the renderer that we need it to update
+    if (this.needsRender) {
+      this.needsRender();
     }
   }
 
