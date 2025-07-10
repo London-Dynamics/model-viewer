@@ -21,7 +21,7 @@ import ModelViewerElementBase, {
   $tick,
 } from '../../model-viewer-base.js';
 import { Constructor } from '../../utilities.js';
-import { Cursor } from './cursor.js';
+import { Cursor } from './floor-cursor.js';
 
 const $cursor = Symbol('cursor');
 const $updateCursor = Symbol('updateCursor');
