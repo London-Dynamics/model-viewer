@@ -21,7 +21,7 @@ import ModelViewerElementBase, {
   $tick,
 } from '../../model-viewer-base.js';
 import { Constructor } from '../../utilities.js';
-import { Cursor } from './floor-cursor.js';
+import { Cursor } from './CursorDisc.js';
 
 const $cursor = Symbol('cursor');
 const $updateCursor = Symbol('updateCursor');
@@ -79,7 +79,7 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
     // Symbol methods
     [$getCursorPosition](): Vector3 | null {
       if (this[$cursor]) {
-        return this[$cursor].getWorldPlacementPosition();
+        return this[$cursor].getPosition();
       }
       return null;
     }
