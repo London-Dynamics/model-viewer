@@ -528,6 +528,27 @@
                           }
                         });
 
+                      const controlStrip = document.getElementById(
+                        'floating-control-strip'
+                      );
+                      if (controlStrip) {
+                        controlStrip.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return false;
+                        });
+                        controlStrip.addEventListener('mousedown', (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return false;
+                        });
+                        controlStrip.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return false;
+                        });
+                      }
+
                       const rotateLeftButton =
                         document.getElementById('rotate-left');
                       if (rotateLeftButton) {
