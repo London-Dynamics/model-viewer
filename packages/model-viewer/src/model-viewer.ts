@@ -25,11 +25,11 @@ import { StagingMixin } from './features/staging.js';
 import { LDTransformsMixin } from './features/ld-transforms.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
 import { LDCameraMixin } from './features/ld-camera.js';
-import { LDLightsMixin } from './features/ld-lights.js';
-import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
-import { LDMeasureMixin } from './features/ld-measure.js';
 import { LDFloatingControlStripMixin } from './features/ld-floating-control-strip.js';
-import { LDPlacementCursorMixin } from './features/ld-placement-cursor.js';
+import { LDLightsMixin } from './features/ld-lights.js';
+import { LDMeasureMixin } from './features/ld-measure.js';
+import { LDPlacementCursorMixin } from './features/ld-placement-cursor/index.js';
+import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
 

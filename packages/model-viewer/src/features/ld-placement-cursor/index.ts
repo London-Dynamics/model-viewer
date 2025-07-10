@@ -19,9 +19,9 @@ import ModelViewerElementBase, {
   $needsRender,
   $scene,
   $tick,
-} from '../model-viewer-base.js';
-import { Constructor } from '../utilities.js';
-import { Cursor } from './ld-puzzler/cursor.js';
+} from '../../model-viewer-base.js';
+import { Constructor } from '../../utilities.js';
+import { Cursor } from './cursor.js';
 
 const $cursor = Symbol('cursor');
 const $updateCursor = Symbol('updateCursor');
