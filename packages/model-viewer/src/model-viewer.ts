@@ -28,7 +28,7 @@ import { LDCameraMixin } from './features/ld-camera.js';
 import { LDLightsMixin } from './features/ld-lights.js';
 import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
-import { FloatingControlsMixin } from './features/ld-floating-controls.js';
+import { LDFloatingControlStripMixin } from './features/ld-floating-control-strip.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
 
@@ -36,7 +36,7 @@ import ModelViewerElementBase from './model-viewer-base.js';
 // Requires an import map - "three": "path/to/model-viewer.min.js".
 export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
-const ModelViewerElementImpl = FloatingControlsMixin(
+const ModelViewerElementImpl = LDFloatingControlStripMixin(
   LDMeasureMixin(
     LDPuzzlerMixin(
       LDLightsMixin(

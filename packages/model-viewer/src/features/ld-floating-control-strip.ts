@@ -32,12 +32,12 @@ export const $selectObjectForControls = Symbol('selectObjectForControls');
 export const $clearSelectedObject = Symbol('clearSelectedObject');
 
 // Mixin that adds floating controls functionality
-export const FloatingControlsMixin = <
+export const LDFloatingControlStripMixin = <
   T extends Constructor<ModelViewerElementBase>
 >(
   ModelViewerElementBase: T
-): Constructor<FloatingControlsInterface> & T => {
-  class FloatingControlsModelViewerElement extends ModelViewerElementBase {
+): Constructor<FloatingControlStripInterface> & T => {
+  class FloatingControlStripModelViewerElement extends ModelViewerElementBase {
     @property({ type: Boolean, attribute: 'floating-controls-enabled' })
     floatingControlsEnabled: boolean = false;
 
@@ -47,7 +47,7 @@ export const FloatingControlsMixin = <
     [$onModelLoad]() {
       super[$onModelLoad]();
       this[$modularControlsContainer] = this.shadowRoot?.querySelector(
-        'slot[name="modular-controls"]'
+        'slot[name="floating-control-strip"]'
       ) as HTMLElement;
     }
 
@@ -126,12 +126,12 @@ export const FloatingControlsMixin = <
     }
   }
 
-  return FloatingControlsModelViewerElement as Constructor<FloatingControlsInterface> &
+  return FloatingControlStripModelViewerElement as Constructor<FloatingControlStripInterface> &
     T;
 };
 
 // Type definitions
-export interface FloatingControlsInterface {
+export interface FloatingControlStripInterface {
   floatingControlsEnabled: boolean;
   selectObjectForControls(object: Object3D): void;
   clearSelectedObject(): void;

@@ -298,7 +298,7 @@ const templateResult = html` <style>
           opacity: 0.4;
        }
 
-       .ld-puzzler .ld-modular-controls {
+       .ld-puzzler .ld-floating-control-strip {
          pointer-events: auto;
          position: absolute;
          z-index: 100;
@@ -400,10 +400,10 @@ const templateResult = html` <style>
           aria-hidden="true"
         ></div>
       </slot>
-      <slot name="modular-controls">
+      <slot name="floating-control-strip">
         <div
-          class="ld-modular-controls"
-          part="ld-modular-controls"
+          class="ld-floating-control-strip"
+          part="ld-floating-control-strip"
           aria-hidden="true"
         ></div>
       </slot>
