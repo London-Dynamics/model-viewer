@@ -143,7 +143,10 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     [$tick](time: number, delta: number) {
       super[$tick](time, delta);
-      // Cursor updates are handled via mouse events, no need for tick updates
+
+      if (this[$cursor]) {
+        this[$cursor].tick(time, delta);
+      }
     }
   }
 

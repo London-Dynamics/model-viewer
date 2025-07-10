@@ -11,14 +11,12 @@ import {
 import { Cursor as CursorBase } from './Cursor';
 
 export class Cursor extends CursorBase {
-  private radius: number = 0.1;
-  private mesh: Mesh | null = null;
+  private baseRadius: number = 0.1;
   private contourLine: LineLoop | null = null;
   private darkContourLine: LineLoop | null = null;
-
-  private animationFrameId: number | null = null;
-  private baseRadius: number = 0.1;
-  private animationStartTime: number = 0;
+  private elapsedTime: number = 0;
+  private mesh: Mesh | null = null;
+  private radius: number = 0.1;
 
   constructor(scene: any, targetObject: Object3D, radius: number = 0.1) {
     super(scene, targetObject);
@@ -114,61 +112,38 @@ export class Cursor extends CursorBase {
   setVisible(visible: boolean) {
     super.setVisible(visible);
 
-    if (visible) {
-      // Start animation when visible
-      this.startAnimation();
-    } else {
+    if (!visible) {
       // Stop animation when not visible
       this.stopAnimation();
     }
   }
 
-  private startAnimation() {
-    if (this.animationFrameId !== null) {
-      return; // Animation already running
-    }
+  tick(_: any, delta: number) {
+    if (this.visible) {
+      this.elapsedTime += delta;
 
-    this.animationStartTime = performance.now();
-    this.animate();
+      const oscillationPeriod = 1500;
+      const phase = (this.elapsedTime % oscillationPeriod) / oscillationPeriod;
+
+      // Create a sine wave that oscillates between -0.1 and +0.1 (10% in each direction)
+      const amplitude = 0.1;
+      const oscillation = Math.sin(phase * 2 * Math.PI) * amplitude;
+
+      // Apply the oscillation to the base radius
+      this.radius = this.baseRadius * (1 + oscillation);
+      this.createCursorGeometry();
+
+      // Tell the renderer that we need it to update
+      if (this.needsRender) {
+        this.needsRender();
+      }
+    }
   }
 
   private stopAnimation() {
-    if (this.animationFrameId !== null) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
-    }
-
     // Reset to base radius
     this.radius = this.baseRadius;
+    this.elapsedTime = 0;
     this.createCursorGeometry();
-  }
-
-  private animate() {
-    if (!this.visible) {
-      this.stopAnimation();
-      return;
-    }
-
-    const currentTime = performance.now();
-    const elapsed = currentTime - this.animationStartTime;
-
-    const oscillationPeriod = 1500;
-    const phase = (elapsed % oscillationPeriod) / oscillationPeriod;
-
-    // Create a sine wave that oscillates between -0.1 and +0.1 (10% in each direction)
-    const amplitude = 0.1;
-    const oscillation = Math.sin(phase * 2 * Math.PI) * amplitude;
-
-    // Apply the oscillation to the base radius
-    this.radius = this.baseRadius * (1 + oscillation);
-    this.createCursorGeometry();
-
-    // Trigger a render if needed
-    if (this.needsRender) {
-      this.needsRender();
-    }
-
-    // Schedule the next frame
-    this.animationFrameId = requestAnimationFrame(() => this.animate());
   }
 }
