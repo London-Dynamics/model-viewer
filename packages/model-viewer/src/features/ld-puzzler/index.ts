@@ -53,7 +53,6 @@ import {
   isInSnappedGroup,
   getSnappedGroup,
 } from '../../utilities/snapping-points.js';
-import { Cursor } from './cursor.js';
 import { updateSlots, createSlotElement, SlotUpdateItem } from './slots.js';
 
 const DROP_HEIGHT = 0.5; // Height to drop models from when placed
@@ -70,11 +69,8 @@ export type PlacementOptions = {
 };
 
 export declare interface LDPuzzlerInterface {
-  placementCursor: boolean;
-  placementCursorSize: number;
   setSrcFromBuffer(buffer: ArrayBuffer): void;
   placeGLB(src: string, options?: PlacementOptions): Promise<void>;
-  getPlacementCursorPosition(): { x: number; y: number; z: number } | null;
   rotateSelected(deg?: number): void;
   deleteSelected(): void;
   deleteObjectByFileName(filename: string): void;
@@ -131,13 +127,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDPuzzlerInterface> & T => {
   class LDPuzzlerModelViewerElement extends ModelViewerElement {
-    @property({ type: Boolean, attribute: 'placement-cursor' })
-    placementCursor: boolean = false;
-
-    @property({ type: Number, attribute: 'placement-cursor-size' })
-    placementCursorSize: number = 0.5; // Default diameter of 0.5m
-
-    private cursor: Cursor | undefined;
     private addedGLBs: Set<Object3D> = new Set(); // Track all added GLBs
     private _modelLoaded = false;
     private originalFloorY: number | undefined; // Store the original floor level
@@ -776,23 +765,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    private handlePlacementCursorAttribute() {
-      if (this.placementCursor) {
-        this.enablePlacementCursor();
-      } else {
-        this.disablePlacementCursor();
-      }
-    }
-
-    private handlePlacementCursorSizeAttribute() {
-      if (this.cursor) {
-        // Convert diameter to radius
-        const radius = this.placementCursorSize / 2;
-        this.cursor.setRadius(radius);
-        this[$needsRender]();
-      }
-    }
-
     private _handleProgress(event: Event) {
       const progress = (event as any).detail.totalProgress;
       const reason = (event as any).detail.reason;
@@ -804,8 +776,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _handleLoad() {
       this._modelLoaded = true;
-      this.handlePlacementCursorAttribute();
-      this.handlePlacementCursorSizeAttribute();
+      // Cursor functionality is now handled by the placement cursor mixin
     }
 
     private setupOutlineSystem() {
@@ -932,45 +903,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       this[$needsRender]();
-    }
-
-    private enablePlacementCursor() {
-      if (!this.cursor) {
-        const targetObject = this.findTargetObject();
-        if (targetObject) {
-          // Create cursor with scene and target references
-          // Convert diameter to radius
-          const radius = this.placementCursorSize / 2;
-          this.cursor = new Cursor(this[$scene], targetObject, radius);
-          // Setup mouse tracking configuration
-          this.cursor.setupMouseTracking(this, () => this[$needsRender]());
-        }
-      }
-
-      if (this.cursor) {
-        this.cursor.setVisible(true); // This will automatically enable mouse tracking
-        this[$needsRender]();
-      }
-    }
-
-    private disablePlacementCursor() {
-      if (this.cursor) {
-        this.cursor.setVisible(false); // This will automatically disable mouse tracking
-        this[$needsRender]();
-      }
-    }
-
-    getPlacementCursorPosition(): { x: number; y: number; z: number } | null {
-      if (this.cursor && this.cursor.visible) {
-        // Return the cursor's local position relative to its parent (target object)
-        // This is the coordinate system where objects are placed
-        return {
-          x: this.cursor.position.x,
-          y: this.cursor.position.y,
-          z: this.cursor.position.z,
-        };
-      }
-      return null;
     }
 
     private findTargetObject() {
@@ -2096,18 +2028,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       };
     }
 
-    updated(changedProperties: Map<string | number | symbol, unknown>) {
-      super.updated(changedProperties);
-
-      if (this._modelLoaded && changedProperties.has('placementCursor')) {
-        this.handlePlacementCursorAttribute();
-      }
-
-      if (this._modelLoaded && changedProperties.has('placementCursorSize')) {
-        this.handlePlacementCursorSizeAttribute();
-      }
-    }
-
     connectedCallback() {
       super.connectedCallback();
 
@@ -2154,10 +2074,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Clean up slot-based rendering
         this.clearSlots(this.snappingPointSlots);
         this.clearSlots(this.breakLinkSlots);
-      }
-
-      if (this.cursor) {
-        this.cursor.cleanup();
       }
     }
 

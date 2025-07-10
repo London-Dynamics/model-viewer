@@ -29,6 +29,7 @@ import { LDLightsMixin } from './features/ld-lights.js';
 import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
 import { LDFloatingControlStripMixin } from './features/ld-floating-control-strip.js';
+import { LDPlacementCursorMixin } from './features/ld-placement-cursor.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
 
@@ -37,19 +38,21 @@ import ModelViewerElementBase from './model-viewer-base.js';
 export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
 const ModelViewerElementImpl = LDFloatingControlStripMixin(
-  LDMeasureMixin(
-    LDPuzzlerMixin(
-      LDLightsMixin(
-        LDCameraMixin(
-          LDEnvironmentMixin(
-            LDTransformsMixin(
-              AnnotationMixin(
-                SceneGraphMixin(
-                  StagingMixin(
-                    EnvironmentMixin(
-                      ControlsMixin(
-                        ARMixin(
-                          LoadingMixin(AnimationMixin(ModelViewerElementBase))
+  LDPlacementCursorMixin(
+    LDMeasureMixin(
+      LDPuzzlerMixin(
+        LDLightsMixin(
+          LDCameraMixin(
+            LDEnvironmentMixin(
+              LDTransformsMixin(
+                AnnotationMixin(
+                  SceneGraphMixin(
+                    StagingMixin(
+                      EnvironmentMixin(
+                        ControlsMixin(
+                          ARMixin(
+                            LoadingMixin(AnimationMixin(ModelViewerElementBase))
+                          )
                         )
                       )
                     )

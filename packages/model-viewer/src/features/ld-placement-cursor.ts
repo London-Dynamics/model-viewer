@@ -1,0 +1,166 @@
+/* @license
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { Object3D, Vector3 } from 'three';
+import { property } from 'lit/decorators.js';
+
+import ModelViewerElementBase, {
+  $needsRender,
+  $scene,
+  $tick,
+} from '../model-viewer-base.js';
+import { Constructor } from '../utilities.js';
+import { Cursor } from './ld-puzzler/cursor.js';
+
+const $cursor = Symbol('cursor');
+const $updateCursor = Symbol('updateCursor');
+
+export const $getPlacementCursorPosition = Symbol('getPlacementCursorPosition');
+export const $setCursorVisible = Symbol('setCursorVisible');
+export const $findTargetObject = Symbol('findTargetObject');
+
+// Mixin that adds placement cursor functionality
+export const LDPlacementCursorMixin = <
+  T extends Constructor<ModelViewerElementBase>
+>(
+  ModelViewerElementBase: T
+): Constructor<PlacementCursorInterface> & T => {
+  class PlacementCursorModelViewerElement extends ModelViewerElementBase {
+    @property({ type: Boolean, attribute: 'placement-cursor' })
+    placementCursor: boolean = false;
+
+    @property({ type: Number, attribute: 'placement-cursor-size' })
+    placementCursorSize: number = 0.5; // Default diameter of 0.5m
+
+    private [$cursor]: Cursor | undefined;
+
+    connectedCallback() {
+      super.connectedCallback();
+      // Don't call updateCursor here - wait for model to load
+    }
+
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      if (this[$cursor]) {
+        this[$cursor].cleanup();
+        this[$cursor] = undefined;
+      }
+    }
+
+    updated(changedProperties: Map<string | number | symbol, unknown>) {
+      super.updated(changedProperties);
+      console.log('[LDPlacementCursorMixin] updated called', {
+        changedProperties,
+        placementCursor: this.placementCursor,
+        placementCursorSize: this.placementCursorSize,
+      });
+      if (
+        changedProperties.has('placementCursor') ||
+        changedProperties.has('placementCursorSize')
+      ) {
+        this[$updateCursor]();
+      }
+    }
+
+    // Public API methods
+    getPlacementCursorPosition(): Vector3 | null {
+      return this[$getPlacementCursorPosition]();
+    }
+
+    setCursorVisible(visible: boolean): void {
+      this[$setCursorVisible](visible);
+    }
+
+    // Symbol methods
+    [$getPlacementCursorPosition](): Vector3 | null {
+      if (this[$cursor]) {
+        return this[$cursor].getWorldPlacementPosition();
+      }
+      return null;
+    }
+
+    [$setCursorVisible](visible: boolean): void {
+      if (this[$cursor]) {
+        this[$cursor].setVisible(visible);
+      }
+    }
+
+    [$findTargetObject]() {
+      let targetObject: Object3D | undefined;
+
+      try {
+        this[$scene].traverse((child) => {
+          if (child.name === 'Target') {
+            targetObject = child;
+            throw new Error('found target object'); // Stop traversal when found
+          }
+        });
+      } catch (e) {
+        if ((e as Error).message !== 'found target object') throw e;
+      }
+
+      return targetObject;
+    }
+
+    private [$updateCursor](): void {
+      // Ensure scene and model are ready before
+      try {
+        const scene = this[$scene];
+
+        if (!scene) {
+          // If scene/model isn't ready yet, don't create cursor
+          return;
+        }
+
+        // Clean up existing cursor
+        if (this[$cursor]) {
+          this[$cursor].cleanup();
+          if (this[$cursor].parent) {
+            this[$cursor].parent.remove(this[$cursor]);
+          }
+          this[$cursor] = undefined;
+        }
+
+        // Create new cursor if enabled
+        const targetObject = this[$findTargetObject]();
+        if (this.placementCursor && targetObject) {
+          const radius = this.placementCursorSize / 2; // Convert diameter to radius
+
+          this[$cursor] = new Cursor(scene, targetObject, radius);
+          this[$cursor].setVisible(true);
+          this[$cursor].setupMouseTracking(this, () => this[$needsRender]());
+          this[$needsRender]();
+        }
+      } catch (error) {
+        console.warn('Error updating placement cursor:', error);
+      }
+    }
+
+    [$tick](time: number, delta: number) {
+      super[$tick](time, delta);
+      // Cursor updates are handled via mouse events, no need for tick updates
+    }
+  }
+
+  return PlacementCursorModelViewerElement as Constructor<PlacementCursorInterface> &
+    T;
+};
+
+// Type definitions
+export interface PlacementCursorInterface {
+  placementCursor: boolean;
+  placementCursorSize: number;
+  getPlacementCursorPosition(): Vector3 | null;
+  setCursorVisible(visible: boolean): void;
+}
