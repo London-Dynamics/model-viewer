@@ -1486,8 +1486,8 @@
     "htmlName": "ld_puzzler",
     "Attributes": [
       {
-        "name": "placement-cursor",
-        "htmlName": "placementCursor",
+        "name": "floor-cursor",
+        "htmlName": "floorCursor",
         "description": "Enables interactive placement cursor that follows mouse movement over the model. When enabled, the cursor shows where a new GLB model would be placed using the placeGLB() method.",
         "links": [
           "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
@@ -1498,8 +1498,8 @@
         }
       },
       {
-        "name": "placement-cursor-size",
-        "htmlName": "placementCursorSize",
+        "name": "floor-cursor-size",
+        "htmlName": "floorCursorSize",
         "description": "Controls the diameter of the placement cursor in meters. This visual indicator shows the size of the area where a new model will be placed.",
         "links": [
           "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
@@ -1528,8 +1528,8 @@
         ]
       },
       {
-        "name": "getPlacementCursorPosition()",
-        "htmlName": "getPlacementCursorPosition",
+        "name": "getCursorPosition()",
+        "htmlName": "getCursorPosition",
         "description": "Returns the current world position of the placement cursor as an object with x, y, z coordinates in meters. Returns null if the placement cursor is not visible or enabled.",
         "links": [
           "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"

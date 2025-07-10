@@ -26,22 +26,20 @@ import { Cursor } from './cursor.js';
 const $cursor = Symbol('cursor');
 const $updateCursor = Symbol('updateCursor');
 
-export const $getPlacementCursorPosition = Symbol('getPlacementCursorPosition');
+export const $getCursorPosition = Symbol('getCursorPosition');
 export const $setCursorVisible = Symbol('setCursorVisible');
 export const $findTargetObject = Symbol('findTargetObject');
 
 // Mixin that adds placement cursor functionality
-export const LDPlacementCursorMixin = <
-  T extends Constructor<ModelViewerElementBase>
->(
+export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElementBase: T
-): Constructor<PlacementCursorInterface> & T => {
-  class PlacementCursorModelViewerElement extends ModelViewerElementBase {
-    @property({ type: Boolean, attribute: 'placement-cursor' })
-    placementCursor: boolean = false;
+): Constructor<CursorInterface> & T => {
+  class CursorModelViewerElement extends ModelViewerElementBase {
+    @property({ type: Boolean, attribute: 'floor-cursor' })
+    floorCursor: boolean = false;
 
-    @property({ type: Number, attribute: 'placement-cursor-size' })
-    placementCursorSize: number = 0.5; // Default diameter of 0.5m
+    @property({ type: Number, attribute: 'floor-cursor-size' })
+    floorCursorSize: number = 0.5; // Default diameter of 0.5m
 
     private [$cursor]: Cursor | undefined;
 
@@ -60,22 +58,18 @@ export const LDPlacementCursorMixin = <
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
-      console.log('[LDPlacementCursorMixin] updated called', {
-        changedProperties,
-        placementCursor: this.placementCursor,
-        placementCursorSize: this.placementCursorSize,
-      });
+
       if (
-        changedProperties.has('placementCursor') ||
-        changedProperties.has('placementCursorSize')
+        changedProperties.has('floorCursor') ||
+        changedProperties.has('floorCursorSize')
       ) {
         this[$updateCursor]();
       }
     }
 
     // Public API methods
-    getPlacementCursorPosition(): Vector3 | null {
-      return this[$getPlacementCursorPosition]();
+    getCursorPosition(): Vector3 | null {
+      return this[$getCursorPosition]();
     }
 
     setCursorVisible(visible: boolean): void {
@@ -83,7 +77,7 @@ export const LDPlacementCursorMixin = <
     }
 
     // Symbol methods
-    [$getPlacementCursorPosition](): Vector3 | null {
+    [$getCursorPosition](): Vector3 | null {
       if (this[$cursor]) {
         return this[$cursor].getWorldPlacementPosition();
       }
@@ -134,8 +128,8 @@ export const LDPlacementCursorMixin = <
 
         // Create new cursor if enabled
         const targetObject = this[$findTargetObject]();
-        if (this.placementCursor && targetObject) {
-          const radius = this.placementCursorSize / 2; // Convert diameter to radius
+        if (this.floorCursor && targetObject) {
+          const radius = this.floorCursorSize / 2; // Convert diameter to radius
 
           this[$cursor] = new Cursor(scene, targetObject, radius);
           this[$cursor].setVisible(true);
@@ -153,14 +147,13 @@ export const LDPlacementCursorMixin = <
     }
   }
 
-  return PlacementCursorModelViewerElement as Constructor<PlacementCursorInterface> &
-    T;
+  return CursorModelViewerElement as Constructor<CursorInterface> & T;
 };
 
 // Type definitions
-export interface PlacementCursorInterface {
-  placementCursor: boolean;
-  placementCursorSize: number;
-  getPlacementCursorPosition(): Vector3 | null;
+export interface CursorInterface {
+  floorCursor: boolean;
+  floorCursorSize: number;
+  getCursorPosition(): Vector3 | null;
   setCursorVisible(visible: boolean): void;
 }

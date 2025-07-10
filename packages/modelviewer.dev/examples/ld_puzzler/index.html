@@ -397,17 +397,16 @@
                             if (e.buttons > 0 && dragData) {
                               // Mouse button is pressed and we have drag data
                               isDragging = true;
-                              // Cursor position updates automatically when placement-cursor attribute is set
+                              // Cursor position updates automatically when floor-cursor attribute is set
                             }
                           };
 
                           // Global mouse up listener to handle drop
                           const handleGlobalMouseUp = (e) => {
                             if (isDragging && dragData) {
-                              const position =
-                                modelViewer.getPlacementCursorPosition();
+                              const position = modelViewer.getCursorPosition();
 
-                              modelViewer.removeAttribute('placement-cursor');
+                              modelViewer.removeAttribute('floor-cursor');
                               if (position) {
                                 const filePath = `../../shared-assets/models/${dragData.filename}`;
                                 modelViewer.placeGLB(filePath, {
@@ -443,7 +442,7 @@
                                 parseFloat(e.target.dataset.floorOffset) || 0,
                             };
 
-                            modelViewer.setAttribute('placement-cursor', '');
+                            modelViewer.setAttribute('floor-cursor', '');
 
                             // Add global listeners when mouse down starts
                             document.addEventListener(
@@ -484,10 +483,10 @@
                           const el = e.target;
                           if (el.getAttribute('aria-checked') === 'true') {
                             el.setAttribute('aria-checked', 'false');
-                            modelViewer.removeAttribute('placement-cursor');
+                            modelViewer.removeAttribute('floor-cursor');
                           } else {
                             el.setAttribute('aria-checked', 'true');
-                            modelViewer.setAttribute('placement-cursor', '');
+                            modelViewer.setAttribute('floor-cursor', '');
                           }
                         });
 
