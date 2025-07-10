@@ -1,0 +1,790 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Puzzler</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Puzzler examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <!-- ES-Shims for older browsers -->
+    <script
+      async
+      src="https://ga.jspm.io/npm:es-module-shims@1.7.1/dist/es-module-shims.js"
+    ></script>
+
+    <!-- Import Three.js using an import-map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <!-- Import the <model-viewer> component without three bundled -->
+
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer-module.min.js"
+    ></script>
+
+    <!-- Import the <model-viewer-effects> addon -->
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.min.js"
+    ></script>
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/fontawesome.min.css"
+    />
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/solid.min.css"
+    />
+
+    <style>
+      /* Light DOM CSS classes for custom slot content */
+
+      /* CSS Parts - Style shadow DOM elements from light DOM */
+      #place-glb-demo::part(ld-snapping-point) {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #fefefe;
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+        pointer-events: none;
+      }
+
+      #place-glb-demo::part(ld-rotation-control) {
+        height: 24px;
+        width: 24px;
+        border-radius: 50%;
+        color: #333;
+        background-color: #fefefe;
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #place-glb-demo::part(ld-rotation-control):hover {
+      }
+
+      #place-glb-demo::part(ld-rotation-icon) {
+        font-size: 16px;
+        line-height: 1;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          sans-serif;
+      }
+
+      #place-glb-demo::part(ld-break-link) {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        color: #333;
+        background-color: #fefefe;
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #place-glb-demo::part(ld-break-link):hover {
+        background-color: cornflowerblue;
+        color: white;
+      }
+
+      #place-glb-demo::part(ld-break-link-icon) {
+        font-size: 16px;
+
+        line-height: 1;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          sans-serif;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="place-glb" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Puzzler</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page showcases various utility functions used by
+                Client-side Puzzler.
+              </h4>
+
+              <div class="heading">
+                <h2 class="demo-title">Place a GLB into the scene</h2>
+                <h4>
+                  <span class="attribute">placeGLB()</span> – adds more geometry
+                  to the scene.
+                </h4>
+                <p>
+                  This example uses CSS parts to style the default UI elements
+                  from the light DOM. Check the CSS in the page head to see how
+                  <code>::part()</code> selectors work.
+                </p>
+              </div>
+              <example-snippet stamp-to="place-glb" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="place-glb-demo"
+                    ld-puzzler
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    max-field-of-view="180"
+                    field-of-view="10deg"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    floating-controls-enabled
+                  >
+                    <div slot="floating-control-strip">
+                      <div
+                        id="floating-control-strip"
+                        class="flex items-center bg-white justify-between rounded-full p-0.5 shadow-sm text-sm font-semibold"
+                      >
+                        <button
+                          type="button"
+                          id="rotate-left"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                        >
+                          <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                        <button
+                          type="button"
+                          id="rotate-right"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                        >
+                          <i class="fa-solid fa-rotate-right"></i>
+                        </button>
+                        <button
+                          type="button"
+                          id="delete-selected"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          title="Delete selected objects"
+                        >
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <effect-composer render-mode="quality">
+                      <outline-effect
+                        color="white"
+                        strength="5"
+                        blend-mode="skip"
+                      ></outline-effect>
+                      <color-grade-effect></color-grade-effect>
+                    </effect-composer>
+                    <div
+                      class="absolute bottom-0 inset-x-0 p-2"
+                      id="control-panel"
+                    >
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div class="flex gap-2">
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-disc-cursor"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="show-cursor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="show-cursor-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Show Disc Cursor</span
+                                  >
+                                </span>
+                              </div>
+
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-arrow-cursor"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="show-cursor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="show-cursor-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Show Drop Cursor</span
+                                  >
+                                </span>
+                              </div>
+
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-snapping"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-controls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-controls-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Enable Snapping</span
+                                  >
+                                </span>
+                              </div>
+
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-controls"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-controls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-controls-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Floating Controls</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                            <div class="flex gap-2">
+                              <button
+                                type="button"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_corner_left.glb"
+                                data-name="corner-l"
+                                data-mass="20"
+                              >
+                                L Corner
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_corner_right.glb"
+                                data-name="corner-r"
+                                data-mass="20"
+                              >
+                                R Corner
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_middle.glb"
+                                data-name="middle"
+                                data-mass="20"
+                              >
+                                Middle
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="sofa_chaise.glb"
+                                data-name="chaise"
+                                data-mass="20"
+                              >
+                                Chaise
+                              </button>
+                            </div>
+                            <!--                <div class="flex gap-2">
+                              <button
+                                type="button"
+                                id="rotate-left"
+                                class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              >
+                                ↺
+                              </button>
+                              <button
+                                type="button"
+                                id="rotate-right"
+                                class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              >
+                                ↻
+                              </button>
+                              <button
+                                type="button"
+                                id="delete-selected"
+                                class="cursor-pointer rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                title="Delete selected objects"
+                              >
+                                🗑
+                              </button>
+                            </div> -->
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#place-glb-demo');
+
+                      modelViewer.addEventListener('load', () => {
+                        modelViewer.deleteObjectByFileName('empty.glb');
+                      });
+
+                      document
+                        .querySelectorAll('.place-glb')
+                        .forEach((button) => {
+                          let isDragging = false;
+                          let mouseDownTime = 0;
+                          let dragData = null;
+
+                          // Global mouse move listener to track dragging outside button
+                          const handleGlobalMouseMove = (e) => {
+                            if (e.buttons > 0 && dragData) {
+                              // Mouse button is pressed and we have drag data
+                              isDragging = true;
+                              // Cursor position updates automatically when floor-cursor attribute is set
+                            }
+                          };
+
+                          // Global mouse up listener to handle drop
+                          const handleGlobalMouseUp = (e) => {
+                            if (isDragging && dragData) {
+                              const position = modelViewer.getCursorPosition();
+
+                              modelViewer.removeAttribute('floor-cursor');
+                              if (position) {
+                                const filePath = `../../shared-assets/models/${dragData.filename}`;
+                                modelViewer.placeGLB(filePath, {
+                                  name: dragData.name || undefined,
+                                  position,
+                                  mass: dragData.mass,
+                                  floorOffset: dragData.floorOffset,
+                                });
+                              }
+                            }
+
+                            // Cleanup
+                            isDragging = false;
+                            dragData = null;
+                            document.removeEventListener(
+                              'mousemove',
+                              handleGlobalMouseMove
+                            );
+                            document.removeEventListener(
+                              'mouseup',
+                              handleGlobalMouseUp
+                            );
+                          };
+
+                          button.addEventListener('mousedown', (e) => {
+                            isDragging = false;
+                            mouseDownTime = Date.now();
+                            dragData = {
+                              filename: e.target.dataset.filename,
+                              name: e.target.dataset.name || undefined,
+                              mass: parseFloat(e.target.dataset.mass) || 1.0,
+                              floorOffset:
+                                parseFloat(e.target.dataset.floorOffset) || 0,
+                            };
+
+                            modelViewer.setAttribute('floor-cursor', '');
+
+                            // Add global listeners when mouse down starts
+                            document.addEventListener(
+                              'mousemove',
+                              handleGlobalMouseMove
+                            );
+                            document.addEventListener(
+                              'mouseup',
+                              handleGlobalMouseUp
+                            );
+                          });
+
+                          button.addEventListener('click', async (e) => {
+                            // Don't trigger if user was dragging or if it was a very brief click (potential start of drag)
+                            if (
+                              isDragging ||
+                              Date.now() - mouseDownTime < 100
+                            ) {
+                              return;
+                            }
+
+                            const options = {
+                              name: e.target.dataset.name || undefined,
+                              mass: parseFloat(e.target.dataset.mass) || 1.0,
+                              floorOffset:
+                                parseFloat(e.target.dataset.floorOffset) || 0,
+                            };
+
+                            const filePath = `../../shared-assets/models/${e.target.dataset.filename}`;
+
+                            modelViewer.placeGLB(filePath, options);
+                          });
+                        });
+
+                      document
+                        .getElementById('toggle-arrow-cursor')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('floor-arrow-cursor');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('floor-arrow-cursor', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-disc-cursor')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('floor-disc-cursor');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('floor-disc-cursor', '');
+                          }
+                        });
+
+                      // Snapping toggle handler
+                      document
+                        .getElementById('toggle-snapping')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.setSnappingEnabled?.(false);
+                            console.log('Snapping disabled');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.setSnappingEnabled?.(true);
+                            console.log('Snapping enabled');
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-controls')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.floatingControlsEnabled?.(false);
+                            console.log('Floating controls disabled');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.floatingControlsEnabled?.(true);
+                            console.log('Floating controls enabled');
+                          }
+                        });
+
+                      const controlStrip = document.getElementById(
+                        'floating-control-strip'
+                      );
+                      if (controlStrip) {
+                        controlStrip.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return false;
+                        });
+                        controlStrip.addEventListener('mousedown', (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return false;
+                        });
+                        controlStrip.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          return false;
+                        });
+                      }
+
+                      const rotateLeftButton =
+                        document.getElementById('rotate-left');
+                      if (rotateLeftButton) {
+                        rotateLeftButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          modelViewer.rotateSelected(90);
+                        });
+                        rotateLeftButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const rotateRightButton =
+                        document.getElementById('rotate-right');
+                      if (rotateLeftButton) {
+                        rotateRightButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          modelViewer.rotateSelected(-90);
+                        });
+                        rotateRightButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const deleteSelectedButton =
+                        document.getElementById('delete-selected');
+                      if (deleteSelectedButton) {
+                        deleteSelectedButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          modelViewer.deleteSelected();
+                        });
+                        deleteSelectedButton.addEventListener(
+                          'mouseup',
+                          (e) => {
+                            e.stopPropagation();
+                          }
+                        );
+                      }
+
+                      // Prevent all clicks in control panel from propagating to model-viewer
+                      const panel = document.getElementById('control-panel');
+
+                      panel.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        // Force stop any model-viewer event handling
+                        return false;
+                      });
+
+                      // Also handle mousedown/mouseup to prevent model-viewer from capturing these
+                      panel.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        return false;
+                      });
+
+                      panel.addEventListener('mouseup', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        return false;
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="set-src-from-buffer" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Buffer, not SRC!</h2>
+                <h4>
+                  <span class="attribute">setSrcFromBuffer()</span> – Update the
+                  source from an ArrayBuffer instead of URL.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="set-src-from-buffer"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="puzzler-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  >
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div class="flex">
+                              <button
+                                type="button"
+                                class="load-buffer rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="model_size_485.buffer"
+                              >
+                                📼 Load 485
+                              </button>
+                              <button
+                                type="button"
+                                class="load-buffer rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-filename="model_size_510.buffer"
+                              >
+                                📼 Load 510
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script>
+                    function parseArrayBufferString(string) {
+                      return new Uint8Array(string.split(',')).buffer;
+                    }
+                  </script>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#puzzler-demo');
+
+                      document
+                        .querySelectorAll('.load-buffer')
+                        .forEach((button) => {
+                          button.addEventListener('click', async (e) => {
+                            const { filename } = e.target.dataset;
+
+                            console.log(
+                              'Fetching buffer string from file: ',
+                              filename
+                            );
+
+                            const bufferString = await fetch(
+                              `../../shared-assets/buffers/${filename}`
+                            ).then((response) => response.text());
+
+                            console.log(
+                              'Buffer string fetched: ',
+                              bufferString.length,
+                              'bytes'
+                            );
+                            console.log(
+                              'Converting to ArrayBuffer before passing to function...'
+                            );
+
+                            const arrayBuffer =
+                              parseArrayBufferString(bufferString);
+
+                            console.log('Done');
+
+                            modelViewer.setSrcFromBuffer(arrayBuffer);
+                          });
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld-puzzler');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+  </body>
+</html>

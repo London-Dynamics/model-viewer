@@ -1,0 +1,478 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Measure Examples</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; scene graph examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="measure" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Measure </span>by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. Give the user the ability to measure the size of objects in
+                the scene.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Display measurements</h2>
+                <p>
+                  Toggle measurements by setting
+                  <span class="attribute">measure</span> attribute. The default
+                  is the total bounding box of the scene. If you also want to
+                  measure the size of individual objects, you can set the
+                  <span class="attribute">measure-objects</span> attribute.
+                </p>
+                <p>Default is an empty string.</p>
+                <p>
+                  "*" will let the user click any object. "name1,name2" will let
+                  the user click objects with the names "name1" and "name2".
+                </p>
+              </div>
+              <example-snippet stamp-to="measure" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/textureCubes.gltf"
+                    alt="An animated 3D model a bedside lamp"
+                  >
+                    <!-- <div slot="ruler-width" class="ld-ruler"></div>
+                    <div slot="ruler-height" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div> -->
+
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-rulers"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="enable-rulers-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-rulers-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Enable</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-lines"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-lines-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-lines-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Lines</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex w-1/2 items-center gap-4">
+                                <h4 class="text-sm! font-medium text-gray-900">
+                                  Unit
+                                </h4>
+                                <span
+                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                >
+                                  <button
+                                    type="button"
+                                    class="measure-unit relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-unit="m"
+                                  >
+                                    m
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-unit="cm"
+                                  >
+                                    cm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-unit="mm"
+                                  >
+                                    mm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-unit="yd"
+                                  >
+                                    yd
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-unit="ft"
+                                  >
+                                    ft
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-unit="in"
+                                  >
+                                    in
+                                  </button>
+                                </span>
+                              </div>
+                              <div class="flex w-1/2 items-center gap-4">
+                                <h4 class="text-sm! font-medium text-gray-900">
+                                  Precision
+                                </h4>
+
+                                <input
+                                  id="measurePrecision"
+                                  type="number"
+                                  name="measurePrecision"
+                                  class="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6"
+                                  placeholder="42"
+                                  value="2"
+                                  min="0"
+                                />
+                              </div>
+                            </div>
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="text-sm! font-medium text-gray-900">
+                                  Measure
+                                </h4>
+                                <span
+                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                >
+                                  <button
+                                    type="button"
+                                    class="relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    id="measure-scene"
+                                  >
+                                    Scene
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    id="measure-objects"
+                                  >
+                                    Any Object
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-object relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-mesh="Box"
+                                  >
+                                    Box L
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-object relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-mesh="Box_1"
+                                  >
+                                    Box R
+                                  </button>
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="text-sm! font-medium text-gray-900">
+                                  Dimensions
+                                </h4>
+                                <span
+                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                >
+                                  <button
+                                    type="button"
+                                    class="measure-override relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-dimensions=""
+                                  >
+                                    Auto
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-override relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    data-dimensions="4.96 2 2"
+                                  >
+                                    Scene 2X
+                                  </button>
+                                  <button
+                                    type="button"
+                                    id="setBoxDimensions"
+                                    class="relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                  >
+                                    Box L ½
+                                  </button>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector('#three-demo');
+
+                      document
+                        .getElementById('toggle-rulers')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('measure');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('measure', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-lines')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.setAttribute(
+                              'disable-measurement-lines',
+                              ''
+                            );
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.removeAttribute(
+                              'disable-measurement-lines'
+                            );
+                          }
+                        });
+
+                      document
+                        .getElementById('measure-scene')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', '');
+                        });
+                      document
+                        .getElementById('measure-objects')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', '*');
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-object')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measure-objects',
+                              e.target.getAttribute('data-mesh')
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('setBoxDimensions')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', 'Box');
+
+                          modelViewer.setAttribute(
+                            'measurement-overrides',
+                            '0.5 0.5 0.5'
+                          );
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-override')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-overrides',
+                              e.target.getAttribute('data-dimensions')
+                            );
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-unit')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-unit',
+                              e.target.getAttribute('data-unit')
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('measurePrecision')
+                        .addEventListener('change', (e) => {
+                          modelViewer.setAttribute(
+                            'measurement-precision',
+                            e.target.value
+                          );
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="slots" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Customise labels</h2>
+                <p>
+                  Add slots to customise the labels for the measurements. The
+                  slots are named "ruler-width", "ruler-height", and
+                  "ruler-depth".
+                </p>
+              </div>
+              <example-snippet stamp-to="slots" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo-2"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/textureCubes.gltf"
+                    alt="An animated 3D model a bedside lamp"
+                    measure
+                  >
+                    <div
+                      slot="ruler-width"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                    <div
+                      slot="ruler-height"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                    <div
+                      slot="ruler-depth"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                  </model-viewer>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_measure');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>
