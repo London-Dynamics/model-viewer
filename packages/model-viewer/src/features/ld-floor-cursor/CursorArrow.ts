@@ -54,8 +54,15 @@ export class Cursor extends CursorBase {
     }
   }
 
+  cleanup() {
+    // Remove all geometry from the cursor
+    this.clear();
+    this.stopAnimation();
+    super.cleanup();
+  }
+
   private createShaft(material: MeshStandardMaterial): Mesh {
-    // Shaft is a block, width = 0.3*radius, height = radius, depth = 0.33*radius
+    // Shaft is a block
     const w = this.radius * GOLDEN_RATIO;
     const h = this.radius;
     const d = this.radius * ARROW_DEPTH;
@@ -101,8 +108,7 @@ export class Cursor extends CursorBase {
       4, 0, 6, 0, 2, 6,
       // Top face
       4, 5, 0, 5, 1, 0,
-      // Bottom face
-      2, 3, 6, 3, 7, 6,
+      // (No bottom face)
     ];
 
     const geometry = new BufferGeometry();
@@ -118,45 +124,110 @@ export class Cursor extends CursorBase {
   }
 
   private createHead(material: MeshStandardMaterial): Mesh {
-    // Head is a triangular prism (not flat)
+    // Head is a split triangular prism (not flat), with a gap at the top matching the shaft width
     const w = this.radius;
     const h = this.radius * GOLDEN_RATIO;
     const d = this.radius * ARROW_DEPTH;
-    // 6 vertices (3 front, 3 back)
+    const shaftW = this.radius * GOLDEN_RATIO;
+    const gap = shaftW;
+    // Vertices: 8 total (4 front, 4 back)
+    // 0: left outer top, 1: left inner top, 2: right inner top, 3: right outer top (front)
+    // 4: left outer top, 5: left inner top, 6: right inner top, 7: right outer top (back)
+    // 8: bottom front, 9: bottom back
     const vertices = new Float32Array([
       // Front face (z = +d/2)
       -w / 2,
       0,
-      d / 2, // left
+      d / 2, // 0: left outer top
+      -gap / 2,
+      0,
+      d / 2, // 1: left inner top
+      gap / 2,
+      0,
+      d / 2, // 2: right inner top
       w / 2,
       0,
-      d / 2, // right
+      d / 2, // 3: right outer top
       0,
       -h,
-      d / 2, // bottom
+      d / 2, // 4: bottom front
       // Back face (z = -d/2)
       -w / 2,
       0,
-      -d / 2, // left
+      -d / 2, // 5: left outer top
+      -gap / 2,
+      0,
+      -d / 2, // 6: left inner top
+      gap / 2,
+      0,
+      -d / 2, // 7: right inner top
       w / 2,
       0,
-      -d / 2, // right
+      -d / 2, // 8: right outer top
       0,
       -h,
-      -d / 2, // bottom
+      -d / 2, // 9: bottom back
     ]);
-    // 8 triangles (2 per face: front, back, bottom; 2 for sides)
+    // Indices: split top, sides, and bottom
     const indices = [
-      // Front face
-      0, 1, 2,
-      // Back face
-      5, 4, 3,
+      // Front face (split top)
+      0,
+      1,
+      4, // left triangle
+      1,
+      2,
+      4, // center triangle (gap)
+      2,
+      3,
+      4, // right triangle
+      // Back face (split top)
+      5,
+      9,
+      6, // left triangle
+      6,
+      9,
+      7, // center triangle (gap)
+      7,
+      9,
+      8, // right triangle
       // Bottom face
-      2, 1, 5, 2, 5, 5, 1, 4, 5,
-      // Left face
-      0, 2, 3, 2, 5, 3,
-      // Right face
-      1, 0, 4, 0, 3, 4,
+      4,
+      9,
+      5,
+      4,
+      5,
+      0, // left
+      4,
+      3,
+      8,
+      4,
+      8,
+      9, // right
+      // Sides
+      0,
+      5,
+      1,
+      1,
+      5,
+      6, // left outer
+      1,
+      6,
+      2,
+      2,
+      6,
+      7, // left inner
+      2,
+      7,
+      3,
+      3,
+      7,
+      8, // right inner
+      3,
+      8,
+      4,
+      4,
+      8,
+      9, // right outer
     ];
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));

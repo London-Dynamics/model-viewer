@@ -54,6 +54,8 @@ export class Cursor extends Object3D {
     this.stopMouseTracking();
     this.visible = false;
     this.element = null;
+
+    this.needsRender?.();
     this.needsRender = null;
   }
 

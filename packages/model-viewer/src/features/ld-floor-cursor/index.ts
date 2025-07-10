@@ -21,11 +21,16 @@ import ModelViewerElementBase, {
   $tick,
 } from '../../model-viewer-base.js';
 import { Constructor } from '../../utilities.js';
-import { Cursor } from './CursorArrow.js';
+import { Cursor as ArrowCursor } from './CursorArrow.js';
 import { Cursor as DiscCursor } from './CursorDisc.js';
 
-const $cursor = Symbol('cursor');
-const $updateCursor = Symbol('updateCursor');
+const $arrowCursor = Symbol('arrowCursor');
+const $discCursor = Symbol('discCursor');
+const $updateCursors = Symbol('updateCursors');
+const $getArrowCursorPosition = Symbol('getArrowCursorPosition');
+const $getDiscCursorPosition = Symbol('getDiscCursorPosition');
+const $setArrowCursorVisible = Symbol('setArrowCursorVisible');
+const $setDiscCursorVisible = Symbol('setDiscCursorVisible');
 
 export const $getCursorPosition = Symbol('getCursorPosition');
 export const $setCursorVisible = Symbol('setCursorVisible');
@@ -36,13 +41,20 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElementBase: T
 ): Constructor<CursorInterface> & T => {
   class CursorModelViewerElement extends ModelViewerElementBase {
-    @property({ type: Boolean, attribute: 'floor-cursor' })
-    floorCursor: boolean = false;
+    @property({ type: Boolean, attribute: 'floor-arrow-cursor' })
+    floorArrowCursor: boolean = false;
 
-    @property({ type: Number, attribute: 'floor-cursor-size' })
-    floorCursorSize: number = 0.5; // Default diameter of 0.5m
+    @property({ type: Boolean, attribute: 'floor-disc-cursor' })
+    floorDiscCursor: boolean = false;
 
-    private [$cursor]: Cursor | undefined;
+    @property({ type: Number, attribute: 'floor-arrow-cursor-size' })
+    floorArrowCursorSize: number = 0.5; // Default diameter of 0.5m
+
+    @property({ type: Number, attribute: 'floor-disc-cursor-size' })
+    floorDiscCursorSize: number = 0.5; // Default diameter of 0.5m
+
+    private [$arrowCursor]: ArrowCursor | undefined;
+    private [$discCursor]: DiscCursor | undefined;
 
     connectedCallback() {
       super.connectedCallback();
@@ -51,9 +63,13 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     disconnectedCallback() {
       super.disconnectedCallback();
-      if (this[$cursor]) {
-        this[$cursor].cleanup();
-        this[$cursor] = undefined;
+      if (this[$arrowCursor]) {
+        this[$arrowCursor].cleanup();
+        this[$arrowCursor] = undefined;
+      }
+      if (this[$discCursor]) {
+        this[$discCursor].cleanup();
+        this[$discCursor] = undefined;
       }
     }
 
@@ -61,33 +77,56 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
       super.updated(changedProperties);
 
       if (
-        changedProperties.has('floorCursor') ||
-        changedProperties.has('floorCursorSize')
+        changedProperties.has('floorArrowCursor') ||
+        changedProperties.has('floorArrowCursorSize') ||
+        changedProperties.has('floorDiscCursor') ||
+        changedProperties.has('floorDiscCursorSize')
       ) {
-        this[$updateCursor]();
+        this[$updateCursors]();
       }
     }
 
     // Public API methods
-    getCursorPosition(): Vector3 | null {
-      return this[$getCursorPosition]();
+    getArrowCursorPosition(): Vector3 | null {
+      return this[$getArrowCursorPosition]();
     }
 
-    setCursorVisible(visible: boolean): void {
-      this[$setCursorVisible](visible);
+    getDiscCursorPosition(): Vector3 | null {
+      return this[$getDiscCursorPosition]();
+    }
+
+    setArrowCursorVisible(visible: boolean): void {
+      this[$setArrowCursorVisible](visible);
+    }
+
+    setDiscCursorVisible(visible: boolean): void {
+      this[$setDiscCursorVisible](visible);
     }
 
     // Symbol methods
-    [$getCursorPosition](): Vector3 | null {
-      if (this[$cursor]) {
-        return this[$cursor].getPosition();
+    [$getArrowCursorPosition](): Vector3 | null {
+      if (this[$arrowCursor]) {
+        return this[$arrowCursor].getPosition();
       }
       return null;
     }
 
-    [$setCursorVisible](visible: boolean): void {
-      if (this[$cursor]) {
-        this[$cursor].setVisible(visible);
+    [$getDiscCursorPosition](): Vector3 | null {
+      if (this[$discCursor]) {
+        return this[$discCursor].getPosition();
+      }
+      return null;
+    }
+
+    [$setArrowCursorVisible](visible: boolean): void {
+      if (this[$arrowCursor]) {
+        this[$arrowCursor].setVisible(visible);
+      }
+    }
+
+    [$setDiscCursorVisible](visible: boolean): void {
+      if (this[$discCursor]) {
+        this[$discCursor].setVisible(visible);
       }
     }
 
@@ -108,48 +147,61 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
       return targetObject;
     }
 
-    private [$updateCursor](): void {
-      // Ensure scene and model are ready before
+    private [$updateCursors](): void {
       try {
         const scene = this[$scene];
+        if (!scene) return;
 
-        if (!scene) {
-          // If scene/model isn't ready yet, don't create cursor
-          return;
-        }
-
-        // Clean up existing cursor
-        if (this[$cursor]) {
-          this[$cursor].cleanup();
-          if (this[$cursor].parent) {
-            this[$cursor].parent.remove(this[$cursor]);
+        // Clean up existing cursors
+        if (this[$arrowCursor]) {
+          this[$arrowCursor].cleanup();
+          if (this[$arrowCursor].parent) {
+            this[$arrowCursor].parent.remove(this[$arrowCursor]);
           }
-          this[$cursor] = undefined;
+          this[$arrowCursor] = undefined;
+        }
+        if (this[$discCursor]) {
+          this[$discCursor].cleanup();
+          if (this[$discCursor].parent) {
+            this[$discCursor].parent.remove(this[$discCursor]);
+          }
+          this[$discCursor] = undefined;
         }
 
-        // Create new cursor if enabled
         const targetObject = this[$findTargetObject]();
-        if (this.floorCursor && targetObject) {
-          const radius = this.floorCursorSize / 2; // Convert diameter to radius
-
-          this[$cursor] = new Cursor(scene, targetObject, radius);
-          const disc = new DiscCursor(scene, targetObject, radius);
-          this[$cursor].setVisible(true);
-          this[$cursor].setupMouseTracking(this, () => this[$needsRender]());
-          disc.setVisible(true);
-          disc.setupMouseTracking(this, () => this[$needsRender]());
-          this[$needsRender]();
+        if (targetObject) {
+          if (this.floorArrowCursor) {
+            const radius = this.floorArrowCursorSize / 2;
+            this[$arrowCursor] = new ArrowCursor(scene, targetObject, radius);
+            this[$arrowCursor].setVisible(true);
+            this[$arrowCursor].setupMouseTracking(this, () =>
+              this[$needsRender]()
+            );
+          }
+          if (this.floorDiscCursor) {
+            const radius = this.floorDiscCursorSize / 2;
+            this[$discCursor] = new DiscCursor(scene, targetObject, radius);
+            this[$discCursor].setVisible(true);
+            this[$discCursor].setupMouseTracking(this, () =>
+              this[$needsRender]()
+            );
+          }
+          if (this.floorArrowCursor || this.floorDiscCursor) {
+            this[$needsRender]();
+          }
         }
       } catch (error) {
-        console.warn('Error updating placement cursor:', error);
+        console.warn('Error updating placement cursors:', error);
       }
     }
 
     [$tick](time: number, delta: number) {
       super[$tick](time, delta);
-
-      if (this[$cursor]) {
-        this[$cursor].tick(time, delta);
+      if (this[$arrowCursor]) {
+        this[$arrowCursor].tick(time, delta);
+      }
+      if (this[$discCursor]) {
+        this[$discCursor].tick(time, delta);
       }
     }
   }
@@ -159,8 +211,12 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
 
 // Type definitions
 export interface CursorInterface {
-  floorCursor: boolean;
-  floorCursorSize: number;
-  getCursorPosition(): Vector3 | null;
-  setCursorVisible(visible: boolean): void;
+  floorArrowCursor: boolean;
+  floorDiscCursor: boolean;
+  floorArrowCursorSize: number;
+  floorDiscCursorSize: number;
+  getArrowCursorPosition(): Vector3 | null;
+  getDiscCursorPosition(): Vector3 | null;
+  setArrowCursorVisible(visible: boolean): void;
+  setDiscCursorVisible(visible: boolean): void;
 }

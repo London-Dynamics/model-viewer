@@ -142,10 +142,16 @@ export class Cursor extends CursorBase {
     }
   }
 
+  cleanup() {
+    // Remove all geometry from the cursor
+    this.clear();
+    this.stopAnimation();
+    super.cleanup();
+  }
+
   private stopAnimation() {
-    // Reset to base radius
+    // Only reset animation-related state
     this.radius = this.baseRadius;
     this.elapsedTime = 0;
-    this.createCursorGeometry();
   }
 }
