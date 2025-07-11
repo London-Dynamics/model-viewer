@@ -50,7 +50,7 @@ export class Cursor extends CursorBase {
     this.group.add(this.shaft);
     this.group.add(this.head);
     this.add(this.group);
-    this.position.set(0, this.baseY, 0);
+    this.position.y = this.baseY;
   }
 
   setVisible(visible: boolean) {
