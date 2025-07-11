@@ -12,6 +12,8 @@ import { Cursor as CursorBase } from './Cursor';
 
 const OSCILLATION_PERIOD = 1500; // 1.5 seconds for a full oscillation
 
+const RENDER_ORDER = 900;
+
 export class Cursor extends CursorBase {
   private baseRadius: number = 0.1;
   private contourLine: LineLoop | null = null;
@@ -61,6 +63,9 @@ export class Cursor extends CursorBase {
     this.mesh.rotation.x = -Math.PI / 2; // Rotate to face up
     this.mesh.position.set(0, 0.01, 0); // Slightly above ground level
     this.mesh.castShadow = false; // Cursor should not cast shadows
+
+    this.mesh.renderOrder = RENDER_ORDER;
+
     this.add(this.mesh);
 
     /* Add contours around the circle - primary and high-contrast for dark backgrounds */
@@ -92,6 +97,9 @@ export class Cursor extends CursorBase {
     this.contourLine = new LineLoop(contourGeometry, contourMaterial);
     this.contourLine.position.set(0, 0.011, 0); // Slightly above the circle
     this.contourLine.castShadow = false; // Cursor contours should not cast shadows
+
+    this.contourLine.renderOrder = RENDER_ORDER;
+
     this.add(this.contourLine);
 
     // High-contrast contour for dark backgrounds
@@ -108,6 +116,9 @@ export class Cursor extends CursorBase {
     );
     this.darkContourLine.position.set(0, 0.012, 0); // Slightly higher than primary contour
     this.darkContourLine.castShadow = false; // Cursor contours should not cast shadows
+
+    this.darkContourLine.renderOrder = RENDER_ORDER;
+
     this.add(this.darkContourLine);
   }
 

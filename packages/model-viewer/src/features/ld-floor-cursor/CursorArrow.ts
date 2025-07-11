@@ -16,6 +16,8 @@ const ARROW_DEPTH = 0.33; // Depth of the arrow head
 const ROTATION_PERIOD = 1000; // 1 second for a full rotation
 const BOUNCE_PERIOD = 1500; // 1.5 seconds for a full bounce cycle
 
+const RENDER_ORDER = 920;
+
 export class Cursor extends CursorBase {
   private group: Group;
   private shaft: Mesh;
@@ -35,10 +37,16 @@ export class Cursor extends CursorBase {
       color: 0xffffff,
       metalness: 0.1,
       roughness: 0.3,
+      depthTest: false,
+      transparent: true,
     });
 
     this.shaft = this.createShaft(material);
     this.head = this.createHead(material);
+
+    this.shaft.renderOrder = RENDER_ORDER;
+    this.head.renderOrder = RENDER_ORDER;
+
     this.group.add(this.shaft);
     this.group.add(this.head);
     this.add(this.group);
