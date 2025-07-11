@@ -77,53 +77,6 @@ export declare interface LDPuzzlerInterface {
   deleteObjectByFileName(filename: string): void;
 }
 
-/**
- * LDPuzzlerMixin adds interactive object placement and selection functionality to model-viewer.
- *
- * Features:
- * - Object placement with gravity animation
- * - Click selection with visual outlines (requires model-viewer-effects)
- * - Drag and drop for selected objects
- * - Placement cursor for guided positioning
- * - Name-based object grouping for future multi-selection support
- * - Snap points for object positioning and alignment
- *
- * Object Naming Convention for Grouping:
- * The 'name' property in PlacementOptions supports special syntax for automatic grouping:
- * - "chair_01" -> groupId: "chair", instanceId: "01" (underscore separates group from instance)
- * - "table-wood_large" -> groupId: "table-wood", instanceId: "large" (hyphens allowed in groupId)
- * - "car#red_001" -> groupId: "car", tags: ["red"], instanceId: "001" (# adds tags)
- * - "duck" -> groupId: "duck", no instanceId (simple name becomes the groupId)
- *
- * Snap Points:
- * - If no snappingPoints are provided in PlacementOptions, default snap points are generated
- * - Default snap points are placed at the middle of each side of the object's bounding box (front, back, left, right)
- * - When any object is selected, all snap points for all objects are displayed as white spheres
- * - Snap point spheres have a diameter of 0.1m and are semi-transparent
- *
- * Future multi-selection will be able to select all objects by groupId or tags.
- *
- * Outline Functionality Requirements:
- * To enable visual outlines for selected objects, you must include the model-viewer-effects
- * custom elements in your HTML:
- *
- * ```html
- * <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer-effects/dist/model-viewer-effects.min.js"></script>
- *
- * <model-viewer>
- *   <effect-composer>
- *     <outline-effect color="white" strength="3" smoothing="1" blend-mode="skip"></outline-effect>
- *   </effect-composer>
- * </model-viewer>
- * ```
- *
- * The ld-puzzler component will automatically:
- * - Set blend-mode="default" when objects are selected (enables outline rendering)
- * - Set blend-mode="skip" when no objects are selected (disables outline rendering)
- *
- * If outline-effect is not present, selection will still work but without visual feedback.
- */
-
 export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDPuzzlerInterface> & T => {
@@ -173,8 +126,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     // Slot-based rotation controls rendering
     private rotationSlots: Map<string, HTMLElement> = new Map();
     private rotationSlotsVisible: boolean = false;
-
-    // Animation properties for rotation
 
     /**
      * Updates the visibility and positioning of snapping point slot elements.
