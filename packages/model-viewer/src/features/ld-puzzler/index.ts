@@ -41,7 +41,6 @@ import { $selectObjectForControls } from '../ld-floating-control-strip.js';
 
 import { Constructor } from '../../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
-import { animateGravityFallSmooth } from '../../utilities/animation.js';
 import {
   SnappingPoint,
   generateDefaultSnappingPoints,
@@ -66,6 +65,11 @@ export type PlacementOptions = {
   mass?: number; // Mass in kg, affects fall speed
   floorOffset?: number; // Additional Y offset from calculated floor position (e.g., 0.5 for center-positioned cubes)
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
+  dimensions?: {
+    width?: number; // Width of the object for snapping calculations
+    height?: number; // Height of the object for snapping calculations
+    depth?: number; // Depth of the object for snapping calculations
+  }
 };
 
 export declare interface LDPuzzlerInterface {
@@ -978,7 +982,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
 
       const visualizationBox = this.createVisualizationBox(
-        { x: 1, y: 1, z: 1 },
+        options.dimensions ?? { x: 1, y: 1, z: 1 },
         options.position ?? { x: 0, y: 0, z: 0 }
       );
       targetObject.add(visualizationBox);
@@ -1073,35 +1077,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               if (!this.outlineEffect) {
                 this.setupOutlineSystem();
               }
+              // Start gravity animation
 
               // Update shadows to include all GLBs
               this.updateShadowsWithGLBs();
               this[$needsRender]();
 
-              // Start gravity animation
-              const mass = options.mass || 1.0; // Default mass of 1kg
-              animateGravityFallSmooth(
-                gltf.scene,
-                dropStartY,
-                finalPosition.y,
-                mass,
-                () => {
-                  this.updateShadowsWithGLBs();
-                  this[$needsRender]();
-                },
-                () => {
-                  // Generate default snap points if needed (after object is in final position)
-                  if (gltf.scene.userData.needsDefaultSnappingPoints) {
-                    gltf.scene.userData.snappingPoints =
-                      generateDefaultSnappingPoints(gltf.scene);
-                    delete gltf.scene.userData.needsDefaultSnappingPoints;
-                  }
 
-                  // Final shadow update when animation completes
-                  this.updateShadowsWithGLBs();
-                  this[$needsRender]();
-                }
-              );
+              setTimeout(() => {
+                const mass = options.mass || 1.0; // Default mass of 1kg
+                this.gravityAnimation = {
+                  model: gltf.scene,
+                  targetY: finalPosition.y,
+                  startY: dropStartY,
+                  mass: mass,
+                  needsDefaultSnappingPoints: gltf.scene.userData.needsDefaultSnappingPoints,
+                  startTime: performance.now(),
+                };
+                this.isAnimatingGravity = true;
+              }, 120);
 
               resolve();
             } else {
@@ -1115,9 +1109,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 (child) => child.name === 'VisualizationBox'
               );
               if (visualizationBox && visualizationBox instanceof Mesh) {
-                this.fadeOutVisualizationBox(visualizationBox, 300, () => {
-                  targetObject.remove(visualizationBox);
-                });
+                targetObject.remove(visualizationBox);
               }
             }
           },
@@ -2148,7 +2140,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const bottomMaterial = new MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.3, // Semi-transparent
+        opacity: 0.7, // Semi-transparent
         side: 2, // DoubleSide to ensure visibility from all angles
       });
 
@@ -2161,99 +2153,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Position the bottom face at the correct location
       visualizationBox.position.set(position.x, 0, position.z);
-      this.startVisualizationBoxPulse(visualizationBox);
       return visualizationBox;
     }
-    /**
-     * Fade out a visualization box smoothly over time.
-     */
-    private fadeOutVisualizationBox(
-      visualizationBox: Mesh,
-      duration: number = 500,
-      onComplete?: () => void
-    ) {
-      if (!(visualizationBox.material instanceof MeshBasicMaterial)) {
-        onComplete?.();
-        return;
-      }
 
-      const startOpacity = visualizationBox.material.opacity;
-      const startTime = performance.now();
 
-      const animate = () => {
-        const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-
-        // Use ease-in function for smooth animation
-        const easeIn = Math.pow(progress, 3);
-        const currentOpacity = startOpacity * (1 - easeIn);
-
-        visualizationBox.material.opacity = currentOpacity;
-        this[$needsRender]();
-
-        if (progress < 1) {
-          requestAnimationFrame(animate);
-        } else {
-          onComplete?.();
-        }
-      };
-
-      requestAnimationFrame(animate);
-    }
-
-    /**
-     * Start a slow pulsing animation for the visualization box.
-     * Pulses the opacity and scale to create a breathing effect.
-     */
-    private startVisualizationBoxPulse(visualizationBox: Mesh) {
-      if (!(visualizationBox.material instanceof MeshBasicMaterial)) {
-        console.warn(
-          'Visualization box material is not MeshBasicMaterial:',
-          visualizationBox.material
-        );
-        return;
-      }
-
-      const startTime = performance.now();
-      const pulseDuration = 2000; // 2 seconds for a complete pulse cycle
-      const minOpacity = 0.2;
-      const maxOpacity = 0.6;
-      const minScale = 0.95;
-      const maxScale = 1.05;
-
-      // Store reference to material to prevent issues
-      const material = visualizationBox.material;
-
-      const animate = () => {
-        // Check if the visualization box is still in the scene
-        if (!visualizationBox.parent) {
-          return; // Stop animation if box was removed
-        }
-
-        const elapsed = performance.now() - startTime;
-        const progress = (elapsed % pulseDuration) / pulseDuration;
-        const pulseValue = Math.sin(progress * Math.PI * 2) * 0.5 + 0.5;
-
-        // Animate opacity
-        const currentOpacity =
-          minOpacity + (maxOpacity - minOpacity) * pulseValue;
-        material.opacity = currentOpacity;
-
-        // Force material to update
-        material.needsUpdate = true;
-
-        // Animate scale for more visible pulsing effect
-        const currentScale = minScale + (maxScale - minScale) * pulseValue;
-        visualizationBox.scale.setScalar(currentScale);
-
-        this[$needsRender]();
-
-        requestAnimationFrame(animate);
-      };
-
-      // Start the animation
-      requestAnimationFrame(animate);
-    }
 
     private updateAllSlots() {
       this.updateSnappingPointSlots();
@@ -2323,6 +2226,125 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         groupCenter: center,
         originalPosition: originalPosition,
       };
+    }
+
+    // Add these properties to the class
+    private isAnimatingGravity: boolean = false;
+    private gravityAnimation: {
+      model: Object3D;
+      targetY: number;
+      startY: number;
+      mass: number;
+      startTime: number; // Add this
+    } | null = null;
+
+    private startGravityAnimation(
+      model: Object3D,
+      targetY: number,
+      mass: number,
+      needsDefaultSnappingPoints: boolean = false
+    ) {
+      this.gravityAnimation = {
+        model: Object3D,
+        targetY: number,
+        mass: number,
+        needsDefaultSnappingPoints: boolean = false,
+        startTime: performance.now(),
+      };
+
+      this.isAnimatingGravity = true;
+    }
+
+    private finishGravityAnimation() {
+      if (!this.gravityAnimation) return;
+
+      const { model, targetY, needsDefaultSnappingPoints } = this.gravityAnimation;
+
+      // Ensure final position is exact
+      model.position.y = targetY;
+
+      // Generate default snap points if needed (after object is in final position)
+      if (model.userData.needsDefaultSnappingPoints) {
+        model.userData.snappingPoints = generateDefaultSnappingPoints(model);
+        delete model.userData.needsDefaultSnappingPoints;
+      }
+
+      // Clean up animation state
+      this.isAnimatingGravity = false;
+      this.gravityAnimation = null;
+
+
+      if (needsDefaultSnappingPoints) {
+        model.userData.snappingPoints =
+          generateDefaultSnappingPoints(model);
+        delete model.userData.needsDefaultSnappingPoints;
+      }
+
+      this.updateShadowsWithGLBs();
+      this[$needsRender]();
+    }
+
+    private updateGravityAnimations(currentTime: number) {
+      if (!this.isAnimatingGravity || !this.gravityAnimation) {
+        return;
+      }
+
+      const { targetY, startY, mass, model, startTime } = this.gravityAnimation;
+
+
+      const gravity = 10; // m/s²
+      const timeScale = 1000; // Convert to milliseconds
+
+      // Calculate fall time based on physics: t = sqrt(2h/g)
+      const fallDistance = Math.abs(startY - targetY);
+
+      // More lenient early exit condition for larger objects
+      if (fallDistance <= 0.001) {
+        model.position.y = targetY;
+        this.finishGravityAnimation();
+        return;
+      }
+
+      // Calculate fall time - make it faster for better visual feedback
+      const baseFallTime = Math.sqrt((2 * fallDistance) / gravity) * timeScale;
+
+      // Simplified mass multiplier - avoid complex calculations that might fail
+      // const massMultiplier = Math.max(0.5, Math.min(2.0, mass / 10.0));
+      const massMultiplier = Math.max(0.7, Math.min(1.3, 1.0 / Math.sqrt(mass)));
+      const adjustedFallTime = Math.max(
+        200, // Increased minimum time
+        Math.min(1000, baseFallTime * massMultiplier) // Increased maximum time
+      );
+
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / adjustedFallTime, 1.0);
+
+      // Use easing for natural-looking gravity acceleration
+      const easedProgress = progress * progress;
+
+      // Calculate current position with more robust math
+      let currentY: number;
+      if (startY > targetY) {
+        // Falling down
+        currentY = startY - (fallDistance * easedProgress);
+        model.position.y = Math.max(currentY, targetY);
+      } else {
+        // Falling up (unusual case)
+        currentY = startY + (fallDistance * easedProgress);
+        model.position.y = Math.min(currentY, targetY);
+      }
+
+      // Trigger render
+      this.updateShadowsWithGLBs();
+      this[$needsRender]();
+
+      // Continue animation if not finished
+      if (progress >= 1.0) {
+        // Ensure final position is exact
+        model.position.y = targetY;
+        this.finishGravityAnimation();
+        return
+      }
     }
 
     /**
@@ -2429,6 +2451,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this.isAnimatingRotation) {
         this.updateRotationAnimation(time);
       }
+
+      if (this.isAnimatingGravity && this.gravityAnimation) {
+        this.updateGravityAnimations(time);
+      }
+
 
       this.updateAllSlots();
     }
