@@ -72,6 +72,7 @@ export declare interface LDPuzzlerInterface {
   setSrcFromBuffer(buffer: ArrayBuffer): void;
   placeGLB(src: string, options?: PlacementOptions): Promise<void>;
   rotateSelected(deg?: number): void;
+  toggleSnappingPoints(visible?: boolean): void;
   deleteSelected(): void;
   deleteObjectByFileName(filename: string): void;
 }
@@ -266,7 +267,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Show or hide snapping point slots
      */
-    private setSnappingPointSlotsVisible(visible: boolean) {
+    public toggleSnappingPoints(visible?: boolean) {
+      if (visible === undefined) {
+        visible = !this.snappingPointsVisible;
+      }
+
       this.snappingPointsVisible = visible;
       this.updateSnappingPointSlots();
     }
@@ -707,7 +712,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Force update of snapping point slots and break link slots after reorganization
       setTimeout(() => {
         // Always update snapping points for all objects
-        this.setSnappingPointSlotsVisible(true);
+        this.toggleSnappingPoints(true);
         this.updateSnappingPointSlots();
 
         // Show break link slots if we still have a group selected
@@ -1691,8 +1696,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
       if (targetObject) {
         // Use slot-based rendering instead of Three.js meshes
-        this.setSnappingPointSlotsVisible(false);
-        this.setSnappingPointSlotsVisible(true);
+        this.toggleSnappingPoints(false);
+        this.toggleSnappingPoints(true);
       }
 
       // Show break link slots since we now have a grouped object selected
@@ -1878,7 +1883,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
       if (targetObject) {
         // Use slot-based rendering instead of Three.js meshes
-        this.setSnappingPointSlotsVisible(true);
+        this.toggleSnappingPoints(true);
       }
 
       // Show break link slots if a grouped object is selected
@@ -1914,7 +1919,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const targetObject = this.findTargetObject();
         if (targetObject) {
           // Use slot-based rendering instead of Three.js meshes
-          this.setSnappingPointSlotsVisible(false);
+          this.toggleSnappingPoints(false);
         }
 
         // Stop any active rotation animation
@@ -2158,7 +2163,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Force an explicit update of snapping point slots after a brief delay
         // to ensure the ungrouped objects are properly processed
         setTimeout(() => {
-          this.setSnappingPointSlotsVisible(true);
+          this.toggleSnappingPoints(true);
           this.updateSnappingPointSlots();
         }, 10);
       } else {
