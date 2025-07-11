@@ -76,46 +76,86 @@ export class Cursor extends CursorBase {
     const d = this.radius * ARROW_DEPTH;
     // const geometry = new BoxGeometry(w, h, d);
 
+    // Each face gets its own 4 unique vertices for flat shading
     const vertices = new Float32Array([
       // Front face (z = +d/2)
       -w / 2,
       h / 2,
-      d / 2, // 0: top-left-front
+      d / 2, // 0 top-left-front
       w / 2,
       h / 2,
-      d / 2, // 1: top-right-front
+      d / 2, // 1 top-right-front
       -w / 2,
       -h / 2,
-      d / 2, // 2: bottom-left-front
+      d / 2, // 2 bottom-left-front
       w / 2,
       -h / 2,
-      d / 2, // 3: bottom-right-front
+      d / 2, // 3 bottom-right-front
+      // Right face (x = +w/2)
+      w / 2,
+      h / 2,
+      d / 2, // 4 top-left-front (same as 1)
+      w / 2,
+      h / 2,
+      -d / 2, // 5 top-right-back
+      w / 2,
+      -h / 2,
+      d / 2, // 6 bottom-left-front (same as 3)
+      w / 2,
+      -h / 2,
+      -d / 2, // 7 bottom-right-back
       // Back face (z = -d/2)
-      -w / 2,
-      h / 2,
-      -d / 2, // 4: top-left-back
       w / 2,
       h / 2,
-      -d / 2, // 5: top-right-back
+      -d / 2, // 8 top-right-back (same as 5)
       -w / 2,
-      -h / 2,
-      -d / 2, // 6: bottom-left-back
+      h / 2,
+      -d / 2, // 9 top-left-back
       w / 2,
       -h / 2,
-      -d / 2, // 7: bottom-right-back
+      -d / 2, //10 bottom-right-back (same as 7)
+      -w / 2,
+      -h / 2,
+      -d / 2, //11 bottom-left-back
+      // Left face (x = -w/2)
+      -w / 2,
+      h / 2,
+      -d / 2, //12 top-left-back (same as 9)
+      -w / 2,
+      h / 2,
+      d / 2, //13 top-left-front (same as 0)
+      -w / 2,
+      -h / 2,
+      -d / 2, //14 bottom-left-back (same as 11)
+      -w / 2,
+      -h / 2,
+      d / 2, //15 bottom-left-front (same as 2)
+      // Top face (y = +h/2)
+      -w / 2,
+      h / 2,
+      -d / 2, //16 top-left-back (same as 9)
+      w / 2,
+      h / 2,
+      -d / 2, //17 top-right-back (same as 5)
+      -w / 2,
+      h / 2,
+      d / 2, //18 top-left-front (same as 0)
+      w / 2,
+      h / 2,
+      d / 2, //19 top-right-front (same as 1)
     ]);
 
     const indices = [
-      // Front face
-      0, 1, 2, 1, 3, 2,
-      // Right face
-      1, 5, 3, 5, 7, 3,
-      // Back face
-      5, 4, 7, 4, 6, 7,
-      // Left face
-      4, 0, 6, 0, 2, 6,
-      // Top face
-      4, 5, 0, 5, 1, 0,
+      // Front face (CCW)
+      0, 2, 1, 1, 2, 3,
+      // Right face (CCW)
+      4, 6, 5, 5, 6, 7,
+      // Back face (CCW)
+      8, 10, 9, 9, 10, 11,
+      // Left face (CCW)
+      12, 14, 13, 13, 14, 15,
+      // Top face (CCW)
+      16, 18, 17, 17, 18, 19,
       // (No bottom face)
     ];
 
@@ -136,107 +176,92 @@ export class Cursor extends CursorBase {
     const w = this.radius;
     const h = this.radius * GOLDEN_RATIO;
     const d = this.radius * ARROW_DEPTH;
-    const shaftW = this.radius * GOLDEN_RATIO;
-    const gap = shaftW;
-    // Vertices: 8 total (4 front, 4 back)
-    // 0: left outer top, 1: left inner top, 2: right inner top, 3: right outer top (front)
-    // 4: left outer top, 5: left inner top, 6: right inner top, 7: right outer top (back)
-    // 8: bottom front, 9: bottom back
+
+    // Unique vertices for each face for flat shading (no split top)
     const vertices = new Float32Array([
-      // Front face (z = +d/2)
+      // Top face (y = 0)
       -w / 2,
       0,
-      d / 2, // 0: left outer top
-      -gap / 2,
-      0,
-      d / 2, // 1: left inner top
-      gap / 2,
-      0,
-      d / 2, // 2: right inner top
+      d / 2, // 0: left front
       w / 2,
       0,
-      d / 2, // 3: right outer top
+      d / 2, // 1: right front
+      w / 2,
+      0,
+      -d / 2, // 2: right back
+      -w / 2,
+      0,
+      -d / 2, // 3: left back
+      // Bottom face (y = -h)
       0,
       -h,
-      d / 2, // 4: bottom front
-      // Back face (z = -d/2)
+      d / 2, // 4: front bottom
+      0,
+      -h,
+      -d / 2, // 5: back bottom
+      // Left face (x = -w/2)
       -w / 2,
       0,
-      -d / 2, // 5: left outer top
-      -gap / 2,
+      d / 2, // 6: top front
+      -w / 2,
       0,
-      -d / 2, // 6: left inner top
-      gap / 2,
+      -d / 2, // 7: top back
       0,
-      -d / 2, // 7: right inner top
-      w / 2,
-      0,
-      -d / 2, // 8: right outer top
+      -h,
+      d / 2, // 8: bottom front
       0,
       -h,
       -d / 2, // 9: bottom back
+      // Right face (x = +w/2)
+      w / 2,
+      0,
+      d / 2, //10: top front
+      w / 2,
+      0,
+      -d / 2, //11: top back
+      0,
+      -h,
+      d / 2, //12: bottom front
+      0,
+      -h,
+      -d / 2, //13: bottom back
+      // Front face (z = +d/2)
+      -w / 2,
+      0,
+      d / 2, //14: top left
+      w / 2,
+      0,
+      d / 2, //15: top right
+      0,
+      -h,
+      d / 2, //16: bottom
+      // Back face (z = -d/2)
+      -w / 2,
+      0,
+      -d / 2, //17: top left
+      w / 2,
+      0,
+      -d / 2, //18: top right
+      0,
+      -h,
+      -d / 2, //19: bottom
     ]);
-    // Indices: split top, sides, and bottom
+
     const indices = [
-      // Front face (split top)
-      0,
-      1,
-      4, // left triangle
-      1,
-      2,
-      4, // center triangle (gap)
-      2,
-      3,
-      4, // right triangle
-      // Back face (split top)
-      5,
-      9,
-      6, // left triangle
-      6,
-      9,
-      7, // center triangle (gap)
-      7,
-      9,
-      8, // right triangle
-      // Bottom face
-      4,
-      9,
-      5,
-      4,
-      5,
-      0, // left
-      4,
-      3,
-      8,
-      4,
-      8,
-      9, // right
-      // Sides
-      0,
-      5,
-      1,
-      1,
-      5,
-      6, // left outer
-      1,
-      6,
-      2,
-      2,
-      6,
-      7, // left inner
-      2,
-      7,
-      3,
-      3,
-      7,
-      8, // right inner
-      3,
-      8,
-      4,
-      4,
-      8,
-      9, // right outer
+      // Top face (CCW)
+      0, 1, 2, 0, 2, 3,
+      // Bottom face (CCW)
+      4, 5, 9, 4, 9, 8,
+      // Left face (CCW, fix winding)
+      6, 7, 8, 7, 9, 8,
+      // Right face (CCW, fix winding)
+      10, 12, 11, 11, 12, 13,
+      // Front face (CCW)
+      14, 16, 15,
+      // Back face (CCW)
+      17, 18, 19,
     ];
+
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new Float32BufferAttribute(vertices, 3));
     geometry.setIndex(indices);
