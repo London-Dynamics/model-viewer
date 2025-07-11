@@ -17,9 +17,12 @@ export class Cursor extends Object3D {
     this.scene = scene;
     this.targetObject = targetObject;
 
-    // Add to target object and position at placement level
+    // default positoin outside window
+    this.position.set(10000, 10000, 10000);
+
+    // Add to target object and position at floor level
     targetObject.add(this);
-    this.positionAtPlacementLevel();
+    this.positionAtFloorLevel();
   }
 
   // Public API methods
@@ -59,7 +62,7 @@ export class Cursor extends Object3D {
     this.needsRender = null;
   }
 
-  private positionAtPlacementLevel() {
+  private positionAtFloorLevel() {
     if (this.scene && this.scene.boundingBox) {
       // Position at the minimum Y of the bounding box (placement level)
       this.position.y = this.scene.boundingBox.min.y;
