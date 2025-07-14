@@ -2184,7 +2184,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           object,
           currentRotation,
           targetRotation,
-          direction
         );
       } else {
         // For individual objects, use the normal rotation animation
@@ -2199,7 +2198,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       group: Object3D,
       startRotation: number,
       targetRotation: number,
-      direction: string
     ) {
       // Calculate the group's bounding box to find its center
       const boundingBox = new Box3().setFromObject(group);
