@@ -606,9 +606,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               }
             });
 
-            // Reset snapping points to fresh defaults for orphaned objects
-            // This ensures all snapping points are available for new connections
-            //obj.userData.snappingPoints = generateDefaultSnappingPoints(obj);
+            // Restore original snapping points if available
+            if (obj.userData.originalSnappingPoints) {
+              obj.userData.snappingPoints = JSON.parse(
+                JSON.stringify(obj.userData.originalSnappingPoints)
+              );
+            }
 
             if (!firstGroupOrObject) {
               firstGroupOrObject = obj;
@@ -1020,7 +1023,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 'Using provided snapping points:',
                 options.snappingPoints
               );
-              gltf.scene.userData.snappingPoints = options.snappingPoints;
+              // Store both active and original snap points (deep copy)
+              gltf.scene.userData.snappingPoints = JSON.parse(
+                JSON.stringify(options.snappingPoints)
+              );
+              gltf.scene.userData.originalSnappingPoints = JSON.parse(
+                JSON.stringify(options.snappingPoints)
+              );
             } else {
               // Generate default snap points if none provided
               // We'll generate them after the object is positioned and added to the scene
