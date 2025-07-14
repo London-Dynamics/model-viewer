@@ -13,16 +13,19 @@
  * limitations under the License.
  */
 
-import {HAS_WEBXR_DEVICE_API, HAS_WEBXR_HIT_TEST_API, IS_WEBXR_AR_CANDIDATE} from './constants.js';
+import {
+  HAS_WEBXR_DEVICE_API,
+  HAS_WEBXR_HIT_TEST_API,
+  IS_WEBXR_AR_CANDIDATE,
+} from './constants.js';
 
 export type Constructor<T = object, U = object> = {
-  new (...args: any[]): T,
-  prototype: T
-}&U;
+  new (...args: any[]): T;
+  prototype: T;
+} & U;
 
-export const deserializeUrl = (url: string|null): string|null =>
-    (!!url && url !== 'null') ? toFullUrl(url) : null;
-
+export const deserializeUrl = (url: string | null): string | null =>
+  !!url && url !== 'null' ? toFullUrl(url) : null;
 
 export const assertIsArCandidate = () => {
   if (IS_WEBXR_AR_CANDIDATE) {
@@ -40,10 +43,11 @@ export const assertIsArCandidate = () => {
   }
 
   throw new Error(
-      `The following APIs are required for AR, but are missing in this browser: ${
-          missingApis.join(', ')}`);
+    `The following APIs are required for AR, but are missing in this browser: ${missingApis.join(
+      ', '
+    )}`
+  );
 };
-
 
 /**
  * Converts a partial URL string to a fully qualified URL string.
@@ -56,7 +60,6 @@ export const toFullUrl = (partialUrl: string): string => {
   return url.toString();
 };
 
-
 /**
  * Returns a throttled version of a given function that is only invoked at most
  * once within a given threshold of time in milliseconds.
@@ -65,7 +68,7 @@ export const toFullUrl = (partialUrl: string): string => {
  * threshold for cases when immediate invocation is desired.
  */
 export const throttle = (fn: (...args: Array<any>) => any, ms: number) => {
-  let timer: number|null = null;
+  let timer: number | null = null;
 
   const throttled = (...args: Array<any>) => {
     if (timer != null) {
@@ -74,7 +77,7 @@ export const throttle = (fn: (...args: Array<any>) => any, ms: number) => {
 
     fn(...args);
 
-    timer = self.setTimeout(() => timer = null, ms);
+    timer = self.setTimeout(() => (timer = null), ms);
   };
 
   throttled.flush = () => {
@@ -88,7 +91,7 @@ export const throttle = (fn: (...args: Array<any>) => any, ms: number) => {
 };
 
 export const debounce = (fn: (...args: Array<any>) => any, ms: number) => {
-  let timer: number|null = null;
+  let timer: number | null = null;
 
   return (...args: Array<any>) => {
     if (timer != null) {
@@ -102,7 +105,6 @@ export const debounce = (fn: (...args: Array<any>) => any, ms: number) => {
   };
 };
 
-
 /**
  * @param {Number} edge
  * @param {Number} value
@@ -112,16 +114,17 @@ export const step = (edge: number, value: number): number => {
   return value < edge ? 0 : 1;
 };
 
-
 /**
  * @param {Number} value
  * @param {Number} lowerLimit
  * @param {Number} upperLimit
  * @return {Number} value clamped within lowerLimit..upperLimit
  */
-export const clamp =
-    (value: number, lowerLimit: number, upperLimit: number): number =>
-        Math.max(lowerLimit, Math.min(upperLimit, value));
+export const clamp = (
+  value: number,
+  lowerLimit: number,
+  upperLimit: number
+): number => Math.max(lowerLimit, Math.min(upperLimit, value));
 
 /**
  * Debug mode is enabled when one of the two following conditions is true:
@@ -135,32 +138,39 @@ export const isDebugMode = (() => {
   const debugQueryParameterName = 'model-viewer-debug-mode';
   const debugQueryParameter = new RegExp(`[?&]${debugQueryParameterName}(&|$)`);
 
-  return () => ((self as any).ModelViewerElement &&
-                (self as any).ModelViewerElement.debugMode) ||
-      (self.location && self.location.search &&
-       self.location.search.match(debugQueryParameter));
+  return () =>
+    ((self as any).ModelViewerElement &&
+      (self as any).ModelViewerElement.debugMode) ||
+    (self.location &&
+      self.location.search &&
+      self.location.search.match(debugQueryParameter));
 })();
 
 export type PredicateFunction<T = void> = (value: T) => boolean;
 
 export const timePasses = (ms: number = 0): Promise<void> =>
-    new Promise(resolve => setTimeout(resolve, ms));
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * @param {EventTarget|EventDispatcher} target
  * @param {string} eventName
  * @param {?Function} predicate
  */
-export const waitForEvent =
-    <T>(target: any,
-        eventName: string,
-        predicate: PredicateFunction<T>|null = null): Promise<T> =>
-        new Promise(resolve => {
-          function handler(event: T) {
-            if (!predicate || predicate(event)) {
-              resolve(event);
-              target.removeEventListener(eventName, handler);
-            }
-          }
-          target.addEventListener(eventName, handler);
-        });
+export const waitForEvent = <T>(
+  target: any,
+  eventName: string,
+  predicate: PredicateFunction<T> | null = null
+): Promise<T> =>
+  new Promise((resolve) => {
+    function handler(event: T) {
+      if (!predicate || predicate(event)) {
+        resolve(event);
+        target.removeEventListener(eventName, handler);
+      }
+    }
+    target.addEventListener(eventName, handler);
+  });
+
+export const cloneObject = <T extends object>(obj: T): T => {
+  return JSON.parse(JSON.stringify(obj)) as T;
+};

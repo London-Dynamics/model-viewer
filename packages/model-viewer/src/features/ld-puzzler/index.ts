@@ -39,7 +39,7 @@ import ModelViewerElementBase, {
 import { $controls } from '../controls.js';
 import { $selectObjectForControls } from '../ld-floating-control-strip.js';
 
-import { Constructor } from '../../utilities.js';
+import { Constructor, cloneObject } from '../../utilities.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
 import {
   SnappingPoint,
@@ -608,8 +608,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             // Restore original snapping points if available
             if (obj.userData.originalSnappingPoints) {
-              obj.userData.snappingPoints = JSON.parse(
-                JSON.stringify(obj.userData.originalSnappingPoints)
+              obj.userData.snappingPoints = cloneObject(
+                obj.userData.originalSnappingPoints
               );
             }
 
@@ -658,7 +658,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           // Reset snapping points to fresh defaults for orphaned objects
           // This ensures all snapping points are available for new connections
-          //child.userData.snappingPoints = generateDefaultSnappingPoints(child);
+          if (child.userData.originalSnappingPoints) {
+            // Restore original snapping points if available
+            child.userData.snappingPoints = cloneObject(
+              child.userData.originalSnappingPoints
+            );
+          }
         });
 
         // Select the first object
@@ -1024,11 +1029,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 options.snappingPoints
               );
               // Store both active and original snap points (deep copy)
-              gltf.scene.userData.snappingPoints = JSON.parse(
-                JSON.stringify(options.snappingPoints)
+              gltf.scene.userData.snappingPoints = cloneObject(
+                options.snappingPoints
               );
-              gltf.scene.userData.originalSnappingPoints = JSON.parse(
-                JSON.stringify(options.snappingPoints)
+
+              gltf.scene.userData.originalSnappingPoints = cloneObject(
+                options.snappingPoints
               );
             } else {
               // Generate default snap points if none provided
@@ -2096,10 +2102,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           // Remove any group-related flags
           delete child.userData.isInGroup;
 
-          // Ensure snapping points are preserved and restored if needed
-          if (!child.userData.snappingPoints) {
-            // If snapping points are missing, try to restore from defaults
-            //child.userData.snappingPoints = generateDefaultSnappingPoints(child);
+          if (child.userData.originalSnappingPoints) {
+            child.userData.snappingPoints = cloneObject(
+              child.userData.originalSnappingPoints
+            );
           }
 
           ungroupedObjects.push(child);
