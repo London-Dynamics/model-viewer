@@ -1105,6 +1105,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               this[$needsRender]();
 
               setTimeout(() => {
+                this.isAnimatingGravity = true;
                 const mass = options.mass || 1.0; // Default mass of 1kg
                 this.gravityAnimation = {
                   model: gltf.scene,
@@ -1112,9 +1113,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                   startY: dropStartY,
                   mass: mass,
                   //needsDefaultSnappingPoints: gltf.scene.userData.needsDefaultSnappingPoints,
-                  startTime: performance.now(),
+                  elapsedTime: 0,
                 };
-                this.isAnimatingGravity = true;
               }, 120);
 
               resolve();
@@ -2191,10 +2191,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       targetRotation = currentRotation + rad;
 
-      console.log(
-        `Rotating object ${object.name} from ${currentRotation} to ${targetRotation}`
-      );
-
       // For groups, we need to handle rotation around the group's center
       if (object.userData.isSnappedGroup) {
         this.rotateGroupAroundCenter(object, currentRotation, targetRotation);
@@ -2246,7 +2242,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       targetY: number;
       startY: number;
       mass: number;
-      startTime: number; // Add this
+      elapsedTime: number;
     } | null = null;
 
     private startGravityAnimation(
@@ -2259,8 +2255,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         model: Object3D,
         targetY: number,
         mass: number,
-        needsDefaultSnappingPoints: (boolean = false),
-        startTime: performance.now(),
+        elapsedTime: 0,
       };
 
       this.isAnimatingGravity = true;
@@ -2269,8 +2264,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private finishGravityAnimation() {
       if (!this.gravityAnimation) return;
 
-      const { model, targetY, needsDefaultSnappingPoints } =
-        this.gravityAnimation;
+      const { model, targetY } = this.gravityAnimation;
 
       // Ensure final position is exact
       model.position.y = targetY;
@@ -2285,21 +2279,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.isAnimatingGravity = false;
       this.gravityAnimation = null;
 
-      if (needsDefaultSnappingPoints) {
-        //model.userData.snappingPoints = generateDefaultSnappingPoints(model);
-        delete model.userData.needsDefaultSnappingPoints;
-      }
-
       this.updateShadowsWithGLBs();
       this[$needsRender]();
     }
 
-    private updateGravityAnimations(currentTime: number) {
+    private updateGravityAnimation(_: number, delta: number) {
       if (!this.isAnimatingGravity || !this.gravityAnimation) {
         return;
       }
 
-      const { targetY, startY, mass, model, startTime } = this.gravityAnimation;
+      const { targetY, startY, mass, model, elapsedTime } =
+        this.gravityAnimation;
 
       const gravity = 10; // m/s²
       const timeScale = 1000; // Convert to milliseconds
@@ -2328,8 +2318,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         Math.min(1000, baseFallTime * massMultiplier) // Increased maximum time
       );
 
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / adjustedFallTime, 1.0);
+      const progress = Math.min(elapsedTime / adjustedFallTime, 1.0);
+
+      this.gravityAnimation.elapsedTime += delta;
 
       // Use easing for natural-looking gravity acceleration
       const easedProgress = progress * progress;
@@ -2372,7 +2363,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         object: object,
         startRotation: startRotation,
         targetRotation: targetRotation,
-        startTime: performance.now(),
+        elapsedTime: 0,
         duration: 500, // Animation duration in milliseconds
       };
     }
@@ -2380,15 +2371,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Update the rotation animation
      */
-    private updateRotationAnimation(currentTime: number) {
+    private updateRotationAnimation(_: number, delta: number) {
       if (!this.isAnimatingRotation || !this.rotationAnimation) {
         return;
       }
 
-      const { object, startRotation, targetRotation, startTime, duration } =
+      const { object, startRotation, targetRotation, elapsedTime, duration } =
         this.rotationAnimation;
-      const elapsed = currentTime - startTime;
-      const progress = Math.min(elapsed / duration, 1);
+
+      const progress = Math.min(elapsedTime / duration, 1);
+
+      this.rotationAnimation.elapsedTime += delta;
 
       // Use ease-out cubic easing for smooth animation
       const easeProgress = 1 - Math.pow(1 - progress, 3);
@@ -2461,11 +2454,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Update rotation animation if active
       if (this.isAnimatingRotation) {
-        this.updateRotationAnimation(time);
+        this.updateRotationAnimation(time, delta);
       }
 
       if (this.isAnimatingGravity && this.gravityAnimation) {
-        this.updateGravityAnimations(time);
+        this.updateGravityAnimation(time, delta);
       }
 
       this.updateAllSlots();
