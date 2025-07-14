@@ -2227,7 +2227,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         object: group,
         startRotation: startRotation,
         targetRotation: targetRotation,
-        startTime: performance.now(),
+        elapsedTime: 0,
         duration: 500,
         isGroup: true,
         groupCenter: center,
