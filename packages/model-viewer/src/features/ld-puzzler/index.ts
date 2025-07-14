@@ -69,7 +69,7 @@ export type PlacementOptions = {
     width?: number; // Width of the object for snapping calculations
     height?: number; // Height of the object for snapping calculations
     depth?: number; // Depth of the object for snapping calculations
-  }
+  };
 };
 
 export declare interface LDPuzzlerInterface {
@@ -608,7 +608,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             // Reset snapping points to fresh defaults for orphaned objects
             // This ensures all snapping points are available for new connections
-            obj.userData.snappingPoints = generateDefaultSnappingPoints(obj);
+            //obj.userData.snappingPoints = generateDefaultSnappingPoints(obj);
 
             if (!firstGroupOrObject) {
               firstGroupOrObject = obj;
@@ -655,7 +655,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           // Reset snapping points to fresh defaults for orphaned objects
           // This ensures all snapping points are available for new connections
-          child.userData.snappingPoints = generateDefaultSnappingPoints(child);
+          //child.userData.snappingPoints = generateDefaultSnappingPoints(child);
         });
 
         // Select the first object
@@ -1011,14 +1011,20 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               placedAt: Date.now(),
             };
 
+            console.log('Placing GLB with metadata:', options);
+
             // Handle snap points
             if (options.snappingPoints && options.snappingPoints.length > 0) {
               // Use provided snap points
+              console.log(
+                'Using provided snapping points:',
+                options.snappingPoints
+              );
               gltf.scene.userData.snappingPoints = options.snappingPoints;
             } else {
               // Generate default snap points if none provided
               // We'll generate them after the object is positioned and added to the scene
-              gltf.scene.userData.needsDefaultSnappingPoints = true;
+              //gltf.scene.userData.needsDefaultSnappingPoints = true;
             }
 
             // Pre-cache mesh references for efficient outline selection
@@ -1083,7 +1089,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               this.updateShadowsWithGLBs();
               this[$needsRender]();
 
-
               setTimeout(() => {
                 const mass = options.mass || 1.0; // Default mass of 1kg
                 this.gravityAnimation = {
@@ -1091,7 +1096,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                   targetY: finalPosition.y,
                   startY: dropStartY,
                   mass: mass,
-                  needsDefaultSnappingPoints: gltf.scene.userData.needsDefaultSnappingPoints,
+                  //needsDefaultSnappingPoints: gltf.scene.userData.needsDefaultSnappingPoints,
                   startTime: performance.now(),
                 };
                 this.isAnimatingGravity = true;
@@ -2085,8 +2090,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           // Ensure snapping points are preserved and restored if needed
           if (!child.userData.snappingPoints) {
             // If snapping points are missing, try to restore from defaults
-            child.userData.snappingPoints =
-              generateDefaultSnappingPoints(child);
+            //child.userData.snappingPoints = generateDefaultSnappingPoints(child);
           }
 
           ungroupedObjects.push(child);
@@ -2156,8 +2160,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       return visualizationBox;
     }
 
-
-
     private updateAllSlots() {
       this.updateSnappingPointSlots();
       this.updateBreakLinkSlots();
@@ -2180,11 +2182,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // For groups, we need to handle rotation around the group's center
       if (object.userData.isSnappedGroup) {
-        this.rotateGroupAroundCenter(
-          object,
-          currentRotation,
-          targetRotation,
-        );
+        this.rotateGroupAroundCenter(object, currentRotation, targetRotation);
       } else {
         // For individual objects, use the normal rotation animation
         this.startRotationAnimation(object, currentRotation, targetRotation);
@@ -2197,7 +2195,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private rotateGroupAroundCenter(
       group: Object3D,
       startRotation: number,
-      targetRotation: number,
+      targetRotation: number
     ) {
       // Calculate the group's bounding box to find its center
       const boundingBox = new Box3().setFromObject(group);
@@ -2239,14 +2237,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private startGravityAnimation(
       model: Object3D,
       targetY: number,
-      mass: number,
-      needsDefaultSnappingPoints: boolean = false
+      mass: number
+      //needsDefaultSnappingPoints: boolean = false
     ) {
       this.gravityAnimation = {
         model: Object3D,
         targetY: number,
         mass: number,
-        needsDefaultSnappingPoints: boolean = false,
+        needsDefaultSnappingPoints: (boolean = false),
         startTime: performance.now(),
       };
 
@@ -2256,14 +2254,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private finishGravityAnimation() {
       if (!this.gravityAnimation) return;
 
-      const { model, targetY, needsDefaultSnappingPoints } = this.gravityAnimation;
+      const { model, targetY, needsDefaultSnappingPoints } =
+        this.gravityAnimation;
 
       // Ensure final position is exact
       model.position.y = targetY;
 
       // Generate default snap points if needed (after object is in final position)
       if (model.userData.needsDefaultSnappingPoints) {
-        model.userData.snappingPoints = generateDefaultSnappingPoints(model);
+        //model.userData.snappingPoints = generateDefaultSnappingPoints(model);
         delete model.userData.needsDefaultSnappingPoints;
       }
 
@@ -2271,10 +2270,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.isAnimatingGravity = false;
       this.gravityAnimation = null;
 
-
       if (needsDefaultSnappingPoints) {
-        model.userData.snappingPoints =
-          generateDefaultSnappingPoints(model);
+        //model.userData.snappingPoints = generateDefaultSnappingPoints(model);
         delete model.userData.needsDefaultSnappingPoints;
       }
 
@@ -2288,7 +2285,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       const { targetY, startY, mass, model, startTime } = this.gravityAnimation;
-
 
       const gravity = 10; // m/s²
       const timeScale = 1000; // Convert to milliseconds
@@ -2308,7 +2304,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Simplified mass multiplier - avoid complex calculations that might fail
       // const massMultiplier = Math.max(0.5, Math.min(2.0, mass / 10.0));
-      const massMultiplier = Math.max(0.7, Math.min(1.3, 1.0 / Math.sqrt(mass)));
+      const massMultiplier = Math.max(
+        0.7,
+        Math.min(1.3, 1.0 / Math.sqrt(mass))
+      );
       const adjustedFallTime = Math.max(
         200, // Increased minimum time
         Math.min(1000, baseFallTime * massMultiplier) // Increased maximum time
@@ -2324,11 +2323,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       let currentY: number;
       if (startY > targetY) {
         // Falling down
-        currentY = startY - (fallDistance * easedProgress);
+        currentY = startY - fallDistance * easedProgress;
         model.position.y = Math.max(currentY, targetY);
       } else {
         // Falling up (unusual case)
-        currentY = startY + (fallDistance * easedProgress);
+        currentY = startY + fallDistance * easedProgress;
         model.position.y = Math.min(currentY, targetY);
       }
 
@@ -2341,7 +2340,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Ensure final position is exact
         model.position.y = targetY;
         this.finishGravityAnimation();
-        return
+        return;
       }
     }
 
@@ -2453,7 +2452,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this.isAnimatingGravity && this.gravityAnimation) {
         this.updateGravityAnimations(time);
       }
-
 
       this.updateAllSlots();
     }
