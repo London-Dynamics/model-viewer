@@ -435,6 +435,7 @@
 
                               modelViewer.removeAttribute('floor-disc-cursor');
                               modelViewer.removeAttribute('floor-arrow-cursor');
+
                               if (position) {
                                 const filePath = `../../shared-assets/models/${dragData.filename}`;
 
@@ -449,13 +450,20 @@
                                   snappingPoints
                                 );
 
-                                modelViewer.placeGLB(filePath, {
-                                  name: dragData.name || undefined,
-                                  position,
-                                  mass: dragData.mass,
-                                  floorOffset: dragData.floorOffset,
-                                  snappingPoints,
-                                });
+                                modelViewer.placeGLB(
+                                  filePath,
+                                  {
+                                    name: dragData.name || undefined,
+                                    position,
+                                    mass: dragData.mass,
+                                    floorOffset: dragData.floorOffset,
+                                    snappingPoints,
+                                  },
+                                  {
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                  }
+                                );
                               }
                             }
 

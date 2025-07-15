@@ -8,20 +8,23 @@ import {
   RingGeometry,
   MeshBasicMaterial,
   Camera,
+  Raycaster,
+  Vector2,
 } from 'three';
 
 export const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in meters
+export const MOUSE_PICK_RADIUS_MULTIPLIER = 3; // Multiplier for mouse picking snapRadius threshold (ray-to-point is more sensitive than point-to-point)
 
 export type SnappingPoint = {
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
-  attraction?: number;
-  attracts?: string[];
-  attractedTo?: string[];
+  snapRadius?: number;
+  accepts?: string[];
+  provides?: string[];
   isUsed?: boolean; // Track if this snap point is already connected
 };
 
-export const DEFAULT_SNAP_ATTRACTION = SNAP_POINT_DIAMETER * 2;
+export const DEFAULT_SNAP_RADIUS = SNAP_POINT_DIAMETER * 2;
 
 /**
  * Generate default snap points on the middle of each side of the bounding box.
@@ -46,7 +49,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z + size.z / 2,
       },
       rotation: { x: 0, y: 0, z: 0 },
-      attraction: DEFAULT_SNAP_ATTRACTION,
+      snapRadius: DEFAULT_SNAP_RADIUS,
     },
     // Back side (negative Z)
     {
@@ -56,7 +59,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z - size.z / 2,
       },
       rotation: { x: 0, y: Math.PI, z: 0 },
-      attraction: DEFAULT_SNAP_ATTRACTION,
+      snapRadius: DEFAULT_SNAP_RADIUS,
     },
     // Right side (positive X)
     {
@@ -66,7 +69,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z,
       },
       rotation: { x: 0, y: Math.PI / 2, z: 0 },
-      attraction: DEFAULT_SNAP_ATTRACTION,
+      snapRadius: DEFAULT_SNAP_RADIUS,
     },
     // Left side (negative X)
     {
@@ -76,7 +79,7 @@ export function generateDefaultSnappingPoints(
         z: localCenter.z,
       },
       rotation: { x: 0, y: -Math.PI / 2, z: 0 },
-      attraction: DEFAULT_SNAP_ATTRACTION,
+      snapRadius: DEFAULT_SNAP_RADIUS,
     },
   ];
 }
@@ -315,6 +318,15 @@ export function getSnappingPointWorldPosition(
   return object.localToWorld(localPos);
 }
 
+// Private function to check if two snapping points are compatible (accepts/provides)
+function snappingPointsAreCompatible(
+  _draggedPoint: SnappingPoint,
+  _targetPoint: SnappingPoint
+): boolean {
+  // TODO: Implement actual logic. For now, always return true.
+  return true;
+}
+
 /**
  * Find potential snapping connections between two objects
  */
@@ -350,6 +362,9 @@ export function findSnappingConnections(
       // Skip already used snap points
       if (targetPoint.isUsed) return;
 
+      // Check if accepts/provides match
+      if (!snappingPointsAreCompatible(draggedPoint, targetPoint)) return;
+
       const draggedWorldPos = getSnappingPointWorldPosition(
         draggedObject,
         draggedPoint
@@ -360,10 +375,8 @@ export function findSnappingConnections(
       );
       const distance = draggedWorldPos.distanceTo(targetWorldPos);
 
-      const draggedAttraction =
-        draggedPoint.attraction ?? DEFAULT_SNAP_ATTRACTION;
-      const targetAttraction =
-        targetPoint.attraction ?? DEFAULT_SNAP_ATTRACTION;
+      const draggedAttraction = draggedPoint.snapRadius ?? DEFAULT_SNAP_RADIUS;
+      const targetAttraction = targetPoint.snapRadius ?? DEFAULT_SNAP_RADIUS;
       const maxAttraction = Math.max(draggedAttraction, targetAttraction);
 
       if (distance <= maxAttraction) {
@@ -378,6 +391,68 @@ export function findSnappingConnections(
 
   // Sort by distance (closest first)
   return connections.sort((a, b) => a.distance - b.distance);
+}
+
+export function findCompatibleSnappingPoints(
+  snapPoint: SnappingPoint,
+  targetObject: Object3D
+): SnappingPoint[] {
+  if (!targetObject.userData.snappingPoints) {
+    return [];
+  }
+  const targetSnappingPoints = targetObject.userData
+    .snappingPoints as SnappingPoint[];
+  return targetSnappingPoints.filter((targetSnapPoint) =>
+    snappingPointsAreCompatible(snapPoint, targetSnapPoint)
+  );
+}
+
+export function findSnappingPointUnderMouse(
+  mouseX: number,
+  mouseY: number,
+  camera: Camera,
+  rootObject: Object3D
+): [SnappingPoint, Vector3] | null {
+  const raycaster = new Raycaster();
+  const mouse = new Vector2(
+    (mouseX / window.innerWidth) * 2 - 1,
+    -(mouseY / window.innerHeight) * 2 + 1
+  );
+
+  raycaster.setFromCamera(mouse, camera);
+  const ray = raycaster.ray;
+
+  let closestSnapPoint: SnappingPoint | null = null;
+  let closestDistance = Infinity;
+  let obj: Object3D | null = null;
+
+  // Traverse all objects with snapping points
+  rootObject.traverse((c) => {
+    if (c.userData && c.userData.snappingPoints) {
+      const snappingPoints = c.userData.snappingPoints as SnappingPoint[];
+      snappingPoints.forEach((snapPoint) => {
+        // Get world position of the snap point
+        const worldPos = getSnappingPointWorldPosition(c, snapPoint);
+        // Compute distance from ray to point
+        // Formula: |(rayOrigin - point) x rayDirection| / |rayDirection|
+        const toPoint = new Vector3().subVectors(worldPos, ray.origin);
+        const cross = new Vector3().crossVectors(toPoint, ray.direction);
+        const distance = cross.length() / ray.direction.length();
+        const snapRadius = snapPoint.snapRadius ?? DEFAULT_SNAP_RADIUS;
+        const mouseRadius = snapRadius * MOUSE_PICK_RADIUS_MULTIPLIER;
+        if (distance <= mouseRadius && distance < closestDistance) {
+          closestDistance = distance;
+          closestSnapPoint = snapPoint;
+          obj = c;
+          console.log(
+            `Found snap point at ${worldPos.toArray()} with distance ${distance}`
+          );
+        }
+      });
+    }
+  });
+
+  return closestSnapPoint && obj ? [closestSnapPoint, obj] : null;
 }
 
 /**

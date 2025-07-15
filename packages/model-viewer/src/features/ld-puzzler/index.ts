@@ -47,7 +47,9 @@ import {
   SNAP_POINT_DIAMETER,
   DEFAULT_SNAP_ATTRACTION,
   getSnappingPointWorldPosition,
+  findCompatibleSnappingPoints,
   findSnappingConnections,
+  findSnappingPointUnderMouse,
   createSnappedGroup,
   isInSnappedGroup,
   getSnappedGroup,
@@ -74,7 +76,11 @@ export type PlacementOptions = {
 
 export declare interface LDPuzzlerInterface {
   setSrcFromBuffer(buffer: ArrayBuffer): void;
-  placeGLB(src: string, options?: PlacementOptions): Promise<void>;
+  placeGLB(
+    src: string,
+    options?: PlacementOptions,
+    mouse?: { x: number; y: number }
+  ): Promise<void>;
   rotateSelected(deg?: number): void;
   toggleSnappingPoints(visible?: boolean): void;
   deleteSelected(): void;
@@ -996,7 +1002,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.rotateObject(MathUtils.degToRad(deg), selectedObject);
     }
 
-    async placeGLB(src: string, options: PlacementOptions = {}): Promise<void> {
+    async placeGLB(
+      src,
+      options: PlacementOptions = {},
+      mouse?: { x: number; y: number }
+    ): Promise<void> {
       this.deselectObject();
       const loader = new GLTFLoader();
 
@@ -1036,11 +1046,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             // Handle snap points
             if (options.snappingPoints && options.snappingPoints.length > 0) {
-              // Use provided snap points
-              console.log(
-                'Using provided snapping points:',
-                options.snappingPoints
-              );
               // Store both active and original snap points (deep copy)
               gltf.scene.userData.snappingPoints = cloneObject(
                 options.snappingPoints
@@ -1049,10 +1054,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               gltf.scene.userData.originalSnappingPoints = cloneObject(
                 options.snappingPoints
               );
-            } else {
-              // Generate default snap points if none provided
-              // We'll generate them after the object is positioned and added to the scene
-              //gltf.scene.userData.needsDefaultSnappingPoints = true;
             }
 
             // Pre-cache mesh references for efficient outline selection
@@ -1068,14 +1069,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
               // Determine the final floor position
               if (options.position) {
-                // Use provided position but ensure Y is at floor level for gravity calculation
-                // Store the original floor level if not already stored
                 if (this.originalFloorY === undefined) {
                   this.originalFloorY = this[$scene].boundingBox
                     ? this[$scene].boundingBox.min.y
                     : 0;
                 }
-
                 const floorY = this.originalFloorY;
                 const floorOffset = options.floorOffset || 0;
                 finalPosition = {
@@ -1084,7 +1082,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                   z: options.position.z,
                 };
               } else {
-                // Calculate floor position automatically with optional offset
                 this.positionModelAtFloor(gltf.scene, options.floorOffset || 0);
                 finalPosition = {
                   x: gltf.scene.position.x,
@@ -1101,8 +1098,128 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 finalPosition.z
               );
 
-              // Add model to scene first
-              targetObject.add(gltf.scene);
+              // --- SNAPPING LOGIC ---
+              // Debug: List all available snapping points in the scene
+              if (targetObject) {
+                const allSnappingPoints = [];
+                targetObject.traverse((child) => {
+                  if (
+                    child.userData.isPlacedObject &&
+                    child.userData.snappingPoints
+                  ) {
+                    child.userData.snappingPoints.forEach((snapPoint, idx) => {
+                      if (!snapPoint.isUsed) {
+                        const localPos = new Vector3(
+                          snapPoint.position.x,
+                          snapPoint.position.y,
+                          snapPoint.position.z
+                        );
+                        const worldPos = child.localToWorld(localPos.clone());
+                        allSnappingPoints.push({
+                          object: child,
+                          index: idx,
+                          worldPosition: worldPos,
+                          snapPoint,
+                        });
+                      }
+                    });
+                  }
+                });
+                console.log(
+                  '[placeGLB] All available snapping points:',
+                  allSnappingPoints
+                );
+              }
+
+              /* Debug logs for snapping point under mouse */
+              console.log('[placeGLB] mouse:', mouse);
+              console.log('[placeGLB] camera:', this[$scene].camera);
+              console.log('[placeGLB] gltf.scene:', gltf.scene);
+              const snappingPoint = mouse
+                ? findSnappingPointUnderMouse(
+                    mouse.x,
+                    mouse.y,
+                    this[$scene].camera,
+                    targetObject
+                  )
+                : null;
+              console.log(
+                '[placeGLB] Result from findSnappingPointUnderMouse:',
+                snappingPoint
+              );
+              let snapped = false;
+              if (snappingPoint) {
+                const compatibleSnappingPoints = findCompatibleSnappingPoints(
+                  snappingPoint[0],
+                  gltf.scene
+                );
+                console.log(
+                  '[placeGLB] compatibleSnappingPoints:',
+                  compatibleSnappingPoints
+                );
+                if (compatibleSnappingPoints.length) {
+                  // Snap the model to the first compatible snapping point
+                  console.log('[placeGLB] Calling setupNewConnection with:', {
+                    draggedObject: gltf.scene,
+                    targetObject: snappingPoint[1],
+                    draggedPoint: compatibleSnappingPoints[0],
+                    targetPoint: snappingPoint[0],
+                  });
+                  this.setupNewConnection(
+                    gltf.scene,
+                    snappingPoint[1],
+                    compatibleSnappingPoints[0],
+                    snappingPoint[0]
+                  );
+                  console.log(
+                    '[placeGLB] Calling completeSnapConnection with pendingSnapConnection:',
+                    this.pendingSnapConnection
+                  );
+                  this.completeSnapConnection(this.pendingSnapConnection);
+                  this.pendingSnapConnection = null;
+                  snapped = true;
+                  // --- FIX: Ensure snapped group is added to scene if it has no parent ---
+                  if (this.selectedObjects && this.selectedObjects.length > 0) {
+                    const sel = this.selectedObjects[0];
+                    if (!sel.parent && targetObject) {
+                      console.warn(
+                        '[placeGLB][FIX] Snapped group had no parent, adding to targetObject:',
+                        targetObject
+                      );
+                      targetObject.add(sel);
+                    }
+                  }
+                  // Debug: Log selectedObjects and scene graph after snapping
+                  console.log(
+                    '[placeGLB][DEBUG] After completeSnapConnection:'
+                  );
+                  console.log('  this.selectedObjects:', this.selectedObjects);
+                  if (this.selectedObjects && this.selectedObjects.length > 0) {
+                    const sel = this.selectedObjects[0];
+                    console.log('  Selected object:', sel);
+                    console.log('  Selected object children:', sel.children);
+                    console.log('  Selected object visible:', sel.visible);
+                    if (sel.parent) {
+                      console.log('  Selected object parent:', sel.parent);
+                      // Check if parent is the scene or another group
+                      let p = sel.parent;
+                      while (p) {
+                        console.log('    Parent:', p.name, p.type, p);
+                        p = p.parent;
+                      }
+                    } else {
+                      console.log('  Selected object has no parent!');
+                    }
+                  } else {
+                    console.log('  No selectedObjects after snap!');
+                  }
+                }
+              }
+
+              // If not snapped, add to scene as a free object
+              if (!snapped) {
+                targetObject.add(gltf.scene);
+              }
 
               // Track this GLB for shadow calculations
               this.addedGLBs.add(gltf.scene);
@@ -1111,12 +1228,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               if (!this.outlineEffect) {
                 this.setupOutlineSystem();
               }
-              // Start gravity animation
 
               // Update shadows to include all GLBs
               this.updateShadowsWithGLBs();
               this[$needsRender]();
 
+              // Start gravity animation
               setTimeout(() => {
                 this.isAnimatingGravity = true;
                 const mass = options.mass || 1.0; // Default mass of 1kg
@@ -1125,7 +1242,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                   targetY: finalPosition.y,
                   startY: dropStartY,
                   mass: mass,
-                  //needsDefaultSnappingPoints: gltf.scene.userData.needsDefaultSnappingPoints,
                   elapsedTime: 0,
                 };
               }, 120);
@@ -1568,30 +1684,46 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       });
 
       if (bestConnection) {
-        // Calculate the offset needed to align the snap points
-        const draggedWorldPos = getSnappingPointWorldPosition(
+        this.setupNewConnection(
           bestConnection.draggedObject,
-          bestConnection.draggedPoint
-        );
-        const targetWorldPos = getSnappingPointWorldPosition(
           bestConnection.targetObject,
+          bestConnection.draggedPoint,
           bestConnection.targetPoint
         );
-
-        // Move the entire dragged object/group so the snap points align
-        const offset = targetWorldPos.sub(draggedWorldPos);
-        draggedObject.position.add(offset);
-
-        // Store the pending connection for completion on drag end
-        this.pendingSnapConnection = {
-          draggedObject: bestConnection.draggedObject,
-          targetObject: bestConnection.targetObject,
-          draggedPoint: bestConnection.draggedPoint,
-          targetPoint: bestConnection.targetPoint,
-        };
-
-        // Objects snapped together
       }
+    }
+
+    private setupNewConnection(
+      draggedObject: Object3D,
+      targetObject: Object3D,
+      draggedPoint: SnappingPoint,
+      targetPoint: SnappingPoint
+    ) {
+      // Calculate the offset needed to align the snap points
+      const draggedWorldPos = getSnappingPointWorldPosition(
+        draggedObject,
+        draggedPoint
+      );
+      const targetWorldPos = getSnappingPointWorldPosition(
+        targetObject,
+        targetPoint
+      );
+
+      // Move the entire dragged object/group so the snap points align
+      const offset = targetWorldPos.sub(draggedWorldPos);
+      draggedObject.position.add(offset);
+
+      // Store the pending connection for completion on drag end
+      this.pendingSnapConnection = {
+        draggedObject,
+        targetObject,
+        draggedPoint,
+        targetPoint,
+      };
+
+      console.log('Pending snap connection set:', this.pendingSnapConnection);
+
+      // Objects snapped together
     }
 
     private areObjectsInSameGroup(obj1: Object3D, obj2: Object3D): boolean {
@@ -1632,6 +1764,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Get the groups these objects belong to (if any)
       const draggedGroup = getSnappedGroup(connection.draggedObject);
       const targetGroup = getSnappedGroup(connection.targetObject);
+      console.log('Completing snap connection:', {
+        draggedObject: connection.draggedObject,
+        targetObject: connection.targetObject,
+        draggedPoint: connection.draggedPoint,
+        targetPoint: connection.targetPoint,
+      });
 
       // Determine what objects we're actually connecting
       const objectToConnect1 = draggedGroup || connection.draggedObject;
@@ -1656,6 +1794,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
       } else {
         // Create a new group from two individual objects
+
+        console.log(
+          'Creating new snapped group from individual objects:',
+          connection.draggedObject,
+          connection.targetObject
+        );
+
         const snappedGroup = createSnappedGroup(
           connection.draggedObject,
           connection.targetObject,
