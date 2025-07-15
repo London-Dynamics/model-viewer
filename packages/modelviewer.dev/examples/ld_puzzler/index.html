@@ -382,7 +382,7 @@
                                 data-filename="sofa_middle.glb"
                                 data-name="middle"
                                 data-mass="20"
-                                data-snapping-points='[{"position":{"x":-1.3877787807814457e-17,"y":0.5,"z":0.5},"rotation":{"x":0,"y":0,"z":0},"attraction":0.2},{"position":{"x":-1.3877787807814457e-17,"y":0.5,"z":-0.5},"rotation":{"x":0,"y":3.141592653589793,"z":0},"attraction":0.2},{"position":{"x":0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":1.5707963267948966,"z":0},"attraction":0.2},{"position":{"x":-0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":-1.5707963267948966,"z":0},"attraction":0.2}]'
+                                data-snapping-points='[{"position":{"x":-1.3877787807814457e-17,"y":0.5,"z":0.5},"rotation":{"x":0,"y":0,"z":0},"snapRadius":0.2,"accepts":["chaise"]},{"position":{"x":0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":1.5707963267948966,"z":0},"snapRadius":0.2,"accepts":["middle-left"],"provides":["middle-right"]},{"position":{"x":-0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":-1.5707963267948966,"z":0},"snapRadius":0.2,"accepts":["middle-right"],"provides":["middle-left"]}]'
                               >
                                 Middle
                               </button>
@@ -450,6 +450,14 @@
                                   snappingPoints
                                 );
 
+                                // Convert mouse coordinates to be relative to model-viewer element
+                                const rect =
+                                  modelViewer.getBoundingClientRect();
+                                const mouseRelativeToModelViewer = {
+                                  x: e.clientX - rect.left,
+                                  y: e.clientY - rect.top,
+                                };
+
                                 modelViewer.placeGLB(
                                   filePath,
                                   {
@@ -459,10 +467,7 @@
                                     floorOffset: dragData.floorOffset,
                                     snappingPoints,
                                   },
-                                  {
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                  }
+                                  mouseRelativeToModelViewer
                                 );
                               }
                             }

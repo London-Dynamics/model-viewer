@@ -1099,120 +1099,40 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               );
 
               // --- SNAPPING LOGIC ---
-              // Debug: List all available snapping points in the scene
-              if (targetObject) {
-                const allSnappingPoints = [];
-                targetObject.traverse((child) => {
-                  if (
-                    child.userData.isPlacedObject &&
-                    child.userData.snappingPoints
-                  ) {
-                    child.userData.snappingPoints.forEach((snapPoint, idx) => {
-                      if (!snapPoint.isUsed) {
-                        const localPos = new Vector3(
-                          snapPoint.position.x,
-                          snapPoint.position.y,
-                          snapPoint.position.z
-                        );
-                        const worldPos = child.localToWorld(localPos.clone());
-                        allSnappingPoints.push({
-                          object: child,
-                          index: idx,
-                          worldPosition: worldPos,
-                          snapPoint,
-                        });
-                      }
-                    });
-                  }
-                });
-                console.log(
-                  '[placeGLB] All available snapping points:',
-                  allSnappingPoints
-                );
-              }
-
-              /* Debug logs for snapping point under mouse */
-              console.log('[placeGLB] mouse:', mouse);
-              console.log('[placeGLB] camera:', this[$scene].camera);
-              console.log('[placeGLB] gltf.scene:', gltf.scene);
               const snappingPoint = mouse
                 ? findSnappingPointUnderMouse(
                     mouse.x,
                     mouse.y,
                     this[$scene].camera,
-                    targetObject
+                    targetObject,
+                    {
+                      width: this.clientWidth,
+                      height: this.clientHeight,
+                      left: 0,
+                      top: 0,
+                    }
                   )
                 : null;
-              console.log(
-                '[placeGLB] Result from findSnappingPointUnderMouse:',
-                snappingPoint
-              );
+
               let snapped = false;
               if (snappingPoint) {
                 const compatibleSnappingPoints = findCompatibleSnappingPoints(
                   snappingPoint[0],
                   gltf.scene
                 );
-                console.log(
-                  '[placeGLB] compatibleSnappingPoints:',
-                  compatibleSnappingPoints
-                );
                 if (compatibleSnappingPoints.length) {
+                  // --- KEY: Add the object to the scene first, then snap ---
+                  targetObject.add(gltf.scene);
                   // Snap the model to the first compatible snapping point
-                  console.log('[placeGLB] Calling setupNewConnection with:', {
-                    draggedObject: gltf.scene,
-                    targetObject: snappingPoint[1],
-                    draggedPoint: compatibleSnappingPoints[0],
-                    targetPoint: snappingPoint[0],
-                  });
                   this.setupNewConnection(
                     gltf.scene,
                     snappingPoint[1],
                     compatibleSnappingPoints[0],
                     snappingPoint[0]
                   );
-                  console.log(
-                    '[placeGLB] Calling completeSnapConnection with pendingSnapConnection:',
-                    this.pendingSnapConnection
-                  );
                   this.completeSnapConnection(this.pendingSnapConnection);
                   this.pendingSnapConnection = null;
                   snapped = true;
-                  // --- FIX: Ensure snapped group is added to scene if it has no parent ---
-                  if (this.selectedObjects && this.selectedObjects.length > 0) {
-                    const sel = this.selectedObjects[0];
-                    if (!sel.parent && targetObject) {
-                      console.warn(
-                        '[placeGLB][FIX] Snapped group had no parent, adding to targetObject:',
-                        targetObject
-                      );
-                      targetObject.add(sel);
-                    }
-                  }
-                  // Debug: Log selectedObjects and scene graph after snapping
-                  console.log(
-                    '[placeGLB][DEBUG] After completeSnapConnection:'
-                  );
-                  console.log('  this.selectedObjects:', this.selectedObjects);
-                  if (this.selectedObjects && this.selectedObjects.length > 0) {
-                    const sel = this.selectedObjects[0];
-                    console.log('  Selected object:', sel);
-                    console.log('  Selected object children:', sel.children);
-                    console.log('  Selected object visible:', sel.visible);
-                    if (sel.parent) {
-                      console.log('  Selected object parent:', sel.parent);
-                      // Check if parent is the scene or another group
-                      let p = sel.parent;
-                      while (p) {
-                        console.log('    Parent:', p.name, p.type, p);
-                        p = p.parent;
-                      }
-                    } else {
-                      console.log('  Selected object has no parent!');
-                    }
-                  } else {
-                    console.log('  No selectedObjects after snap!');
-                  }
                 }
               }
 

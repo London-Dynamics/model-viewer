@@ -13,7 +13,7 @@ import {
 } from 'three';
 
 export const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in meters
-export const MOUSE_PICK_RADIUS_MULTIPLIER = 3; // Multiplier for mouse picking snapRadius threshold (ray-to-point is more sensitive than point-to-point)
+export const DEFAULT_SNAP_RADIUS = SNAP_POINT_DIAMETER * 2;
 
 export type SnappingPoint = {
   position: { x: number; y: number; z: number };
@@ -23,8 +23,6 @@ export type SnappingPoint = {
   provides?: string[];
   isUsed?: boolean; // Track if this snap point is already connected
 };
-
-export const DEFAULT_SNAP_RADIUS = SNAP_POINT_DIAMETER * 2;
 
 /**
  * Generate default snap points on the middle of each side of the bounding box.
@@ -320,11 +318,20 @@ export function getSnappingPointWorldPosition(
 
 // Private function to check if two snapping points are compatible (accepts/provides)
 function snappingPointsAreCompatible(
-  _draggedPoint: SnappingPoint,
-  _targetPoint: SnappingPoint
+  draggedPoint: SnappingPoint,
+  targetPoint: SnappingPoint
 ): boolean {
-  // TODO: Implement actual logic. For now, always return true.
-  return true;
+  // If targetPoint.accepts is empty or not defined, accept anything
+  if (!targetPoint.accepts || targetPoint.accepts.length === 0) {
+    return true;
+  }
+  // draggedPoint.provides must have at least one value in targetPoint.accepts
+  if (!draggedPoint.provides || draggedPoint.provides.length === 0) {
+    return false;
+  }
+  return draggedPoint.provides.some((type) =>
+    targetPoint.accepts!.includes(type)
+  );
 }
 
 /**
@@ -402,8 +409,10 @@ export function findCompatibleSnappingPoints(
   }
   const targetSnappingPoints = targetObject.userData
     .snappingPoints as SnappingPoint[];
-  return targetSnappingPoints.filter((targetSnapPoint) =>
-    snappingPointsAreCompatible(snapPoint, targetSnapPoint)
+  return targetSnappingPoints.filter(
+    (targetSnapPoint) =>
+      !targetSnapPoint.isUsed &&
+      snappingPointsAreCompatible(snapPoint, targetSnapPoint)
   );
 }
 
@@ -411,13 +420,26 @@ export function findSnappingPointUnderMouse(
   mouseX: number,
   mouseY: number,
   camera: Camera,
-  rootObject: Object3D
-): [SnappingPoint, Vector3] | null {
+  rootObject: Object3D,
+  viewport?: { width: number; height: number; left: number; top: number }
+): [SnappingPoint, Object3D] | null {
   const raycaster = new Raycaster();
-  const mouse = new Vector2(
-    (mouseX / window.innerWidth) * 2 - 1,
-    -(mouseY / window.innerHeight) * 2 + 1
-  );
+
+  // If viewport is provided, use it; otherwise fall back to window dimensions
+  let normalizedX: number;
+  let normalizedY: number;
+
+  if (viewport) {
+    // Convert mouse coordinates relative to the viewport
+    normalizedX = ((mouseX - viewport.left) / viewport.width) * 2 - 1;
+    normalizedY = -((mouseY - viewport.top) / viewport.height) * 2 + 1;
+  } else {
+    // Fallback to window dimensions (original behavior)
+    normalizedX = (mouseX / window.innerWidth) * 2 - 1;
+    normalizedY = -(mouseY / window.innerHeight) * 2 + 1;
+  }
+
+  const mouse = new Vector2(normalizedX, normalizedY);
 
   raycaster.setFromCamera(mouse, camera);
   const ray = raycaster.ray;
@@ -431,6 +453,9 @@ export function findSnappingPointUnderMouse(
     if (c.userData && c.userData.snappingPoints) {
       const snappingPoints = c.userData.snappingPoints as SnappingPoint[];
       snappingPoints.forEach((snapPoint) => {
+        // Skip used snapping points
+        if (snapPoint.isUsed) return;
+
         // Get world position of the snap point
         const worldPos = getSnappingPointWorldPosition(c, snapPoint);
         // Compute distance from ray to point
@@ -439,14 +464,11 @@ export function findSnappingPointUnderMouse(
         const cross = new Vector3().crossVectors(toPoint, ray.direction);
         const distance = cross.length() / ray.direction.length();
         const snapRadius = snapPoint.snapRadius ?? DEFAULT_SNAP_RADIUS;
-        const mouseRadius = snapRadius * MOUSE_PICK_RADIUS_MULTIPLIER;
-        if (distance <= mouseRadius && distance < closestDistance) {
+
+        if (distance <= snapRadius && distance < closestDistance) {
           closestDistance = distance;
           closestSnapPoint = snapPoint;
           obj = c;
-          console.log(
-            `Found snap point at ${worldPos.toArray()} with distance ${distance}`
-          );
         }
       });
     }
