@@ -568,6 +568,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               }
             });
 
+            // Restore snapping points for all objects in the group
+            objectSet.forEach((obj) => {
+              if (obj.userData.originalSnappingPoints) {
+                obj.userData.snappingPoints = cloneObject(
+                  obj.userData.originalSnappingPoints
+                );
+              }
+            });
+
             if (!firstGroupOrObject) {
               firstGroupOrObject = newGroup;
             }
@@ -674,7 +683,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Force update of snapping point slots and break link slots after reorganization
       setTimeout(() => {
-        // Always update snapping points for all objects
+        // Clear any existing snapping point slots first
+        this.clearSnappingPointSlots();
+        // Force update snapping points for all objects
+        this.toggleSnappingPoints(false);
         this.toggleSnappingPoints(true);
         this.updateSnappingPointSlots();
 
@@ -692,6 +704,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         // Force re-render to ensure all snapping points are visible
         this.dispatchEvent(new CustomEvent('render'));
+        this[$needsRender]();
       }, 10);
     }
 
