@@ -1398,6 +1398,20 @@
     ]
   },
   {
+    "Title": "LD Material Manager",
+    "htmlName": "ld_materialmanager",
+    "Methods": [
+      {
+        "name": "setMaterial(materialName, properties, resetBeforeChange)",
+        "htmlName": "set-material",
+        "description": "Modifies a material in the scene. The method takes a material name and an object with properties to modify, such as color, roughness, metallic, etc. This allows for dynamic changes to materials without needing to reload the model.",
+        "links": [
+          "<a href=\"../examples/ld_materialmanager/#set-material\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Measure",
     "htmlName": "ld_measure",
     "Attributes": [
@@ -1481,6 +1495,7 @@
       }
     ]
   },
+
   {
     "Title": "LD Puzzler",
     "htmlName": "ld_puzzler",

@@ -360,6 +360,16 @@
     ]
   },
   {
+    "name": "LD Material Manager",
+    "htmlName": "ld_materialmanager",
+    "examples": [
+      {
+        "htmlId": "set-material",
+        "name": "Set Material"
+      }
+    ]
+  },
+  {
     "name": "LD Measure",
     "htmlName": "ld_measure",
     "examples": [
