@@ -6,7 +6,7 @@ export declare interface LDMaterialManagerInterface {
   setMaterial(
     materialName: string,
     properties: any,
-    resetBeforeChange?: boolean
+    resetBeforeApply?: boolean
   ): void;
 }
 
@@ -460,7 +460,7 @@ export const LDMaterialManagerMixin = <
     setMaterial(
       materialName: string,
       properties: any,
-      resetBeforeChange?: boolean
+      resetBeforeApply?: boolean
     ) {
       const material = this.getMaterialByName(materialName);
       if (!material) {
@@ -471,8 +471,8 @@ export const LDMaterialManagerMixin = <
       // Backup the material on first use
       this.backupMaterial(material, materialName);
 
-      // If resetBeforeChange is true, restore from backup first
-      if (resetBeforeChange) {
+      // If resetBeforeApply is true, restore from backup first
+      if (resetBeforeApply) {
         this.restoreMaterial(material, materialName);
       }
 
