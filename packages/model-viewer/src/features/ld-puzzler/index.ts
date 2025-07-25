@@ -1176,11 +1176,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                         elapsedTime: 0,
                       };
                     }
-                    updateSourceProgress(1.0);
                     resolve();
                   });
                 });
               });
+              updateSourceProgress(1.0);
+              resolve();
             } else {
               updateSourceProgress(1.0);
               reject();
