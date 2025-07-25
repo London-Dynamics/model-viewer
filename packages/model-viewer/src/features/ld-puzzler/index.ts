@@ -30,10 +30,11 @@ import { LDExporter } from '../ld-exporter.js';
 import { property } from 'lit/decorators.js';
 
 import ModelViewerElementBase, {
-  $scene,
-  $renderer,
-  $needsRender,
   $canvas,
+  $needsRender,
+  $progressTracker,
+  $renderer,
+  $scene,
   $tick,
 } from '../../model-viewer-base.js';
 import { $controls } from '../controls.js';
@@ -62,6 +63,7 @@ const DROP_HEIGHT = 0.5; // Height to drop models from when placed
 export type { SnappingPoint };
 
 export type PlacementOptions = {
+  enterAnimation?: boolean;
   name?: string;
   position?: { x: number; y: number; z: number };
   mass?: number; // Mass in kg, affects fall speed
@@ -1008,6 +1010,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       mouse?: { x: number; y: number }
     ): Promise<void> {
       this.deselectObject();
+
+      const updateSourceProgress =
+        this[$progressTracker].beginActivity('ld-model-load');
+
       const loader = new GLTFLoader();
 
       const targetObject = this.findTargetObject();
@@ -1021,7 +1027,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       return new Promise((resolve, reject) => {
         loader.load(
           src,
-          (gltf) => {
+          async (gltf) => {
             const objectName =
               options.name ||
               `part__${Math.random().toString(36).substring(2, 9)}`;
@@ -1091,7 +1097,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               }
 
               // Set initial position above the final position
-              const dropStartY = finalPosition.y + DROP_HEIGHT;
+              const dropStartY =
+                finalPosition.y + (options.enterAnimation ? DROP_HEIGHT : 0);
               gltf.scene.position.set(
                 finalPosition.x,
                 dropStartY,
@@ -1153,25 +1160,34 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               this.updateShadowsWithGLBs();
               this[$needsRender]();
 
-              // Start gravity animation
-              setTimeout(() => {
-                this.isAnimatingGravity = true;
-                const mass = options.mass || 1.0; // Default mass of 1kg
-                this.gravityAnimation = {
-                  model: gltf.scene,
-                  targetY: finalPosition.y,
-                  startY: dropStartY,
-                  mass: mass,
-                  elapsedTime: 0,
-                };
-              }, 120);
-
-              resolve();
+              // Wait for shaders to compile and pixels to be drawn.
+              await new Promise<void>((resolve) => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    // Start gravity animation
+                    if (options.enterAnimation) {
+                      this.isAnimatingGravity = true;
+                      const mass = options.mass || 1.0; // Default mass of 1kg
+                      this.gravityAnimation = {
+                        model: gltf.scene,
+                        targetY: finalPosition.y,
+                        startY: dropStartY,
+                        mass: mass,
+                        elapsedTime: 0,
+                      };
+                    }
+                    updateSourceProgress(1.0);
+                    resolve();
+                  });
+                });
+              });
             } else {
+              updateSourceProgress(1.0);
               reject();
             }
           },
           (xhr) => {
+            updateSourceProgress(xhr.loaded / xhr.total);
             if (xhr.loaded === xhr.total) {
               // Fade out and remove the visualization box when animation completes
               const visualizationBox = targetObject.children.find(

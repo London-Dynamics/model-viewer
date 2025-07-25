@@ -408,6 +408,11 @@
                       const modelViewer =
                         document.querySelector('#place-glb-demo');
 
+                      modelViewer.addEventListener('progress', (e) => {
+                        const progress = e.detail;
+                        console.log('Loading progress:', progress);
+                      });
+
                       modelViewer.addEventListener('load', () => {
                         modelViewer.deleteObjectByFileName('empty.glb');
                       });
@@ -461,6 +466,7 @@
                                 modelViewer.placeGLB(
                                   filePath,
                                   {
+                                    enterAnimation: true,
                                     name: dragData.name || undefined,
                                     position,
                                     mass: dragData.mass,
