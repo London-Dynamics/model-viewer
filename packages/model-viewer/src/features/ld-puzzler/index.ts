@@ -88,6 +88,7 @@ export declare interface LDPuzzlerInterface {
   toggleSnappingPoints(visible?: boolean): void;
   deleteSelected(): void;
   deleteObjectByFileName(filename: string): void;
+  deleteObjectByName(name: string): void;
 }
 
 export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -978,6 +979,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this[$scene].traverse((child) => {
           if (child.userData?.filename === filename) {
+            this.deleteObject(child);
+            throw new Error('Object deleted'); // Stop traversal after deletion
+          }
+        });
+      } catch (e) {
+        if ((e as Error).message !== 'Object deleted') {
+          throw e; // Re-throw if it's not the expected error
+        }
+      }
+    }
+
+    public deleteObjectByName(name: string) {
+      try {
+        this[$scene].traverse((child) => {
+          if (child.userData?.name === name) {
             this.deleteObject(child);
             throw new Error('Object deleted'); // Stop traversal after deletion
           }
