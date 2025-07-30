@@ -68,6 +68,7 @@ export type PlacementOptions = {
   position?: { x: number; y: number; z: number };
   mass?: number; // Mass in kg, affects fall speed
   floorOffset?: number; // Additional Y offset from calculated floor position (e.g., 0.5 for center-positioned cubes)
+  selectable?: boolean; // Whether the placed object should be selectable
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
   dimensions?: {
     width?: number; // Width of the object for snapping calculations
@@ -1034,6 +1035,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             gltf.scene.name = 'part__' + objectName;
             gltf.scene.userData['filepath'] = src;
             gltf.scene.userData['name'] = objectName;
+            gltf.scene.userData['selectable'] = options.selectable ?? true;
 
             // Parse metadata from the object name
             const nameMetadata = this.parseNameMetadata(objectName);
@@ -1909,7 +1911,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.currentMousePosition
       );
 
-      if (selectedPart) {
+      if (selectedPart && selectedPart.userData.selectable !== false) {
         // Check if the object is part of a snapped group
         const snappedGroup = getSnappedGroup(selectedPart);
         const objectToSelect = snappedGroup || selectedPart;
