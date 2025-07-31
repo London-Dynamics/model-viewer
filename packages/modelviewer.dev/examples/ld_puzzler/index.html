@@ -362,7 +362,6 @@
                                 data-filename="sofa_corner_left.glb"
                                 data-name="corner-l"
                                 data-mass="20"
-                                data-snapping-points='[{"position":{"x":0,"y":0.5,"z":0.5},"rotation":{"x":0,"y":0,"z":0},"snapRadius":0.2,"accepts":["chaise","middle-right"],"provides":["corner-left-front"]},{"position":{"x":0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":1.5707963267948966,"z":0},"snapRadius":0.2,"accepts":["middle-left","corner-right-left"],"provides":["corner-left-right"]}]'
                               >
                                 L Corner
                               </button>
@@ -372,7 +371,6 @@
                                 data-filename="sofa_corner_right.glb"
                                 data-name="corner-r"
                                 data-mass="20"
-                                data-snapping-points='[{"position":{"x":0,"y":0.5,"z":0.5},"rotation":{"x":0,"y":0,"z":0},"snapDistance":0.2,"accepts":["chaise","middle-left"],"provides":["corner-right-front"]},{"position":{"x":-0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":-1.5707963267948966,"z":0},"snapDistance":0.2,"accepts":["middle-right","corner-left-right"],"provides":["corner-right-left"]}]'
                               >
                                 R Corner
                               </button>
@@ -382,7 +380,6 @@
                                 data-filename="sofa_middle.glb"
                                 data-name="middle"
                                 data-mass="20"
-                                data-snapping-points='[{"position":{"x":-1.3877787807814457e-17,"y":0.5,"z":0.5},"rotation":{"x":0,"y":0,"z":0},"snapRadius":0.2,"accepts":["chaise"]},{"position":{"x":0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":1.5707963267948966,"z":0},"snapRadius":0.2,"accepts":["middle-left"],"provides":["middle-right"]},{"position":{"x":-0.5,"y":0.5,"z":0},"rotation":{"x":0,"y":-1.5707963267948966,"z":0},"snapRadius":0.2,"accepts":["middle-right"],"provides":["middle-left"]}]'
                               >
                                 Middle
                               </button>
@@ -392,7 +389,6 @@
                                 data-filename="sofa_chaise.glb"
                                 data-name="chaise"
                                 data-mass="20"
-                                data-snapping-points='[{"position":{"x":0,"y":0.25,"z":-0.5},"rotation":{"x":0,"y":3.141592653589793,"z":0},"snapRadius":0.2,"accepts":[],"provides":["chaise"]}]'
                               >
                                 Chaise
                               </button>
@@ -427,6 +423,76 @@
                         modelViewer.deleteObjectByFileName('empty.glb');
                       });
 
+                      const snappingPointsMap = {
+                        'corner-l': [
+                          {
+                            position: { x: 0, y: 0.5, z: 0.5 },
+                            rotation: { x: 0, y: 0, z: 0 },
+                            snapRadius: 0.2,
+                            accepts: ['chaise'],
+                            provides: ['corner-left-front'],
+                          },
+                          {
+                            position: { x: 0.5, y: 0.5, z: 0 },
+                            rotation: { x: 0, y: 1.5707963267948966, z: 0 },
+                            snapRadius: 0.2,
+                            accepts: ['seat-left'],
+                            provides: ['seat-right'],
+                          },
+                        ],
+                        'corner-r': [
+                          {
+                            position: { x: 0, y: 0.5, z: 0.5 },
+                            rotation: { x: 0, y: 0, z: 0 },
+                            snapDistance: 0.2,
+                            accepts: ['chaise'],
+                            provides: ['corner-right-front'],
+                          },
+                          {
+                            position: { x: -0.5, y: 0.5, z: 0 },
+                            rotation: { x: 0, y: -1.5707963267948966, z: 0 },
+                            snapDistance: 0.2,
+                            accepts: ['seat-right'],
+                            provides: ['seat-left'],
+                          },
+                        ],
+                        middle: [
+                          {
+                            position: {
+                              x: -1.3877787807814457e-17,
+                              y: 0.5,
+                              z: 0.5,
+                            },
+                            rotation: { x: 0, y: 0, z: 0 },
+                            snapRadius: 0.2,
+                            accepts: ['chaise'],
+                          },
+                          {
+                            position: { x: 0.5, y: 0.5, z: 0 },
+                            rotation: { x: 0, y: 1.5707963267948966, z: 0 },
+                            snapRadius: 0.2,
+                            accepts: ['seat-left'],
+                            provides: ['seat-right', 'middle-right'],
+                          },
+                          {
+                            position: { x: -0.5, y: 0.5, z: 0 },
+                            rotation: { x: 0, y: -1.5707963267948966, z: 0 },
+                            snapRadius: 0.2,
+                            accepts: ['seat-right'],
+                            provides: ['seat-left', 'middle-left'],
+                          },
+                        ],
+                        chaise: [
+                          {
+                            position: { x: 0, y: 0.25, z: -0.5 },
+                            rotation: { x: 0, y: 3.141592653589793, z: 0 },
+                            snapRadius: 0.2,
+                            accepts: [],
+                            provides: ['chaise'],
+                          },
+                        ],
+                      };
+
                       document
                         .querySelectorAll('.place-glb')
                         .forEach((button) => {
@@ -454,9 +520,8 @@
                               if (position) {
                                 const filePath = `../../shared-assets/models/${dragData.filename}`;
 
-                                const snappingPoints = dragData.snappingPoints
-                                  ? JSON.parse(dragData.snappingPoints)
-                                  : undefined;
+                                const snappingPoints =
+                                  snappingPointsMap[dragData.name] || undefined;
 
                                 console.log(
                                   'Placing GLB at position:',
