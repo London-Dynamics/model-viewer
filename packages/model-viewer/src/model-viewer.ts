@@ -16,12 +16,12 @@
 import { AnimationMixin } from './features/animation.js';
 import { AnnotationMixin } from './features/annotation.js';
 import { ARMixin } from './features/ar.js';
-import { ControlsMixin } from './features/controls.js';
 import { EnvironmentMixin } from './features/environment.js';
 import { LoadingMixin } from './features/loading.js';
 import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 
+import { LDControlsMixin } from './features/ld-controls.js';
 import { LDTransformsMixin } from './features/ld-transforms.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
 import { LDCameraMixin } from './features/ld-camera.js';
@@ -51,7 +51,7 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
                     SceneGraphMixin(
                       StagingMixin(
                         EnvironmentMixin(
-                          ControlsMixin(
+                          LDControlsMixin(
                             ARMixin(
                               LoadingMixin(
                                 AnimationMixin(ModelViewerElementBase)
