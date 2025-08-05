@@ -98,6 +98,7 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     setDiscCursorVisible(visible: boolean): void {
+      console.log('Setting disc cursor visibility to:', visible);
       this[$setDiscCursorVisible](visible);
     }
 
@@ -146,6 +147,12 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private [$updateCursors](): void {
+      console.log('Updating placement cursors:', {
+        floorArrowCursor: this.floorArrowCursor,
+        floorArrowCursorSize: this.floorArrowCursorSize,
+        floorDiscCursor: this.floorDiscCursor,
+        floorDiscCursorSize: this.floorDiscCursorSize,
+      });
       try {
         const scene = this[$scene];
         if (!scene) return;
@@ -167,6 +174,7 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
 
         const targetObject = this[$findTargetObject]();
+        console.log('Target object for cursors:', targetObject);
         if (targetObject) {
           if (this.floorArrowCursor) {
             const radius = this.floorArrowCursorSize / 2;
@@ -177,6 +185,7 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
             );
           }
           if (this.floorDiscCursor) {
+            console.log('floorDiscCursor is enabled, creating disc cursor');
             const radius = this.floorDiscCursorSize / 2;
             this[$discCursor] = new DiscCursor(scene, targetObject, radius);
             this[$discCursor].setVisible(true);

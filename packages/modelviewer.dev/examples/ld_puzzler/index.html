@@ -511,11 +511,20 @@
 
                           // Global mouse up listener to handle drop
                           const handleGlobalMouseUp = async (e) => {
+                            console.log(
+                              'Global mouse up event:',
+                              e,
+                              isDragging,
+                              dragData
+                            );
                             if (isDragging && dragData) {
                               const position = modelViewer.getCursorPosition();
-
+                              console.log(
+                                'Global mouse up at position:',
+                                position
+                              );
                               modelViewer.removeAttribute('floor-disc-cursor');
-                              modelViewer.removeAttribute('floor-arrow-cursor');
+                              //modelViewer.removeAttribute('floor-arrow-cursor');
 
                               if (position) {
                                 const filePath = `../../shared-assets/models/${dragData.filename}`;
@@ -538,21 +547,23 @@
                                   y: e.clientY - rect.top,
                                 };
 
-                                console.log('Placing GLB...');
+                                const placementOptions = {
+                                  enterAnimation: true,
+                                  name: dragData.name || undefined,
+                                  position,
+                                  mass: dragData.mass,
+                                  floorOffset: dragData.floorOffset,
+                                  selectable:
+                                    dragData.selectable === 'false'
+                                      ? false
+                                      : undefined,
+                                  snappingPoints,
+                                };
+
+                                console.log('Placing GLB...', placementOptions);
                                 await modelViewer.placeGLB(
                                   filePath,
-                                  {
-                                    enterAnimation: true,
-                                    name: dragData.name || undefined,
-                                    position,
-                                    mass: dragData.mass,
-                                    floorOffset: dragData.floorOffset,
-                                    selectable:
-                                      dragData.selectable === 'false'
-                                        ? false
-                                        : undefined,
-                                    snappingPoints,
-                                  },
+                                  placementOptions,
                                   mouseRelativeToModelViewer
                                 );
                                 console.log('GLB placed successfully');
@@ -577,7 +588,7 @@
                             mouseDownTime = Date.now();
                             dragData = e.target.dataset;
 
-                            modelViewer.setAttribute('floor-arrow-cursor', '');
+                            //modelViewer.setAttribute('floor-arrow-cursor', '');
                             modelViewer.setAttribute('floor-disc-cursor', '');
 
                             // Add global listeners when mouse down starts

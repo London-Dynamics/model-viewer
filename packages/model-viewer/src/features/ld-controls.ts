@@ -131,6 +131,9 @@ interface ControlsAdapter {
     maximumRadius?: number;
     touchAction?: string;
   };
+
+  // Additional methods for camera control
+  fitToBox: CameraControls['fitToBox'];
 }
 
 /**
@@ -257,6 +260,89 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.smoothTime = 0.25;
     this.thirdPartyControls.draggingSmoothTime = 0.125;
 
+    // Ensure camera has valid initial values before any calculations
+    if (!camera.position.isVector3 || camera.position.length() === 0) {
+      camera.position.set(0, 0, 5);
+    }
+
+    // Ensure camera up vector is valid
+    if (
+      !camera.up.isVector3 ||
+      camera.up.length() === 0 ||
+      !isFinite(camera.up.x) ||
+      !isFinite(camera.up.y) ||
+      !isFinite(camera.up.z)
+    ) {
+      camera.up.set(0, 1, 0);
+    }
+
+    // Ensure projection matrix is properly set up
+    if (camera instanceof THREE.PerspectiveCamera) {
+      if (!camera.fov || !isFinite(camera.fov) || camera.fov <= 0) {
+        camera.fov = 45; // Default field of view
+      }
+      if (!camera.aspect || !isFinite(camera.aspect) || camera.aspect <= 0) {
+        camera.aspect = 1; // Default aspect ratio
+      }
+    }
+    if (!camera.near || !isFinite(camera.near) || camera.near <= 0) {
+      camera.near = 0.1; // Default near plane
+    }
+    if (!camera.far || !isFinite(camera.far) || camera.far <= camera.near) {
+      camera.far = 1000; // Default far plane
+    }
+
+    // Update projection matrix with valid parameters
+    camera.updateProjectionMatrix();
+
+    // Ensure camera is looking at a valid target
+    const defaultTarget = new THREE.Vector3(0, 0, 0);
+
+    // Set up camera with proper matrices first
+    camera.lookAt(defaultTarget);
+    camera.updateMatrix();
+    camera.updateMatrixWorld(true);
+
+    // Now set CameraControls with the properly initialized camera
+    this.thirdPartyControls.setLookAt(
+      camera.position.x,
+      camera.position.y,
+      camera.position.z, // Camera position from actual camera
+      defaultTarget.x,
+      defaultTarget.y,
+      defaultTarget.z, // Target position
+      false // No transition
+    );
+
+    // Force multiple updates to ensure proper matrix calculation
+    this.thirdPartyControls.update(0);
+    camera.updateMatrix();
+    camera.updateMatrixWorld(true);
+
+    // Final validation - if still invalid, reset to absolute safe defaults
+    const matrixValid = camera.matrixWorld.elements.every(
+      (n: number) => isFinite(n) && !isNaN(n)
+    );
+    const projMatrixValid = camera.projectionMatrix.elements.every(
+      (n: number) => isFinite(n) && !isNaN(n)
+    );
+
+    if (!matrixValid || !projMatrixValid) {
+      camera.position.set(0, 0, 5);
+      camera.up.set(0, 1, 0);
+      camera.fov = 45;
+      camera.aspect = 1;
+      camera.near = 0.1;
+      camera.far = 1000;
+      camera.updateProjectionMatrix();
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrix();
+      camera.updateMatrixWorld(true);
+
+      this.thirdPartyControls.setLookAt(0, 0, 5, 0, 0, 0, false);
+      this.thirdPartyControls.update(0);
+    }
+
     // Set up sensitivity mappings
     this.updateSensitivity();
   }
@@ -340,21 +426,91 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   setOrbit(theta: number, phi: number, radius: number): void {
-    // CameraControls uses azimuthAngle (theta) and polarAngle (phi) and distance (radius)
-    this.thirdPartyControls.setLookAt(
-      0,
-      0,
-      0, // Position will be calculated from spherical coords
-      0,
-      0,
-      0, // Target (will be set based on current target)
-      false // No transition
-    );
+    // Validate input parameters to avoid NaN issues
+    if (
+      !isFinite(theta) ||
+      !isFinite(phi) ||
+      !isFinite(radius) ||
+      isNaN(theta) ||
+      isNaN(phi) ||
+      isNaN(radius)
+    ) {
+      console.warn('setOrbit called with invalid values:', {
+        theta,
+        phi,
+        radius,
+      });
+      return;
+    }
 
-    // Set spherical coordinates directly
+    // Ensure radius is positive and non-zero
+    if (radius <= 0) {
+      console.warn('setOrbit called with invalid radius:', radius);
+      radius = 1; // Use a safe default
+    }
+
+    // Clamp phi to valid range to avoid gimbal lock issues
+    const clampedPhi = Math.max(0.01, Math.min(Math.PI - 0.01, phi));
+
+    // Get the current target position to maintain it
+    const currentTarget = new THREE.Vector3();
+    this.thirdPartyControls.getTarget(currentTarget);
+
+    // Ensure the target is valid (not NaN)
+    if (
+      !currentTarget.isVector3 ||
+      !isFinite(currentTarget.x) ||
+      !isFinite(currentTarget.y) ||
+      !isFinite(currentTarget.z)
+    ) {
+      currentTarget.set(0, 0, 0);
+    }
+
+    // Set the spherical coordinates
     this.thirdPartyControls.azimuthAngle = theta;
-    this.thirdPartyControls.polarAngle = phi;
+    this.thirdPartyControls.polarAngle = clampedPhi;
     this.thirdPartyControls.distance = radius;
+
+    // Calculate expected camera position to validate before applying
+    const expectedPosition = new THREE.Vector3();
+    expectedPosition.setFromSphericalCoords(radius, clampedPhi, theta);
+    expectedPosition.add(currentTarget);
+
+    // Validate expected position
+    if (
+      !expectedPosition.isVector3 ||
+      !isFinite(expectedPosition.x) ||
+      !isFinite(expectedPosition.y) ||
+      !isFinite(expectedPosition.z)
+    ) {
+      console.error(
+        'Expected camera position is invalid, resetting to safe state'
+      );
+      this.thirdPartyControls.setLookAt(0, 0, 5, 0, 0, 0, false);
+      this.thirdPartyControls.update(0);
+      return;
+    }
+
+    // Force multiple updates to ensure proper matrix calculation
+    this.thirdPartyControls.update(0);
+    this.thirdPartyControls.camera.updateMatrix();
+    this.thirdPartyControls.camera.updateMatrixWorld(true);
+
+    // Verify the camera matrix is valid after update
+    const matrixValid =
+      this.thirdPartyControls.camera.matrixWorld.elements.every(
+        (n: number) => isFinite(n) && !isNaN(n)
+      );
+    if (!matrixValid) {
+      console.error(
+        'Camera matrix became invalid after setOrbit, resetting to safe state'
+      );
+      // Reset to a safe state
+      this.thirdPartyControls.setLookAt(0, 0, 5, 0, 0, 0, false);
+      this.thirdPartyControls.update(0);
+      this.thirdPartyControls.camera.updateMatrix();
+      this.thirdPartyControls.camera.updateMatrixWorld(true);
+    }
   }
 
   adjustOrbit(deltaTheta: number, deltaPhi: number, deltaRadius: number): void {
@@ -386,6 +542,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   update(_time: number, delta: number): boolean {
+    // Periodically validate camera matrix to catch and fix NaN issues
+    this.validateAndFixCameraMatrix();
+
     // Update CameraControls - delta is in seconds for CameraControls
     return this.thirdPartyControls.update(delta / 1000);
   }
@@ -409,6 +568,124 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
         listener
       );
     }
+  }
+
+  fitToBox(
+    ...args: Parameters<CameraControls['fitToBox']>
+  ): ReturnType<CameraControls['fitToBox']> {
+    return this.thirdPartyControls.fitToBox(...args);
+  }
+
+  /**
+   * Force camera matrix update and validate state
+   * Call this if you suspect the camera matrix is invalid
+   */
+  validateAndFixCameraMatrix(): boolean {
+    const camera = this.thirdPartyControls.camera;
+
+    // Check if camera position and target are valid
+    const position = camera.position;
+    const positionValid =
+      position.isVector3 &&
+      isFinite(position.x) &&
+      isFinite(position.y) &&
+      isFinite(position.z) &&
+      !isNaN(position.x) &&
+      !isNaN(position.y) &&
+      !isNaN(position.z);
+
+    if (!positionValid) {
+      position.set(0, 0, 5);
+    }
+
+    // Check camera up vector
+    const up = camera.up;
+    const upValid =
+      up.isVector3 &&
+      isFinite(up.x) &&
+      isFinite(up.y) &&
+      isFinite(up.z) &&
+      !isNaN(up.x) &&
+      !isNaN(up.y) &&
+      !isNaN(up.z) &&
+      up.length() > 0;
+
+    if (!upValid) {
+      up.set(0, 1, 0);
+    }
+
+    // Check camera projection parameters (only for PerspectiveCamera)
+    if (camera instanceof THREE.PerspectiveCamera) {
+      if (!camera.fov || !isFinite(camera.fov) || camera.fov <= 0) {
+        camera.fov = 45;
+      }
+      if (!camera.aspect || !isFinite(camera.aspect) || camera.aspect <= 0) {
+        camera.aspect = 1;
+      }
+    }
+
+    if (!camera.near || !isFinite(camera.near) || camera.near <= 0) {
+      camera.near = 0.1;
+    }
+    if (!camera.far || !isFinite(camera.far) || camera.far <= camera.near) {
+      camera.far = 1000;
+    }
+
+    // Update projection matrix
+    camera.updateProjectionMatrix();
+
+    // Check CameraControls target
+    const target = new THREE.Vector3();
+    this.thirdPartyControls.getTarget(target);
+    const targetValid =
+      target.isVector3 &&
+      isFinite(target.x) &&
+      isFinite(target.y) &&
+      isFinite(target.z) &&
+      !isNaN(target.x) &&
+      !isNaN(target.y) &&
+      !isNaN(target.z);
+
+    if (!targetValid) {
+      this.thirdPartyControls.setTarget(0, 0, 0, false);
+    }
+
+    // Force updates
+    this.thirdPartyControls.update(0);
+    camera.updateMatrix();
+    camera.updateMatrixWorld(true);
+
+    // Check if matrices are valid
+    const matrixValid =
+      camera.matrix.elements.every((n: number) => isFinite(n) && !isNaN(n)) &&
+      camera.matrixWorld.elements.every(
+        (n: number) => isFinite(n) && !isNaN(n)
+      );
+    const projMatrixValid = camera.projectionMatrix.elements.every(
+      (n: number) => isFinite(n) && !isNaN(n)
+    );
+
+    if (!matrixValid || !projMatrixValid) {
+      // Reset to a known good state
+      camera.position.set(0, 0, 5);
+      camera.up.set(0, 1, 0);
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = 45;
+        camera.aspect = 1;
+      }
+      camera.near = 0.1;
+      camera.far = 1000;
+      camera.updateProjectionMatrix();
+      camera.lookAt(0, 0, 0);
+      camera.updateMatrix();
+      camera.updateMatrixWorld(true);
+
+      this.thirdPartyControls.setLookAt(0, 0, 5, 0, 0, 0, false);
+      this.thirdPartyControls.update(0);
+      return false;
+    }
+
+    return true;
   }
 
   private mapEventType(smoothControlsEventType: string): string | null {
@@ -681,6 +958,7 @@ export declare interface ControlsInterface {
   getMinimumFieldOfView(): number;
   getMaximumFieldOfView(): number;
   getIdealAspect(): number;
+  fitToBox: CameraControls['fitToBox'];
   jumpCameraToGoal(): void;
   updateFraming(): Promise<void>;
   resetInteractionPrompt(): void;
@@ -889,6 +1167,10 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getIdealAspect(): number {
       return this[$scene].idealAspect;
+    }
+
+    fitToBox(...args: Parameters<CameraControls['fitToBox']>): Promise<void[]> {
+      return this[$controls].fitToBox(...args);
     }
 
     jumpCameraToGoal() {

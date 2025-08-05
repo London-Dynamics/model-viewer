@@ -1370,7 +1370,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
         }
       }
-      // No need to restore panSensitivity here; controls are unaffected
     }
 
     private onTouchStart(event: TouchEvent) {
@@ -1520,15 +1519,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Store original sensitivities and disable all camera interactions while dragging
       if (this[$controls]) {
-        this.originalSensitivities.orbit = this[$controls].orbitSensitivity;
-        this.originalSensitivities.zoom = this[$controls].zoomSensitivity;
-        this.originalSensitivities.pan = this[$controls].panSensitivity;
-        this.originalSensitivities.input = this[$controls].inputSensitivity;
+        this[$controls].disableInteraction();
+        // this.originalSensitivities.orbit = this[$controls].orbitSensitivity;
+        // this.originalSensitivities.zoom = this[$controls].zoomSensitivity;
+        // this.originalSensitivities.pan = this[$controls].panSensitivity;
+        // this.originalSensitivities.input = this[$controls].inputSensitivity;
 
-        this[$controls].orbitSensitivity = 0;
-        this[$controls].zoomSensitivity = 0;
-        this[$controls].panSensitivity = 0;
-        this[$controls].inputSensitivity = 0;
+        // this[$controls].orbitSensitivity = 0;
+        // this[$controls].zoomSensitivity = 0;
+        // this[$controls].panSensitivity = 0;
+        // this[$controls].inputSensitivity = 0;
       }
 
       // Change cursor to indicate dragging
@@ -1700,10 +1700,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Restore original sensitivities
       if (this[$controls]) {
-        this[$controls].orbitSensitivity = this.originalSensitivities.orbit;
-        this[$controls].zoomSensitivity = this.originalSensitivities.zoom;
-        this[$controls].panSensitivity = this.originalSensitivities.pan;
-        this[$controls].inputSensitivity = this.originalSensitivities.input;
+        this[$controls].enableInteraction();
+        // this[$controls].orbitSensitivity = this.originalSensitivities.orbit;
+        // this[$controls].zoomSensitivity = this.originalSensitivities.zoom;
+        // this[$controls].panSensitivity = this.originalSensitivities.pan;
+        // this[$controls].inputSensitivity = this.originalSensitivities.input;
       }
 
       // Reset cursor
@@ -1970,9 +1971,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setBreakLinkSlotsVisible(true);
       }
 
-      // Disable camera panning while a part is selected
       if (this[$controls]) {
+        // Disable camera panning while a part is selected
         this[$controls].enablePan = false;
+        // Fit the camera to the selected object
+        this[$controls].fitToBox(object, true, {
+          paddingTop: 1,
+          paddingBottom: 1,
+          paddingLeft: 1,
+          paddingRight: 1,
+        });
       }
 
       this[$selectObjectForControls](object);
