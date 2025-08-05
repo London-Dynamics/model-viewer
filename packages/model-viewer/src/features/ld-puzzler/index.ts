@@ -1516,9 +1516,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Fallback: no offset
         this.dragOffset.set(0, 0, 0);
       }
-
+      console.log('start dragging', this[$controls]);
       // Store original sensitivities and disable all camera interactions while dragging
       if (this[$controls]) {
+        console.log('disable interaction');
         this[$controls].disableInteraction();
         // this.originalSensitivities.orbit = this[$controls].orbitSensitivity;
         // this.originalSensitivities.zoom = this[$controls].zoomSensitivity;
@@ -1731,19 +1732,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const objectToConnect1 = draggedGroup || connection.draggedObject;
       const objectToConnect2 = targetGroup || connection.targetObject;
 
+      let focusGroup: Object3D | null = null;
+
       // If both objects are already in groups, we need to merge the groups
       if (draggedGroup && targetGroup) {
-        this.mergeSnappedGroups(draggedGroup, targetGroup, connection);
+        focusGroup = this.mergeSnappedGroups(
+          draggedGroup,
+          targetGroup,
+          connection
+        );
       } else if (draggedGroup && !targetGroup) {
         // Add target object to existing dragged group
-        this.addObjectToSnappedGroup(
+        focusGroup = this.addObjectToSnappedGroup(
           draggedGroup,
           connection.targetObject,
           connection
         );
       } else if (!draggedGroup && targetGroup) {
         // Add dragged object to existing target group
-        this.addObjectToSnappedGroup(
+        focusGroup = this.addObjectToSnappedGroup(
           targetGroup,
           connection.draggedObject,
           connection
@@ -1764,6 +1771,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           connection.targetPoint
         );
         this.selectedObjects = [snappedGroup];
+
+        focusGroup = snappedGroup;
+      }
+
+      if (focusGroup) {
+        const boundingBox = new Box3().setFromObject(focusGroup);
+        const center = boundingBox.getCenter(new Vector3());
+        this[$scene].setTarget(center.x, center.y, center.z);
       }
 
       // Update outline selection
@@ -1854,6 +1869,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Update selection to group1
       this.selectedObjects = [group1];
+
+      return group1;
     }
 
     private addObjectToSnappedGroup(
@@ -1906,6 +1923,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Update selection to the group
       this.selectedObjects = [group];
+
+      return group;
     }
     /**
      * Update the mesh cache for a group after its structure has changed
@@ -1974,13 +1993,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this[$controls]) {
         // Disable camera panning while a part is selected
         this[$controls].enablePan = false;
-        // Fit the camera to the selected object
-        this[$controls].fitToBox(object, true, {
-          paddingTop: 1,
-          paddingBottom: 1,
-          paddingLeft: 1,
-          paddingRight: 1,
-        });
+
+        // Get the object's world position/bounding box
+        const boundingBox = new Box3().setFromObject(object);
+        const center = boundingBox.getCenter(new Vector3());
+
+        // Set the scene target (this is what the camera orbits around)
+        this[$scene].setTarget(center.x, center.y, center.z);
       }
 
       this[$selectObjectForControls](object);
@@ -2122,6 +2141,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.addEventListener('load', this._handleLoad);
       this.addEventListener('progress', this._handleProgress);
+
+      console.log('this.controls', this[$controls]);
 
       if (typeof window !== 'undefined') {
         window.deDraco = this.deDraco;

@@ -6,12 +6,12 @@ import ModelViewerElementBase, {
   $scene,
   // $userInputElement,
   $onModelLoad,
-} from "../model-viewer-base.js";
+} from '../model-viewer-base.js';
 
-import { $controls } from "./controls.js";
+import { $controls } from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
-import { Constructor } from "../utilities.js";
-import { Mesh } from "three";
+import { Constructor } from '../utilities.js';
+import { Mesh } from 'three';
 
 export interface ClickDetails {
   geometry?: string;
@@ -27,7 +27,7 @@ type CameraMeta = {
 };
 
 export declare interface LDCameraInterface {
-  setCameraFromJSON(json: CameraMeta["object"]): void;
+  setCameraFromJSON(json: CameraMeta['object']): void;
   getCameraMeta(): CameraMeta | null;
 }
 
@@ -35,10 +35,6 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDCameraInterface> & T => {
   class LDCameraModelViewerElement extends ModelViewerElement {
-    // protected[$controls] = new SmoothControls(
-    //     this[$scene].camera as PerspectiveCamera, this[$userInputElement],
-    //     this[$scene]);
-
     private _pointerDwn = [0, 0];
     private _pointerUp = [0, 0];
 
@@ -72,43 +68,43 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
             detail.geometry = geometry.name;
           }
 
-          if (typeof material !== "undefined" && !Array.isArray(material)) {
+          if (typeof material !== 'undefined' && !Array.isArray(material)) {
             detail.material = material.name;
           }
           this.dispatchEvent(
-            new CustomEvent<ClickDetails>("click", { detail })
+            new CustomEvent<ClickDetails>('click', { detail })
           );
         }
       }
     }
 
-    async setCameraFromJSON(json: CameraMeta["object"]) {
+    async setCameraFromJSON(json: CameraMeta['object']) {
       // @ts-ignore
       const controls = this[$controls];
       const { camera } = controls;
 
-      console.log("scene", this[$scene]);
-      console.log("camera", camera);
-      console.log("controls", controls);
+      console.log('scene', this[$scene]);
+      console.log('camera', camera);
+      console.log('controls', controls);
 
       Object.keys(json).forEach((key) => {
         const value = json[key];
 
         if (camera.hasOwnProperty(key) && camera[key] !== value) {
           switch (key) {
-            case "matrix":
+            case 'matrix':
               //console.log("setting camera property", key, value);
 
               //camera.applyMatrix4(new Matrix4().fromArray(value));
               //camera.updateMatrixWorld( true );
 
               break;
-            case "up":
+            case 'up':
               // @ts-ignore
               //camera.up = new Vector3().fromArray(value);
               break;
             default:
-              console.log("setting camera property", key, value);
+              console.log('setting camera property', key, value);
 
             //camera[key] = value;
           }
@@ -164,13 +160,13 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (currentGLTF != null) {
       }
 
-      this.addEventListener("pointerdown", (e) => {
+      this.addEventListener('pointerdown', (e) => {
         this._pointerDwn = [e.offsetX, e.offsetY];
       });
-      this.addEventListener("pointerup", (e) => {
+      this.addEventListener('pointerup', (e) => {
         this._pointerUp = [e.offsetX, e.offsetY];
       });
-      this.addEventListener("click", this.handleClick);
+      this.addEventListener('click', this.handleClick);
     }
   }
   // @ts-ignore

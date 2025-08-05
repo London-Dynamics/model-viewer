@@ -20,11 +20,8 @@
  * third-party library instead of the original SmoothControls. The interface
  * remains identical to the original controls, making it a true drop-in replacement.
  *
- * Key features:
- * - Full API compatibility with original controls
- * - Adapter pattern to bridge CameraControls and SmoothControls interfaces
- * - Event mapping between different control systems
- * - Sensitivity and configuration mapping
+ * Link to CameraControls library:
+ * https://github.com/yomotsu/camera-controls
  *
  * Usage:
  * Replace the import in your ModelViewer implementation:
@@ -57,35 +54,90 @@ import ModelViewerElementBase, {
   toVector3D,
   Vector3D,
 } from '../model-viewer-base.js';
-import { degreesToRadians, normalizeUnit } from '../styles/conversions.js';
+
 import {
   EvaluatedStyle,
   Intrinsics,
   SphericalIntrinsics,
-  StyleEvaluator,
   Vector3Intrinsics,
 } from '../styles/evaluators.js';
-import {
-  IdentNode,
-  NumberNode,
-  numberNode,
-  parseExpressions,
-} from '../styles/parsers.js';
+
 import { DECAY_MILLISECONDS } from '../three-components/Damper.js';
 import {
   ChangeSource,
   PointerChangeEvent,
 } from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
-import { Path, timeline, TimingFunction } from '../utilities/animation.js';
+import { timeline, TimingFunction } from '../utilities/animation.js';
 
 import CameraControls from 'camera-controls';
+
+import {
+  $controls,
+  $fingerAnimatedContainers,
+  $panElement,
+  $promptAnimatedContainer,
+  $promptElement,
+  A11yTranslationsInterface,
+  cameraOrbitIntrinsics,
+  cameraTargetIntrinsics,
+  fieldOfViewIntrinsics,
+  Finger,
+  InteractionPromptStrategy,
+  InteractionPromptStyle,
+  maxCameraOrbitIntrinsics,
+  minCameraOrbitIntrinsics,
+  minFieldOfViewIntrinsics,
+  SphericalPosition,
+  TouchAction,
+  type CameraChangeDetails,
+  type ControlsInterface,
+} from './controls.js';
+
+import {
+  DEFAULT_FOV_DEG,
+  DEFAULT_MIN_FOV_DEG,
+  DEFAULT_CAMERA_ORBIT,
+  DEFAULT_CAMERA_TARGET,
+  DEFAULT_FIELD_OF_VIEW,
+  MINIMUM_RADIUS_RATIO,
+  AZIMUTHAL_QUADRANT_LABELS,
+  POLAR_TRIENT_LABELS,
+  DEFAULT_INTERACTION_PROMPT_THRESHOLD,
+  INTERACTION_PROMPT,
+} from './controls.js';
+
+export {
+  DEFAULT_FOV_DEG,
+  DEFAULT_MIN_FOV_DEG,
+  DEFAULT_CAMERA_ORBIT,
+  DEFAULT_CAMERA_TARGET,
+  DEFAULT_FIELD_OF_VIEW,
+  MINIMUM_RADIUS_RATIO,
+  AZIMUTHAL_QUADRANT_LABELS,
+  POLAR_TRIENT_LABELS,
+  DEFAULT_INTERACTION_PROMPT_THRESHOLD,
+  INTERACTION_PROMPT,
+};
+
 CameraControls.install({ THREE: THREE });
+
+// Functions to auto-forward methods from CameraControls to the adapter
+const CAMERA_CONTROLS_METHODS_TO_EXPOSE = [
+  'fitToBox',
+  'fitToSphere',
+  'setLookAt',
+  'saveState',
+  'reset',
+] as const;
+
+type ExposedMethodNames = (typeof CAMERA_CONTROLS_METHODS_TO_EXPOSE)[number];
+type ExposedCameraControlsMethods = Pick<CameraControls, ExposedMethodNames>;
 
 /**
  * Adapter interface that bridges between the 3rd party controls and the expected SmoothControls interface
  */
-interface ControlsAdapter {
+interface ControlsAdapter extends ExposedCameraControlsMethods {
   // Core controls properties
   inputSensitivity: number;
   orbitSensitivity: number;
@@ -131,9 +183,6 @@ interface ControlsAdapter {
     maximumRadius?: number;
     touchAction?: string;
   };
-
-  // Additional methods for camera control
-  fitToBox: CameraControls['fitToBox'];
 }
 
 /**
@@ -570,10 +619,26 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     }
   }
 
-  fitToBox(
-    ...args: Parameters<CameraControls['fitToBox']>
-  ): ReturnType<CameraControls['fitToBox']> {
+  // CameraControls methods that need to be exposed
+
+  fitToBox(...args: Parameters<CameraControls['fitToBox']>) {
     return this.thirdPartyControls.fitToBox(...args);
+  }
+
+  fitToSphere(...args: Parameters<CameraControls['fitToSphere']>) {
+    return this.thirdPartyControls.fitToSphere(...args);
+  }
+
+  setLookAt(...args: Parameters<CameraControls['setLookAt']>) {
+    return this.thirdPartyControls.setLookAt(...args);
+  }
+
+  saveState(): void {
+    return this.thirdPartyControls.saveState();
+  }
+
+  reset(): Promise<void[]> {
+    return this.thirdPartyControls.reset();
   }
 
   /**
@@ -735,171 +800,10 @@ const fade = timeline({
   ],
 });
 
-export const DEFAULT_FOV_DEG = 30;
-export const DEFAULT_MIN_FOV_DEG = 12;
-
-export const DEFAULT_CAMERA_ORBIT = '0deg 75deg 105%';
-const DEFAULT_CAMERA_TARGET = 'auto auto auto';
-const DEFAULT_FIELD_OF_VIEW = 'auto';
-
-const MINIMUM_RADIUS_RATIO = 2.2;
-
-const AZIMUTHAL_QUADRANT_LABELS = ['front', 'right', 'back', 'left'];
-const POLAR_TRIENT_LABELS = ['upper-', '', 'lower-'];
-
-export const DEFAULT_INTERACTION_PROMPT_THRESHOLD = 3000;
-export const INTERACTION_PROMPT = '. Use mouse, touch or arrow keys to move.';
-
-export interface CameraChangeDetails {
-  source: ChangeSource;
-  spatialRegion?: string; // HACK
-}
-
-export interface SphericalPosition {
-  theta: number; // equator angle around the y (up) axis.
-  phi: number; // polar angle from the y (up) axis.
-  radius: number;
-  toString(): string;
-}
-
-export interface Finger {
-  x: Path;
-  y: Path;
-}
-
-export interface A11yTranslationsInterface {
-  left: string;
-  right: string;
-  front: string;
-  back: string;
-  'upper-left': string;
-  'upper-right': string;
-  'upper-front': string;
-  'upper-back': string;
-  'lower-left': string;
-  'lower-right': string;
-  'lower-front': string;
-  'lower-back': string;
-  'interaction-prompt': string;
-}
-
-export type InteractionPromptStrategy = 'auto' | 'none';
-export type InteractionPromptStyle = 'basic' | 'wiggle';
-export type TouchAction = 'pan-y' | 'pan-x' | 'none';
-
-export const InteractionPromptStrategy: {
-  [index: string]: InteractionPromptStrategy;
-} = {
-  AUTO: 'auto',
-  NONE: 'none',
-};
-
-export const InteractionPromptStyle: {
-  [index: string]: InteractionPromptStyle;
-} = {
-  BASIC: 'basic',
-  WIGGLE: 'wiggle',
-};
-
-export const TouchAction: { [index: string]: TouchAction } = {
-  PAN_Y: 'pan-y',
-  PAN_X: 'pan-x',
-  NONE: 'none',
-};
-
-export const fieldOfViewIntrinsics = () => {
-  return {
-    basis: [
-      degreesToRadians(numberNode(DEFAULT_FOV_DEG, 'deg')) as NumberNode<'rad'>,
-    ],
-    keywords: { auto: [null] },
-  };
-};
-
-const minFieldOfViewIntrinsics = () => {
-  return {
-    basis: [
-      degreesToRadians(
-        numberNode(DEFAULT_MIN_FOV_DEG, 'deg')
-      ) as NumberNode<'rad'>,
-    ],
-    keywords: { auto: [null] },
-  };
-};
-
-export const cameraOrbitIntrinsics = (() => {
-  const defaultTerms = parseExpressions(DEFAULT_CAMERA_ORBIT)[0].terms as [
-    NumberNode<'rad'>,
-    NumberNode<'rad'>,
-    IdentNode
-  ];
-
-  const theta = normalizeUnit(defaultTerms[0]) as NumberNode<'rad'>;
-  const phi = normalizeUnit(defaultTerms[1]) as NumberNode<'rad'>;
-
-  return (element: ModelViewerElementBase) => {
-    const radius = element[$scene].idealCameraDistance();
-
-    return {
-      basis: [theta, phi, numberNode(radius, 'm')],
-      keywords: { auto: [null, null, numberNode(105, '%')] },
-    };
-  };
-})();
-
-const minCameraOrbitIntrinsics = (
-  element: ModelViewerElementBase & ControlsInterface
-) => {
-  const radius = MINIMUM_RADIUS_RATIO * element[$scene].boundingSphere.radius;
-
-  return {
-    basis: [
-      numberNode(-Infinity, 'rad'),
-      numberNode(0, 'rad'),
-      numberNode(radius, 'm'),
-    ],
-    keywords: { auto: [null, null, null] },
-  };
-};
-
-const maxCameraOrbitIntrinsics = (element: ModelViewerElementBase) => {
-  const orbitIntrinsics = cameraOrbitIntrinsics(element);
-  const evaluator = new StyleEvaluator([], orbitIntrinsics);
-  const defaultRadius = evaluator.evaluate()[2];
-
-  return {
-    basis: [
-      numberNode(Infinity, 'rad'),
-      numberNode(Math.PI, 'rad'),
-      numberNode(defaultRadius, 'm'),
-    ],
-    keywords: { auto: [null, null, null] },
-  };
-};
-
-export const cameraTargetIntrinsics = (element: ModelViewerElementBase) => {
-  const center = element[$scene].boundingBox.getCenter(new THREE.Vector3());
-
-  return {
-    basis: [
-      numberNode(center.x, 'm'),
-      numberNode(center.y, 'm'),
-      numberNode(center.z, 'm'),
-    ],
-    keywords: { auto: [null, null, null] },
-  };
-};
-
 const HALF_PI = Math.PI / 2.0;
 const THIRD_PI = Math.PI / 3.0;
 const QUARTER_PI = HALF_PI / 2.0;
 const TAU = 2.0 * Math.PI;
-
-export const $controls = Symbol('controls');
-export const $panElement = Symbol('panElement');
-export const $promptElement = Symbol('promptElement');
-export const $promptAnimatedContainer = Symbol('promptAnimatedContainer');
-export const $fingerAnimatedContainers = Symbol('fingerAnimatedContainers');
 
 const $deferInteractionPrompt = Symbol('deferInteractionPrompt');
 const $updateAria = Symbol('updateAria');
@@ -931,45 +835,11 @@ const $syncMaxCameraOrbit = Symbol('syncMaxCameraOrbit');
 const $syncMinFieldOfView = Symbol('syncMinFieldOfView');
 const $syncMaxFieldOfView = Symbol('syncMaxFieldOfView');
 
-export declare interface ControlsInterface {
-  cameraControls: boolean;
-  cameraOrbit: string;
-  cameraTarget: string;
-  fieldOfView: string;
-  minCameraOrbit: string;
-  maxCameraOrbit: string;
-  minFieldOfView: string;
-  maxFieldOfView: string;
-  interactionPrompt: InteractionPromptStrategy;
-  interactionPromptStyle: InteractionPromptStyle;
-  interactionPromptThreshold: number;
-  orbitSensitivity: number;
-  zoomSensitivity: number;
-  panSensitivity: number;
-  touchAction: TouchAction;
-  interpolationDecay: number;
-  disableZoom: boolean;
-  disablePan: boolean;
-  disableTap: boolean;
-  a11y: A11yTranslationsInterface | string | null;
-  getCameraOrbit(): SphericalPosition;
-  getCameraTarget(): Vector3D;
-  getFieldOfView(): number;
-  getMinimumFieldOfView(): number;
-  getMaximumFieldOfView(): number;
-  getIdealAspect(): number;
-  fitToBox: CameraControls['fitToBox'];
-  jumpCameraToGoal(): void;
-  updateFraming(): Promise<void>;
-  resetInteractionPrompt(): void;
-  zoom(keyPresses: number): void;
-  interact(duration: number, finger0: Finger, finger1?: Finger): void;
-  inputSensitivity: number;
-}
+export declare interface LDControlsInterface extends ControlsInterface {}
 
 export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
-): Constructor<ControlsInterface> & T => {
+): Constructor<LDControlsInterface> & T => {
   class ControlsModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'camera-controls' })
     cameraControls: boolean = false;
@@ -1167,10 +1037,6 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getIdealAspect(): number {
       return this[$scene].idealAspect;
-    }
-
-    fitToBox(...args: Parameters<CameraControls['fitToBox']>): Promise<void[]> {
-      return this[$controls].fitToBox(...args);
     }
 
     jumpCameraToGoal() {
