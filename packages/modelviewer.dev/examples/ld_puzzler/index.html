@@ -238,7 +238,7 @@
                             <div class="flex gap-4">
                               <div class="flex items-center">
                                 <button
-                                  id="toggle-disc-cursor"
+                                  id="toggle-cursor"
                                   type="button"
                                   class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
                                   role="switch"
@@ -255,31 +255,7 @@
                                   id="show-cursor-label"
                                 >
                                   <span class="font-medium text-gray-900"
-                                    >Disc Cursor</span
-                                  >
-                                </span>
-                              </div>
-
-                              <div class="flex items-center">
-                                <button
-                                  id="toggle-arrow-cursor"
-                                  type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
-                                  role="switch"
-                                  aria-checked="false"
-                                  aria-labelledby="show-cursor-label"
-                                >
-                                  <span
-                                    aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
-                                  ></span>
-                                </button>
-                                <span
-                                  class="ml-2 text-sm"
-                                  id="show-cursor-label"
-                                >
-                                  <span class="font-medium text-gray-900"
-                                    >Drop Cursor</span
+                                    >Cursor Visible</span
                                   >
                                 </span>
                               </div>
@@ -414,13 +390,21 @@
                       const modelViewer =
                         document.querySelector('#place-glb-demo');
 
+                      const relativeMouseCoordinates = (e) => {
+                        const rect = modelViewer.getBoundingClientRect();
+                        return {
+                          x: e.clientX - rect.left,
+                          y: e.clientY - rect.top,
+                        };
+                      };
+
                       modelViewer.addEventListener('progress', (e) => {
                         const progress = e.detail;
                         console.log('Loading progress:', progress);
                       });
 
                       modelViewer.addEventListener('load', () => {
-                        modelViewer.deleteObjectByFileName('empty.glb');
+                        //modelViewer.deleteObjectByFileName('empty.glb');
                       });
 
                       const snappingPointsMap = {
@@ -496,87 +480,12 @@
                       document
                         .querySelectorAll('.place-glb')
                         .forEach((button) => {
-                          let isDragging = false;
-                          let mouseDownTime = 0;
-                          let dragData = null;
-
-                          // Global mouse move listener to track dragging outside button
-                          const handleGlobalMouseMove = (e) => {
-                            if (e.buttons > 0 && dragData) {
-                              // Mouse button is pressed and we have drag data
-                              isDragging = true;
-                              // Cursor position updates automatically when floor-cursor attribute is set
-                            }
-                          };
+                          let session = null;
 
                           // Global mouse up listener to handle drop
                           const handleGlobalMouseUp = async (e) => {
-                            console.log(
-                              'Global mouse up event:',
-                              e,
-                              isDragging,
-                              dragData
-                            );
-                            if (isDragging && dragData) {
-                              const position = modelViewer.getCursorPosition();
-                              console.log(
-                                'Global mouse up at position:',
-                                position
-                              );
-                              modelViewer.removeAttribute('floor-disc-cursor');
-                              //modelViewer.removeAttribute('floor-arrow-cursor');
-
-                              if (position) {
-                                const filePath = `../../shared-assets/models/${dragData.filename}`;
-
-                                const snappingPoints =
-                                  snappingPointsMap[dragData.name] || undefined;
-
-                                console.log(
-                                  'Placing GLB at position:',
-                                  position,
-                                  'with snapping points:',
-                                  snappingPoints
-                                );
-
-                                // Convert mouse coordinates to be relative to model-viewer element
-                                const rect =
-                                  modelViewer.getBoundingClientRect();
-                                const mouseRelativeToModelViewer = {
-                                  x: e.clientX - rect.left,
-                                  y: e.clientY - rect.top,
-                                };
-
-                                const placementOptions = {
-                                  enterAnimation: true,
-                                  name: dragData.name || undefined,
-                                  position,
-                                  mass: dragData.mass,
-                                  floorOffset: dragData.floorOffset,
-                                  selectable:
-                                    dragData.selectable === 'false'
-                                      ? false
-                                      : undefined,
-                                  snappingPoints,
-                                };
-
-                                console.log('Placing GLB...', placementOptions);
-                                await modelViewer.placeGLB(
-                                  filePath,
-                                  placementOptions,
-                                  mouseRelativeToModelViewer
-                                );
-                                console.log('GLB placed successfully');
-                              }
-                            }
-
                             // Cleanup
-                            isDragging = false;
-                            dragData = null;
-                            document.removeEventListener(
-                              'mousemove',
-                              handleGlobalMouseMove
-                            );
+
                             document.removeEventListener(
                               'mouseup',
                               handleGlobalMouseUp
@@ -584,69 +493,70 @@
                           };
 
                           button.addEventListener('mousedown', (e) => {
-                            isDragging = false;
-                            mouseDownTime = Date.now();
-                            dragData = e.target.dataset;
+                            const dataset = Object.assign({}, e.target.dataset);
 
-                            //modelViewer.setAttribute('floor-arrow-cursor', '');
-                            modelViewer.setAttribute('floor-disc-cursor', '');
+                            dataset.snappingPoints =
+                              snappingPointsMap[dataset.name] || [];
 
-                            // Add global listeners when mouse down starts
-                            document.addEventListener(
-                              'mousemove',
-                              handleGlobalMouseMove
+                            const { filename, ...placementOptions } = dataset;
+
+                            modelViewer.setAttribute('cursor-visible', '');
+
+                            const lowresSrc = `../../shared-assets/models/${filename}`;
+                            const highResSrc = `../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf`; //`../../shared-assets/models/${filename}`;
+
+                            // Capture initial mouse position so the placeholder
+                            // can be positioned immediately even if it loads
+                            // synchronously.
+                            const initialMouse = {
+                              clientX: e.clientX,
+                              clientY: e.clientY,
+                            };
+
+                            session = modelViewer.startPlacement(
+                              lowresSrc,
+                              highResSrc,
+                              placementOptions,
+                              initialMouse
                             );
+
+                            session.addEventListener(
+                              'placeholder-loaded',
+                              (e) => {
+                                modelViewer.removeAttribute('cursor-visible');
+                              }
+                            );
+
+                            session.addEventListener('loaded', (e) => {
+                              console.log('Loaded placed object');
+                              modelViewer.removeAttribute('cursor-visible');
+                              session = null;
+                            });
+
+                            session.addEventListener('progress', (ev) => {
+                              const detail = ev.detail;
+                              console.log('Placement progress', detail);
+                              // detail.phase === 'placeholder' | 'final'
+                              // detail.progress === 0..1
+                            });
+
                             document.addEventListener(
                               'mouseup',
                               handleGlobalMouseUp
                             );
                           });
-
-                          button.addEventListener('click', async (e) => {
-                            // Don't trigger if user was dragging or if it was a very brief click (potential start of drag)
-                            if (
-                              isDragging ||
-                              Date.now() - mouseDownTime < 100
-                            ) {
-                              return;
-                            }
-
-                            const options = {
-                              name: e.target.dataset.name || undefined,
-                              mass: parseFloat(e.target.dataset.mass) || 1.0,
-                              floorOffset:
-                                parseFloat(e.target.dataset.floorOffset) || 0,
-                            };
-
-                            const filePath = `../../shared-assets/models/${e.target.dataset.filename}`;
-
-                            modelViewer.placeGLB(filePath, options);
-                          });
                         });
 
                       document
-                        .getElementById('toggle-arrow-cursor')
+                        .getElementById('toggle-cursor')
                         .addEventListener('click', (e) => {
                           const el = e.target;
                           if (el.getAttribute('aria-checked') === 'true') {
                             el.setAttribute('aria-checked', 'false');
-                            modelViewer.removeAttribute('floor-arrow-cursor');
+                            modelViewer.removeAttribute('cursor-visible');
                           } else {
                             el.setAttribute('aria-checked', 'true');
-                            modelViewer.setAttribute('floor-arrow-cursor', '');
-                          }
-                        });
-
-                      document
-                        .getElementById('toggle-disc-cursor')
-                        .addEventListener('click', (e) => {
-                          const el = e.target;
-                          if (el.getAttribute('aria-checked') === 'true') {
-                            el.setAttribute('aria-checked', 'false');
-                            modelViewer.removeAttribute('floor-disc-cursor');
-                          } else {
-                            el.setAttribute('aria-checked', 'true');
-                            modelViewer.setAttribute('floor-disc-cursor', '');
+                            modelViewer.setAttribute('cursor-visible', '');
                           }
                         });
 

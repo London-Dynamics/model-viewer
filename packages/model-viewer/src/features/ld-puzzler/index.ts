@@ -1,2623 +1,564 @@
-// @ts-nocheck
-
-declare global {
-  interface Window {
-    deDraco: any;
-  }
-}
-
-import {
-  Box3,
-  BoxGeometry,
-  Euler,
-  Group,
-  MathUtils,
-  Mesh,
-  MeshBasicMaterial,
-  Object3D,
-  Plane,
-  PlaneGeometry,
-  Quaternion,
-  Raycaster,
-  RepeatWrapping,
-  TextureLoader,
-  Vector2,
-  Vector3,
-} from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { LDExporter } from '../ld-exporter.js';
 import { property } from 'lit/decorators.js';
+import { Object3D, Vector3 } from 'three';
 
+import { Constructor } from '../../utilities.js';
 import ModelViewerElementBase, {
-  $canvas,
   $needsRender,
-  $progressTracker,
-  $renderer,
   $scene,
-  $tick,
+  $renderer,
 } from '../../model-viewer-base.js';
-import { $controls } from '../controls.js';
-import { $selectObjectForControls } from '../ld-floating-control-strip.js';
+import { $getMouseWorldPoint } from '../ld-cursor/index.js';
 
-import { Constructor, cloneObject } from '../../utilities.js';
-import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
-import {
-  SnappingPoint,
-  generateDefaultSnappingPoints,
-  SNAP_POINT_DIAMETER,
-  DEFAULT_SNAP_ATTRACTION,
-  getSnappingPointWorldPosition,
-  findCompatibleSnappingPoints,
-  findSnappingConnections,
-  findSnappingPointUnderMouse,
-  createSnappedGroup,
-  isInSnappedGroup,
-  getSnappedGroup,
-} from '../../utilities/snapping-points.js';
-import { updateSlots, createSlotElement, SlotUpdateItem } from './slots.js';
-
-const DROP_HEIGHT = 0.5; // Height to drop models from when placed
+import { SnappingPoint } from '../../utilities/snapping-points.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
 
-export type PlacementOptions = {
-  enterAnimation?: boolean;
+type PlacementOptions = {
+  mass?: number;
   name?: string;
-  position?: { x: number; y: number; z: number };
-  mass?: number; // Mass in kg, affects fall speed
-  floorOffset?: number; // Additional Y offset from calculated floor position (e.g., 0.5 for center-positioned cubes)
-  selectable?: boolean; // Whether the placed object should be selectable
+  selectable?: boolean;
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
-  dimensions?: {
-    width?: number; // Width of the object for snapping calculations
-    height?: number; // Height of the object for snapping calculations
-    depth?: number; // Depth of the object for snapping calculations
-  };
 };
 
+type PlaceFunction = (
+  src: string,
+  position: {
+    x: number;
+    y: number;
+    z: number;
+  },
+  options?: PlacementOptions
+) => Promise<void>;
+
+type RotateFunction = () => void;
+
+type SelectionScope = 'placed' | 'puzzler-root' | 'both' | 'all';
+
+type TransformFunction = () => void;
+
 export declare interface LDPuzzlerInterface {
-  setSrcFromBuffer(buffer: ArrayBuffer): void;
-  placeGLB(
-    src: string,
-    options?: PlacementOptions,
-    mouse?: { x: number; y: number }
-  ): Promise<void>;
-  rotateSelected(deg?: number): void;
-  toggleSnappingPoints(visible?: boolean): void;
-  deleteSelected(): void;
-  deleteObjectByFileName(filename: string): void;
-  deleteObjectByName(name: string): void;
+  place: PlaceFunction;
+  rotate: RotateFunction;
+  transform: TransformFunction;
+  startPlacement?: (
+    lowResSrc: string,
+    highResSrc: string,
+    options?: any,
+    initialMouse?: { clientX: number; clientY: number }
+  ) => any;
 }
 
 export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDPuzzlerInterface> & T => {
   class LDPuzzlerModelViewerElement extends ModelViewerElement {
-    private addedGLBs: Set<Object3D> = new Set(); // Track all added GLBs
-    private _modelLoaded = false;
-    private originalFloorY: number | undefined; // Store the original floor level
+    @property({ type: Boolean, attribute: 'edit-mode' })
+    editMode: boolean = false;
 
-    // Selection and dragging properties
-    private selectedObjects: Object3D[] = [];
-    private selectedGroups: Set<Object3D> = new Set(); // Track selected groups for multi-selection
-    private isDragging: boolean = false;
-    private dragStartPosition: Vector3 = new Vector3();
-    private dragStartMousePosition: Vector2 = new Vector2();
-    private dragOffset: Vector3 = new Vector3(); // Offset between object center and click point
-    private currentMousePosition: Vector2 = new Vector2();
-    private floorPlane: Plane = new Plane(new Vector3(0, 1, 0), 0);
-    private raycaster: Raycaster = new Raycaster();
+    @property({ type: Boolean, attribute: 'snapping-enabled' })
+    snappingEnabled: boolean = false;
 
-    // Mouse tracking
-    private lastClickTime: number = 0;
-    private lastClickPosition: Vector2 = new Vector2();
-    private clickHandler?: (event: MouseEvent) => void;
-
-    // Outline system - expects outline-effect element to be present in HTML
-    private outlineEffect: HTMLElement | null = null;
-
-    // Snap point system
-    private snappingPointSpheres: Set<Mesh> = new Set(); // Track all snap point sphere meshes
-    private snappingEnabled: boolean = true; // Allow disabling snapping
-    private pendingSnapConnection: {
-      draggedObject: Object3D;
-      targetObject: Object3D;
-      draggedPoint: SnappingPoint;
-      targetPoint: SnappingPoint;
-    } | null = null;
-
-    // Slot-based snapping point rendering
-    private snappingPointSlots: Map<string, HTMLElement> = new Map();
-    private snappingPointsVisible: boolean = false;
-
-    // Slot-based ungroup button rendering
-    // Break link slot management for multiple connection points
-    private breakLinkSlots: Map<string, HTMLElement> = new Map();
-    private breakLinkSlotsVisible: boolean = false;
-
-    // Slot-based rotation controls rendering
-    private rotationSlots: Map<string, HTMLElement> = new Map();
-    private rotationSlotsVisible: boolean = false;
+    @property({ type: Boolean, attribute: 'snapping-points-visible' })
+    snappingPointsVisible: boolean = false;
 
     /**
-     * Updates the visibility and positioning of snapping point slot elements.
-     * Creates DOM elements for each visible snapping point and positions them
-     * at the correct 2D screen coordinates. Also applies opacity based on
-     * whether the snapping point is facing the camera or behind the model.
+     * Which nodes are allowed to be selected.
+     * - 'placed' (default): only objects created with place() (prefix "part_"), respecting selectable:false
+     * - 'puzzler-root': only children of "PuzzlerRoot" whose name starts with "id_"
+     * - 'both': union of 'placed' and 'puzzler-root'
+     * - 'all': any scene node (still respects selectable:false)
      */
-    private updateSnappingPointSlots() {
-      if (!this.snappingPointsVisible) {
-        this.snappingPointSlots.forEach((element) => {
-          element.style.display = 'none';
-        });
-        return;
-      }
-
-      const scene = this[$scene];
-      const camera = scene.getCamera();
-      if (!camera) return;
-
-      const snappingPointsFound: SlotUpdateItem[] = [];
-      const targetObject = this.findTargetObject();
-
-      if (targetObject) {
-        targetObject.traverse((child) => {
-          if (child.userData.isPlacedObject && child.userData.snappingPoints) {
-            const snappingPoints = child.userData
-              .snappingPoints as SnappingPoint[];
-            snappingPoints.forEach((snapPoint, index) => {
-              if (snapPoint.isUsed) return;
-
-              const localPos = new Vector3(
-                snapPoint.position.x,
-                snapPoint.position.y,
-                snapPoint.position.z
-              );
-              const worldPos = child.localToWorld(localPos.clone());
-
-              const rotation = new Euler(
-                snapPoint.rotation.x,
-                snapPoint.rotation.y,
-                snapPoint.rotation.z
-              );
-              const normal = new Vector3(0, 0, 1).applyEuler(rotation);
-              const worldNormal = normal
-                .clone()
-                .transformDirection(child.matrixWorld);
-
-              const viewVector = new Vector3()
-                .copy(camera.position)
-                .sub(worldPos);
-              const dotProduct = viewVector.dot(worldNormal);
-              const facingCamera = dotProduct > 0;
-
-              snappingPointsFound.push({
-                name: `${child.uuid}_${index}`,
-                worldPosition: worldPos,
-                isFacingCamera: facingCamera,
-              });
-            });
-          }
-        });
-      }
-
-      updateSlots(snappingPointsFound, {
-        slotMap: this.snappingPointSlots,
-        owner: this,
-        container: this.shadowRoot?.querySelector('.slot.ld-puzzler'),
-        scene,
-        camera,
-        onCreate: (item) => {
-          const element = createSlotElement(
-            'ld-snapping-point',
-            '', // No inline styles - handled by CSS
-            'snapping-point',
-            this.shadowRoot,
-            null // Content handled by slot template
-          );
-          return element;
-        },
-        onUpdate: (element, item) => {
-          if (item.isFacingCamera) {
-            element.classList.remove('back-facing');
-          } else {
-            element.classList.add('back-facing');
-          }
-        },
-      });
-    }
-
-    /**
-     * Show or hide snapping point slots
-     */
-    public toggleSnappingPoints(visible?: boolean) {
-      if (visible === undefined) {
-        visible = !this.snappingPointsVisible;
-      }
-
-      this.snappingPointsVisible = visible;
-      this.updateSnappingPointSlots();
-    }
-
-    /**
-     * Remove all snapping point slots
-     */
-    private clearSnappingPointSlots() {
-      this.clearSlots(this.snappingPointSlots);
-    }
-
-    /**
-     * Updates the visibility and positioning of the ungroup slot element.
-     * Shows the ungroup button at the connection point between two snapped objects.
-     */
-
-    /**
-     * Updates the visibility and positioning of break link slot elements.
-     * Creates DOM elements for each snap connection and positions them
-     * at the center point between the connected objects.
-     */
-    private updateBreakLinkSlots() {
-      if (!this.breakLinkSlotsVisible || this.selectedObjects.length === 0) {
-        this.breakLinkSlots.forEach((slot) => {
-          slot.style.display = 'none';
-        });
-        return;
-      }
-
-      const scene = this[$scene];
-      const camera = scene.getCamera();
-      if (!camera) return;
-
-      const selectedGroup = this.selectedObjects[0];
-      if (
-        !selectedGroup.userData.isSnappedGroup ||
-        !selectedGroup.userData.snapConnections
-      ) {
-        this.breakLinkSlots.forEach((slot) => {
-          slot.style.display = 'none';
-        });
-        return;
-      }
-
-      const slotItems: SlotUpdateItem[] = selectedGroup.userData.snapConnections
-        .map((snapConnection: any, index: number) => {
-          const connectionId = `connection-${index}`;
-          if (!snapConnection.object1 || !snapConnection.object2) {
-            return null;
-          }
-
-          const point1WorldPos = getSnappingPointWorldPosition(
-            snapConnection.object1,
-            snapConnection.snapPoint1
-          );
-          const point2WorldPos = getSnappingPointWorldPosition(
-            snapConnection.object2,
-            snapConnection.snapPoint2
-          );
-
-          const midpoint = new Vector3()
-            .addVectors(point1WorldPos, point2WorldPos)
-            .multiplyScalar(0.5);
-
-          return {
-            name: connectionId,
-            worldPosition: midpoint,
-            data: { connectionId },
-          };
-        })
-        .filter((item) => item !== null) as SlotUpdateItem[];
-
-      updateSlots(slotItems, {
-        slotMap: this.breakLinkSlots,
-        owner: this,
-        container: this.shadowRoot?.querySelector('.slot.ld-puzzler'),
-        scene,
-        camera,
-        onCreate: (item) => {
-          const element = createSlotElement(
-            'ld-break-link',
-            '', // No inline styles - handled by CSS
-            'break-link',
-            this.shadowRoot,
-            null // Content handled by slot template
-          );
-
-          element.addEventListener('click', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.breakSpecificConnection(item.data.connectionId);
-          });
-
-          return element;
-        },
-        onUpdate: (element, item) => {
-          element.style.zIndex = '20'; // Ensure it's on top
-        },
-      });
-    }
-
-    /**
-     * Show or hide the break link slots
-     */
-    private setBreakLinkSlotsVisible(visible: boolean) {
-      this.breakLinkSlotsVisible = visible;
-      this.updateBreakLinkSlots();
-    }
-
-    /**
-     * Remove all break link slots
-     */
-    private clearBreakLinkSlots() {
-      this.clearSlots(this.breakLinkSlots);
-    }
-
-    /**
-     * Break a specific connection identified by its ID
-     */
-    private breakSpecificConnection(connectionId: string) {
-      if (this.selectedObjects.length !== 1) return;
-
-      const selectedGroup = this.selectedObjects[0];
-      if (
-        !selectedGroup.userData.isSnappedGroup ||
-        !selectedGroup.userData.snapConnections
-      ) {
-        return;
-      }
-
-      // Parse the connection index from the ID
-      const index = parseInt(connectionId.replace('connection-', ''));
-      const connections = selectedGroup.userData.snapConnections;
-
-      if (index < 0 || index >= connections.length) {
-        return;
-      }
-
-      const connectionToBreak = connections[index];
-
-      // Mark the snap points as no longer used
-      if (connectionToBreak.snapPoint1) {
-        connectionToBreak.snapPoint1.isUsed = false;
-      }
-      if (connectionToBreak.snapPoint2) {
-        connectionToBreak.snapPoint2.isUsed = false;
-      }
-
-      // Remove this connection from the group's connections
-      connections.splice(index, 1);
-
-      // Clear break link slots immediately to prevent floating buttons
-      this.clearBreakLinkSlots();
-      this.setBreakLinkSlotsVisible(false);
-
-      // If this was the last connection, ungroup everything
-      if (connections.length === 0) {
-        this.ungroupSelectedObject();
-        return;
-      }
-
-      // Otherwise, we need to reorganize the group structure
-      this.reorganizeGroupAfterBreakLink(selectedGroup, connectionToBreak);
-
-      // Trigger render update
-      this[$needsRender]();
-    }
-
-    /**
-     * Reorganize the group structure after breaking a specific link
-     */
-    private reorganizeGroupAfterBreakLink(
-      group: Object3D,
-      brokenConnection: any
-    ) {
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return;
-
-      // Find which objects are still connected through remaining connections
-      const remainingConnections = group.userData.snapConnections;
-      const connectedObjectSets: Set<Object3D>[] = [];
-
-      // Build connected component sets
-      remainingConnections.forEach((connection: any) => {
-        const obj1 = connection.object1;
-        const obj2 = connection.object2;
-
-        // Find if either object is already in a set
-        let set1 = connectedObjectSets.find((set) => set.has(obj1));
-        let set2 = connectedObjectSets.find((set) => set.has(obj2));
-
-        if (set1 && set2 && set1 !== set2) {
-          // Merge the two sets
-          set2.forEach((obj) => set1!.add(obj));
-          const index = connectedObjectSets.indexOf(set2);
-          connectedObjectSets.splice(index, 1);
-        } else if (set1) {
-          set1.add(obj2);
-        } else if (set2) {
-          set2.add(obj1);
-        } else {
-          // Create new set with both objects
-          const newSet = new Set([obj1, obj2]);
-          connectedObjectSets.push(newSet);
-        }
-      });
-
-      // Get all child objects and save their world transforms before removing them
-      const childObjects = [...group.children];
-      const worldTransforms = new Map();
-
-      // Save world transforms for all objects while they're still in the original group
-      childObjects.forEach((child) => {
-        const worldPosition = new Vector3();
-        const worldQuaternion = new Quaternion();
-        const worldScale = new Vector3();
-        child.getWorldPosition(worldPosition);
-        child.getWorldQuaternion(worldQuaternion);
-        child.getWorldScale(worldScale);
-        worldTransforms.set(child, {
-          position: worldPosition,
-          quaternion: worldQuaternion,
-          scale: worldScale,
-        });
-      });
-
-      // Make sure all child objects are accounted for in some set
-      // Objects not in any remaining connections become individual objects
-      childObjects.forEach((child) => {
-        const isInAnySet = connectedObjectSets.some((set) => set.has(child));
-        if (!isInAnySet) {
-          // Create a singleton set for this object
-          const singletonSet = new Set([child]);
-          connectedObjectSets.push(singletonSet);
-        }
-      });
-
-      // Remove all children from the current group
-      childObjects.forEach((child) => group.remove(child));
-
-      // Remove the current group from its parent
-      if (group.parent) {
-        group.parent.remove(group);
-      }
-
-      // Clear selection before creating new groups
-      this.selectedObjects = [];
-
-      if (connectedObjectSets.length === 1) {
-        // All remaining objects are still connected - create one new group
-        const newGroup = new Group();
-        newGroup.name = `SnappedGroup_${Date.now()}`;
-        newGroup.userData.isSnappedGroup = true;
-
-        // Add to target first
-        targetObject.add(newGroup);
-
-        connectedObjectSets[0].forEach((obj) => {
-          // Get saved world transform
-          const transform = worldTransforms.get(obj);
-          if (transform) {
-            // Add to new group
-            newGroup.add(obj);
-
-            // Convert world position to new group's local coordinate system
-            const localPosition = transform.position.clone();
-            newGroup.worldToLocal(localPosition);
-            obj.position.copy(localPosition);
-            obj.quaternion.copy(transform.quaternion);
-            obj.scale.copy(transform.scale);
-          } else {
-            newGroup.add(obj);
-          }
-        });
-
-        // Copy the remaining connections to the new group
-        newGroup.userData.snapConnections = [...remainingConnections];
-
-        // Copy other userData from the original group
-        newGroup.userData.isPlacedObject = true;
-        newGroup.userData.meshes = [];
-        newGroup.traverse((child) => {
-          if (child.type === 'Mesh' && child.name !== 'SnappingPointSphere') {
-            newGroup.userData.meshes.push(child);
-          }
-        });
-
-        // Select the new group
-        this.selectObject(newGroup);
-      } else if (connectedObjectSets.length > 1) {
-        // Multiple disconnected groups - create separate groups
-        let firstGroupOrObject: Object3D | null = null;
-
-        connectedObjectSets.forEach((objectSet) => {
-          if (objectSet.size > 1) {
-            // Create a new group for multiple connected objects
-            const newGroup = new Group();
-            newGroup.name = `SnappedGroup_${Date.now()}`;
-            newGroup.userData.isSnappedGroup = true;
-
-            // Add to target first
-            targetObject.add(newGroup);
-
-            objectSet.forEach((obj) => {
-              // Get saved world transform
-              const transform = worldTransforms.get(obj);
-              if (transform) {
-                // Add to new group
-                newGroup.add(obj);
-
-                // Convert world position to new group's local coordinate system
-                const localPosition = transform.position.clone();
-                newGroup.worldToLocal(localPosition);
-                obj.position.copy(localPosition);
-                obj.quaternion.copy(transform.quaternion);
-                obj.scale.copy(transform.scale);
-              } else {
-                newGroup.add(obj);
-              }
-            });
-
-            // Find connections that belong to this group
-            const groupConnections = remainingConnections.filter(
-              (connection: any) =>
-                objectSet.has(connection.object1) &&
-                objectSet.has(connection.object2)
-            );
-            newGroup.userData.snapConnections = groupConnections;
-
-            // Set up group userData
-            newGroup.userData.isPlacedObject = true;
-            newGroup.userData.meshes = [];
-            newGroup.traverse((child) => {
-              if (
-                child.type === 'Mesh' &&
-                child.name !== 'SnappingPointSphere'
-              ) {
-                newGroup.userData.meshes.push(child);
-              }
-            });
-
-            // Restore snapping points for all objects in the group
-            objectSet.forEach((obj) => {
-              if (obj.userData.originalSnappingPoints) {
-                obj.userData.snappingPoints = cloneObject(
-                  obj.userData.originalSnappingPoints
-                );
-              }
-            });
-
-            if (!firstGroupOrObject) {
-              firstGroupOrObject = newGroup;
-            }
-          } else {
-            // Single object - add directly to target using the same logic as ungroupSnappedGroup
-            const obj = objectSet.values().next().value;
-
-            // Get saved world transform
-            const transform = worldTransforms.get(obj);
-            if (transform) {
-              // Add to target and restore transform
-              targetObject.add(obj);
-
-              // Convert world position to local space of the target object
-              const localPosition = transform.position.clone();
-              targetObject.worldToLocal(localPosition);
-              obj.position.copy(localPosition);
-              obj.quaternion.copy(transform.quaternion);
-              obj.scale.copy(transform.scale);
-            } else {
-              targetObject.add(obj);
-            }
-
-            // Restore as individual placed object
-            obj.userData.isPlacedObject = true;
-            delete obj.userData.isInGroup;
-
-            // Ensure meshes array is set up for individual objects
-            obj.userData.meshes = [];
-            obj.traverse((child) => {
-              if (
-                child.type === 'Mesh' &&
-                child.name !== 'SnappingPointSphere'
-              ) {
-                obj.userData.meshes.push(child);
-              }
-            });
-
-            // Restore original snapping points if available
-            if (obj.userData.originalSnappingPoints) {
-              obj.userData.snappingPoints = cloneObject(
-                obj.userData.originalSnappingPoints
-              );
-            }
-
-            if (!firstGroupOrObject) {
-              firstGroupOrObject = obj;
-            }
-          }
-        });
-
-        // Select the first object/group
-        if (firstGroupOrObject) {
-          this.selectObject(firstGroupOrObject);
-        }
-      } else {
-        // No remaining connections - place all objects individually using the same logic as ungroupSnappedGroup
-        childObjects.forEach((child) => {
-          // Get saved world transform
-          const transform = worldTransforms.get(child);
-          if (transform) {
-            // Add to target and restore transform
-            targetObject.add(child);
-
-            // Convert world position to local space of the target object
-            const localPosition = transform.position.clone();
-            targetObject.worldToLocal(localPosition);
-            child.position.copy(localPosition);
-            child.quaternion.copy(transform.quaternion);
-            child.scale.copy(transform.scale);
-          } else {
-            targetObject.add(child);
-          }
-
-          child.userData.isPlacedObject = true;
-          delete child.userData.isInGroup;
-
-          // Ensure meshes array is set up for individual objects
-          child.userData.meshes = [];
-          child.traverse((grandchild) => {
-            if (
-              grandchild.type === 'Mesh' &&
-              grandchild.name !== 'SnappingPointSphere'
-            ) {
-              child.userData.meshes.push(grandchild);
-            }
-          });
-
-          // Reset snapping points to fresh defaults for orphaned objects
-          // This ensures all snapping points are available for new connections
-          if (child.userData.originalSnappingPoints) {
-            // Restore original snapping points if available
-            child.userData.snappingPoints = cloneObject(
-              child.userData.originalSnappingPoints
-            );
-          }
-        });
-
-        // Select the first object
-        if (childObjects.length > 0) {
-          this.selectObject(childObjects[0]);
-        }
-      }
-
-      // Force update of snapping point slots and break link slots after reorganization
-      setTimeout(() => {
-        // Clear any existing snapping point slots first
-        this.clearSnappingPointSlots();
-        // Force update snapping points for all objects
-        this.toggleSnappingPoints(false);
-        this.toggleSnappingPoints(true);
-        this.updateSnappingPointSlots();
-
-        // Show break link slots if we still have a group selected
-        if (
-          this.selectedObjects.length > 0 &&
-          this.selectedObjects[0].userData.isSnappedGroup
-        ) {
-          this.setBreakLinkSlotsVisible(true);
-          this.updateBreakLinkSlots();
-        } else {
-          // Hide break link slots if no group is selected
-          this.setBreakLinkSlotsVisible(false);
-        }
-
-        // Force re-render to ensure all snapping points are visible
-        this.dispatchEvent(new CustomEvent('render'));
-        this[$needsRender]();
-      }, 10);
-    }
-
-    private updateShadowsWithGLBs() {
-      // Create a comprehensive bounding box that includes all added GLBs
-      if (this[$scene].boundingBox && this.addedGLBs.size > 0) {
-        // Store the original floor level if not already stored
-        if (this.originalFloorY === undefined) {
-          this.originalFloorY = this[$scene].boundingBox.min.y;
-        }
-
-        // Start with the original scene bounding box
-        const originalBounds = this[$scene].boundingBox.clone();
-
-        // Expand to include all added GLBs, but preserve the original floor level
-        this.addedGLBs.forEach((glb) => {
-          originalBounds.expandByObject(glb);
-        });
-
-        // Preserve the original floor level by ensuring it never goes below the original
-        originalBounds.min.y = this.originalFloorY;
-
-        // Update the scene's bounding box and size
-        this[$scene].boundingBox.copy(originalBounds);
-        this[$scene].boundingBox.getSize(this[$scene].size);
-
-        // Force shadow update
-        this[$scene].updateShadow();
-      }
-    }
-
-    async setSrcFromBuffer(buffer: ArrayBuffer) {
-      try {
-        const safeObjectUrl = createSafeObjectUrlFromArrayBuffer(buffer);
-
-        this.setAttribute('src', safeObjectUrl.url);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    private _handleProgress(event: Event) {
-      const progress = (event as any).detail.totalProgress;
-      const reason = (event as any).detail.reason;
-
-      if (this._modelLoaded && reason === 'model-load' && progress < 1) {
-        this._modelLoaded = false;
-      }
-    }
-
-    private _handleLoad() {
-      this._modelLoaded = true;
-      // Cursor functionality is now handled by the placement cursor mixin
-    }
-
-    private setupOutlineSystem() {
-      // Look for an outline-effect element that should be provided by the HTML page
-      this.outlineEffect = this.querySelector('outline-effect');
-
-      if (!this.outlineEffect) {
-        console.warn(
-          'ld-puzzler: No outline-effect element found. Outline functionality will be disabled. Please add <outline-effect> inside your <model-viewer> element.'
-        );
-        return;
-      }
-
-      // Outline effect element found, functionality enabled
-    }
-
-    private updateOutlineSelection() {
-      // Initialize outline system if not already done
-      if (!this.outlineEffect) {
-        this.setupOutlineSystem();
-      }
-
-      if (!this.outlineEffect) return;
-
-      // Update the selection in the outline effect
-      if (this.selectedObjects.length > 0) {
-        // Collect all mesh objects from selected groups/objects for outline rendering
-        const meshesToOutline = this.collectMeshesFromObjects(
-          this.selectedObjects
-        );
-
-        // Set the mesh objects as the selection for outline rendering
-        (this.outlineEffect as any).selection = meshesToOutline;
-        // Use default blend-mode when objects are selected (enable outline rendering)
-        this.outlineEffect.setAttribute('blend-mode', 'default');
-      } else {
-        // When no objects are selected, use skip mode to disable outline completely
-        this.outlineEffect.setAttribute('blend-mode', 'skip');
-        // Clear the selection to avoid any lingering selection state
-        (this.outlineEffect as any).selection = [];
-      }
-
-      this[$needsRender]();
-    }
-
-    /**
-     * Efficiently collect all mesh objects from a list of objects (Groups or Meshes).
-     * This method supports both individual objects and future multi-object selections.
-     */
-    private collectMeshesFromObjects(objects: Object3D[]): Object3D[] {
-      const meshes: Object3D[] = [];
-
-      objects.forEach((obj) => {
-        if (obj.type === 'Mesh' && !this.isSnappingPointMesh(obj)) {
-          // Exclude snap point meshes from outline rendering
-          meshes.push(obj);
-        } else if (obj.type === 'Group' || obj.userData.isSnappedGroup) {
-          // Handle both regular Groups and snapped groups (which might be Object3D type)
-          // Use pre-cached meshes if available for better performance
-          if (obj.userData.meshes && Array.isArray(obj.userData.meshes)) {
-            // Filter out any snap point meshes from cached meshes
-            const filteredMeshes = obj.userData.meshes.filter(
-              (mesh: Object3D) => !this.isSnappingPointMesh(mesh)
-            );
-            meshes.push(...filteredMeshes);
-          } else {
-            // Fallback: traverse and collect all mesh children (excluding snap points)
-            obj.traverse((child) => {
-              if (child.type === 'Mesh' && !this.isSnappingPointMesh(child)) {
-                meshes.push(child);
-              }
-            });
-          }
-        }
-      });
-
-      return meshes;
-    }
-
-    /**
-     * Check if a mesh is part of a snapping point visualization
-     */
-    private isSnappingPointMesh(mesh: Object3D): boolean {
-      // Check if the mesh itself is named as a snapping point
-      if (mesh.name === 'SnappingPointSphere') {
-        return true;
-      }
-
-      // Check if the mesh is a child of a snapping point group
-      let parent = mesh.parent;
-      while (parent) {
-        if (parent.name === 'SnappingPointSphere') {
+    @property({ type: String, attribute: 'selection-scope' })
+    selectionScope: SelectionScope = 'placed';
+
+    // Return true only when edit-mode is enabled and the node passes the scope & selectable checks
+    _isNodeSelectable(node: any): boolean {
+      if (!this.editMode) return false;
+      if (!node) return false;
+      if (node.selectable === false || node.userData?.selectable === false)
+        return false;
+
+      const name = node.name || '';
+      const isPlaced = name.startsWith('placed_');
+      const isPuzzlerId =
+        node.parent &&
+        node.parent.name === 'PuzzlerRoot' &&
+        name.startsWith('id_');
+
+      switch (this.selectionScope) {
+        case 'placed':
+          return isPlaced;
+        case 'puzzler-root':
+          return isPuzzlerId;
+        case 'both':
+          return isPlaced || isPuzzlerId;
+        case 'all':
           return true;
-        }
-        parent = parent.parent;
+        default:
+          return isPlaced;
       }
-
-      return false;
     }
+
+    // Internal counter for naming placed objects / sessions
+    private _placementCounter = 0;
+    private _activePlacementSession: PlacementSession | null = null;
 
     /**
-     * Enhanced method for selecting multiple objects (for future multi-selection support).
-     * Currently supports single selection but designed to be easily extended.
+     * Direct placement API: load a GLB and add it at the provided world position.
+     * Returns a promise that resolves when the model is loaded and inserted.
      */
-    private selectObjects(objects: Object3D[]) {
-      // Clear previous selection
-      this.deselectObject();
+    place: PlaceFunction = async (src, position, options) => {
+      const scene = this[$scene];
+      if (!scene) return;
 
-      this.selectedObjects = [...objects];
+      const loader = this[$renderer].loader;
 
-      // Track groups separately for potential future grouping operations
-      objects.forEach((obj) => {
-        if (obj.type === 'Group') {
-          this.selectedGroups.add(obj);
-        }
-      });
-
-      // Update outline selection
-      this.updateOutlineSelection();
-
-      // Disable camera panning while objects are selected
-      if (this[$controls]) {
-        this[$controls].enablePan = false;
-      }
-
-      this[$needsRender]();
-    }
-
-    private findTargetObject() {
-      let targetObject: Object3D | undefined;
-
-      try {
-        this[$scene].traverse((child) => {
-          if (child.name === 'Target') {
-            targetObject = child;
-            throw new Error('found target object'); // Stop traversal when found
-          }
-        });
-      } catch (e) {
-        if ((e as Error).message !== 'found target object') throw e;
-      }
-
-      return targetObject;
-    }
-
-    private positionModelAtFloor(model: Object3D, floorOffset: number = 0) {
-      if (!this[$scene] || !this[$scene].boundingBox) return;
-
-      // Store the original floor level if not already stored
-      if (this.originalFloorY === undefined) {
-        this.originalFloorY = this[$scene].boundingBox.min.y;
-      }
-
-      // Calculate the model's bounding box
-      const modelBoundingBox = new Box3().setFromObject(model);
-
-      // Use the original floor level, not the current scene bounding box
-      const sceneFloorY = this.originalFloorY;
-
-      // Calculate how much to move the model so its bottom aligns with the original floor
-      const modelBottomY = modelBoundingBox.min.y;
-      const offsetY = sceneFloorY - modelBottomY + floorOffset;
-
-      // Apply the position adjustment
-      model.position.y += offsetY;
-    }
-
-    private removeObject3D(object3D) {
-      if (!(object3D instanceof Object3D)) return false;
-
-      // for better memory management and performance
-      if (object3D.geometry) object3D.geometry.dispose();
-
-      if (object3D.material) {
-        if (object3D.material instanceof Array) {
-          // for better memory management and performance
-          object3D.material.forEach((material) => material.dispose());
-        } else {
-          // for better memory management and performance
-          object3D.material.dispose();
-        }
-      }
-      object3D.removeFromParent(); // the parent might be the scene or another Object3D, but it is sure to be removed this way
-      return true;
-    }
-
-    private deleteObject(object: Object3D) {
-      try {
-        // Clear selection
-        this.deselectObject();
-
-        // If it's a GLB, remove it from the addedGLBs set
-        if (object.userData.isPlacedObject) {
-          this.addedGLBs.delete(object);
-        }
-
-        // Remove the object from the scene
-        this.removeObject3D(object);
-
-        // Update shadows after deletion
-        this[$scene].updateShadow();
-        this[$needsRender]();
-      } catch (e) {
-        console.error('Error deleting object:', e);
-      }
-    }
-
-    public deleteObjectByFileName(filename: string) {
-      try {
-        this[$scene].traverse((child) => {
-          if (child.userData?.filename === filename) {
-            this.deleteObject(child);
-            throw new Error('Object deleted'); // Stop traversal after deletion
-          }
-        });
-      } catch (e) {
-        if ((e as Error).message !== 'Object deleted') {
-          throw e; // Re-throw if it's not the expected error
-        }
-      }
-    }
-
-    public deleteObjectByName(name: string) {
-      try {
-        this[$scene].traverse((child) => {
-          if (child.userData?.name === name) {
-            this.deleteObject(child);
-            throw new Error('Object deleted'); // Stop traversal after deletion
-          }
-        });
-      } catch (e) {
-        if ((e as Error).message !== 'Object deleted') {
-          throw e; // Re-throw if it's not the expected error
-        }
-      }
-    }
-
-    public deleteSelected() {
-      if (this.selectedObjects.length === 0) return;
-
-      // Delete each selected object
-      this.selectedObjects.forEach((object) => {
-        this.deleteObject(object);
-      });
-    }
-
-    async rotateSelected(deg) {
-      if (this.selectedObjects.length === 0) return;
-      const selectedObject = this.selectedObjects[0];
-
-      this.rotateObject(MathUtils.degToRad(deg), selectedObject);
-    }
-
-    async placeGLB(
-      src,
-      options: PlacementOptions = {},
-      mouse?: { x: number; y: number }
-    ): Promise<void> {
-      this.deselectObject();
-
-      const updateSourceProgress =
-        this[$progressTracker].beginActivity('ld-model-load');
-
-      const loader = new GLTFLoader();
-
-      const targetObject = this.findTargetObject();
-
-      const visualizationBox = this.createVisualizationBox(
-        options.dimensions ?? { x: 1, y: 1, z: 1 },
-        options.position ?? { x: 0, y: 0, z: 0 }
+      // Load via renderer's loader which uses the project's caching loader.
+      const gltf = await loader.load(
+        src,
+        this as unknown as ModelViewerElementBase
       );
-      targetObject.add(visualizationBox);
 
-      return new Promise((resolve, reject) => {
-        loader.load(
-          src,
-          async (gltf) => {
-            const objectName =
-              options.name ||
-              `part__${Math.random().toString(36).substring(2, 9)}`;
-            gltf.scene.name = 'part__' + objectName;
-            gltf.scene.userData['filepath'] = src;
-            gltf.scene.userData['name'] = objectName;
-            gltf.scene.userData['selectable'] = options.selectable ?? true;
+      if (!gltf || !gltf.scene) return;
 
-            // Parse metadata from the object name
-            const nameMetadata = this.parseNameMetadata(objectName);
+      // Name + mark as placed so selection scope recognizes it.
+      const placedName = `placed_${++this._placementCounter}`;
+      gltf.scene.name = options?.name || placedName;
+      gltf.scene.userData = gltf.scene.userData || {};
+      gltf.scene.userData.isPlacedObject = true;
+      if (options?.selectable === false) gltf.scene.userData.selectable = false;
 
-            // Add metadata for future grouping and selection optimization
-            gltf.scene.userData = {
-              ...gltf.scene.userData,
-              isPlacedObject: true,
-              groupId: nameMetadata.groupId,
-              tags: nameMetadata.tags,
-              instanceId: nameMetadata.instanceId,
-              placedAt: Date.now(),
-            };
+      // Apply position
+      gltf.scene.position.set(position.x, position.y, position.z);
 
-            console.log('Placing GLB with metadata:', options);
-
-            // Handle snap points
-            if (options.snappingPoints && options.snappingPoints.length > 0) {
-              // Store both active and original snap points (deep copy)
-              gltf.scene.userData.snappingPoints = cloneObject(
-                options.snappingPoints
-              );
-
-              gltf.scene.userData.originalSnappingPoints = cloneObject(
-                options.snappingPoints
-              );
-            }
-
-            // Pre-cache mesh references for efficient outline selection
-            const meshes: Object3D[] = [];
-            gltf.scene.traverse((child) => {
-              if (child.type === 'Mesh') {
-                meshes.push(child);
-              }
-            });
-            gltf.scene.userData.meshes = meshes;
-            if (targetObject) {
-              let finalPosition: { x: number; y: number; z: number };
-
-              // Determine the final floor position
-              if (options.position) {
-                if (this.originalFloorY === undefined) {
-                  this.originalFloorY = this[$scene].boundingBox
-                    ? this[$scene].boundingBox.min.y
-                    : 0;
-                }
-                const floorY = this.originalFloorY;
-                const floorOffset = options.floorOffset || 0;
-                finalPosition = {
-                  x: options.position.x,
-                  y: floorY + floorOffset,
-                  z: options.position.z,
-                };
-              } else {
-                this.positionModelAtFloor(gltf.scene, options.floorOffset || 0);
-                finalPosition = {
-                  x: gltf.scene.position.x,
-                  y: gltf.scene.position.y,
-                  z: gltf.scene.position.z,
-                };
-              }
-
-              // Set initial position above the final position
-              const dropStartY =
-                finalPosition.y + (options.enterAnimation ? DROP_HEIGHT : 0);
-              gltf.scene.position.set(
-                finalPosition.x,
-                dropStartY,
-                finalPosition.z
-              );
-
-              // --- SNAPPING LOGIC ---
-              const snappingPoint = mouse
-                ? findSnappingPointUnderMouse(
-                    mouse.x,
-                    mouse.y,
-                    this[$scene].camera,
-                    targetObject,
-                    {
-                      width: this.clientWidth,
-                      height: this.clientHeight,
-                      left: 0,
-                      top: 0,
-                    }
-                  )
-                : null;
-
-              let snapped = false;
-              if (snappingPoint) {
-                const compatibleSnappingPoints = findCompatibleSnappingPoints(
-                  snappingPoint[0],
-                  gltf.scene
-                );
-                if (compatibleSnappingPoints.length) {
-                  // --- KEY: Add the object to the scene first, then snap ---
-                  targetObject.add(gltf.scene);
-                  // Snap the model to the first compatible snapping point
-                  this.setupNewConnection(
-                    gltf.scene,
-                    snappingPoint[1],
-                    compatibleSnappingPoints[0],
-                    snappingPoint[0]
-                  );
-                  this.completeSnapConnection(this.pendingSnapConnection);
-                  this.pendingSnapConnection = null;
-                  snapped = true;
-                }
-              }
-
-              // If not snapped, add to scene as a free object
-              if (!snapped) {
-                targetObject.add(gltf.scene);
-              }
-
-              // Track this GLB for shadow calculations
-              this.addedGLBs.add(gltf.scene);
-
-              // Initialize outline system on first GLB placement
-              if (!this.outlineEffect) {
-                this.setupOutlineSystem();
-              }
-
-              // Update shadows to include all GLBs
-              this.updateShadowsWithGLBs();
-              this[$needsRender]();
-
-              // Wait for shaders to compile and pixels to be drawn.
-              await new Promise<void>((resolve) => {
-                requestAnimationFrame(() => {
-                  requestAnimationFrame(() => {
-                    // Start gravity animation
-                    if (options.enterAnimation) {
-                      this.isAnimatingGravity = true;
-                      const mass = options.mass || 1.0; // Default mass of 1kg
-                      this.gravityAnimation = {
-                        model: gltf.scene,
-                        targetY: finalPosition.y,
-                        startY: dropStartY,
-                        mass: mass,
-                        elapsedTime: 0,
-                      };
-                    }
-                    resolve();
-                  });
-                });
-              });
-              updateSourceProgress(1.0);
-              resolve();
-            } else {
-              updateSourceProgress(1.0);
-              reject();
-            }
-          },
-          (xhr) => {
-            updateSourceProgress(xhr.loaded / xhr.total);
-            if (xhr.loaded === xhr.total) {
-              // Fade out and remove the visualization box when animation completes
-              const visualizationBox = targetObject.children.find(
-                (child) => child.name === 'VisualizationBox'
-              );
-              if (visualizationBox && visualizationBox instanceof Mesh) {
-                targetObject.remove(visualizationBox);
-              }
-            }
-          },
-          (error) => {
-            console.error('Error loading GLB:', error);
-            reject(error);
-          }
-        );
-      });
-    }
-
-    /* Remove draco compression from a glb
-     *
-     * @param {ArrayBuffer} inputBuffer GLB with draco
-     * @return {Promise<ArrayBuffer>} GLB without draco
-     */
-    deDraco(inputBuffer: ArrayBuffer) {
-      return new Promise((res) => {
-        const loader = new GLTFLoader();
-        const dracoLoader = new DRACOLoader();
-        dracoLoader.setDecoderPath(
-          'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/'
-        );
-        loader.setDRACOLoader(dracoLoader);
-
-        loader.parse(
-          inputBuffer,
-          '',
-          (model) => {
-            if (model.scene) {
-              model.scene.traverse((node) => {
-                if (node.userData['name']) {
-                  node.name = node.userData['name'];
-                }
-              });
-              const exporter = new LDExporter();
-              exporter.parse(
-                model.scene.children,
-                (arrayBuffer) => {
-                  res(arrayBuffer);
-                },
-                function (err) {
-                  console.error(err);
-                },
-                { binary: true }
-              );
-            } else {
-              res(inputBuffer);
-            }
-          },
-          (error) => {
-            console.error(error);
-          }
-        );
-      });
-    }
-
-    private hideCustomSnappingPointSlots() {
-      // Find all custom snapping-point slots in the light DOM and hide them by default
-      const customSlots = this.querySelectorAll('[slot="snapping-point"]');
-      customSlots.forEach((slot) => {
-        const element = slot as HTMLElement;
-        // Store original visibility and hide the element
-        element.dataset.originalDisplay = element.style.display || '';
-        element.style.visibility = 'hidden';
-        element.style.position = 'absolute';
-        element.style.left = '-9999px';
-      });
-    }
-
-    private setupDragHandlers() {
-      // Mouse/touch event handlers for custom dragging
-      this.addEventListener('mousedown', this.onMouseDown.bind(this));
-      this.addEventListener('mousemove', this.onMouseMove.bind(this));
-      this.addEventListener('mouseup', this.onMouseUp.bind(this));
-
-      // Touch events for mobile support
-      this.addEventListener('touchstart', this.onTouchStart.bind(this));
-      this.addEventListener('touchmove', this.onTouchMove.bind(this));
-      this.addEventListener('touchend', this.onTouchEnd.bind(this));
-
-      // Prevent context menu on right click
-      this.addEventListener('contextmenu', (e) => e.preventDefault());
-    }
-
-    // Camera control state storage
-    private originalSensitivities = {
-      orbit: 1,
-      zoom: 1,
-      pan: 1,
-      input: 1,
+      // Attach to the scene target so it participates in the scene graph
+      try {
+        scene.target.add(gltf.scene);
+      } catch (e) {
+        // Fallback: add to scene root
+        scene.add(gltf.scene);
+      }
     };
 
-    private onMouseDown(event: MouseEvent) {
-      if (event.button !== 0) return; // Only handle left mouse button
+    rotate: RotateFunction = () => {
+      // Implementation for rotating the selected puzzle piece
+    };
+    transform: TransformFunction = () => {
+      // Implementation for transforming the selected puzzle piece
+    };
 
-      this.updateMousePosition(event);
-      this.lastClickTime = performance.now();
-      this.lastClickPosition.copy(this.currentMousePosition);
-
-      // Check if we're clicking on the selected object
-      if (this.selectedObjects.length) {
-        const isOnSelectedObject = this.selectedObjects.some((obj) =>
-          this.isPointOnObject(this.currentMousePosition, obj)
-        );
-        if (isOnSelectedObject) {
-          event.stopImmediatePropagation();
-          event.preventDefault();
-          this.startDragging(event);
-          return;
-        }
-      }
-
-      // Check if we're clicking on any part object to potentially select it
-      const partObject = this.getPartObjectAtPosition(
-        this.currentMousePosition
-      );
-      if (partObject) {
-        event.stopImmediatePropagation();
-        event.preventDefault();
-        // Selection will be handled on mouseup
-      }
-    }
-
-    private onMouseMove(event: MouseEvent) {
-      this.updateMousePosition(event);
-
-      if (this.isDragging && this.selectedObjects.length) {
-        this.updateDragPosition();
-      }
-    }
-
-    private onMouseUp(event: MouseEvent) {
-      if (this.isDragging) {
-        this.stopDragging();
-      } else {
-        // Handle selection only if we're not dragging and it was a quick click
-        const timeSinceMouseDown = performance.now() - this.lastClickTime;
-        const distanceFromMouseDown = this.currentMousePosition.distanceTo(
-          this.lastClickPosition
-        );
-
-        if (timeSinceMouseDown < 300 && distanceFromMouseDown < 5) {
-          // Check if we clicked on a part object
-          const partObject = this.getPartObjectAtPosition(
-            this.currentMousePosition
-          );
-          if (partObject) {
-            // Handle selection for part objects
-            this.handleSelection(event);
-          } else {
-            // Clicked on empty space - deselect any selected object
-            this.deselectObject();
-          }
-        }
-      }
-    }
-
-    private onTouchStart(event: TouchEvent) {
-      if (event.touches.length === 1) {
-        const touch = event.touches[0];
-        this.updateMousePositionFromTouch(touch);
-        this.lastClickTime = performance.now();
-        this.lastClickPosition.copy(this.currentMousePosition);
-
-        if (this.selectedObjects.length) {
-          const isOnSelectedObject = this.selectedObjects.some((obj) =>
-            this.isPointOnObject(this.currentMousePosition, obj)
-          );
-          if (isOnSelectedObject) {
-            event.stopImmediatePropagation();
-            event.preventDefault();
-            this.startDragging();
-            return;
-          }
-        }
-
-        // Check if we're touching any part object to potentially select it
-        const partObject = this.getPartObjectAtPosition(
-          this.currentMousePosition
-        );
-        if (partObject) {
-          event.stopImmediatePropagation();
-          event.preventDefault();
-          // Selection will be handled on touchend
-        }
-      }
-    }
-
-    private onTouchMove(event: TouchEvent) {
-      if (event.touches.length === 1 && this.isDragging) {
-        const touch = event.touches[0];
-        this.updateMousePositionFromTouch(touch);
-        this.updateDragPosition();
-        event.preventDefault();
-      }
-    }
-
-    private onTouchEnd(event: TouchEvent) {
-      if (this.isDragging) {
-        this.stopDragging();
-      } else if (event.changedTouches.length === 1) {
-        // Handle tap selection
-        const touch = event.changedTouches[0];
-        this.updateMousePositionFromTouch(touch);
-
-        const timeSinceMouseDown = performance.now() - this.lastClickTime;
-        const distanceFromMouseDown = this.currentMousePosition.distanceTo(
-          this.lastClickPosition
-        );
-
-        if (timeSinceMouseDown < 300 && distanceFromMouseDown < 5) {
-          this.handleSelection();
-        }
-      }
-    }
-
-    private updateMousePosition(event: MouseEvent) {
-      const rect = this.getBoundingClientRect();
-      this.currentMousePosition.x =
-        ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      this.currentMousePosition.y =
-        -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    }
-
-    private updateMousePositionFromTouch(touch: Touch) {
-      const rect = this.getBoundingClientRect();
-      this.currentMousePosition.x =
-        ((touch.clientX - rect.left) / rect.width) * 2 - 1;
-      this.currentMousePosition.y =
-        -((touch.clientY - rect.top) / rect.height) * 2 + 1;
-    }
-
-    private isPointOnObject(mousePosition: Vector2, object: Object3D): boolean {
-      this.raycaster.setFromCamera(mousePosition, this[$scene].camera);
-
-      const intersects = this.raycaster.intersectObject(object, true);
-      return intersects.length > 0;
-    }
-
-    private getPartObjectAtPosition(mousePosition: Vector2): Object3D | null {
-      this.raycaster.setFromCamera(mousePosition, this[$scene].camera);
-
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return null;
-
-      // Get all part objects (those with "part__" prefix)
-      const partObjects: Object3D[] = [];
-      targetObject.traverse((child) => {
-        if (child.name && child.name.startsWith('part__')) {
-          partObjects.push(child);
-        }
-      });
-
-      const intersects = this.raycaster.intersectObjects(partObjects, true);
-
-      if (intersects.length > 0) {
-        // Find the top-level part object (not a child mesh)
-        let selectedPart = intersects[0].object;
-        while (selectedPart.parent && !selectedPart.name.startsWith('part__')) {
-          selectedPart = selectedPart.parent;
-        }
-
-        if (selectedPart.name && selectedPart.name.startsWith('part__')) {
-          return selectedPart;
-        }
-      }
-
-      return null;
-    }
-
-    private startDragging(event?: MouseEvent | TouchEvent) {
-      if (!this.selectedObjects.length) return;
-
-      this.isDragging = true;
-      this.dragStartMousePosition.copy(this.currentMousePosition);
-      this.dragStartPosition.copy(this.selectedObjects[0].position);
-
-      // Calculate the offset between the object position and where we clicked
-      // Cast a ray to the floor plane to find where we clicked
-      this.raycaster.setFromCamera(
-        this.currentMousePosition,
-        this[$scene].camera
-      );
-
-      // Update floor plane to current floor level
-      if (this.originalFloorY !== undefined) {
-        this.floorPlane.constant = -this.originalFloorY;
-      }
-
-      const clickPoint = new Vector3();
-      if (this.raycaster.ray.intersectPlane(this.floorPlane, clickPoint)) {
-        // Calculate offset from object position to click point (only X and Z)
-        this.dragOffset.set(
-          this.selectedObjects[0].position.x - clickPoint.x,
-          0,
-          this.selectedObjects[0].position.z - clickPoint.z
-        );
-      } else {
-        // Fallback: no offset
-        this.dragOffset.set(0, 0, 0);
-      }
-      console.log('start dragging', this[$controls]);
-      // Store original sensitivities and disable all camera interactions while dragging
-      if (this[$controls]) {
-        console.log('disable interaction');
-        this[$controls].disableInteraction();
-        // this.originalSensitivities.orbit = this[$controls].orbitSensitivity;
-        // this.originalSensitivities.zoom = this[$controls].zoomSensitivity;
-        // this.originalSensitivities.pan = this[$controls].panSensitivity;
-        // this.originalSensitivities.input = this[$controls].inputSensitivity;
-
-        // this[$controls].orbitSensitivity = 0;
-        // this[$controls].zoomSensitivity = 0;
-        // this[$controls].panSensitivity = 0;
-        // this[$controls].inputSensitivity = 0;
-      }
-
-      // Change cursor to indicate dragging
-      this.style.cursor = 'grabbing';
-
-      // Dragging started for selected objects
-    }
-
-    private updateDragPosition() {
-      if (!this.isDragging || this.selectedObjects.length === 0) return;
-
-      // Cast ray from current mouse position
-      this.raycaster.setFromCamera(
-        this.currentMousePosition,
-        this[$scene].camera
-      );
-
-      const object = this.selectedObjects[0]; // Assuming single selection for now
-
-      // Find intersection with floor plane
-      const intersectionPoint = new Vector3();
+    /**
+     * Start an interactive placement session using a low-resolution GLB as a
+     * placeholder. Returns a PlacementSession (EventTarget-style).
+     * Only one interactive session may be 'placing' at a time; if one exists
+     * it will be returned instead of creating a new one.
+     */
+    startPlacement(
+      lowResSrc: string,
+      highResSrc: string,
+      options?: PlacementOptions,
+      initialMouse?: { clientX: number; clientY: number }
+    ): PlacementSession {
+      // Enforce single interactive session
       if (
-        this.raycaster.ray.intersectPlane(this.floorPlane, intersectionPoint)
+        this._activePlacementSession &&
+        this._activePlacementSession.state === 'placing'
       ) {
-        // Calculate the desired position with drag offset
-        const desiredX = intersectionPoint.x + this.dragOffset.x;
-        const desiredZ = intersectionPoint.z + this.dragOffset.z;
-
-        // For groups, preserve the current Y position to maintain internal object relationships
-        // For individual objects, use floor positioning
-        const desiredY = object.userData.isSnappedGroup
-          ? object.position.y // Preserve current Y for groups
-          : this.originalFloorY || 0; // Use floor Y for individual objects
-
-        // Set the position (might be overridden by snapping)
-        object.position.set(desiredX, desiredY, desiredZ);
-
-        // Check for snapping if enabled
-        this.pendingSnapConnection = null;
-        if (this.snappingEnabled) {
-          this.checkAndApplySnapping(object, intersectionPoint);
-        }
-
-        this[$scene].updateShadow();
-
-        this[$needsRender]();
-      }
-    }
-
-    private checkAndApplySnapping(
-      draggedObject: Object3D,
-      intersectionPoint: Vector3
-    ) {
-      // Find snappable objects within the dragged object (could be a group or single object)
-      const snappableObjects: Object3D[] = [];
-      if (draggedObject.userData.isSnappedGroup) {
-        // If it's a group, check all child objects for snapping
-        draggedObject.traverse((child) => {
-          if (child.userData.isPlacedObject && child.userData.snappingPoints) {
-            snappableObjects.push(child);
-          }
-        });
-      } else if (draggedObject.userData.snappingPoints) {
-        // Single object
-        snappableObjects.push(draggedObject);
+        return this._activePlacementSession;
       }
 
-      if (snappableObjects.length === 0) return;
-
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return;
-
-      let bestConnection: {
-        draggedObject: Object3D;
-        targetObject: Object3D;
-        draggedPoint: SnappingPoint;
-        targetPoint: SnappingPoint;
-        distance: number;
-      } | null = null;
-
-      // Check snapping from any snappable object to any target
-      snappableObjects.forEach((snappableObj) => {
-        targetObject.traverse((child) => {
-          if (
-            child.userData.isPlacedObject &&
-            child !== snappableObj &&
-            !this.areObjectsInSameGroup(snappableObj, child) &&
-            child.userData.snappingPoints
-          ) {
-            const connections = findSnappingConnections(snappableObj, child);
-            if (connections.length > 0) {
-              const closest = connections[0];
-              if (
-                !bestConnection ||
-                closest.distance < bestConnection.distance
-              ) {
-                bestConnection = {
-                  draggedObject: snappableObj,
-                  targetObject: child,
-                  draggedPoint: closest.draggedPoint,
-                  targetPoint: closest.targetPoint,
-                  distance: closest.distance,
-                };
-              }
-            }
-          }
-        });
-      });
-
-      if (bestConnection) {
-        this.setupNewConnection(
-          bestConnection.draggedObject,
-          bestConnection.targetObject,
-          bestConnection.draggedPoint,
-          bestConnection.targetPoint
-        );
-      }
-    }
-
-    private setupNewConnection(
-      draggedObject: Object3D,
-      targetObject: Object3D,
-      draggedPoint: SnappingPoint,
-      targetPoint: SnappingPoint
-    ) {
-      // Calculate the offset needed to align the snap points
-      const draggedWorldPos = getSnappingPointWorldPosition(
-        draggedObject,
-        draggedPoint
+      const session = new PlacementSession(
+        this,
+        lowResSrc,
+        highResSrc,
+        options || {}
       );
-      const targetWorldPos = getSnappingPointWorldPosition(
-        targetObject,
-        targetPoint
-      );
+      this._activePlacementSession = session;
 
-      // Move the entire dragged object/group so the snap points align
-      const offset = targetWorldPos.sub(draggedWorldPos);
-      draggedObject.position.add(offset);
-
-      // Store the pending connection for completion on drag end
-      this.pendingSnapConnection = {
-        draggedObject,
-        targetObject,
-        draggedPoint,
-        targetPoint,
+      // When session transitions out of placing (commit/cancel), clear active session
+      const clearActive = () => {
+        if (this._activePlacementSession === session)
+          this._activePlacementSession = null;
       };
 
-      console.log('Pending snap connection set:', this.pendingSnapConnection);
-
-      // Objects snapped together
-    }
-
-    private areObjectsInSameGroup(obj1: Object3D, obj2: Object3D): boolean {
-      const group1 = getSnappedGroup(obj1);
-      const group2 = getSnappedGroup(obj2);
-      return group1 !== null && group1 === group2;
-    }
-
-    private stopDragging() {
-      if (!this.isDragging) return;
-
-      this.isDragging = false;
-
-      // Complete any pending snap connection
-      if (this.pendingSnapConnection) {
-        this.completeSnapConnection(this.pendingSnapConnection);
-        this.pendingSnapConnection = null;
-      }
-
-      // Restore original sensitivities
-      if (this[$controls]) {
-        this[$controls].enableInteraction();
-        // this[$controls].orbitSensitivity = this.originalSensitivities.orbit;
-        // this[$controls].zoomSensitivity = this.originalSensitivities.zoom;
-        // this[$controls].panSensitivity = this.originalSensitivities.pan;
-        // this[$controls].inputSensitivity = this.originalSensitivities.input;
-      }
-
-      // Reset cursor
-      this.style.cursor = '';
-    }
-
-    private completeSnapConnection(connection: {
-      draggedObject: Object3D;
-      targetObject: Object3D;
-      draggedPoint: SnappingPoint;
-      targetPoint: SnappingPoint;
-    }) {
-      // Get the groups these objects belong to (if any)
-      const draggedGroup = getSnappedGroup(connection.draggedObject);
-      const targetGroup = getSnappedGroup(connection.targetObject);
-      console.log('Completing snap connection:', {
-        draggedObject: connection.draggedObject,
-        targetObject: connection.targetObject,
-        draggedPoint: connection.draggedPoint,
-        targetPoint: connection.targetPoint,
-      });
-
-      // Determine what objects we're actually connecting
-      const objectToConnect1 = draggedGroup || connection.draggedObject;
-      const objectToConnect2 = targetGroup || connection.targetObject;
-
-      let focusGroup: Object3D | null = null;
-
-      // If both objects are already in groups, we need to merge the groups
-      if (draggedGroup && targetGroup) {
-        focusGroup = this.mergeSnappedGroups(
-          draggedGroup,
-          targetGroup,
-          connection
-        );
-      } else if (draggedGroup && !targetGroup) {
-        // Add target object to existing dragged group
-        focusGroup = this.addObjectToSnappedGroup(
-          draggedGroup,
-          connection.targetObject,
-          connection
-        );
-      } else if (!draggedGroup && targetGroup) {
-        // Add dragged object to existing target group
-        focusGroup = this.addObjectToSnappedGroup(
-          targetGroup,
-          connection.draggedObject,
-          connection
-        );
-      } else {
-        // Create a new group from two individual objects
-
-        console.log(
-          'Creating new snapped group from individual objects:',
-          connection.draggedObject,
-          connection.targetObject
-        );
-
-        const snappedGroup = createSnappedGroup(
-          connection.draggedObject,
-          connection.targetObject,
-          connection.draggedPoint,
-          connection.targetPoint
-        );
-        this.selectedObjects = [snappedGroup];
-
-        focusGroup = snappedGroup;
-      }
-
-      if (focusGroup) {
-        const boundingBox = new Box3().setFromObject(focusGroup);
-        const center = boundingBox.getCenter(new Vector3());
-        this[$scene].setTarget(center.x, center.y, center.z);
-      }
-
-      // Update outline selection
-      this.updateOutlineSelection();
-
-      // Refresh snap points since the objects are now grouped
-      const targetObject = this.findTargetObject();
-      if (targetObject) {
-        // Use slot-based rendering instead of Three.js meshes
-        this.toggleSnappingPoints(false);
-        this.toggleSnappingPoints(true);
-      }
-
-      // Show break link slots since we now have a grouped object selected
-      if (
-        this.selectedObjects.length > 0 &&
-        this.selectedObjects[0].userData.isSnappedGroup
-      ) {
-        this.setBreakLinkSlotsVisible(true);
-      }
-
-      // Force a render to show the new group state
-      this[$needsRender]();
-
-      // Snap connection completed
-    }
-
-    private mergeSnappedGroups(
-      group1: Object3D,
-      group2: Object3D,
-      connection: {
-        draggedObject: Object3D;
-        targetObject: Object3D;
-        draggedPoint: SnappingPoint;
-        targetPoint: SnappingPoint;
-      }
-    ) {
-      // Move all objects from group2 into group1, preserving world positions
-      const objectsToMove = [...group2.children];
-      objectsToMove.forEach((obj) => {
-        // Save world position before moving
-        const worldPosition = new Vector3();
-        const worldQuaternion = new Quaternion();
-        const worldScale = new Vector3();
-        obj.getWorldPosition(worldPosition);
-        obj.getWorldQuaternion(worldQuaternion);
-        obj.getWorldScale(worldScale);
-
-        group2.remove(obj);
-        group1.add(obj);
-
-        // Convert world position to group1's local coordinate system
-        group1.worldToLocal(worldPosition);
-        obj.position.copy(worldPosition);
-        obj.quaternion.copy(worldQuaternion);
-        obj.scale.copy(worldScale);
-      });
-
-      // Add the connection to group1's snap connections
-      if (!group1.userData.snapConnections) {
-        group1.userData.snapConnections = [];
-      }
-      group1.userData.snapConnections.push({
-        object1: connection.draggedObject,
-        object2: connection.targetObject,
-        snapPoint1: { ...connection.draggedPoint },
-        snapPoint2: { ...connection.targetPoint },
-      });
-
-      // Copy over any existing connections from group2
-      if (group2.userData.snapConnections) {
-        group1.userData.snapConnections.push(
-          ...group2.userData.snapConnections
-        );
-      }
-
-      // Mark the snap points as used
-      connection.draggedPoint.isUsed = true;
-      connection.targetPoint.isUsed = true;
-
-      // Remove group2 from its parent
-      if (group2.parent) {
-        group2.parent.remove(group2);
-      }
-
-      // Update the mesh cache for group1 after merging
-      this.updateGroupMeshCache(group1);
-
-      // Update selection to group1
-      this.selectedObjects = [group1];
-
-      return group1;
-    }
-
-    private addObjectToSnappedGroup(
-      group: Object3D,
-      newObject: Object3D,
-      connection: {
-        draggedObject: Object3D;
-        targetObject: Object3D;
-        draggedPoint: SnappingPoint;
-        targetPoint: SnappingPoint;
-      }
-    ) {
-      // Save the world position before removing from current parent
-      const worldPosition = new Vector3();
-      const worldQuaternion = new Quaternion();
-      const worldScale = new Vector3();
-      newObject.getWorldPosition(worldPosition);
-      newObject.getWorldQuaternion(worldQuaternion);
-      newObject.getWorldScale(worldScale);
-
-      // Remove the new object from its current parent and add to group
-      if (newObject.parent) {
-        newObject.parent.remove(newObject);
-      }
-      group.add(newObject);
-
-      // Convert world position to group's local coordinate system
-      group.worldToLocal(worldPosition);
-      newObject.position.copy(worldPosition);
-      newObject.quaternion.copy(worldQuaternion);
-      newObject.scale.copy(worldScale);
-
-      // Add the connection to the group's snap connections
-      if (!group.userData.snapConnections) {
-        group.userData.snapConnections = [];
-      }
-      group.userData.snapConnections.push({
-        object1: connection.draggedObject,
-        object2: connection.targetObject,
-        snapPoint1: { ...connection.draggedPoint },
-        snapPoint2: { ...connection.targetPoint },
-      });
-
-      // Mark the snap points as used
-      connection.draggedPoint.isUsed = true;
-      connection.targetPoint.isUsed = true;
-
-      // Update the mesh cache for the group after adding new object
-      this.updateGroupMeshCache(group);
-
-      // Update selection to the group
-      this.selectedObjects = [group];
-
-      return group;
-    }
-    /**
-     * Update the mesh cache for a group after its structure has changed
-     */
-    private updateGroupMeshCache(group: Object3D) {
-      if (!group.userData.isSnappedGroup) return;
-
-      group.userData.meshes = [];
-      group.traverse((child) => {
-        if (child.type === 'Mesh' && !this.isSnappingPointMesh(child)) {
-          group.userData.meshes.push(child);
-        }
-      });
-
-      // Mesh cache updated for group
-    }
-
-    private handleSelection(event?: MouseEvent | TouchEvent) {
-      const selectedPart = this.getPartObjectAtPosition(
-        this.currentMousePosition
-      );
-
-      if (selectedPart && selectedPart.userData.selectable !== false) {
-        // Check if the object is part of a snapped group
-        const snappedGroup = getSnappedGroup(selectedPart);
-        const objectToSelect = snappedGroup || selectedPart;
-
-        // Toggle selection if clicking the same object/group, otherwise select new object/group
-        if (
-          this.selectedObjects.length === 1 &&
-          this.selectedObjects[0] === objectToSelect
-        ) {
-          this.deselectObject();
-        } else {
-          this.selectObject(objectToSelect);
-        }
-      } else {
-        this.deselectObject();
-      }
-    }
-
-    private selectObject(object: Object3D) {
-      // Deselect previous object
-      this.deselectObject();
-
-      this.selectedObjects = [object];
-
-      // Update outline selection
-      this.updateOutlineSelection();
-
-      // Show snap points for all objects when any object is selected
-      const targetObject = this.findTargetObject();
-      if (targetObject) {
-        // Use slot-based rendering instead of Three.js meshes
-        this.toggleSnappingPoints(true);
-      }
-
-      // Show break link slots if a grouped object is selected
-      if (
-        this.selectedObjects.length > 0 &&
-        this.selectedObjects[0].userData.isSnappedGroup
-      ) {
-        this.setBreakLinkSlotsVisible(true);
-      }
-
-      if (this[$controls]) {
-        // Disable camera panning while a part is selected
-        this[$controls].enablePan = false;
-
-        // Get the object's world position/bounding box
-        const boundingBox = new Box3().setFromObject(object);
-        const center = boundingBox.getCenter(new Vector3());
-
-        // Set the scene target (this is what the camera orbits around)
-        this[$scene].setTarget(center.x, center.y, center.z);
-      }
-
-      this[$selectObjectForControls](object);
-
-      // Force a render to ensure proper orientation
-      this[$needsRender]();
-
-      // Slot-based snapping points update automatically in the tick method
-    }
-
-    private deselectObject() {
-      if (this.selectedObjects.length > 0) {
-        this.selectedObjects = [];
-        this.selectedGroups.clear(); // Clear group tracking
-
-        // Update outline selection
-        this.updateOutlineSelection();
-
-        // Hide snap points when no object is selected
-        const targetObject = this.findTargetObject();
-        if (targetObject) {
-          // Use slot-based rendering instead of Three.js meshes
-          this.toggleSnappingPoints(false);
-        }
-
-        // Stop any active rotation animation
-        if (this.isAnimatingRotation) {
-          this.isAnimatingRotation = false;
-          this.rotationAnimation = null;
-        }
-
-        // Hide break link slots when no object is selected
-        this.setBreakLinkSlotsVisible(false);
-
-        this[$selectObjectForControls](null);
-
-        this[$needsRender]();
-      }
-      // Re-enable camera panning when no part is selected
-      if (this[$controls]) {
-        this[$controls].enablePan = true;
-      }
-    }
-
-    /**
-     * Get all objects by group ID for future multi-object grouping support.
-     */
-    private getObjectsByGroupId(groupId: string): Object3D[] {
-      const objects: Object3D[] = [];
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return objects;
-
-      targetObject.traverse((child) => {
-        if (
-          child.userData.groupId === groupId &&
-          child.userData.isPlacedObject
-        ) {
-          objects.push(child);
-        }
-      });
-
-      return objects;
-    }
-
-    /**
-     * Get all objects by tags for future batch operations.
-     */
-    private getObjectsByTags(tags: string[]): Object3D[] {
-      const objects: Object3D[] = [];
-      const targetObject = this.findTargetObject();
-      if (!targetObject) return objects;
-
-      targetObject.traverse((child) => {
-        if (child.userData.isPlacedObject && child.userData.tags) {
-          const hasMatchingTag = tags.some((tag) =>
-            child.userData.tags.includes(tag)
-          );
-          if (hasMatchingTag) {
-            objects.push(child);
-          }
-        }
-      });
-
-      return objects;
-    }
-
-    /**
-     * Future method for selecting objects by group ID (for multi-object grouping).
-     */
-    private selectObjectsByGroupId(groupId: string) {
-      const objects = this.getObjectsByGroupId(groupId);
-      if (objects.length > 0) {
-        this.selectObjects(objects);
-      }
-    }
-
-    /**
-     * Parse grouping information from object name.
-     * Supports naming conventions like:
-     * - "chair_01" -> groupId: "chair", instanceId: "01"
-     * - "table-wood_large" -> groupId: "table-wood", instanceId: "large"
-     * - "car#red_001" -> groupId: "car", tags: ["red"], instanceId: "001"
-     */
-    private parseNameMetadata(name: string): {
-      groupId: string;
-      tags: string[];
-      instanceId: string;
-    } {
-      // Extract tags from # syntax: "car#red_001" -> groupId: "car", tags: ["red"], instanceId: "001"
-      const tagMatch = name.match(/^([^#]+)#([^_]+)_(.+)$/);
-      if (tagMatch) {
-        return {
-          groupId: tagMatch[1],
-          tags: [tagMatch[2]],
-          instanceId: tagMatch[3],
+      session.addEventListener('loading-start', clearActive, { once: true });
+      session.addEventListener('cancel', clearActive, { once: true });
+      session.addEventListener('error', clearActive, { once: true });
+
+      // Kick off loading of placeholder low-res GLB asynchronously
+      session._loadPlaceholder();
+
+      // If an initial mouse position was provided, ensure the placeholder
+      // will be positioned there immediately once it loads. If the
+      // placeholder is already loaded, updatePosition will handle it.
+      if (initialMouse) {
+        const oncePosition = () => {
+          try {
+            session.updatePosition(initialMouse.clientX, initialMouse.clientY);
+          } catch (e) {}
         };
+        session.addEventListener('placeholder-loaded', oncePosition, {
+          once: true,
+        });
+        // Also attempt an immediate update in case the placeholder is
+        // already available synchronously.
+        try {
+          session.updatePosition(initialMouse.clientX, initialMouse.clientY);
+        } catch (e) {}
       }
 
-      // Extract groupId and instanceId from _ syntax: "chair_01" -> groupId: "chair", instanceId: "01"
-      const groupMatch = name.match(/^(.+)_([^_]+)$/);
-      if (groupMatch) {
-        return {
-          groupId: groupMatch[1],
-          tags: [],
-          instanceId: groupMatch[2],
-        };
-      }
-
-      // No special syntax, use the full name as groupId
-      return {
-        groupId: name,
-        tags: [],
-        instanceId: '',
-      };
-    }
-
-    connectedCallback() {
-      super.connectedCallback();
-
-      this.addEventListener('load', this._handleLoad);
-      this.addEventListener('progress', this._handleProgress);
-
-      console.log('this.controls', this[$controls]);
-
-      if (typeof window !== 'undefined') {
-        window.deDraco = this.deDraco;
-      }
-
-      // Hide any existing custom snapping-point slots by default
-      this.hideCustomSnappingPointSlots();
-
-      // Set up custom selection and drag handlers
-      this.setupDragHandlers();
-    }
-
-    disconnectedCallback() {
-      super.disconnectedCallback();
-
-      this.removeEventListener('load', this._handleLoad);
-      this.removeEventListener('progress', this._handleProgress);
-
-      // Clean up our custom event handlers
-      this.removeEventListener('mousedown', this.onMouseDown.bind(this));
-      this.removeEventListener('mousemove', this.onMouseMove.bind(this));
-      this.removeEventListener('mouseup', this.onMouseUp.bind(this));
-      this.removeEventListener('touchstart', this.onTouchStart.bind(this));
-      this.removeEventListener('touchmove', this.onTouchMove.bind(this));
-      this.removeEventListener('touchend', this.onTouchEnd.bind(this));
-
-      // Clean up selection state
-      this.deselectObject();
-
-      // Clean up any active rotation animation
-      if (this.isAnimatingRotation) {
-        this.isAnimatingRotation = false;
-        this.rotationAnimation = null;
-      }
-
-      // Clean up snap points
-      const targetObject = this.findTargetObject();
-      if (targetObject) {
-        // Clean up slot-based rendering
-        this.clearSlots(this.snappingPointSlots);
-        this.clearSlots(this.breakLinkSlots);
-      }
-    }
-
-    // Public API for snapping control
-    public setSnappingEnabled(enabled: boolean) {
-      this.snappingEnabled = enabled;
-    }
-
-    public getSnappingEnabled(): boolean {
-      return this.snappingEnabled;
-    }
-
-    // Future ungroup functionality
-    public ungroupSelectedObject(): boolean {
-      if (this.selectedObjects.length !== 1) return false;
-
-      const selectedObject = this.selectedObjects[0];
-      if (!selectedObject.userData.isSnappedGroup) return false;
-
-      return this.ungroupSnappedGroup(selectedObject);
-    }
-
-    private ungroupSnappedGroup(group: Object3D): boolean {
-      if (!group.userData.snapConnections) return false;
-
-      // No need to restore snap points since we don't mark them as used anymore
-      // group.userData.snapConnections.forEach((connection: any) => {
-      //   if (connection.snapPoint1) connection.snapPoint1.isUsed = false;
-      //   if (connection.snapPoint2) connection.snapPoint2.isUsed = false;
-      // });
-
-      // Move all child objects back to the target object (where objects should live)
-      const targetObject = this.findTargetObject();
-      const childObjects = [...group.children];
-      const ungroupedObjects: Object3D[] = [];
-
-      childObjects.forEach((child) => {
-        // Save the world position and rotation before removing from group
-        const worldPosition = new Vector3();
-        const worldQuaternion = new Quaternion();
-        const worldScale = new Vector3();
-        child.getWorldPosition(worldPosition);
-        child.getWorldQuaternion(worldQuaternion);
-        child.getWorldScale(worldScale);
-
-        group.remove(child);
-        if (targetObject) {
-          targetObject.add(child);
-
-          // Convert world position to local space of the target object
-          targetObject.worldToLocal(worldPosition);
-          child.position.copy(worldPosition);
-          child.quaternion.copy(worldQuaternion);
-          child.scale.copy(worldScale);
-
-          // Ensure the child is marked as a placed object with snapping points
-          child.userData.isPlacedObject = true;
-          // Remove any group-related flags
-          delete child.userData.isInGroup;
-
-          if (child.userData.originalSnappingPoints) {
-            child.userData.snappingPoints = cloneObject(
-              child.userData.originalSnappingPoints
-            );
+      // Wire default pointer capture (window-level) so consumers don't need to
+      // manage global listeners. Pointer moves update the placeholder; pointer
+      // up commits the placement. ESC cancels.
+      const onPointerMove = (e: PointerEvent) => {
+        try {
+          if (session.state === 'placing') {
+            session.updatePosition(e.clientX, e.clientY);
           }
-
-          ungroupedObjects.push(child);
+        } catch (err) {
+          // swallow
         }
-      });
-
-      // Remove the group itself
-      if (group.parent) {
-        group.parent.remove(group);
-      }
-
-      // Select one of the ungrouped objects to show snapping points
-      // This allows immediate re-snapping
-      if (ungroupedObjects.length > 0) {
-        this.selectObject(ungroupedObjects[0]);
-
-        // Force an explicit update of snapping point slots after a brief delay
-        // to ensure the ungrouped objects are properly processed
-        setTimeout(() => {
-          this.toggleSnappingPoints(true);
-          this.updateSnappingPointSlots();
-        }, 10);
-      } else {
-        // Fallback: clear selection
-        this.deselectObject();
-      }
-
-      // Trigger render update
-      this[$needsRender]();
-
-      // Group successfully ungrouped
-      return true;
-    }
-
-    /**
-     * Create a visualization box that shows only the bottom face of the placement area.
-     * The bottom face will be semi-transparent and positioned at the same location as the GLB.
-     */
-    private createVisualizationBox(
-      size: {
-        x: number;
-        y: number;
-        z: number;
-      },
-      position: { x: number; y: number; z: number }
-    ): Mesh {
-      // Create a plane geometry for just the bottom face with the same X and Z dimensions
-      const bottomGeometry = new PlaneGeometry(size.x, size.z);
-
-      // Create a semi-transparent material for the bottom face
-      const bottomMaterial = new MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.7, // Semi-transparent
-        side: 2, // DoubleSide to ensure visibility from all angles
-      });
-
-      // Create the visualization box using only the bottom face
-      const visualizationBox = new Mesh(bottomGeometry, bottomMaterial);
-      visualizationBox.name = 'VisualizationBox';
-
-      // Rotate the plane to be horizontal (bottom face)
-      visualizationBox.rotation.x = -Math.PI / 2;
-
-      // Position the bottom face at the correct location
-      visualizationBox.position.set(position.x, 0, position.z);
-      return visualizationBox;
-    }
-
-    private updateAllSlots() {
-      this.updateSnappingPointSlots();
-      this.updateBreakLinkSlots();
-    }
-
-    /**
-     * Handle rotation slot click events
-     */
-    private rotateObject(rad: number, object: Object3D) {
-      if (!object || this.isAnimatingRotation) return;
-
-      const currentRotation = object.rotation.y;
-      let targetRotation: number;
-
-      targetRotation = currentRotation + rad;
-
-      // For groups, we need to handle rotation around the group's center
-      if (object.userData.isSnappedGroup) {
-        this.rotateGroupAroundCenter(object, currentRotation, targetRotation);
-      } else {
-        // For individual objects, use the normal rotation animation
-        this.startRotationAnimation(object, currentRotation, targetRotation);
-      }
-    }
-
-    /**
-     * Rotate a group around its center point
-     */
-    private rotateGroupAroundCenter(
-      group: Object3D,
-      startRotation: number,
-      targetRotation: number
-    ) {
-      // Calculate the group's bounding box to find its center
-      const boundingBox = new Box3().setFromObject(group);
-      const center = boundingBox.getCenter(new Vector3());
-
-      // Convert center to the group's parent coordinate system
-      const groupParent = group.parent;
-      if (groupParent) {
-        groupParent.worldToLocal(center);
-      }
-
-      // Store the original position
-      const originalPosition = group.position.clone();
-
-      // Start the rotation animation with center-based rotation
-      this.isAnimatingRotation = true;
-      this.rotationAnimation = {
-        object: group,
-        startRotation: startRotation,
-        targetRotation: targetRotation,
-        elapsedTime: 0,
-        duration: 500,
-        isGroup: true,
-        groupCenter: center,
-        originalPosition: originalPosition,
-      };
-    }
-
-    // Add these properties to the class
-    private isAnimatingGravity: boolean = false;
-    private gravityAnimation: {
-      model: Object3D;
-      targetY: number;
-      startY: number;
-      mass: number;
-      elapsedTime: number;
-    } | null = null;
-
-    private startGravityAnimation(
-      model: Object3D,
-      targetY: number,
-      mass: number
-      //needsDefaultSnappingPoints: boolean = false
-    ) {
-      this.gravityAnimation = {
-        model: Object3D,
-        targetY: number,
-        mass: number,
-        elapsedTime: 0,
       };
 
-      this.isAnimatingGravity = true;
-    }
-
-    private finishGravityAnimation() {
-      if (!this.gravityAnimation) return;
-
-      const { model, targetY } = this.gravityAnimation;
-
-      // Ensure final position is exact
-      model.position.y = targetY;
-
-      // Generate default snap points if needed (after object is in final position)
-      if (model.userData.needsDefaultSnappingPoints) {
-        //model.userData.snappingPoints = generateDefaultSnappingPoints(model);
-        delete model.userData.needsDefaultSnappingPoints;
-      }
-
-      // Clean up animation state
-      this.isAnimatingGravity = false;
-      this.gravityAnimation = null;
-
-      this.updateShadowsWithGLBs();
-      this[$needsRender]();
-    }
-
-    private updateGravityAnimation(_: number, delta: number) {
-      if (!this.isAnimatingGravity || !this.gravityAnimation) {
-        return;
-      }
-
-      const { targetY, startY, mass, model, elapsedTime } =
-        this.gravityAnimation;
-
-      const gravity = 10; // m/s²
-      const timeScale = 1000; // Convert to milliseconds
-
-      // Calculate fall time based on physics: t = sqrt(2h/g)
-      const fallDistance = Math.abs(startY - targetY);
-
-      // More lenient early exit condition for larger objects
-      if (fallDistance <= 0.001) {
-        model.position.y = targetY;
-        this.finishGravityAnimation();
-        return;
-      }
-
-      // Calculate fall time - make it faster for better visual feedback
-      const baseFallTime = Math.sqrt((2 * fallDistance) / gravity) * timeScale;
-
-      // Simplified mass multiplier - avoid complex calculations that might fail
-      // const massMultiplier = Math.max(0.5, Math.min(2.0, mass / 10.0));
-      const massMultiplier = Math.max(
-        0.7,
-        Math.min(1.3, 1.0 / Math.sqrt(mass))
-      );
-      const adjustedFallTime = Math.max(
-        200, // Increased minimum time
-        Math.min(1000, baseFallTime * massMultiplier) // Increased maximum time
-      );
-
-      const progress = Math.min(elapsedTime / adjustedFallTime, 1.0);
-
-      this.gravityAnimation.elapsedTime += delta;
-
-      // Use easing for natural-looking gravity acceleration
-      const easedProgress = progress * progress;
-
-      // Calculate current position with more robust math
-      let currentY: number;
-      if (startY > targetY) {
-        // Falling down
-        currentY = startY - fallDistance * easedProgress;
-        model.position.y = Math.max(currentY, targetY);
-      } else {
-        // Falling up (unusual case)
-        currentY = startY + fallDistance * easedProgress;
-        model.position.y = Math.min(currentY, targetY);
-      }
-
-      // Trigger render
-      this.updateShadowsWithGLBs();
-      this[$needsRender]();
-
-      // Continue animation if not finished
-      if (progress >= 1.0) {
-        // Ensure final position is exact
-        model.position.y = targetY;
-        this.finishGravityAnimation();
-        return;
-      }
-    }
-
-    /**
-     * Start a smooth rotation animation
-     */
-    private startRotationAnimation(
-      object: Object3D,
-      startRotation: number,
-      targetRotation: number
-    ) {
-      this.isAnimatingRotation = true;
-      this.rotationAnimation = {
-        object: object,
-        startRotation: startRotation,
-        targetRotation: targetRotation,
-        elapsedTime: 0,
-        duration: 500, // Animation duration in milliseconds
-      };
-    }
-
-    /**
-     * Update the rotation animation
-     */
-    private updateRotationAnimation(_: number, delta: number) {
-      if (!this.isAnimatingRotation || !this.rotationAnimation) {
-        return;
-      }
-
-      const { object, startRotation, targetRotation, elapsedTime, duration } =
-        this.rotationAnimation;
-
-      const progress = Math.min(elapsedTime / duration, 1);
-
-      this.rotationAnimation.elapsedTime += delta;
-
-      // Use ease-out cubic easing for smooth animation
-      const easeProgress = 1 - Math.pow(1 - progress, 3);
-
-      // Interpolate between start and target rotation
-      const currentRotation =
-        startRotation + (targetRotation - startRotation) * easeProgress;
-
-      // Handle group rotation around center vs individual object rotation
-      if (
-        this.rotationAnimation.isGroup &&
-        this.rotationAnimation.groupCenter &&
-        this.rotationAnimation.originalPosition
-      ) {
-        // For groups, rotate around the group's center
-        const { groupCenter, originalPosition } = this.rotationAnimation;
-
-        // Calculate the rotation difference from start
-        const rotationDiff = currentRotation - startRotation;
-
-        // Temporarily move the group so its center is at origin
-        const tempPosition = originalPosition.clone().sub(groupCenter);
-
-        // Apply rotation to the temporary position
-        const rotatedPosition = tempPosition.clone();
-        rotatedPosition.applyAxisAngle(new Vector3(0, 1, 0), rotationDiff);
-
-        // Move back and set the new position and rotation
-        object.position.copy(rotatedPosition.add(groupCenter));
-        object.rotation.y = currentRotation;
-      } else {
-        // For individual objects, use direct rotation
-        object.rotation.y = currentRotation;
-      }
-
-      // Update shadows during animation
-      this.updateShadowsWithGLBs();
-
-      // Force a render to show the rotation
-      this[$needsRender]();
-
-      // Check if animation is complete
-      if (progress >= 1) {
-        this.finishRotationAnimation();
-      }
-    }
-
-    /**
-     * Finish the rotation animation
-     */
-    private finishRotationAnimation() {
-      if (!this.rotationAnimation) return;
-
-      const { object, targetRotation } = this.rotationAnimation;
-
-      // Ensure final rotation is exact
-      object.rotation.y = targetRotation;
-
-      // Clean up animation state
-      this.isAnimatingRotation = false;
-      this.rotationAnimation = null;
-
-      // Final render and shadow update
-      this.updateShadowsWithGLBs();
-      this[$needsRender]();
-    }
-
-    [$tick](time: number, delta: number) {
-      super[$tick](time, delta);
-
-      // Update rotation animation if active
-      if (this.isAnimatingRotation) {
-        this.updateRotationAnimation(time, delta);
-      }
-
-      if (this.isAnimatingGravity && this.gravityAnimation) {
-        this.updateGravityAnimation(time, delta);
-      }
-
-      this.updateAllSlots();
-    }
-
-    /**
-     * Generic helper to clear and remove slot elements from a given map.
-     */
-    private clearSlots(slotMap: Map<string, HTMLElement>) {
-      slotMap.forEach((element) => {
-        if (element.parentElement) {
-          element.parentElement.removeChild(element);
+      const onPointerUp = () => {
+        try {
+          if (session.state === 'placing') {
+            // Commit using any preconfigured finalSrc
+            session.commit().catch(() => {});
+          }
+        } catch (err) {
+          // swallow
         }
+      };
+
+      const onPointerCancel = () => {
+        try {
+          if (session.state === 'placing') session.cancel();
+        } catch (err) {}
+      };
+
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          if (session.state === 'placing') session.cancel();
+        }
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerCancel);
+      window.addEventListener('keydown', onKeyDown);
+
+      const removeDomListeners = () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerCancel);
+        window.removeEventListener('keydown', onKeyDown);
+      };
+
+      // Clean up listeners when session ends or errors.
+      session.addEventListener('loading-start', () => removeDomListeners(), {
+        once: true,
       });
-      slotMap.clear();
+      session.addEventListener('cancel', () => removeDomListeners(), {
+        once: true,
+      });
+      session.addEventListener('error', () => removeDomListeners(), {
+        once: true,
+      });
+
+      return session;
     }
   }
 
   return LDPuzzlerModelViewerElement;
 };
+
+/**
+ * PlacementSession represents an interactive placement instance. It's an
+ * EventTarget and emits events: 'start','update','loading-start','loaded','error','cancel'.
+ */
+class PlacementSession extends EventTarget {
+  id: string;
+  state: 'placing' | 'loading' | 'ended' | 'cancelled' = 'placing';
+  placeholder: Object3D | null = null;
+  private _element: InstanceType<ReturnType<typeof LDPuzzlerMixin>> | null;
+  private _lowResSrc: string;
+  private _highResSrc?: string;
+  private _options?: PlacementOptions;
+
+  constructor(
+    element: any,
+    lowResSrc: string,
+    highResSrc?: string,
+    options?: PlacementOptions
+  ) {
+    super();
+    this.id = String(Date.now()) + '_' + Math.floor(Math.random() * 10000);
+    this._element = element;
+    this._lowResSrc = lowResSrc;
+    this._highResSrc = highResSrc;
+    this._options = options;
+    this.dispatchEvent(
+      new CustomEvent('start', { detail: { sessionId: this.id } })
+    );
+  }
+
+  // Internal: load low-res placeholder and insert into scene
+  async _loadPlaceholder() {
+    if (!this._element) return;
+    const scene = (this._element as any)[$scene];
+    if (!scene) return;
+
+    try {
+      const loader = (this._element as any)[$renderer].loader;
+      const gltf = await loader.load(
+        this._lowResSrc,
+        this._element,
+        (p: number) => {
+          // Progress for placeholder load (0..1)
+          try {
+            this.dispatchEvent(
+              new CustomEvent('progress', {
+                detail: {
+                  sessionId: this.id,
+                  phase: 'placeholder',
+                  progress: p,
+                },
+              })
+            );
+          } catch (e) {}
+        }
+      );
+
+      if (!gltf || !gltf.scene) return;
+
+      // Use the low-res model as the interactive placeholder
+      const placeholder = gltf.scene;
+      if (!placeholder) return;
+
+      this.placeholder = placeholder;
+      placeholder.name =
+        this._options?.name || `placement_placeholder_${this.id}`;
+      placeholder.userData = placeholder.userData || {};
+      placeholder.userData.isPlacementPlaceholder = true;
+      if (this._options?.selectable === false)
+        placeholder.userData.selectable = false;
+
+      // Insert into scene target
+      try {
+        scene.target.add(placeholder);
+      } catch (e) {
+        scene.add(placeholder);
+      }
+      // Keep the placeholder hidden until we receive the first pointer
+      // update so it doesn't appear at the scene origin if the GLB loads
+      // very quickly.
+      try {
+        placeholder.visible = false;
+      } catch (e) {
+        // ignore if property not present
+      }
+
+      this.dispatchEvent(
+        new CustomEvent('placeholder-loaded', {
+          detail: { sessionId: this.id, placeholder },
+        })
+      );
+      // Request render
+      (this._element as any)[$needsRender]();
+    } catch (error) {
+      this.dispatchEvent(
+        new CustomEvent('error', { detail: { sessionId: this.id, error } })
+      );
+      this.cancel();
+    }
+  }
+
+  // Update placeholder position. Accepts client coordinates and converts
+  // them to a world point using the LDCursor mixin's helper.
+  updatePosition(clientX: number, clientY: number) {
+    if (!this.placeholder || !this._element) return;
+
+    try {
+      const world = (this._element as any)[$getMouseWorldPoint](
+        clientX,
+        clientY
+      ) as Vector3 | null;
+      if (!world) {
+        // pointer outside or no valid ray intersection
+        this.dispatchEvent(
+          new CustomEvent('update', {
+            detail: { sessionId: this.id, worldPoint: null },
+          })
+        );
+        return;
+      }
+
+      // Make the placeholder visible on the first pointer update so it
+      // doesn't flash at the origin when the low-res asset loaded before
+      // the user moved the mouse.
+      if (this.placeholder.visible === false) {
+        try {
+          this.placeholder.visible = true;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      this.placeholder.position.set(world.x, world.y, world.z);
+      this.dispatchEvent(
+        new CustomEvent('update', {
+          detail: {
+            sessionId: this.id,
+            worldPoint: { x: world.x, y: world.y, z: world.z },
+          },
+        })
+      );
+      (this._element as any)[$needsRender]();
+    } catch (error) {
+      // If helper is not present or fails, emit error and no-op
+      this.dispatchEvent(
+        new CustomEvent('error', { detail: { sessionId: this.id, error } })
+      );
+    }
+  }
+
+  // Commit placement: start loading the final high-res GLB. Session is
+  // considered ended for interactive purposes immediately; returned Promise
+  // resolves/rejects when final model load completes.
+  async commit(finalSrc?: string) {
+    if (this.state !== 'placing') {
+      return Promise.reject(new Error('Session not placing'));
+    }
+
+    this.state = 'loading';
+    this.dispatchEvent(
+      new CustomEvent('loading-start', {
+        detail: {
+          sessionId: this.id,
+          finalSrc: finalSrc || this._highResSrc,
+        },
+      })
+    );
+
+    const srcToLoad = finalSrc || this._highResSrc;
+    if (!srcToLoad) {
+      const err = new Error('No finalSrc provided to commit');
+      this.dispatchEvent(
+        new CustomEvent('error', { detail: { sessionId: this.id, error: err } })
+      );
+      this._cleanupPlaceholder();
+      return Promise.reject(err);
+    }
+
+    // Allow new interactive sessions now; capture element ref so we can
+    // continue the final load in the background and still clean up the
+    // placeholder even after we drop the interactive reference.
+    const element = this._element;
+    this._endInteractive();
+
+    if (!element) return Promise.reject(new Error('No element'));
+
+    const loader = (element as any)[$renderer].loader;
+    const scene = (element as any)[$scene];
+
+    try {
+      const gltf = await loader.load(srcToLoad, element, (p: number) => {
+        // Progress for final load (0..1)
+        try {
+          this.dispatchEvent(
+            new CustomEvent('progress', {
+              detail: { sessionId: this.id, phase: 'final', progress: p },
+            })
+          );
+        } catch (e) {}
+      });
+
+      if (!gltf || !gltf.scene) {
+        throw new Error('Loaded GLTF missing scene');
+      }
+
+      // Place final model at placeholder transform (if present)
+      if (this.placeholder) {
+        gltf.scene.position.copy(this.placeholder.position);
+        gltf.scene.quaternion.copy(this.placeholder.quaternion);
+        gltf.scene.scale.copy(this.placeholder.scale);
+      }
+
+      // Mark as placed so selection logic recognizes it
+      gltf.scene.name = this._options?.name || `placed_${this.id}`;
+      gltf.scene.userData = gltf.scene.userData || {};
+      gltf.scene.userData.isPlacedObject = true;
+      if (this._options?.selectable === false)
+        gltf.scene.userData.selectable = false;
+
+      try {
+        scene.target.add(gltf.scene);
+      } catch (e) {
+        scene.add(gltf.scene);
+      }
+
+      // Clean up placeholder (we can still remove it even though the
+      // interactive session has been ended)
+      this._cleanupPlaceholder();
+
+      // Request a render so the newly added final model is visible
+      // immediately (camera movement shouldn't be required).
+      try {
+        (element as any)[$needsRender]();
+      } catch (e) {
+        // ignore
+      }
+
+      this.state = 'ended';
+      const detail = { sessionId: this.id, placedNode: gltf.scene };
+      this.dispatchEvent(new CustomEvent('loaded', { detail }));
+      return { id: this.id, node: gltf.scene };
+    } catch (error) {
+      // On failure, remove placeholder and emit error
+      this._cleanupPlaceholder();
+      this.state = 'cancelled';
+      this.dispatchEvent(
+        new CustomEvent('error', { detail: { sessionId: this.id, error } })
+      );
+      try {
+        (element as any)[$needsRender]();
+      } catch (e) {}
+      return Promise.reject(error);
+    }
+  }
+
+  cancel() {
+    this._cleanupPlaceholder();
+    this.state = 'cancelled';
+    this.dispatchEvent(
+      new CustomEvent('cancel', { detail: { sessionId: this.id } })
+    );
+    this._endInteractive();
+  }
+
+  private _cleanupPlaceholder() {
+    if (!this.placeholder) return;
+    try {
+      if (this.placeholder.parent)
+        this.placeholder.parent.remove(this.placeholder);
+      this.placeholder.traverse((child: any) => {
+        if (child.dispose)
+          try {
+            child.dispose();
+          } catch (_) {}
+      });
+    } catch (e) {
+      // ignore
+    }
+    this.placeholder = null;
+    // If the interactive element is still around, request a render.
+    if (this._element) (this._element as any)[$needsRender]();
+  }
+
+  private _endInteractive() {
+    // Drop reference to element so caller may start another interactive session
+    this._element = null;
+  }
+}

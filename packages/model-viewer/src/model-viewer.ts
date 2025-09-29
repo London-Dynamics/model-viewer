@@ -29,7 +29,7 @@ import { LDFloatingControlStripMixin } from './features/ld-floating-control-stri
 import { LDLightsMixin } from './features/ld-lights.js';
 import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
-import { LDCursorMixin } from './features/ld-floor-cursor/index.js';
+import { LDCursorMixin } from './features/ld-cursor/index.js';
 import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
 
 import ModelViewerElementBase from './model-viewer-base.js';
