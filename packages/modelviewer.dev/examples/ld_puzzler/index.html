@@ -398,6 +398,82 @@
                         };
                       };
 
+                      // --- Loader-hotspot management ---
+                      // Map sessionId -> hotspot wrapper element
+                      const activeLoaders = new Map();
+
+                      // Inject minimal styles for the loader UI
+                      const loaderStyle = document.createElement('style');
+                      loaderStyle.textContent = `
+                        .ld-loader {
+                          width: 36px;
+                          height: 36px;
+                          border-radius: 50%;
+                          background: conic-gradient(#3b82f6 0deg, #3b82f6 0deg, #e5e7eb 0deg);
+                          display:flex;
+                          align-items:center;
+                          justify-content:center;
+                          color:#111;
+                          font-size:10px;
+                          box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                        }
+                        .ld-loader-label{ font-size:10px; }
+                      `;
+                      document.head.appendChild(loaderStyle);
+
+                      function vec3ToPositionString(v) {
+                        if (!v) return undefined;
+                        // three.js Vector3 -> "Xm Ym Zm" format
+                        return `${v.x}m ${v.y}m ${v.z}m`;
+                      }
+
+                      function createLoaderHotspot(sessionId, positionVector) {
+                        const slotName = `hotspot-loader-${sessionId}`;
+                        const wrapper = document.createElement('div');
+                        wrapper.setAttribute('slot', slotName);
+                        const posStr = vec3ToPositionString(positionVector);
+                        if (posStr) wrapper.dataset.position = posStr;
+                        // zero normal keeps the hotspot always visible
+                        wrapper.dataset.normal = '0m 0m 0m';
+
+                        const inner = document.createElement('div');
+                        inner.className = 'ld-loader';
+                        inner.innerHTML = `<div class="ld-loader-label">0%</div>`;
+                        wrapper.appendChild(inner);
+
+                        // Attach session id for lookup
+                        wrapper.dataset.sessionId = sessionId;
+
+                        modelViewer.appendChild(wrapper);
+                        activeLoaders.set(sessionId, wrapper);
+                        return wrapper;
+                      }
+
+                      function updateLoaderProgress(sessionId, progress) {
+                        const wrapper = activeLoaders.get(sessionId);
+                        if (!wrapper) return;
+                        const inner = wrapper.querySelector('.ld-loader');
+                        if (!inner) return;
+                        const pct = Math.round(progress * 100);
+                        const label = inner.querySelector('.ld-loader-label');
+                        if (label) label.textContent = `${pct}%`;
+                        // Update conic-gradient to reflect progress (0..360deg)
+                        const deg = Math.round(progress * 360);
+                        inner.style.background = `conic-gradient(#3b82f6 0deg, #3b82f6 ${deg}deg, #e5e7eb ${deg}deg)`;
+                        // rely on model-viewer's annotation/slot plumbing to update render
+                      }
+
+                      function removeLoaderHotspot(sessionId) {
+                        const wrapper = activeLoaders.get(sessionId);
+                        if (!wrapper) return;
+                        try {
+                          wrapper.remove();
+                        } catch (e) {}
+                        activeLoaders.delete(sessionId);
+                        // rely on model-viewer's annotation/slot plumbing to update render
+                      }
+                      // --- end loader-hotspot management ---
+
                       modelViewer.addEventListener('progress', (e) => {
                         const progress = e.detail;
                         console.log('Loading progress:', progress);
@@ -527,17 +603,71 @@
                               }
                             );
 
+                            session.addEventListener('loading-start', (e) => {
+                              console.log('Loading placed object', e.detail);
+                              const sessionId = e.detail.sessionId;
+                              // Prefer computed center from session if available
+                              const center =
+                                e.detail && e.detail.center
+                                  ? e.detail.center
+                                  : null;
+                              const pos = center
+                                ? center
+                                : session.placeholder
+                                ? session.placeholder.position
+                                : null;
+                              createLoaderHotspot(sessionId, pos);
+                              // When placeholder becomes available later, update hotspot position
+                              session.addEventListener(
+                                'placeholder-loaded',
+                                (pl) => {
+                                  try {
+                                    const ph = pl.detail.placeholder;
+                                    const posStr = `${ph.position.x}m ${ph.position.y}m ${ph.position.z}m`;
+                                    const slotName = `hotspot-loader-${sessionId}`;
+                                    // Update the DOM node if present
+                                    const wrapper =
+                                      activeLoaders.get(sessionId);
+                                    if (wrapper) {
+                                      wrapper.dataset.position = posStr;
+                                    }
+                                    // Inform model-viewer to update the hotspot position
+                                    try {
+                                      modelViewer.updateHotspot?.({
+                                        name: slotName,
+                                        position: posStr,
+                                        normal: '0m 0m 0m',
+                                      });
+                                    } catch (e) {}
+                                  } catch (e) {}
+                                },
+                                { once: true }
+                              );
+                            });
+
                             session.addEventListener('loaded', (e) => {
                               console.log('Loaded placed object');
                               modelViewer.removeAttribute('cursor-visible');
+                              removeLoaderHotspot(e.detail.sessionId);
                               session = null;
                             });
 
                             session.addEventListener('progress', (ev) => {
                               const detail = ev.detail;
-                              console.log('Placement progress', detail);
-                              // detail.phase === 'placeholder' | 'final'
-                              // detail.progress === 0..1
+                              // console.log('Placement progress', detail);
+                              updateLoaderProgress(
+                                detail.sessionId,
+                                detail.progress
+                              );
+                            });
+
+                            session.addEventListener('error', (e) => {
+                              // Clean up loader if load failed
+                              removeLoaderHotspot(e.detail.sessionId);
+                            });
+
+                            session.addEventListener('cancel', (e) => {
+                              removeLoaderHotspot(e.detail.sessionId);
                             });
 
                             document.addEventListener(

@@ -1,5 +1,5 @@
 import { property } from 'lit/decorators.js';
-import { Object3D, Vector3 } from 'three';
+import { Object3D, Vector3, Box3 } from 'three';
 
 import { Constructor } from '../../utilities.js';
 import ModelViewerElementBase, {
@@ -433,11 +433,30 @@ class PlacementSession extends EventTarget {
     }
 
     this.state = 'loading';
+
+    // Compute a reasonable center point for the placeholder so callers
+    // can position UI (hotspots) at the geometric center of the object
+    // rather than at the floor or origin.
+    let centerDetail: { x: number; y: number; z: number } | null = null;
+    try {
+      if (this.placeholder) {
+        // Ensure world matrices are up to date
+        this.placeholder.updateMatrixWorld(true);
+        const box = new Box3().setFromObject(this.placeholder);
+        const center = new Vector3();
+        box.getCenter(center);
+        centerDetail = { x: center.x, y: center.y, z: center.z };
+      }
+    } catch (e) {
+      centerDetail = null;
+    }
+
     this.dispatchEvent(
       new CustomEvent('loading-start', {
         detail: {
           sessionId: this.id,
-          finalSrc: finalSrc || this._highResSrc,
+          src: finalSrc || this._highResSrc,
+          center: centerDetail,
         },
       })
     );
