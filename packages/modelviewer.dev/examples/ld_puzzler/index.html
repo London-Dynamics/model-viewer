@@ -183,6 +183,7 @@
                     field-of-view="10deg"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     floating-controls-enabled
+                    snapping-enabled
                     edit-mode
                   >
                     <div slot="floating-control-strip">
@@ -505,14 +506,14 @@
                           {
                             position: { x: 0, y: 0.5, z: 0.5 },
                             rotation: { x: 0, y: 0, z: 0 },
-                            snapDistance: 0.2,
+                            snapRadius: 0.2,
                             accepts: ['chaise'],
                             provides: ['corner-right-front'],
                           },
                           {
                             position: { x: -0.5, y: 0.5, z: 0 },
                             rotation: { x: 0, y: -1.5707963267948966, z: 0 },
-                            snapDistance: 0.2,
+                            snapRadius: 0.2,
                             accepts: ['seat-right'],
                             provides: ['seat-left'],
                           },
@@ -699,14 +700,11 @@
 
                           if (el.getAttribute('aria-checked') === 'true') {
                             el.setAttribute('aria-checked', 'false');
-
-                            modelViewer.setSnappingEnabled?.(false);
-                            console.log('Snapping disabled');
+                            modelViewer.removeAttribute('snapping-enabled');
                           } else {
                             el.setAttribute('aria-checked', 'true');
 
-                            modelViewer.setSnappingEnabled?.(true);
-                            console.log('Snapping enabled');
+                            modelViewer.setAttribute('snapping-enabled', '');
                           }
                         });
                       document
@@ -717,13 +715,16 @@
                           if (el.getAttribute('aria-checked') === 'true') {
                             el.setAttribute('aria-checked', 'false');
 
-                            modelViewer.toggleSnappingPoints?.(false);
-                            console.log('Snapping disabled');
+                            modelViewer.removeAttribute(
+                              'snapping-points-visible'
+                            );
                           } else {
                             el.setAttribute('aria-checked', 'true');
 
-                            modelViewer.toggleSnappingPoints?.(true);
-                            console.log('Snapping enabled');
+                            modelViewer.setAttribute(
+                              'snapping-points-visible',
+                              ''
+                            );
                           }
                         });
 
