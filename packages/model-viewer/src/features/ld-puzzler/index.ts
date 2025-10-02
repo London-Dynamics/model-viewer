@@ -1,5 +1,5 @@
 import { property } from 'lit/decorators.js';
-import { Object3D, Vector3, Box3 } from 'three';
+import { Object3D, Vector3, Box3, Raycaster, Vector2 } from 'three';
 
 import { Constructor } from '../../utilities.js';
 import ModelViewerElementBase, {
@@ -10,6 +10,10 @@ import ModelViewerElementBase, {
 import { $getMouseWorldPoint } from '../ld-cursor/index.js';
 
 import { SnappingPoint } from '../../utilities/snapping-points.js';
+import {
+  $selectObjectForControls,
+  $clearSelectedObject,
+} from '../ld-floating-control-strip.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
@@ -33,7 +37,7 @@ type PlaceFunction = (
 
 type RotateFunction = () => void;
 
-type SelectionScope = 'placed' | 'puzzler-root' | 'both' | 'all';
+type SelectionScope = 'part' | 'group' | 'all';
 
 type TransformFunction = () => void;
 
@@ -63,14 +67,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     snappingPointsVisible: boolean = false;
 
     /**
-     * Which nodes are allowed to be selected.
-     * - 'placed' (default): only objects created with place() (prefix "part_"), respecting selectable:false
-     * - 'puzzler-root': only children of "PuzzlerRoot" whose name starts with "id_"
-     * - 'both': union of 'placed' and 'puzzler-root'
-     * - 'all': any scene node (still respects selectable:false)
+     * Which selection mode is active. Options:
+     * - 'part' (default): select individual parts (closest placed object, or PuzzlerRoot as fallback)
+     * - 'group': select groups (closest group node, or parent of closest PuzzlerRoot as fallback)
+     * - 'all': allow any scene node to be selected
      */
     @property({ type: String, attribute: 'selection-scope' })
-    selectionScope: SelectionScope = 'placed';
+    selectionScope: SelectionScope = 'part';
 
     // Return true only when edit-mode is enabled and the node passes the scope & selectable checks
     _isNodeSelectable(node: any): boolean {
@@ -80,25 +83,214 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return false;
 
       const name = node.name || '';
-      const isPlaced = name.startsWith('placed_');
-      const isPuzzlerId =
-        node.parent &&
-        node.parent.name === 'PuzzlerRoot' &&
-        name.startsWith('id_');
+      const isPlaced = node.userData.isPlacedObject === true;
+      const isPuzzlerRoot = name === 'PuzzlerRoot';
+      const isGroup = node.userData?.isGroup === true || isPuzzlerRoot;
 
       switch (this.selectionScope) {
-        case 'placed':
-          return isPlaced;
-        case 'puzzler-root':
-          return isPuzzlerId;
-        case 'both':
-          return isPlaced || isPuzzlerId;
+        case 'part':
+          return isPlaced || isPuzzlerRoot;
+        case 'group':
+          return isGroup;
         case 'all':
           return true;
         default:
-          return isPlaced;
+          return isPlaced || isPuzzlerRoot;
       }
     }
+
+    connectedCallback() {
+      super.connectedCallback();
+      // Use pointerup in the capture phase to reliably detect clicks on the
+      // canvas even if inner handlers stop propagation. Keep click as a
+      // fallback for browsers that may not trigger pointer events.
+      this.addEventListener(
+        'pointerup',
+        this._onPointerEvent as EventListener,
+        true
+      );
+      this.addEventListener('click', this._onPointerEvent as EventListener);
+    }
+
+    disconnectedCallback() {
+      super.disconnectedCallback();
+      this.removeEventListener(
+        'pointerup',
+        this._onPointerEvent as EventListener,
+        true
+      );
+      this.removeEventListener('click', this._onPointerEvent as EventListener);
+      // Clear any outline/selection state when removed
+      try {
+        this._setOutline([]);
+      } catch (e) {}
+      try {
+        (this as any)[$clearSelectedObject]();
+      } catch (e) {}
+    }
+
+    private _getMeshesForOutline(object: Object3D): Object3D[] {
+      const meshes: Object3D[] = [];
+      object.traverse((child: any) => {
+        if (child && child.isMesh) meshes.push(child);
+      });
+      return meshes;
+    }
+
+    private _setOutline(meshes: Object3D[]) {
+      try {
+        const outline = this.querySelector('outline-effect') as any;
+        if (!outline) return;
+        (outline as any).selection = meshes;
+        // If no selection, prefer skip blend-mode to avoid artifacts
+        outline.setAttribute('blend-mode', meshes.length ? 'default' : 'skip');
+      } catch (e) {
+        // ignore
+      }
+      // remember cleared/assigned outline via the outline-effect element only
+      (this as any)[$needsRender]();
+    }
+
+    private _onPointerEvent = (e: PointerEvent | MouseEvent) => {
+      // Only allow selection when in edit mode
+      if (!this.editMode) return;
+
+      // Avoid reacting to non-primary buttons
+      // (PointerEvent has button, MouseEvent too)
+      const btn = (e as any).button;
+      if (typeof btn === 'number' && btn !== 0) return;
+
+      try {
+        const clientX = (e as any).clientX;
+        const clientY = (e as any).clientY;
+        if (typeof clientX !== 'number' || typeof clientY !== 'number') return;
+
+        const rect = this.getBoundingClientRect();
+        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+
+        const raycaster = new Raycaster();
+        raycaster.setFromCamera(
+          new Vector2(ndcX, ndcY),
+          (this as any)[$scene].camera
+        );
+
+        const sceneRoot = (this as any)[$scene].target || (this as any)[$scene];
+        const hits = raycaster.intersectObject(sceneRoot, true);
+
+        if (!hits || hits.length === 0) {
+          // Clicked empty space: clear selection
+          try {
+            (this as any)[$clearSelectedObject]();
+          } catch (err) {}
+          this._setOutline([]);
+          try {
+            this.dispatchEvent(
+              new CustomEvent('select', {
+                detail: { node: null, type: 'clear' },
+              })
+            );
+          } catch (e) {}
+          return;
+        }
+
+        // Collect selectable candidates from hits. For each hit, walk up
+        // the ancestor chain and record selectable nodes. Later choose the
+        // best candidate: prefer placed parts over PuzzlerRoot groups, then
+        // fallback to first selectable.
+        const candidates: { node: any; depth: number }[] = [];
+        for (const hit of hits) {
+          let node: any = hit.object;
+          let depth = 0;
+          while (node) {
+            if (this._isNodeSelectable(node)) {
+              candidates.push({ node, depth });
+            }
+            node = node.parent;
+            depth++;
+          }
+        }
+
+        let selectedNode: Object3D | null = null;
+        if (candidates.length > 0) {
+          if (this.selectionScope === 'part') {
+            // prefer nearest placed object
+            const placed = candidates
+              .filter((c) => c.node?.userData?.isPlacedObject === true)
+              .sort((a, b) => a.depth - b.depth);
+            if (placed.length > 0) selectedNode = placed[0].node;
+
+            // fallback to nearest PuzzlerRoot
+            if (!selectedNode) {
+              const roots = candidates
+                .filter((c) => (c.node.name || '') === 'PuzzlerRoot')
+                .sort((a, b) => a.depth - b.depth);
+              if (roots.length > 0) selectedNode = roots[0].node;
+            }
+          } else if (this.selectionScope === 'group') {
+            // prefer nearest group node
+            const groups = candidates
+              .filter((c) => c.node?.userData?.isGroup === true)
+              .sort((a, b) => a.depth - b.depth);
+            if (groups.length > 0) selectedNode = groups[0].node;
+
+            // fallback: if we hit a PuzzlerRoot child, select its parent group
+            if (!selectedNode) {
+              const rootHits = candidates
+                .filter((c) => (c.node.name || '') === 'PuzzlerRoot')
+                .sort((a, b) => a.depth - b.depth);
+              if (rootHits.length > 0) {
+                const rootNode = rootHits[0].node;
+                selectedNode = rootNode.parent || rootNode;
+              }
+            }
+          } else {
+            // 'all' or unknown: nearest selectable
+            candidates.sort((a, b) => a.depth - b.depth);
+            selectedNode = candidates[0].node;
+          }
+        }
+
+        if (!selectedNode) {
+          try {
+            (this as any)[$clearSelectedObject]();
+          } catch (err) {}
+          this._setOutline([]);
+          try {
+            this.dispatchEvent(
+              new CustomEvent('select', {
+                detail: { node: null, type: 'clear' },
+              })
+            );
+          } catch (e) {}
+          return;
+        }
+
+        // Notify floating controls mixin and set outline selection
+        try {
+          (this as any)[$selectObjectForControls](selectedNode);
+        } catch (err) {}
+        const meshes = this._getMeshesForOutline(selectedNode);
+        this._setOutline(meshes);
+        // Emit a public selection event so consumers can react
+        try {
+          const t =
+            selectedNode?.userData?.isPlacedObject === true
+              ? 'part'
+              : selectedNode?.userData?.isGroup === true ||
+                selectedNode?.name === 'PuzzlerRoot'
+              ? 'group'
+              : 'node';
+          this.dispatchEvent(
+            new CustomEvent('select', {
+              detail: { node: selectedNode, type: t },
+            })
+          );
+        } catch (e) {}
+      } catch (error) {
+        // swallow
+      }
+    };
 
     // Internal counter for naming placed objects / sessions
     private _placementCounter = 0;

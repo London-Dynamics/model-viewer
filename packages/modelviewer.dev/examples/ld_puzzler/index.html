@@ -183,6 +183,7 @@
                     field-of-view="10deg"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     floating-controls-enabled
+                    edit-mode
                   >
                     <div slot="floating-control-strip">
                       <div
@@ -215,8 +216,8 @@
                     </div>
                     <effect-composer render-mode="quality">
                       <outline-effect
-                        color="white"
-                        strength="5"
+                        color="#165dfc"
+                        strength="10"
                         blend-mode="skip"
                       ></outline-effect>
                       <color-grade-effect></color-grade-effect>
@@ -579,7 +580,7 @@
                             modelViewer.setAttribute('cursor-visible', '');
 
                             const lowresSrc = `../../shared-assets/models/${filename}`;
-                            const highResSrc = `../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf`; //`../../shared-assets/models/${filename}`;
+                            const highResSrc = lowresSrc;
 
                             // Capture initial mouse position so the placeholder
                             // can be positioned immediately even if it loads
