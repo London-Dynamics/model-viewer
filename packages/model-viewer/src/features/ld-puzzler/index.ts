@@ -64,7 +64,7 @@ export declare interface LDPuzzlerInterface {
   rotate: RotateFunction;
   transform: TransformFunction;
   ungroupSelectedObject?: () => boolean;
-  startPlacement?: (
+  beginPlacement?: (
     lowResSrc: string,
     highResSrc: string,
     options?: any,
@@ -2530,7 +2530,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Only one interactive session may be 'placing' at a time; if one exists
      * it will be returned instead of creating a new one.
      */
-    startPlacement(
+    beginPlacement(
       lowResSrc: string,
       highResSrc: string,
       options?: PlacementOptions,
