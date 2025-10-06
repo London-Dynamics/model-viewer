@@ -70,6 +70,21 @@ export declare interface LDPuzzlerInterface {
     options?: any,
     initialMouse?: { clientX: number; clientY: number }
   ) => any;
+
+  // Higher-level API functions
+  getSelectedNode?: () => Object3D | null;
+  selectPart?: (node: Object3D) => boolean;
+  selectGroup?: (node: Object3D) => boolean;
+  clearSelection?: () => void;
+  translateNode?: (
+    node: Object3D,
+    offset: { x: number; y: number; z: number }
+  ) => boolean;
+  rotateNode?: (node: Object3D, angleDegrees: number) => boolean;
+  deleteNode?: (node: Object3D) => boolean;
+  groupSelectedObjects?: () => Object3D | null;
+  breakGroup?: (group: Object3D) => boolean;
+  breakLink?: (connectionId: string) => boolean;
 }
 
 export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -78,6 +93,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   class LDPuzzlerModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'edit-mode' })
     editMode: boolean = false;
+
+    @property({ type: Number, attribute: 'snap-distance' })
+    snapDistance: number = 0.2; // Default snap distance in meters
+
+    @property({ type: Number, attribute: 'snap-hysteresis' })
+    snapHysteresis: number = 1.5; // Multiplier for unsnap distance (prevents immediate re-snapping)
 
     @property({ type: Boolean, attribute: 'snapping-enabled' })
     snappingEnabled: boolean = false;
@@ -105,7 +126,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const name = node.name || '';
       const isPlaced = node.userData.isPlacedObject === true;
       const isPuzzlerRoot = name === 'PuzzlerRoot';
-      const isGroup = node.userData?.isGroup === true || isPuzzlerRoot;
+      const isGroup = node.userData?.isSnappedGroup === true || isPuzzlerRoot;
 
       switch (this.selectionScope) {
         case 'part':
@@ -146,7 +167,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Update snapping/break-link slots while visible each frame so they
       // follow camera movement and reflect toggles immediately.
       try {
-        if (this.snappingPointsVisible) this.updateSnappingPointSlots();
+        // Update snapping points when they should be visible
+        const shouldShowSnappingPoints =
+          this.snappingPointsVisible ||
+          (this.selectedObjects && this.selectedObjects.length > 0) ||
+          (this._activePlacementSession &&
+            this._activePlacementSession.state === 'placing') ||
+          (this.isDragging && this.snappingEnabled);
+
+        if (shouldShowSnappingPoints) {
+          this.updateSnappingPointSlots();
+        }
       } catch (e) {}
       try {
         if (this._breakLinkSlotsVisible) this.updateBreakLinkSlots();
@@ -183,6 +214,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Clear selected groups bookkeeping
         this._selectedGroups.clear();
         this._breakLinkSlotsVisible = false;
+        // Clean up 3D snapping point meshes
+        this.clearSlots(this._snappingPointSlots);
+        // Clear hysteresis tracking
+        this._recentlyDisconnectedPairs.clear();
       } catch (e) {}
       try {
         // reference touch helper to silence unused-method lint
@@ -246,6 +281,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           } catch (err) {}
           this._setOutline([]);
           try {
+            this.selectedObjects = [];
+          } catch (e) {}
+          try {
+            this.updateSnappingPointSlots();
+          } catch (e) {}
+          try {
             this.dispatchEvent(
               new CustomEvent('select', {
                 detail: { node: null, type: 'clear' },
@@ -291,19 +332,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           } else if (this.selectionScope === 'group') {
             // prefer nearest group node
             const groups = candidates
-              .filter((c) => c.node?.userData?.isGroup === true)
+              .filter((c) => c.node?.userData?.isSnappedGroup === true)
               .sort((a, b) => a.depth - b.depth);
             if (groups.length > 0) selectedNode = groups[0].node;
 
-            // fallback: if we hit a PuzzlerRoot child, select its parent group
+            // fallback: if we hit an object with PuzzlerRoot ancestors, select the highest PuzzlerRoot
             if (!selectedNode) {
-              const rootHits = candidates
+              const puzzlerRoots = candidates
                 .filter((c) => (c.node.name || '') === 'PuzzlerRoot')
-                .sort((a, b) => a.depth - b.depth);
-              if (rootHits.length > 0) {
-                const rootNode = rootHits[0].node;
-                selectedNode = rootNode.parent || rootNode;
-              }
+                .sort((a, b) => b.depth - a.depth); // Sort by depth descending to get highest in tree
+              if (puzzlerRoots.length > 0) selectedNode = puzzlerRoots[0].node;
             }
           } else {
             // 'all' or unknown: nearest selectable
@@ -327,10 +365,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           return;
         }
 
-        // Notify floating controls mixin and set outline selection
+        // Notify floating controls mixin, set outline selection, and record
+        // the selected object so dragging targets the correct node.
         try {
           (this as any)[$selectObjectForControls](selectedNode);
         } catch (err) {}
+        try {
+          this.selectedObjects = selectedNode ? [selectedNode] : [];
+        } catch (e) {}
         const meshes = this._getMeshesForOutline(selectedNode);
         this._setOutline(meshes);
         // Emit a public selection event so consumers can react
@@ -338,7 +380,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           const t =
             selectedNode?.userData?.isPlacedObject === true
               ? 'part'
-              : selectedNode?.userData?.isGroup === true ||
+              : selectedNode?.userData?.isSnappedGroup === true ||
                 selectedNode?.name === 'PuzzlerRoot'
               ? 'group'
               : 'node';
@@ -347,6 +389,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               detail: { node: selectedNode, type: t },
             })
           );
+          // Refresh snapping point slots to reflect the new selection.
+          try {
+            this.updateSnappingPointSlots();
+          } catch (e) {}
         } catch (e) {}
       } catch (error) {
         // swallow
@@ -360,6 +406,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     // Selection / grouping bookkeeping (from index_old)
     private selectedObjects: Object3D[] = [];
     private _selectedGroups: Set<Object3D> = new Set();
+    // When dragging, prefer to move the enclosing group (if any).
+    private _currentDragTarget: Object3D | null = null;
 
     // Slot maps for UI (snapping points, break-link/ungroup, rotation controls)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -376,6 +424,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       draggedPoint: SnappingPoint;
       targetPoint: SnappingPoint;
     } | null = null;
+
+    // Track recently disconnected pairs for hysteresis (cleared on drag end)
+    private _recentlyDisconnectedPairs: Set<string> = new Set();
 
     // Track original transforms for objects we temporarily align for visual
     // snapping so we can restore them when the candidate goes away.
@@ -408,6 +459,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch (e) {}
       }
 
+      // Log pending connection changes for debugging
+      try {
+        console.debug('[puzzler] _setPendingSnapConnection ->', v);
+      } catch (e) {}
       this.pendingSnapConnection = v;
 
       // If new pending connection, apply a temporary alignment so the
@@ -459,6 +514,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           try {
             (mover as Object3D).position.copy(desiredLocal);
+            try {
+              console.debug(
+                '[puzzler] _setPendingSnapConnection applied visual alignment',
+                { moverName: mover.name || mover.uuid, desiredLocal }
+              );
+            } catch (e) {}
             // For now we don't modify rotation programmatically; that could
             // be added in future if desired.
           } catch (e) {}
@@ -504,6 +565,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Apply position
       gltf.scene.position.set(position.x, position.y, position.z);
 
+      // Attach snapping points if provided in options
+      if (options?.snappingPoints) {
+        gltf.scene.userData.snappingPoints = options.snappingPoints;
+      }
+
       // Attach to the scene target so it participates in the scene graph
       try {
         scene.target.add(gltf.scene);
@@ -520,7 +586,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     public ungroupSelectedObject(): boolean {
       if (this.selectedObjects.length !== 1) return false;
       const group = this.selectedObjects[0];
-      if (!group || !group.userData?.isGroup) return false;
+      // Only accept the canonical `isSnappedGroup` marker
+      if (!group || !group.userData?.isSnappedGroup) return false;
       return this.ungroupSnappedGroup(group);
     }
 
@@ -547,6 +614,37 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           worldTransforms.set(child, { pos, quat, scale });
         });
 
+        // Record all connections being broken for hysteresis logic
+        const connections = group.userData?.snapConnections || [];
+        connections.forEach((connection: any) => {
+          // Extract object IDs from different connection formats
+          let id1: string, id2: string;
+          if (connection.object1 && connection.object2) {
+            id1 = connection.object1.name || connection.object1.uuid;
+            id2 = connection.object2.name || connection.object2.uuid;
+          } else if (connection.a && connection.b) {
+            id1 = connection.a;
+            id2 = connection.b;
+          } else {
+            return; // Skip malformed connections
+          }
+
+          // Create a consistent pair key (alphabetically sorted to avoid order issues)
+          const pairKey = [id1, id2].sort().join('|');
+          this._recentlyDisconnectedPairs.add(pairKey);
+
+          try {
+            console.debug(
+              '[puzzler] tracking disconnected pair for hysteresis',
+              {
+                id1,
+                id2,
+                pairKey,
+              }
+            );
+          } catch (e) {}
+        });
+
         // Remove children from group and reparent to group's parent
         children.forEach((child) => {
           group.remove(child);
@@ -567,6 +665,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           // Clear group metadata
           if (child.userData) {
             delete child.userData.groupId;
+            // Clear legacy/new in-group marker so child behaves as standalone
+            delete child.userData.isInGroup;
           }
         });
 
@@ -612,7 +712,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           const group = new Object3D();
           group.name = `group_${Date.now()}`;
           group.userData = group.userData || {};
-          group.userData.isGroup = true;
+          group.userData.isSnappedGroup = true;
           group.userData.snapConnections = [];
 
           // Parent both objects under the new group while preserving world transforms
@@ -688,7 +788,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _findEnclosingGroup(obj: Object3D | null): Object3D | null {
       let node = obj;
       while (node) {
-        if (node.userData?.isGroup === true) return node;
+        // Support both legacy `isGroup` marker and newer `isSnappedGroup` marker
+        if (node.userData?.isSnappedGroup === true) return node;
         node = node.parent as Object3D | null;
       }
       return null;
@@ -701,6 +802,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       // Move children from group2 into group1 and merge connections
       try {
+        try {
+          console.debug('[puzzler] mergeSnappedGroups', {
+            g1: group1.name || group1.uuid,
+            g2: group2.name || group2.uuid,
+            connection,
+          });
+        } catch (e) {}
         const children = [...group2.children];
         children.forEach((child) => {
           // preserve world transform
@@ -713,6 +821,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           child.position.copy(worldPos);
           child.userData = child.userData || {};
           child.userData.groupId = group1.name;
+          child.userData.isInGroup = true;
         });
 
         group1.userData.snapConnections = group1.userData.snapConnections || [];
@@ -740,6 +849,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       connection: any
     ) {
       try {
+        try {
+          console.debug('[puzzler] addObjectToSnappedGroup', {
+            group: group.name || group.uuid,
+            newObject: newObject.name || newObject.uuid,
+            connection,
+          });
+        } catch (e) {}
         newObject.updateMatrixWorld(true);
         const worldPos = new Vector3();
         newObject.getWorldPosition(worldPos);
@@ -750,6 +866,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         newObject.position.copy(worldPos);
         newObject.userData = newObject.userData || {};
         newObject.userData.groupId = group.name;
+        newObject.userData.isInGroup = true;
         group.userData = group.userData || {};
         group.userData.snapConnections = group.userData.snapConnections || [];
         group.userData.snapConnections.push(connection);
@@ -845,6 +962,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         try {
           (this as any)[$scene].setTarget(center.x, center.y, center.z);
         } catch (e) {}
+        try {
+          console.debug('[puzzler] completeSnapConnection focusGroup', {
+            name: focusGroup.name || focusGroup.uuid,
+            userData: focusGroup.userData,
+          });
+        } catch (e) {}
       }
 
       // Update outline selection
@@ -860,10 +983,26 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.toggleSnappingPoints(true);
       }
 
-      // Show break link slots if snapped group selected
+      // Ensure selection reflects the focused group (if any) so UI knows
+      // which group we're operating on.
+      if (focusGroup) {
+        try {
+          this.selectedObjects = [focusGroup];
+        } catch (e) {}
+      }
+
+      try {
+        console.debug('[puzzler] selection after completeSnapConnection', {
+          selected:
+            this.selectedObjects[0]?.name || this.selectedObjects[0]?.uuid,
+          userData: this.selectedObjects[0]?.userData,
+        });
+      } catch (e) {}
+
+      // Show break link slots if the selected object is a snapped/group
       if (
         this.selectedObjects.length > 0 &&
-        this.selectedObjects[0].userData.isSnappedGroup
+        this.selectedObjects[0].userData?.isSnappedGroup
       ) {
         this._breakLinkSlotsVisible = true;
         this.updateBreakLinkSlots();
@@ -878,16 +1017,39 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       // Recompute connected components and split group if necessary.
       try {
+        try {
+          console.debug('[puzzler] reorganizeGroupAfterBreakLink', {
+            name: group.name || group.uuid,
+            userData: group.userData,
+          });
+        } catch (e) {}
+
         const connections = group.userData?.snapConnections || [];
-        // Build adjacency map by object name
+
+        // Build adjacency map by object name. Support both legacy (a/b)
+        // connection objects and the newer object1/object2 shaped objects.
         const map = new Map<string, Set<string>>();
         connections.forEach((c: any) => {
-          if (!map.has(c.a)) map.set(c.a, new Set());
-          if (!map.has(c.b)) map.set(c.b, new Set());
-          const ma = map.get(c.a);
-          const mb = map.get(c.b);
-          if (ma) ma.add(c.b);
-          if (mb) mb.add(c.a);
+          let nameA: string | undefined;
+          let nameB: string | undefined;
+
+          if (c.a || c.b) {
+            nameA = c.a;
+            nameB = c.b;
+          } else if (c.object1 && c.object2) {
+            nameA = c.object1?.name || String(c.object1?.id);
+            nameB = c.object2?.name || String(c.object2?.id);
+          } else if (c.objectA && c.objectB) {
+            // defensive: alternate naming
+            nameA = c.objectA?.name || String(c.objectA?.id);
+            nameB = c.objectB?.name || String(c.objectB?.id);
+          }
+
+          if (!nameA || !nameB) return;
+          if (!map.has(nameA)) map.set(nameA, new Set());
+          if (!map.has(nameB)) map.set(nameB, new Set());
+          map.get(nameA)!.add(nameB);
+          map.get(nameB)!.add(nameA);
         });
 
         // Find connected components among group's children by name
@@ -895,16 +1057,20 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const nameToChild = new Map<string, Object3D>();
         children.forEach((c) => nameToChild.set(c.name || String(c.id), c));
 
+        // Ensure isolated children show up in the map so they become single-node components
+        nameToChild.forEach((_, name) => {
+          if (!map.has(name)) map.set(name, new Set());
+        });
+
         const visited = new Set<string>();
         const components: Object3D[][] = [];
 
-        for (const child of children) {
-          const key = child.name || String(child.id);
-          if (visited.has(key)) continue;
+        for (const [name] of nameToChild) {
+          if (visited.has(name)) continue;
           // BFS
-          const queue = [key];
+          const queue = [name];
           const compKeys: string[] = [];
-          visited.add(key);
+          visited.add(name);
           while (queue.length) {
             const k = queue.shift() as string;
             compKeys.push(k);
@@ -925,6 +1091,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         if (components.length <= 1) {
           // nothing to split
+          try {
+            console.debug(
+              '[puzzler] reorganizeGroupAfterBreakLink nothing to split',
+              {
+                components: components.length,
+              }
+            );
+          } catch (e) {}
           return;
         }
 
@@ -934,17 +1108,56 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             const obj = comp[0];
             group.remove(obj);
             if (group.parent) group.parent.add(obj);
-            delete obj.userData.groupId;
+            if (obj.userData) {
+              delete obj.userData.groupId;
+              delete obj.userData.isInGroup;
+            }
           } else {
             const newGroup = new Object3D();
             newGroup.name = `${group.name}_part_${index}`;
-            newGroup.userData = { isGroup: true, snapConnections: [] };
+            newGroup.userData = { isSnappedGroup: true, snapConnections: [] };
             if (group.parent) group.parent.add(newGroup);
+            const compNames = new Set<string>();
             comp.forEach((obj) => {
               group.remove(obj);
               newGroup.add(obj);
+              obj.userData = obj.userData || {};
               obj.userData.groupId = newGroup.name;
+              obj.userData.isInGroup = true;
+              compNames.add(obj.name || String(obj.id));
             });
+
+            // Transfer any connections that belong entirely to this component
+            connections.forEach((c: any) => {
+              // legacy shape
+              if (c.a || c.b) {
+                if (compNames.has(c.a) && compNames.has(c.b)) {
+                  newGroup.userData.snapConnections.push({
+                    id: c.id || `${c.a}_${c.b}`,
+                    a: c.a,
+                    b: c.b,
+                    aPoint: c.aPoint,
+                    bPoint: c.bPoint,
+                  });
+                }
+              } else if (c.object1 && c.object2) {
+                const na = c.object1?.name || String(c.object1?.id);
+                const nb = c.object2?.name || String(c.object2?.id);
+                if (compNames.has(na) && compNames.has(nb)) {
+                  // attempt to resolve actual child object references under the new group
+                  const objA = newGroup.getObjectByName(na) || c.object1;
+                  const objB = newGroup.getObjectByName(nb) || c.object2;
+                  newGroup.userData.snapConnections.push({
+                    id: c.id || `${na}_${nb}`,
+                    object1: objA,
+                    object2: objB,
+                    snapPoint1: c.snapPoint1,
+                    snapPoint2: c.snapPoint2,
+                  });
+                }
+              }
+            });
+
             this.updateGroupMeshCache(newGroup);
           }
         });
@@ -952,6 +1165,24 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Remove original group if empty
         if (group.children.length === 0 && group.parent)
           group.parent.remove(group);
+
+        // Defensive cleanup: any remaining child that is not under a snapped
+        // group should not have lingering in-group metadata.
+        nameToChild.forEach((child) => {
+          if (child.parent && !child.parent.userData?.isSnappedGroup) {
+            if (child.userData) {
+              if (child.userData.isInGroup) delete child.userData.isInGroup;
+              if (child.userData.groupId) delete child.userData.groupId;
+            }
+          }
+        });
+
+        try {
+          console.debug('[puzzler] reorganizeGroupAfterBreakLink completed', {
+            components: components.length,
+          });
+        } catch (e) {}
+
         this[$needsRender]();
       } catch (e) {}
     }
@@ -971,12 +1202,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Updates the visibility and positioning of snapping point slot elements.
      */
     private updateSnappingPointSlots() {
-      if (!this.snappingPointsVisible) {
-        this._snappingPointSlots.forEach((element) => {
-          element.style.display = 'none';
-        });
-        return;
-      }
+      // Show slots when:
+      // 1. snappingPointsVisible is explicitly true, or
+      // 2. when there's an active selection, or
+      // 3. when interactive placement session is in progress, or
+      // 4. when dragging (if snapping is enabled)
+      const shouldShow =
+        this.snappingPointsVisible ||
+        (this.selectedObjects && this.selectedObjects.length > 0) ||
+        (this._activePlacementSession &&
+          this._activePlacementSession.state === 'placing') ||
+        (this.isDragging && this.snappingEnabled);
 
       const scene = (this as any)[$scene];
       const camera = scene.getCamera
@@ -984,16 +1220,20 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         : (scene as any).camera;
       if (!camera) return;
 
-      const snappingPointsFound: any[] = [];
       const targetObject = this.findTargetObject();
+      if (!targetObject) return;
 
+      if (!shouldShow) {
+        this.clearSlots(this._snappingPointSlots);
+        return;
+      }
+
+      // Use HTML slots for all snapping points (both placed objects and placeholders)
+      const snappingPointsFound: any[] = [];
       if (targetObject) {
         targetObject.traverse((child: any) => {
-          if (
-            (child.userData?.isPlacedObject ||
-              child.userData?.isPlacementPlaceholder) &&
-            child.userData?.snappingPoints
-          ) {
+          // Show slots for all objects with snapping points
+          if (child.userData?.snappingPoints) {
             const snappingPoints = child.userData
               .snappingPoints as SnappingPoint[];
             snappingPoints.forEach((snapPoint, index) => {
@@ -1027,17 +1267,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 ownerName: child.name || child.uuid,
                 worldPosition: worldPos,
                 isFacingCamera: facingCamera,
+                data: {
+                  object: child,
+                  snapPoint,
+                  index,
+                },
               });
             });
           }
         });
       }
-
-      // DEBUG: log discovered snapping points so developers can inspect
-      // whether placeholders or placed objects expose snapping points.
-      try {
-        // debug removed
-      } catch (e) {}
 
       updateSlots(snappingPointsFound, {
         slotMap: this._snappingPointSlots,
@@ -1062,8 +1301,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           else element.classList.add('back-facing');
         },
       });
-
-      // snapping-debug visualization removed
     }
 
     private updateBreakLinkSlots() {
@@ -1080,11 +1317,34 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         : (scene as any).camera;
       if (!camera) return;
 
-      const selectedGroup = this.selectedObjects[0];
-      if (
-        !selectedGroup?.userData?.isSnappedGroup ||
-        !selectedGroup.userData.snapConnections
-      ) {
+      // Allow selection of either the group object itself, or a child of
+      // the group. Also accept older-style groups (isGroup) as well as
+      // the newer isSnappedGroup marker. Normalize to the actual group
+      // object that contains snapConnections.
+      let selectedGroup: Object3D | null = null;
+      if (this.selectedObjects.length > 0) {
+        const sel = this.selectedObjects[0];
+        // If the selected object is the snapped-group itself
+        if (sel?.userData?.isSnappedGroup) {
+          selectedGroup = sel;
+        } else {
+          // Try to find an enclosing snapped group first
+          selectedGroup = getSnappedGroup(sel as any);
+          // If not found, try walking up to an older-style group marker
+          if (!selectedGroup) {
+            let node = sel as Object3D | null;
+            while (node) {
+              if (node.userData?.isSnappedGroup === true) {
+                selectedGroup = node;
+                break;
+              }
+              node = node.parent as Object3D | null;
+            }
+          }
+        }
+      }
+
+      if (!selectedGroup || !selectedGroup.userData?.snapConnections) {
         this._breakLinkSlots.forEach((slot) => {
           slot.style.display = 'none';
         });
@@ -1094,16 +1354,40 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const slotItems = selectedGroup.userData.snapConnections
         .map((snapConnection: any, index: number) => {
           const connectionId = `connection-${index}`;
-          if (!snapConnection.object1 || !snapConnection.object2) return null;
 
-          const point1WorldPos = getSnappingPointWorldPosition(
-            snapConnection.object1,
-            snapConnection.snapPoint1
-          );
-          const point2WorldPos = getSnappingPointWorldPosition(
-            snapConnection.object2,
-            snapConnection.snapPoint2
-          );
+          // Support multiple connection shapes:
+          // - New: { object1, object2, snapPoint1, snapPoint2 }
+          // - Old: { a: <name>, b: <name>, aPoint, bPoint }
+          let obj1: Object3D | null = null;
+          let obj2: Object3D | null = null;
+          let sp1: any = null;
+          let sp2: any = null;
+
+          if (snapConnection.object1 && snapConnection.object2) {
+            obj1 = snapConnection.object1;
+            obj2 = snapConnection.object2;
+            sp1 = snapConnection.snapPoint1;
+            sp2 = snapConnection.snapPoint2;
+          } else if (snapConnection.a || snapConnection.b) {
+            // Resolve by name within the group first, then fallback to scene
+            const nameA = snapConnection.a;
+            const nameB = snapConnection.b;
+            if (nameA) {
+              obj1 = selectedGroup.getObjectByName(nameA) as Object3D | null;
+              if (!obj1) obj1 = (this as any)[$scene].getObjectByName(nameA);
+            }
+            if (nameB) {
+              obj2 = selectedGroup.getObjectByName(nameB) as Object3D | null;
+              if (!obj2) obj2 = (this as any)[$scene].getObjectByName(nameB);
+            }
+            sp1 = snapConnection.aPoint;
+            sp2 = snapConnection.bPoint;
+          }
+
+          if (!obj1 || !obj2 || !sp1 || !sp2) return null;
+
+          const point1WorldPos = getSnappingPointWorldPosition(obj1, sp1);
+          const point2WorldPos = getSnappingPointWorldPosition(obj2, sp2);
 
           const midpoint = new Vector3()
             .addVectors(point1WorldPos, point2WorldPos)
@@ -1371,9 +1655,27 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private startDragging(_event?: MouseEvent | TouchEvent) {
       if (!this.selectedObjects.length) return;
 
+      // If the selected object is part of a group, drag the enclosing group
+      // so grouped objects move together. Otherwise drag the selected object.
+      this._currentDragTarget =
+        this._findEnclosingGroup(this.selectedObjects[0]) ||
+        this.selectedObjects[0];
+
       this.isDragging = true;
+      try {
+        console.debug('[puzzler] startDragging', {
+          selected:
+            this.selectedObjects[0]?.name || this.selectedObjects[0]?.uuid,
+          dragTarget:
+            this._currentDragTarget?.name || this._currentDragTarget?.uuid,
+        });
+      } catch (e) {}
       this.dragStartMousePosition.copy(this.currentMousePosition);
-      this.dragStartPosition.copy(this.selectedObjects[0].position);
+      try {
+        this.dragStartPosition.copy(this._currentDragTarget.position);
+      } catch (e) {
+        this.dragStartPosition.copy(this.selectedObjects[0].position);
+      }
 
       this.raycaster.setFromCamera(
         this.currentMousePosition,
@@ -1386,10 +1688,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const clickPoint = new Vector3();
       if (this.raycaster.ray.intersectPlane(this.floorPlane, clickPoint)) {
+        const offsetTarget = this._currentDragTarget || this.selectedObjects[0];
         this.dragOffset.set(
-          this.selectedObjects[0].position.x - clickPoint.x,
+          offsetTarget.position.x - clickPoint.x,
           0,
-          this.selectedObjects[0].position.z - clickPoint.z
+          offsetTarget.position.z - clickPoint.z
         );
       } else {
         this.dragOffset.set(0, 0, 0);
@@ -1403,6 +1706,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       this.style.cursor = 'grabbing';
+
+      // Show all snapping points during drag if snapping is enabled
+      if (this.snappingEnabled) {
+        this.toggleSnappingPoints(true);
+      }
+
       try {
         this.updateSnappingPointSlots();
       } catch (e) {}
@@ -1416,7 +1725,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any)[$scene].camera
       );
 
-      const object = this.selectedObjects[0];
+      const object = this._currentDragTarget || this.selectedObjects[0];
 
       const intersectionPoint = new Vector3();
       if (
@@ -1424,11 +1733,20 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         const desiredX = intersectionPoint.x + this.dragOffset.x;
         const desiredZ = intersectionPoint.z + this.dragOffset.z;
-        const desiredY = object.userData.isSnappedGroup
-          ? object.position.y
-          : this.originalFloorY || 0;
+        const desiredY =
+          object.userData?.isSnappedGroup === true
+            ? object.position.y
+            : this.originalFloorY || 0;
 
         object.position.set(desiredX, desiredY, desiredZ);
+        try {
+          console.debug('[puzzler] updateDragPosition', {
+            target: object.name || object.uuid,
+            pos: { x: desiredX, y: desiredY, z: desiredZ },
+            dragTarget:
+              this._currentDragTarget?.name || this._currentDragTarget?.uuid,
+          });
+        } catch (e) {}
 
         // clear any previous pending connection and then check again
         this._setPendingSnapConnection(null);
@@ -1454,7 +1772,26 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private stopDragging() {
       if (!this.isDragging) return;
 
+      try {
+        console.debug('[puzzler] stopDragging pre', {
+          selected:
+            this.selectedObjects[0]?.name || this.selectedObjects[0]?.uuid,
+          currentDragTarget:
+            this._currentDragTarget?.name || this._currentDragTarget?.uuid,
+        });
+      } catch (e) {}
+
       this.isDragging = false;
+
+      // Clear recently disconnected pairs when drag ends - allow normal snapping again
+      this._recentlyDisconnectedPairs.clear();
+      try {
+        console.debug(
+          '[puzzler] cleared recently disconnected pairs on drag end'
+        );
+      } catch (e) {}
+
+      this._currentDragTarget = null;
 
       try {
         // debug removed
@@ -1485,7 +1822,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       // (snapping debug pairs disabled)
       const snappableObjects: Object3D[] = [];
-      if (draggedObject.userData.isSnappedGroup) {
+      if (draggedObject.userData?.isSnappedGroup === true) {
         draggedObject.traverse((child: any) => {
           if (child.userData.isPlacedObject && child.userData.snappingPoints)
             snappableObjects.push(child);
@@ -1515,8 +1852,60 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             !this.areObjectsInSameGroup(snappableObj, child) &&
             child.userData.snappingPoints
           ) {
+            // Check if this pair was recently disconnected (for hysteresis)
+            const draggedId = snappableObj.name || snappableObj.uuid;
+            const targetId = child.name || child.uuid;
+            const pairKey = [draggedId, targetId].sort().join('|');
+            const wasRecentlyDisconnected =
+              this._recentlyDisconnectedPairs.has(pairKey);
+
+            // Use larger distance threshold for recently disconnected pairs
+            const effectiveSnapDistance = wasRecentlyDisconnected
+              ? this.snapDistance * this.snapHysteresis
+              : this.snapDistance;
+
+            try {
+              console.debug('[puzzler] checking snap with hysteresis', {
+                draggedId,
+                targetId,
+                pairKey,
+                wasRecentlyDisconnected,
+                normalDistance: this.snapDistance,
+                effectiveDistance: effectiveSnapDistance,
+              });
+            } catch (e) {}
+
             const connections = findSnappingConnections(snappableObj, child);
-            if (connections && connections.length > 0) {
+
+            try {
+              console.debug('[puzzler] connections found', {
+                draggedId,
+                targetId,
+                pairKey,
+                connectionsFound: connections.length,
+                closestDistance:
+                  connections.length > 0 ? connections[0].distance : 'none',
+              });
+            } catch (e) {}
+
+            // Apply hysteresis filtering: completely disable snapping for recently disconnected pairs during drag
+            let filteredConnections = wasRecentlyDisconnected
+              ? [] // Block all snapping for recently disconnected pairs during drag
+              : connections;
+
+            try {
+              console.debug('[puzzler] after filtering', {
+                draggedId,
+                targetId,
+                pairKey,
+                wasRecentlyDisconnected,
+                originalConnections: connections.length,
+                filteredConnections: filteredConnections.length,
+                effectiveSnapDistance,
+              });
+            } catch (e) {}
+
+            if (filteredConnections && filteredConnections.length > 0) {
               try {
                 // debug removed
               } catch (e) {}
@@ -1527,7 +1916,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                 // debug removed
               } catch (e) {}
 
-              const closest = connections[0];
+              const closest = filteredConnections[0];
               // Do not immediately mutate scene graph while dragging:
               // record a pending connection so it may be completed on drop.
               try {
@@ -1557,13 +1946,22 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         if (this.selectedObjects.length !== 1) return;
 
-        const selectedGroup = this.selectedObjects[0];
-        if (
-          !selectedGroup?.userData?.isSnappedGroup ||
-          !selectedGroup.userData.snapConnections
-        ) {
-          return;
+        // Normalize the selected group: accept selecting either the group
+        // itself or a child and resolve to the canonical `isSnappedGroup`.
+        let selectedGroup: Object3D | null = this.selectedObjects[0];
+        if (!selectedGroup?.userData?.isSnappedGroup) {
+          selectedGroup =
+            getSnappedGroup(selectedGroup as any) || selectedGroup;
         }
+        if (!selectedGroup?.userData?.isSnappedGroup) return;
+
+        try {
+          console.debug('[puzzler] breakSpecificConnection selectedGroup', {
+            name: selectedGroup.name || selectedGroup.uuid,
+            userData: selectedGroup.userData,
+            connectionId,
+          });
+        } catch (e) {}
 
         // Parse connection index (IDs are of the form 'connection-<index>')
         const index = parseInt(String(connectionId).replace('connection-', ''));
@@ -1594,6 +1992,43 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           // ignore
         }
 
+        // Track this specific disconnection for hysteresis logic
+        try {
+          let id1: string | undefined, id2: string | undefined;
+          if (connectionToBreak.object1 && connectionToBreak.object2) {
+            id1 =
+              connectionToBreak.object1.name || connectionToBreak.object1.uuid;
+            id2 =
+              connectionToBreak.object2.name || connectionToBreak.object2.uuid;
+          } else if (connectionToBreak.a && connectionToBreak.b) {
+            id1 = connectionToBreak.a;
+            id2 = connectionToBreak.b;
+          } else {
+            // Try to extract from the group's children
+            const groupChildren = [...selectedGroup.children];
+            if (groupChildren.length >= 2) {
+              id1 = groupChildren[0].name || groupChildren[0].uuid;
+              id2 = groupChildren[1].name || groupChildren[1].uuid;
+            }
+          }
+
+          if (id1 && id2) {
+            const pairKey = [id1, id2].sort().join('|');
+            this._recentlyDisconnectedPairs.add(pairKey);
+
+            try {
+              console.debug(
+                '[puzzler] tracking broken connection pair for hysteresis',
+                {
+                  id1,
+                  id2,
+                  pairKey,
+                }
+              );
+            } catch (e) {}
+          }
+        } catch (e) {}
+
         // Remove the connection from the group's list
         connections.splice(index, 1);
 
@@ -1606,14 +2041,144 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // If no remaining connections, ungroup everything
         if (connections.length === 0) {
           try {
-            this.ungroupSelectedObject();
-          } catch (e) {}
+            try {
+              console.debug(
+                '[puzzler] breakSpecificConnection: no connections remain — ungrouping',
+                {
+                  group: selectedGroup.name || selectedGroup.uuid,
+                }
+              );
+            } catch (e) {}
+
+            const ungrouped = this.ungroupSnappedGroup(selectedGroup);
+            try {
+              console.debug('[puzzler] ungroupSnappedGroup result', {
+                ungrouped,
+              });
+            } catch (e) {}
+
+            // Clear break link slots immediately and hide them
+            try {
+              this.clearSlots(this._breakLinkSlots);
+              this._breakLinkSlotsVisible = false;
+            } catch (e) {}
+
+            // Clear selection/outline and refresh slots so UI reflects the change
+            try {
+              (this as any)[$clearSelectedObject]();
+            } catch (e) {}
+            try {
+              this.selectedObjects = [];
+            } catch (e) {}
+            try {
+              this._setOutline([]);
+            } catch (e) {}
+            try {
+              this.updateOutlineSelection();
+            } catch (e) {}
+            try {
+              this.updateSnappingPointSlots();
+            } catch (e) {}
+            try {
+              this.updateBreakLinkSlots();
+            } catch (e) {}
+            (this as any)[$needsRender]();
+          } catch (e) {
+            try {
+              console.debug('[puzzler] ungroup error', { e });
+            } catch (e) {}
+          }
           return;
         }
 
-        // Otherwise, reorganize the group into connected components
+        // Defensive cleanup: reparent any child that is not referenced by
+        // any remaining connection so it becomes independently movable.
+        try {
+          const remainingNames = new Set<string>();
+          connections.forEach((c: any) => {
+            if (c.a || c.b) {
+              if (c.a) remainingNames.add(c.a);
+              if (c.b) remainingNames.add(c.b);
+            } else if (c.object1 && c.object2) {
+              const na = c.object1?.name || String(c.object1?.id);
+              const nb = c.object2?.name || String(c.object2?.id);
+              if (na) remainingNames.add(na);
+              if (nb) remainingNames.add(nb);
+            }
+          });
+
+          const parent = selectedGroup.parent;
+          const children = [...selectedGroup.children];
+          children.forEach((child) => {
+            const childName = child.name || String(child.id);
+            if (!remainingNames.has(childName)) {
+              // detach singleton child and clear group metadata
+              try {
+                selectedGroup.remove(child);
+                if (parent) parent.add(child);
+                if (child.userData) {
+                  delete child.userData.groupId;
+                  delete child.userData.isInGroup;
+                }
+              } catch (e) {}
+            }
+          });
+
+          // If group empty after cleanup remove it
+          if (selectedGroup.children.length === 0 && selectedGroup.parent)
+            selectedGroup.parent.remove(selectedGroup);
+        } catch (e) {
+          try {
+            console.debug('[puzzler] post-break cleanup failed', { e });
+          } catch (e) {}
+        }
+
+        // Otherwise, reorganize the group into connected components and
+        // clear selection so children may be selected/moved individually.
         try {
           this.reorganizeGroupAfterBreakLink(selectedGroup, connectionToBreak);
+        } catch (e) {}
+
+        // Clear selection and outline so no stale group selection remains
+        try {
+          try {
+            (this as any)[$clearSelectedObject]();
+          } catch (e) {}
+          try {
+            this.selectedObjects = [];
+          } catch (e) {}
+          try {
+            this._setOutline([]);
+          } catch (e) {}
+          try {
+            this.updateOutlineSelection();
+          } catch (e) {}
+        } catch (e) {}
+
+        // Refresh slots so the UI reflects the reorganization immediately
+        try {
+          this.updateBreakLinkSlots();
+        } catch (e) {}
+        try {
+          this.updateSnappingPointSlots();
+        } catch (e) {}
+
+        // Debug: log final parent/userData for former children to help diagnose
+        try {
+          const parentObj = selectedGroup.parent as Object3D | null;
+          const children = parentObj
+            ? [...(parentObj as Object3D).children]
+            : [];
+          console.debug('[puzzler] post-break selectedGroup children', {
+            parent: parentObj?.name || parentObj?.uuid,
+            children: children
+              .filter((c) => c.name && c.name.startsWith('part__'))
+              .map((c) => ({
+                name: c.name,
+                parent: c.parent?.name,
+                userData: c.userData,
+              })),
+          });
         } catch (e) {}
 
         (this as any)[$needsRender]();
@@ -1631,9 +2196,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this._snappingPointSlots;
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      void this._snappingPointSlots;
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this._breakLinkSlots;
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this._rotationSlots;
+      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+      void this._recentlyDisconnectedPairs;
       // methods
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this.setupNewConnection;
@@ -1654,6 +2223,284 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     transform: TransformFunction = () => {
       // Implementation for transforming the selected puzzle piece
     };
+
+    // Higher-level API functions for external control
+
+    /**
+     * Get the currently selected node based on selection scope
+     */
+    getSelectedNode(): Object3D | null {
+      return this.selectedObjects.length > 0 ? this.selectedObjects[0] : null;
+    }
+
+    /**
+     * Select a specific part (regardless of current selection scope)
+     */
+    selectPart(node: Object3D): boolean {
+      if (!node) return false;
+      try {
+        this.selectedObjects = [node];
+        (this as any)[$selectObjectForControls](node);
+        const meshes = this._getMeshesForOutline(node);
+        this._setOutline(meshes);
+
+        // Hide break link slots for individual parts
+        this._breakLinkSlotsVisible = false;
+        this.clearSlots(this._breakLinkSlots);
+
+        this.updateSnappingPointSlots();
+        this.updateBreakLinkSlots();
+        this.dispatchEvent(
+          new CustomEvent('select', {
+            detail: { node, type: 'part' },
+          })
+        );
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /**
+     * Select a specific group (regardless of current selection scope)
+     */
+    selectGroup(node: Object3D): boolean {
+      if (!node) return false;
+      if (!node.userData?.isSnappedGroup && node.name !== 'PuzzlerRoot')
+        return false;
+      try {
+        this.selectedObjects = [node];
+        (this as any)[$selectObjectForControls](node);
+        const meshes = this._getMeshesForOutline(node);
+        this._setOutline(meshes);
+        this.updateSnappingPointSlots();
+        this.dispatchEvent(
+          new CustomEvent('select', {
+            detail: { node, type: 'group' },
+          })
+        );
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /**
+     * Clear current selection
+     */
+    clearSelection(): void {
+      try {
+        (this as any)[$clearSelectedObject]();
+        this.selectedObjects = [];
+        this._setOutline([]);
+        this._breakLinkSlotsVisible = false;
+        this.clearSlots(this._breakLinkSlots);
+        this.updateSnappingPointSlots();
+        this.updateBreakLinkSlots();
+        this.dispatchEvent(
+          new CustomEvent('select', {
+            detail: { node: null, type: 'clear' },
+          })
+        );
+      } catch (e) {}
+    }
+
+    /**
+     * Translate a specific node by the given offset
+     */
+    translateNode(
+      node: Object3D,
+      offset: { x: number; y: number; z: number }
+    ): boolean {
+      if (!node) return false;
+      try {
+        const oldPosition = node.position.clone();
+        node.position.add(new Vector3(offset.x, offset.y, offset.z));
+
+        // Fire events for individual parts if this is a group
+        this._firePartsStateEvents(node, 'translate', {
+          oldPosition,
+          newPosition: node.position.clone(),
+        });
+
+        (this as any)[$needsRender]();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /**
+     * Rotate a specific node by the given angle (in degrees) around Y axis
+     */
+    rotateNode(node: Object3D, angleDegrees: number): boolean {
+      if (!node) return false;
+      try {
+        const oldRotation = node.rotation.clone();
+        node.rotateY((angleDegrees * Math.PI) / 180);
+
+        // Fire events for individual parts if this is a group
+        this._firePartsStateEvents(node, 'rotate', {
+          oldRotation,
+          newRotation: node.rotation.clone(),
+        });
+
+        (this as any)[$needsRender]();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /**
+     * Delete a specific node
+     */
+    deleteNode(node: Object3D): boolean {
+      if (!node) return false;
+      try {
+        // Fire events for individual parts before deletion
+        this._firePartsStateEvents(node, 'delete', {});
+
+        if (node.parent) {
+          node.parent.remove(node);
+        }
+
+        // Clear selection if this was the selected node
+        if (this.selectedObjects.includes(node)) {
+          this.clearSelection();
+        }
+
+        (this as any)[$needsRender]();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /**
+     * Group selected objects together (creates a new group from multiple objects)
+     */
+    groupSelectedObjects(): Object3D | null {
+      if (this.selectedObjects.length < 2) return null;
+
+      try {
+        // Create new group
+        const group = new Object3D();
+        group.name = `user_group_${Date.now()}`;
+        group.userData = group.userData || {};
+        group.userData.isSnappedGroup = true;
+        group.userData.snapConnections = [];
+
+        const parent = this.selectedObjects[0].parent;
+        if (parent) parent.add(group);
+
+        // Move all selected objects to the group while preserving world transforms
+        this.selectedObjects.forEach((obj) => {
+          obj.updateMatrixWorld(true);
+          const worldPos = new Vector3();
+          const worldQuat = obj.quaternion.clone();
+          const worldScale = new Vector3();
+          obj.getWorldPosition(worldPos);
+          obj.getWorldScale(worldScale);
+
+          if (obj.parent) obj.parent.remove(obj);
+          group.add(obj);
+
+          // Convert world transform to local transform in new parent
+          if (obj.parent) {
+            const localPos = obj.parent.worldToLocal(worldPos.clone());
+            obj.position.copy(localPos);
+            obj.quaternion.copy(worldQuat);
+            obj.scale.copy(worldScale);
+          }
+
+          obj.userData = obj.userData || {};
+          obj.userData.isInGroup = true;
+        });
+
+        this.selectGroup(group);
+        this._firePartsStateEvents(group, 'group', {});
+
+        (this as any)[$needsRender]();
+        return group;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    /**
+     * Break all connections in a group (free all parts)
+     */
+    breakGroup(group: Object3D): boolean {
+      if (!group || !group.userData?.isSnappedGroup) return false;
+      return this.ungroupSnappedGroup(group);
+    }
+
+    /**
+     * Break a specific connection between two parts in a group
+     */
+    breakLink(connectionId: string): boolean {
+      try {
+        this.breakSpecificConnection(connectionId);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /**
+     * Fire events for individual parts when group operations occur
+     */
+    private _firePartsStateEvents(
+      node: Object3D,
+      operation: string,
+      data: any
+    ): void {
+      try {
+        if (node.userData?.isSnappedGroup || node.name === 'PuzzlerRoot') {
+          // This is a group - fire events for each child part
+          node.traverse((child) => {
+            if (
+              child !== node &&
+              (child.userData?.isPlacedObject || child.name === 'PuzzlerRoot')
+            ) {
+              this.dispatchEvent(
+                new CustomEvent('part-state-change', {
+                  detail: {
+                    node: child,
+                    operation,
+                    groupNode: node,
+                    data: {
+                      ...data,
+                      position: child.position.clone(),
+                      rotation: child.rotation.clone(),
+                      scale: child.scale.clone(),
+                    },
+                  },
+                })
+              );
+            }
+          });
+        } else {
+          // Single part
+          this.dispatchEvent(
+            new CustomEvent('part-state-change', {
+              detail: {
+                node,
+                operation,
+                groupNode: null,
+                data: {
+                  ...data,
+                  position: node.position.clone(),
+                  rotation: node.rotation.clone(),
+                  scale: node.scale.clone(),
+                },
+              },
+            })
+          );
+        }
+      } catch (e) {}
+    }
 
     /**
      * Start an interactive placement session using a low-resolution GLB as a
@@ -1682,6 +2529,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         options || {}
       );
       this._activePlacementSession = session;
+
+      // Ensure snapping slots are refreshed immediately when an interactive
+      // placement session is started so snapping points for the placeholder
+      // will appear (placeholder may not yet be loaded).
+      try {
+        this.updateSnappingPointSlots();
+      } catch (e) {}
 
       // When session transitions out of placing (commit/cancel), clear active session
       const clearActive = () => {
@@ -1979,6 +2833,76 @@ class PlacementSession extends EventTarget {
       }
 
       this.placeholder.position.set(world.x, world.y, world.z);
+
+      // Check for snapping during interactive placement if snapping is enabled
+      if (
+        (this._element as any).snappingEnabled &&
+        this.placeholder &&
+        this.placeholder.userData.snappingPoints
+      ) {
+        try {
+          const targetObject = (this._element as any).findTargetObject();
+          if (targetObject) {
+            // Find potential snap targets by traversing all placed objects
+            let bestConnection: any = null;
+            targetObject.traverse((child: any) => {
+              if (
+                child.userData.isPlacedObject &&
+                child !== this.placeholder &&
+                child.userData.snappingPoints
+              ) {
+                const connections = findSnappingConnections(
+                  this.placeholder!,
+                  child
+                );
+                if (connections && connections.length > 0) {
+                  const connection = {
+                    ...connections[0],
+                    targetObject: child,
+                  };
+                  if (
+                    !bestConnection ||
+                    connection.distance < bestConnection.distance
+                  ) {
+                    bestConnection = connection;
+                  }
+                }
+              }
+            });
+
+            if (bestConnection) {
+              // Apply temporary snapping for visual feedback
+              const draggedWorld = getSnappingPointWorldPosition(
+                this.placeholder!,
+                bestConnection.draggedPoint
+              );
+              const targetWorld = getSnappingPointWorldPosition(
+                bestConnection.targetObject,
+                bestConnection.targetPoint
+              );
+              const offset = new Vector3().subVectors(
+                targetWorld,
+                draggedWorld
+              );
+              this.placeholder.position.add(offset);
+
+              // Record pending connection for commit
+              (this._element as any).pendingSnapConnection = {
+                draggedObject: this.placeholder!,
+                targetObject: bestConnection.targetObject,
+                draggedPoint: bestConnection.draggedPoint,
+                targetPoint: bestConnection.targetPoint,
+              };
+            } else {
+              // Clear any pending connection if no snap found
+              (this._element as any).pendingSnapConnection = null;
+            }
+          }
+        } catch (e) {
+          // Ignore snapping errors during placement
+        }
+      }
+
       this.dispatchEvent(
         new CustomEvent('update', {
           detail: {

@@ -519,6 +519,15 @@ export function createSnappedGroup(
   group.userData = { ...object1.userData, ...group.userData };
   group.userData.isPlacedObject = true;
 
+  try {
+    console.debug('[snapping] createSnappedGroup', {
+      groupName: group.name,
+      object1: object1.name || object1.uuid,
+      object2: object2.name || object2.uuid,
+      snapConnections: group.userData.snapConnections,
+    });
+  } catch (e) {}
+
   // Ensure the group itself doesn't have snapping points - only its children should
   delete group.userData.snappingPoints;
 
@@ -563,18 +572,27 @@ function isSnappingPointMesh(mesh: Object3D): boolean {
  * Check if an object is part of a snapped group
  */
 export function isInSnappedGroup(object: Object3D): boolean {
-  return object.parent?.userData.isSnappedGroup === true;
+  const parent = object.parent;
+  if (!parent || !parent.userData) return false;
+  return (
+    parent.userData.isSnappedGroup === true || parent.userData.isGroup === true
+  );
 }
 
 /**
  * Get the snapped group containing an object, if any
  */
 export function getSnappedGroup(object: Object3D): Object3D | null {
-  if (object.userData.isSnappedGroup) {
-    return object;
+  if (object.userData) {
+    if (object.userData.isSnappedGroup || object.userData.isGroup)
+      return object;
   }
-  if (object.parent?.userData.isSnappedGroup) {
-    return object.parent;
+  if (object.parent && object.parent.userData) {
+    if (
+      object.parent.userData.isSnappedGroup === true ||
+      object.parent.userData.isGroup === true
+    )
+      return object.parent;
   }
   return null;
 }
