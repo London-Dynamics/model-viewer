@@ -109,12 +109,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     /**
      * Which selection mode is active. Options:
-     * - 'part' (default): select individual parts (closest placed object, or PuzzlerRoot as fallback)
-     * - 'group': select groups (closest group node, or parent of closest PuzzlerRoot as fallback)
+     * - 'part': select individual parts (closest placed object, or PuzzlerRoot as fallback)
+     * - 'group' (default): select groups (closest group node, or parent of closest PuzzlerRoot as fallback)
      * - 'all': allow any scene node to be selected
      */
     @property({ type: String, attribute: 'selection-scope' })
-    selectionScope: SelectionScope = 'part';
+    selectionScope: SelectionScope = 'group';
 
     // Return true only when edit-mode is enabled and the node passes the scope & selectable checks
     _isNodeSelectable(node: any): boolean {
@@ -132,7 +132,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         case 'part':
           return isPlaced || isPuzzlerRoot;
         case 'group':
-          return isGroup;
+          // In group mode, allow selection of both actual groups AND individual placed objects
+          // Individual objects are treated as single-object "groups" for dragging
+          return isGroup || isPlaced;
         case 'all':
           return true;
         default:
@@ -315,36 +317,33 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         let selectedNode: Object3D | null = null;
         if (candidates.length > 0) {
+          // Apply intelligent selection based on scope, but use _isNodeSelectable for filtering
           if (this.selectionScope === 'part') {
-            // prefer nearest placed object
+            // In part mode, prefer the nearest individual part
             const placed = candidates
               .filter((c) => c.node?.userData?.isPlacedObject === true)
               .sort((a, b) => a.depth - b.depth);
-            if (placed.length > 0) selectedNode = placed[0].node;
-
-            // fallback to nearest PuzzlerRoot
-            if (!selectedNode) {
-              const roots = candidates
-                .filter((c) => (c.node.name || '') === 'PuzzlerRoot')
-                .sort((a, b) => a.depth - b.depth);
-              if (roots.length > 0) selectedNode = roots[0].node;
+            if (placed.length > 0) {
+              selectedNode = placed[0].node;
+            } else {
+              // fallback to any selectable candidate
+              candidates.sort((a, b) => a.depth - b.depth);
+              selectedNode = candidates[0].node;
             }
           } else if (this.selectionScope === 'group') {
-            // prefer nearest group node
+            // In group mode, prefer groups over individual parts
             const groups = candidates
               .filter((c) => c.node?.userData?.isSnappedGroup === true)
               .sort((a, b) => a.depth - b.depth);
-            if (groups.length > 0) selectedNode = groups[0].node;
-
-            // fallback: if we hit an object with PuzzlerRoot ancestors, select the highest PuzzlerRoot
-            if (!selectedNode) {
-              const puzzlerRoots = candidates
-                .filter((c) => (c.node.name || '') === 'PuzzlerRoot')
-                .sort((a, b) => b.depth - a.depth); // Sort by depth descending to get highest in tree
-              if (puzzlerRoots.length > 0) selectedNode = puzzlerRoots[0].node;
+            if (groups.length > 0) {
+              selectedNode = groups[0].node;
+            } else {
+              // fallback to any selectable candidate (individual parts, etc.)
+              candidates.sort((a, b) => a.depth - b.depth);
+              selectedNode = candidates[0].node;
             }
           } else {
-            // 'all' or unknown: nearest selectable
+            // 'all' mode: just pick the nearest selectable
             candidates.sort((a, b) => a.depth - b.depth);
             selectedNode = candidates[0].node;
           }
@@ -1655,21 +1654,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private startDragging(_event?: MouseEvent | TouchEvent) {
       if (!this.selectedObjects.length) return;
 
-      // If the selected object is part of a group, drag the enclosing group
-      // so grouped objects move together. Otherwise drag the selected object.
-      this._currentDragTarget =
-        this._findEnclosingGroup(this.selectedObjects[0]) ||
-        this.selectedObjects[0];
+      // Determine drag target based on selection scope:
+      // - 'part': drag the selected object directly (don't look for enclosing group)
+      // - 'group': drag the enclosing group so grouped objects move together
+      if (this.selectionScope === 'part') {
+        this._currentDragTarget = this.selectedObjects[0];
+      } else {
+        this._currentDragTarget =
+          this._findEnclosingGroup(this.selectedObjects[0]) ||
+          this.selectedObjects[0];
+      }
 
       this.isDragging = true;
-      try {
-        console.debug('[puzzler] startDragging', {
-          selected:
-            this.selectedObjects[0]?.name || this.selectedObjects[0]?.uuid,
-          dragTarget:
-            this._currentDragTarget?.name || this._currentDragTarget?.uuid,
-        });
-      } catch (e) {}
       this.dragStartMousePosition.copy(this.currentMousePosition);
       try {
         this.dragStartPosition.copy(this._currentDragTarget.position);
@@ -1772,30 +1768,56 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private stopDragging() {
       if (!this.isDragging) return;
 
-      try {
-        console.debug('[puzzler] stopDragging pre', {
-          selected:
-            this.selectedObjects[0]?.name || this.selectedObjects[0]?.uuid,
-          currentDragTarget:
-            this._currentDragTarget?.name || this._currentDragTarget?.uuid,
-        });
-      } catch (e) {}
-
       this.isDragging = false;
+
+      // Ensure dragged individual parts maintain their placement status
+      if (this.selectionScope === 'part' && this._currentDragTarget) {
+        try {
+          // If we dragged an individual part, ensure it's properly parented and marked as placed
+          const draggedObject = this._currentDragTarget;
+          if (draggedObject && !draggedObject.userData?.isSnappedGroup) {
+            // Ensure it's marked as a placed object for selection
+            draggedObject.userData = draggedObject.userData || {};
+            draggedObject.userData.isPlacedObject = true;
+
+            // Only re-parent to scene if the object is NOT part of a group
+            // Re-parenting objects that are part of groups breaks the group structure
+            const isPartOfGroup = draggedObject.parent?.userData?.isSnappedGroup === true;
+            
+            if (!isPartOfGroup) {
+              // Ensure it's properly parented to the scene
+              const scene = (this as any)[$scene];
+              if (
+                scene &&
+                draggedObject.parent !== scene.target &&
+                draggedObject.parent !== scene
+              ) {
+                try {
+                  if (draggedObject.parent)
+                    draggedObject.parent.remove(draggedObject);
+                  scene.target
+                    ? scene.target.add(draggedObject)
+                    : scene.add(draggedObject);
+                } catch (e) {
+                  console.debug('[puzzler] failed to re-parent dragged part', {
+                    e,
+                  });
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.debug('[puzzler] error ensuring part placement status', {
+            e,
+          });
+        }
+      }
 
       // Clear recently disconnected pairs when drag ends - allow normal snapping again
       this._recentlyDisconnectedPairs.clear();
-      try {
-        console.debug(
-          '[puzzler] cleared recently disconnected pairs on drag end'
-        );
-      } catch (e) {}
 
       this._currentDragTarget = null;
 
-      try {
-        // debug removed
-      } catch (e) {}
       if (this.pendingSnapConnection) {
         try {
           this.completeSnapConnection(this.pendingSnapConnection);
