@@ -25,6 +25,9 @@ import {
   getSnappedGroup,
   findSnappingConnections,
 } from '../../utilities/snapping-points.js';
+
+import { getErrorMessage } from '../../utilities/errors.js';
+
 import { $controls } from '../controls.js';
 import { updateSlots, createSlotElement } from './slots.js';
 import { Euler } from 'three';
@@ -32,6 +35,10 @@ import {
   $selectObjectForControls,
   $clearSelectedObject,
 } from '../ld-floating-control-strip.js';
+import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { LDExporter } from '../ld-exporter.js';
+import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
@@ -43,27 +50,36 @@ type PlacementOptions = {
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
 };
 
-type PlaceFunction = (
-  src: string,
-  position: {
-    x: number;
-    y: number;
-    z: number;
-  },
-  options?: PlacementOptions
-) => Promise<void>;
-
-type RotateFunction = () => void;
-
 type SelectionScope = 'part' | 'group' | 'all';
 
-type TransformFunction = () => void;
+type PositionOptions = {
+  position?: Vector3;
+  rotation?: Euler;
+  scale?: Vector3;
+  anchor?: string;
+};
+
+type LoadFunction = (src: string, id: string) => Promise<GLTF>;
+type LoadManyFunction = (
+  items: Array<{ src: string; id: string }>
+) => Promise<GLTF[]>;
+
+type AttachFunction = (id: string, options?: PositionOptions) => void;
+type AttachMaterialFunction = (id: string) => void;
+
+type ClearSceneFunction = () => void;
 
 export declare interface LDPuzzlerInterface {
-  place: PlaceFunction;
-  rotate: RotateFunction;
-  transform: TransformFunction;
-  ungroupSelectedObject?: () => boolean;
+  load: LoadFunction;
+  loadMany: LoadManyFunction;
+  attachObject: AttachFunction;
+  attachMaterial: AttachMaterialFunction;
+  clear: ClearSceneFunction;
+
+  setSrcFromBuffer(buffer: ArrayBuffer): void;
+
+  deDraco: (inputBuffer: ArrayBuffer) => Promise<ArrayBuffer>;
+
   beginPlacement?: (
     lowResSrc: string,
     highResSrc: string,
@@ -75,6 +91,7 @@ export declare interface LDPuzzlerInterface {
   getSelectedNode?: () => Object3D | null;
   selectPart?: (node: Object3D) => boolean;
   selectGroup?: (node: Object3D) => boolean;
+  ungroupSelectedObject?: () => boolean;
   clearSelection?: () => void;
   translateNode?: (
     node: Object3D,
@@ -158,34 +175,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
     }
 
-    [$tick](time: number, delta: number) {
-      // Forward to base class tick
-      try {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore - dynamic symbol access
-        super[$tick](time, delta);
-      } catch (e) {}
-
-      // Update snapping/break-link slots while visible each frame so they
-      // follow camera movement and reflect toggles immediately.
-      try {
-        // Update snapping points when they should be visible
-        const shouldShowSnappingPoints =
-          this.snappingPointsVisible ||
-          (this.selectedObjects && this.selectedObjects.length > 0) ||
-          (this._activePlacementSession &&
-            this._activePlacementSession.state === 'placing') ||
-          (this.isDragging && this.snappingEnabled);
-
-        if (shouldShowSnappingPoints) {
-          this.updateSnappingPointSlots();
-        }
-      } catch (e) {}
-      try {
-        if (this._breakLinkSlotsVisible) this.updateBreakLinkSlots();
-      } catch (e) {}
-    }
-
     disconnectedCallback() {
       super.disconnectedCallback();
       this.removeEventListener(
@@ -225,6 +214,178 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // reference touch helper to silence unused-method lint
         this._touchUnused();
       } catch (e) {}
+    }
+
+    [$tick](time: number, delta: number) {
+      // Forward to base class tick
+      try {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore - dynamic symbol access
+        super[$tick](time, delta);
+      } catch (e) {}
+
+      // Update snapping/break-link slots while visible each frame so they
+      // follow camera movement and reflect toggles immediately.
+      try {
+        // Update snapping points when they should be visible
+        const shouldShowSnappingPoints =
+          this.snappingPointsVisible ||
+          (this.selectedObjects && this.selectedObjects.length > 0) ||
+          (this._activePlacementSession &&
+            this._activePlacementSession.state === 'placing') ||
+          (this.isDragging && this.snappingEnabled);
+
+        if (shouldShowSnappingPoints) {
+          this.updateSnappingPointSlots();
+        }
+      } catch (e) {}
+      try {
+        if (this._breakLinkSlotsVisible) this.updateBreakLinkSlots();
+      } catch (e) {}
+    }
+
+    async setSrcFromBuffer(buffer: ArrayBuffer) {
+      try {
+        const safeObjectUrl = createSafeObjectUrlFromArrayBuffer(buffer);
+
+        this.setAttribute('src', safeObjectUrl.url);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    private _puzzleRegistry: Map<string, GLTF> = new Map();
+
+    async load(src: string, id: string): Promise<GLTF> {
+      const loader = new GLTFLoader();
+
+      return new Promise((resolve, reject) => {
+        loader.load(
+          src,
+          (gltf) => {
+            gltf.scene.name = `puzzle_${id}`;
+            gltf.scene.userData.id = id;
+            gltf.scene.userData.isPuzzle = true;
+
+            this._puzzleRegistry.set(id, gltf);
+
+            resolve(gltf);
+          },
+          (xhr) => {
+            this._loadStatusMap.set(id, {
+              loaded: xhr.loaded,
+              total: xhr.total,
+              error: false,
+            });
+
+            this.dispatchEvent(
+              new CustomEvent('progress', {
+                detail: {
+                  totalProgress: this._loadProgress,
+                  reason: 'puzzle-load',
+                },
+              })
+            );
+          },
+          (err) => {
+            this._loadStatusMap.set(id, {
+              loaded: 0,
+              total: 0,
+              error: true,
+              message: getErrorMessage(err),
+            });
+            reject(err);
+          }
+        );
+      });
+    }
+
+    unload(id: string) {
+      this.detachObject(id);
+      this._puzzleRegistry.delete(id);
+    }
+
+    async loadMany(srcs: Array<{ src: string; id: string }>) {
+      this.clearLoadProgress();
+      const promises = srcs.map((item) => this.load(item.src, item.id));
+      return Promise.all(promises);
+    }
+
+    private _loadStatusMap: Map<
+      string,
+      { loaded: number; total: number; error?: boolean; message?: string }
+    > = new Map();
+
+    private get _loadProgress() {
+      const statuses = Array.from(this._loadStatusMap.values());
+      if (statuses.length === 0) return 1;
+      const loaded = statuses.reduce((acc, s) => acc + s.loaded, 0);
+      const total = statuses.reduce((acc, s) => acc + s.total, 0);
+      return loaded / total;
+    }
+
+    clearLoadProgress() {
+      this._loadStatusMap.clear();
+    }
+
+    attachObject(id: string, options?: PositionOptions) {
+      console.log('attachObject', id, options);
+    }
+
+    detachObject(id: string) {
+      console.log('detachObject', id);
+    }
+
+    attachMaterial(id: string) {
+      console.log('attachMaterial', id);
+    }
+
+    clear() {}
+
+    /* Remove draco compression from a glb
+     *
+     * @param {ArrayBuffer} inputBuffer GLB with draco
+     * @return {Promise<ArrayBuffer>} GLB without draco
+     */
+    deDraco(inputBuffer: ArrayBuffer) {
+      return new Promise((res) => {
+        const loader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath(
+          'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/libs/draco/'
+        );
+        loader.setDRACOLoader(dracoLoader);
+
+        loader.parse(
+          inputBuffer,
+          '',
+          (model) => {
+            if (model.scene) {
+              model.scene.traverse((node) => {
+                if (node.userData['name']) {
+                  node.name = node.userData['name'];
+                }
+              });
+              const exporter = new LDExporter();
+              exporter.parse(
+                model.scene.children,
+                (arrayBuffer: unknown) => {
+                  res(arrayBuffer);
+                },
+                function (err: any) {
+                  console.error(err);
+                },
+                { binary: true }
+              );
+            } else {
+              res(inputBuffer);
+            }
+          },
+          (error) => {
+            console.error(error);
+          }
+        );
+      });
     }
 
     private _getMeshesForOutline(object: Object3D): Object3D[] {
@@ -398,8 +559,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     };
 
-    // Internal counter for naming placed objects / sessions
-    private _placementCounter = 0;
     private _activePlacementSession: PlacementSession | null = null;
 
     // Selection / grouping bookkeeping (from index_old)
@@ -535,48 +694,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private dragOffset: Vector3 = new Vector3();
     private floorPlane: Plane = new Plane(new Vector3(0, 1, 0), 0);
     private originalFloorY: number | undefined = undefined;
-
-    /**
-     * Direct placement API: load a GLB and add it at the provided world position.
-     * Returns a promise that resolves when the model is loaded and inserted.
-     */
-    place: PlaceFunction = async (src, position, options) => {
-      const scene = this[$scene];
-      if (!scene) return;
-
-      const loader = this[$renderer].loader;
-
-      // Load via renderer's loader which uses the project's caching loader.
-      const gltf = await loader.load(
-        src,
-        this as unknown as ModelViewerElementBase
-      );
-
-      if (!gltf || !gltf.scene) return;
-
-      // Name + mark as placed so selection scope recognizes it.
-      const placedName = `placed_${++this._placementCounter}`;
-      gltf.scene.name = options?.name || placedName;
-      gltf.scene.userData = gltf.scene.userData || {};
-      gltf.scene.userData.isPlacedObject = true;
-      if (options?.selectable === false) gltf.scene.userData.selectable = false;
-
-      // Apply position
-      gltf.scene.position.set(position.x, position.y, position.z);
-
-      // Attach snapping points if provided in options
-      if (options?.snappingPoints) {
-        gltf.scene.userData.snappingPoints = options.snappingPoints;
-      }
-
-      // Attach to the scene target so it participates in the scene graph
-      try {
-        scene.target.add(gltf.scene);
-      } catch (e) {
-        // Fallback: add to scene root
-        scene.add(gltf.scene);
-      }
-    };
 
     /**
      * Public API: ungroup the currently selected group object (if any).
@@ -1782,8 +1899,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             // Only re-parent to scene if the object is NOT part of a group
             // Re-parenting objects that are part of groups breaks the group structure
-            const isPartOfGroup = draggedObject.parent?.userData?.isSnappedGroup === true;
-            
+            const isPartOfGroup =
+              draggedObject.parent?.userData?.isSnappedGroup === true;
+
             if (!isPartOfGroup) {
               // Ensure it's properly parented to the scene
               const scene = (this as any)[$scene];
@@ -2238,13 +2356,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this.completeSnapConnection;
     }
-
-    rotate: RotateFunction = () => {
-      // Implementation for rotating the selected puzzle piece
-    };
-    transform: TransformFunction = () => {
-      // Implementation for transforming the selected puzzle piece
-    };
 
     // Higher-level API functions for external control
 
