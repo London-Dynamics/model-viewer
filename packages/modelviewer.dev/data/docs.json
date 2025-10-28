@@ -1501,11 +1501,65 @@
     "htmlName": "ld_puzzler",
     "Attributes": [
       {
-        "name": "floor-cursor",
-        "htmlName": "floorCursor",
-        "description": "Enables interactive placement cursor that follows mouse movement over the model. When enabled, the cursor shows where a new GLB model would be placed using the placeGLB() method.",
+        "name": "edit-mode",
+        "htmlName": "editMode",
+        "description": "Enable edit mode to allow placing, selecting and manipulating models in the scene.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "false", "options": "true, false" }
+      },
+      {
+        "name": "selection-scope",
+        "htmlName": "selectionScope",
+        "description": "Selection granularity: 'part' selects individual placed parts, 'group' selects snapped groups (default), 'all' allows selecting any scene node.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "group", "options": "part, group, all" }
+      },
+      {
+        "name": "snap-distance",
+        "htmlName": "snapDistance",
+        "description": "Maximum distance (in metres) within which snapping may occur between snapping points.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "0.2", "options": "number (meters)" }
+      },
+      {
+        "name": "snap-hysteresis",
+        "htmlName": "snapHysteresis",
+        "description": "Multiplier applied to snap-distance for recently disconnected pairs to prevent immediate re-snapping.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "1.5", "options": "number (>= 1)" }
+      },
+      {
+        "name": "snapping-enabled",
+        "htmlName": "snappingEnabled",
+        "description": "Toggle to enable or disable snapping behaviour during dragging and placement.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "false", "options": "true, false" }
+      },
+      {
+        "name": "snapping-points-visible",
+        "htmlName": "snappingPointsVisible",
+        "description": "Show snapping-point UI slots. Also shown automatically while dragging, when selection exists, or during placement sessions.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "false", "options": "true, false" }
+      },
+      {
+        "name": "cursor-visible",
+        "htmlName": "cursorVisible",
+        "description": "Toggle visibility of the placement cursor used during interactive placement.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
         ],
         "default": {
           "default": "false",
@@ -1513,41 +1567,84 @@
         }
       },
       {
-        "name": "floor-cursor-size",
-        "htmlName": "floorCursorSize",
-        "description": "Controls the diameter of the placement cursor in meters. This visual indicator shows the size of the area where a new model will be placed.",
+        "name": "cursor-size",
+        "htmlName": "cursorSize",
+        "description": "Diameter of the placement cursor in meters.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
         ],
         "default": {
           "default": "0.5",
-          "options": "any positive number (meters)"
+          "options": "number (meters)"
+        }
+      },
+      {
+        "name": "cursor-colour",
+        "htmlName": "cursorColour",
+        "description": "CSS color used for the placement cursor.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "#165dfc",
+          "options": "any valid CSS color string"
         }
       }
     ],
     "Methods": [
+      {
+        "name": "load(src: string, id: string): Promise<GLTF>",
+        "htmlName": "load",
+        "description": "Load a GLTF/GLB at the provided URL and register it under the given id. Resolves with the loaded GLTF object and updates internal load progress events.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#load\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "loadMany(items: Array<{src: string; id: string}>): Promise<GLTF[]>",
+        "htmlName": "loadMany",
+        "description": "Load multiple GLTF/GLB files in parallel. Returns a Promise that resolves with an array of loaded GLTFs.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#load-many\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "attachObject(id: string, options?: PositionOptions): void",
+        "htmlName": "attachObject",
+        "description": "Instantiate or attach a previously-loaded model (by id) into the scene. Optional position/rotation/scale anchor may be provided.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#attach\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "detachObject(id: string): void",
+        "htmlName": "detachObject",
+        "description": "Remove an attached object (by id) from the scene. Does not necessarily remove the cached GLTF."
+      },
+      {
+        "name": "attachMaterial(id: string): void",
+        "htmlName": "attachMaterial",
+        "description": "TODO"
+      },
+      {
+        "name": "clear(): void",
+        "htmlName": "clear",
+        "description": "Clear the puzzler scene (detach placed objects and reset internal registries)."
+      },
+      {
+        "name": "beginPlacement(lowResSrc: string, highResSrc: string, options?: PlacementOptions, initialMouse?: {clientX:number,clientY:number}): PlacementSession",
+        "htmlName": "beginPlacement",
+        "description": "Start an interactive placement session. Returns a PlacementSession (EventTarget) that emits events (start, update, placeholder-loaded, loading-start, progress, loaded, error, cancel). Use session.commit() to finish placement and obtain the placed node.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ]
+      },
       {
         "name": "setSrcFromBuffer(buffer: ArrayBuffer)",
         "htmlName": "setSrcFromBuffer",
         "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",
         "links": [
           "<a href=\"../examples/ld_puzzler/#set-src-from-buffer\">Related examples</a>"
-        ]
-      },
-      {
-        "name": "placeGLB(src: string, options?: PlacementOptions)",
-        "htmlName": "placeGLB",
-        "description": "Dynamically adds a GLB model to the scene with physics-based placement. The model will drop from above and settle on the surface. Options include name, position, and mass for realistic gravity simulation.",
-        "links": [
-          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
-        ]
-      },
-      {
-        "name": "getCursorPosition()",
-        "htmlName": "getCursorPosition",
-        "description": "Returns the current world position of the placement cursor as an object with x, y, z coordinates in meters. Returns null if the placement cursor is not visible or enabled.",
-        "links": [
-          "<a href=\"../examples/ld_puzzler/#place-glb\">Related examples</a>"
         ]
       },
       {

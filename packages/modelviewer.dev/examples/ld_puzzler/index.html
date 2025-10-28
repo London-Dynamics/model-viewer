@@ -77,7 +77,7 @@
       /* Light DOM CSS classes for custom slot content */
 
       /* CSS Parts - Style shadow DOM elements from light DOM */
-      #place-glb-demo::part(ld-snapping-point) {
+      #modular-demo::part(ld-snapping-point) {
         width: 10px;
         height: 10px;
         border-radius: 50%;
@@ -86,7 +86,7 @@
         pointer-events: none;
       }
 
-      #place-glb-demo::part(ld-rotation-control) {
+      #modular-demo::part(ld-rotation-control) {
         height: 24px;
         width: 24px;
         border-radius: 50%;
@@ -100,17 +100,17 @@
         align-items: center;
       }
 
-      #place-glb-demo::part(ld-rotation-control):hover {
+      #modular-demo::part(ld-rotation-control):hover {
       }
 
-      #place-glb-demo::part(ld-rotation-icon) {
+      #modular-demo::part(ld-rotation-icon) {
         font-size: 16px;
         line-height: 1;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
           sans-serif;
       }
 
-      #place-glb-demo::part(ld-break-link) {
+      #modular-demo::part(ld-break-link) {
         width: 24px;
         height: 24px;
         border-radius: 50%;
@@ -124,12 +124,12 @@
         align-items: center;
       }
 
-      #place-glb-demo::part(ld-break-link):hover {
+      #modular-demo::part(ld-break-link):hover {
         background-color: cornflowerblue;
         color: white;
       }
 
-      #place-glb-demo::part(ld-break-link-icon) {
+      #modular-demo::part(ld-break-link-icon) {
         font-size: 16px;
 
         line-height: 1;
@@ -144,7 +144,7 @@
       <div id="toggle"></div>
       <div class="examples-container">
         <div class="sample">
-          <div id="place-glb" class="demo"></div>
+          <div id="modular" class="demo"></div>
           <div class="content">
             <div class="wrapper">
               <h4 id="intro">
@@ -167,11 +167,11 @@
                   <code>::part()</code> selectors work.
                 </p>
               </div>
-              <example-snippet stamp-to="place-glb" highlight-as="html">
+              <example-snippet stamp-to="modular" highlight-as="html">
                 <template>
                   <model-viewer
                     src="../../shared-assets/models/empty.glb"
-                    id="place-glb-demo"
+                    id="modular-demo"
                     ld-puzzler
                     camera-controls
                     interaction-prompt="none"
@@ -445,7 +445,7 @@
                   <script type="module">
                     (() => {
                       const modelViewer =
-                        document.querySelector('#place-glb-demo');
+                        document.querySelector('#modular-demo');
 
                       const relativeMouseCoordinates = (e) => {
                         const rect = modelViewer.getBoundingClientRect();
