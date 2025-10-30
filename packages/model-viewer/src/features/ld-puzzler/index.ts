@@ -7,6 +7,7 @@ import {
   Vector2,
   Plane,
   Quaternion,
+  EulerOrder,
 } from 'three';
 
 import { Constructor } from '../../utilities.js';
@@ -75,6 +76,8 @@ export declare interface LDPuzzlerInterface {
   attachObject: AttachFunction;
   attachMaterial: AttachMaterialFunction;
   clear: ClearSceneFunction;
+
+  rotate(objectName: string, anglesDegrees: [number, number, number]): void;
 
   setSrcFromBuffer(buffer: ArrayBuffer): void;
 
@@ -256,6 +259,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _puzzleRegistry: Map<string, GLTF> = new Map();
 
+    private _currentObject: Object3D | undefined = undefined;
+
     async load(src: string, id: string): Promise<GLTF> {
       const loader = new GLTFLoader();
 
@@ -263,8 +268,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         loader.load(
           src,
           (gltf) => {
-            gltf.scene.name = `puzzle_${id}`;
-            gltf.scene.userData.id = id;
+            gltf.scene.name = id;
             gltf.scene.userData.isPuzzle = true;
 
             this._puzzleRegistry.set(id, gltf);
@@ -342,13 +346,87 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     clear() {}
 
+    rotate(
+      objectName: string,
+      anglesDegrees: [number, number, number],
+      order: EulerOrder = 'XYZ'
+    ) {
+      if (objectName !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+
+      if (!this._currentObject) {
+        this._currentObject = this[$scene].getObjectByName(objectName);
+      }
+
+      if (!this._currentObject) return;
+
+      const rotation = new Euler(
+        anglesDegrees[0] * (Math.PI / 180),
+        anglesDegrees[1] * (Math.PI / 180),
+        anglesDegrees[2] * (Math.PI / 180),
+        order
+      );
+      // Rotate around geometric center instead of local origin while
+      // preserving the API semantics that `rotation` sets the object's
+      // local rotation (absolute), not an accumulated world rotation.
+      try {
+        const obj = this._currentObject as Object3D;
+
+        // compute world center of the object
+        const bbox = new Box3().setFromObject(obj);
+        const centerWorld = bbox.getCenter(new Vector3());
+
+        const parent = obj.parent || (this as any)[$scene];
+
+        // Desired local quaternion from requested Euler
+        const desiredLocalQuat = new Quaternion().setFromEuler(rotation);
+
+        // Compute desired world quaternion = parentWorldQuat * desiredLocalQuat
+        const parentWorldQuat = new Quaternion();
+        parent.getWorldQuaternion(parentWorldQuat);
+        const desiredWorldQuat = parentWorldQuat
+          .clone()
+          .multiply(desiredLocalQuat);
+
+        // Current world quaternion
+        const currentWorldQuat = new Quaternion();
+        obj.getWorldQuaternion(currentWorldQuat);
+
+        // Rotation delta to apply to the object's world-space orientation
+        const rotationDelta = desiredWorldQuat
+          .clone()
+          .multiply(currentWorldQuat.clone().invert());
+
+        // Compute current world position and rotate it around centerWorld by rotationDelta
+        const worldPos = new Vector3();
+        obj.getWorldPosition(worldPos);
+        const offset = worldPos.clone().sub(centerWorld);
+        const rotatedOffset = offset.clone().applyQuaternion(rotationDelta);
+        const newWorldPos = centerWorld.clone().add(rotatedOffset);
+
+        // Convert new world position into parent's local space and assign
+        const newLocalPos = parent.worldToLocal(newWorldPos.clone());
+        obj.position.copy(newLocalPos);
+
+        // Finally set the object's local rotation to the desired local quaternion
+        obj.quaternion.copy(desiredLocalQuat);
+      } catch (e) {
+        // fallback to original behavior
+        this._currentObject.rotation.copy(rotation);
+      }
+      this[$scene].updateBoundingBox();
+      this[$scene].updateShadow();
+      this[$needsRender]();
+    }
+
     /* Remove draco compression from a glb
      *
      * @param {ArrayBuffer} inputBuffer GLB with draco
      * @return {Promise<ArrayBuffer>} GLB without draco
      */
-    deDraco(inputBuffer: ArrayBuffer) {
-      return new Promise((res) => {
+    deDraco(inputBuffer: ArrayBuffer): Promise<ArrayBuffer> {
+      return new Promise((resolve, reject) => {
         const loader = new GLTFLoader();
         const dracoLoader = new DRACOLoader();
         dracoLoader.setDecoderPath(
@@ -369,20 +447,22 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               const exporter = new LDExporter();
               exporter.parse(
                 model.scene.children,
-                (arrayBuffer: unknown) => {
-                  res(arrayBuffer);
+                (arrayBuffer: ArrayBuffer) => {
+                  resolve(arrayBuffer);
                 },
                 function (err: any) {
                   console.error(err);
+                  reject(err);
                 },
                 { binary: true }
               );
             } else {
-              res(inputBuffer);
+              resolve(inputBuffer);
             }
           },
           (error) => {
             console.error(error);
+            reject(error);
           }
         );
       });
@@ -3135,8 +3215,8 @@ class PlacementSession extends EventTarget {
       }
 
       // Mark as placed so selection logic recognizes it
-      gltf.scene.name = this._options?.name || `placed_${this.id}`;
-      gltf.scene.userData = gltf.scene.userData || {};
+      gltf.scene.name = this._options?.name || this.id;
+      gltf.scene.userData = { ...gltf.scene.userData };
       // Preserve any snappingPoints provided during placement so the final
       // placed model participates in snapping discovery.
       if (this._options?.snappingPoints) {

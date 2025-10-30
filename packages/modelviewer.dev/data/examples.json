@@ -388,12 +388,16 @@
     "htmlName": "ld_puzzler",
     "examples": [
       {
-        "htmlId": "place-glb",
-        "name": "Place a GLB into the scene"
+        "htmlId": "modular",
+        "name": "Modular scenes"
+      },
+      {
+        "htmlId": "transforms",
+        "name": "Dynamic transforms"
       },
       {
         "htmlId": "set-src-from-buffer",
-        "name": "Buffer, not SRC!"
+        "name": "Set SRC from Buffer"
       }
     ]
   }

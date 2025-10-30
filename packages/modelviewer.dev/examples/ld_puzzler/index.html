@@ -921,6 +921,149 @@
         </div>
 
         <div class="sample">
+          <div id="transforms" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Transforms</h2>
+                <h4>
+                  Call <span class="attribute">rotate()</span>,
+                  <span class="attribute">translate()</span>, and
+                  <span class="attribute">scale()</span> with an object's name
+                  to manipulate its transform. The name "scene" can be used to
+                  manipulate the entire model.
+                </h4>
+              </div>
+              <example-snippet stamp-to="transforms" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    id="transforms-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  >
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="mt-2 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div
+                              class="flex items-center justify-between gap-4"
+                            >
+                              <label
+                                for="rotate-scene"
+                                class="block text-sm font-medium text-gray-400 dark:text-white"
+                                >Rotate Scene</label
+                              >
+                              <input
+                                type="range"
+                                id="rotate-scene"
+                                class="rotate"
+                                data-object-name="Scene"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                            </div>
+                            <div
+                              class="flex items-center justify-between gap-4"
+                            >
+                              <label
+                                for="rotate-p-box"
+                                class="block text-sm font-medium text-gray-400 dark:text-white"
+                                >Rotate Purple Box</label
+                              >
+                              <input
+                                type="range"
+                                id="rotate-p-box"
+                                class="rotate"
+                                data-object-name="Box"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                            </div>
+                            <div
+                              class="flex items-center justify-between gap-4"
+                            >
+                              <label
+                                for="rotate-y-box"
+                                class="block text-sm font-medium text-gray-400 dark:text-white"
+                                >Rotate Yellow Box</label
+                              >
+                              <input
+                                type="range"
+                                id="rotate-y-box"
+                                class="rotate"
+                                data-object-name="Box_1"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#transforms-demo');
+
+                      document.querySelectorAll('.rotate').forEach((el) => {
+                        el.addEventListener('input', (e) => {
+                          const { objectName } = e.target.dataset;
+                          const angle = parseFloat(el.value);
+                          modelViewer.rotate(objectName, [0, angle, 0]);
+                        });
+                      });
+
+                      // document
+                      //   .querySelectorAll('.btn-transform')
+                      //   .forEach((button) => {
+                      //     button.addEventListener('click', (e) => {
+                      //       const { objectName, transform } = e.target.dataset;
+
+                      //       console.log(
+                      //         `Applying transform ${transform} to object ${objectName}`
+                      //       );
+
+                      //       switch (transform) {
+                      //         case 'rotate':
+                      //           modelViewer.rotate(objectName, [0, 45, 0]);
+                      //           break;
+                      //         // Add more cases for other transforms as needed
+                      //         default:
+                      //           console.warn(`Unknown transform: ${transform}`);
+                      //       }
+                      //     });
+                      //   });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div id="set-src-from-buffer" class="demo"></div>
           <div class="content">
             <div class="wrapper">
