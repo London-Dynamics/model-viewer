@@ -962,19 +962,29 @@
                             >
                               <label
                                 for="rotate-scene"
-                                class="block text-sm font-medium text-gray-400 dark:text-white"
+                                class="block flex-1 text-sm font-medium text-gray-400 dark:text-white"
                                 >Rotate Scene</label
                               >
                               <input
                                 type="range"
                                 id="rotate-scene"
-                                class="rotate"
                                 data-object-name="Scene"
+                                data-axis="x"
                                 min="-180"
                                 max="180"
                                 step="1"
                                 value="0"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                class="rotate w-1/3 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                              <input
+                                type="range"
+                                data-object-name="Scene"
+                                data-axis="y"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate w-1/3 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
                               />
                             </div>
                             <div
@@ -982,19 +992,29 @@
                             >
                               <label
                                 for="rotate-p-box"
-                                class="block text-sm font-medium text-gray-400 dark:text-white"
+                                class="block flex-1 text-sm font-medium text-gray-400 dark:text-white"
                                 >Rotate Purple Box</label
                               >
                               <input
                                 type="range"
                                 id="rotate-p-box"
-                                class="rotate"
                                 data-object-name="Box"
+                                data-axis="x"
                                 min="-180"
                                 max="180"
                                 step="1"
                                 value="0"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                class="rotate w-1/3 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                              <input
+                                type="range"
+                                data-object-name="Box"
+                                data-axis="y"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate w-1/3 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
                               />
                             </div>
                             <div
@@ -1002,19 +1022,29 @@
                             >
                               <label
                                 for="rotate-y-box"
-                                class="block text-sm font-medium text-gray-400 dark:text-white"
+                                class="block flex-1 text-sm font-medium text-gray-400 dark:text-white"
                                 >Rotate Yellow Box</label
                               >
                               <input
                                 type="range"
                                 id="rotate-y-box"
-                                class="rotate"
                                 data-object-name="Box_1"
+                                data-axis="x"
                                 min="-180"
                                 max="180"
                                 step="1"
                                 value="0"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                                class="rotate w-1/3 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
+                              />
+                              <input
+                                type="range"
+                                data-object-name="Box_1"
+                                data-axis="y"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate w-1/3 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700"
                               />
                             </div>
                           </div>
@@ -1029,9 +1059,19 @@
 
                       document.querySelectorAll('.rotate').forEach((el) => {
                         el.addEventListener('input', (e) => {
-                          const { objectName } = e.target.dataset;
+                          const { objectName, axis } = e.target.dataset;
                           const angle = parseFloat(el.value);
-                          modelViewer.rotate(objectName, [0, angle, 0]);
+
+                          const rotation = [0, 0, 0];
+                          if (axis === 'x') {
+                            rotation[0] = angle;
+                            rotation[1] = 0;
+                          } else {
+                            rotation[1] = angle;
+                            rotation[0] = 0;
+                          }
+
+                          modelViewer.rotate(objectName, rotation);
                         });
                       });
 

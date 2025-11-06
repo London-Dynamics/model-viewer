@@ -78,6 +78,8 @@ export declare interface LDPuzzlerInterface {
   clear: ClearSceneFunction;
 
   rotate(objectName: string, anglesDegrees: [number, number, number]): void;
+  position(objectName: string, value: [number, number, number]): void;
+  scale(objectName: string, value: [number, number, number]): void;
 
   setSrcFromBuffer(buffer: ArrayBuffer): void;
 
@@ -96,11 +98,7 @@ export declare interface LDPuzzlerInterface {
   selectGroup?: (node: Object3D) => boolean;
   ungroupSelectedObject?: () => boolean;
   clearSelection?: () => void;
-  translateNode?: (
-    node: Object3D,
-    offset: { x: number; y: number; z: number }
-  ) => boolean;
-  rotateNode?: (node: Object3D, angleDegrees: number) => boolean;
+
   deleteNode?: (node: Object3D) => boolean;
   groupSelectedObjects?: () => Object3D | null;
   breakGroup?: (group: Object3D) => boolean;
@@ -180,6 +178,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     disconnectedCallback() {
       super.disconnectedCallback();
+      this.cancelRequestedShadowUpdate();
       this.removeEventListener(
         'pointerup',
         this._onPointerEvent as EventListener,
@@ -346,11 +345,26 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     clear() {}
 
+    // private [$updateFramingThrottled] = throttle(async () => {
+    //   await this[$scene].updateFraming();
+    //   this[$needsRender]();
+    // }, 400);
+
     rotate(
       objectName: string,
-      anglesDegrees: [number, number, number],
+      value: [number, number, number],
       order: EulerOrder = 'XYZ'
     ) {
+      if (
+        !Array.isArray(value) ||
+        value.length !== 3 ||
+        value.some((angle) => typeof angle !== 'number')
+      ) {
+        throw new Error(
+          'Invalid value array. Expected an array of three numbers representing angles in degrees.'
+        );
+      }
+
       if (objectName !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
@@ -362,61 +376,89 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this._currentObject) return;
 
       const rotation = new Euler(
-        anglesDegrees[0] * (Math.PI / 180),
-        anglesDegrees[1] * (Math.PI / 180),
-        anglesDegrees[2] * (Math.PI / 180),
+        value[0] * (Math.PI / 180),
+        value[1] * (Math.PI / 180),
+        value[2] * (Math.PI / 180),
         order
       );
-      // Rotate around geometric center instead of local origin while
-      // preserving the API semantics that `rotation` sets the object's
-      // local rotation (absolute), not an accumulated world rotation.
-      try {
-        const obj = this._currentObject as Object3D;
 
-        // compute world center of the object
-        const bbox = new Box3().setFromObject(obj);
-        const centerWorld = bbox.getCenter(new Vector3());
+      const obj = this._currentObject as Object3D;
 
-        const parent = obj.parent || (this as any)[$scene];
+      obj.rotation.copy(rotation);
 
-        // Desired local quaternion from requested Euler
-        const desiredLocalQuat = new Quaternion().setFromEuler(rotation);
+      this.requestShadowUpdate();
+      this[$needsRender]();
+    }
 
-        // Compute desired world quaternion = parentWorldQuat * desiredLocalQuat
-        const parentWorldQuat = new Quaternion();
-        parent.getWorldQuaternion(parentWorldQuat);
-        const desiredWorldQuat = parentWorldQuat
-          .clone()
-          .multiply(desiredLocalQuat);
-
-        // Current world quaternion
-        const currentWorldQuat = new Quaternion();
-        obj.getWorldQuaternion(currentWorldQuat);
-
-        // Rotation delta to apply to the object's world-space orientation
-        const rotationDelta = desiredWorldQuat
-          .clone()
-          .multiply(currentWorldQuat.clone().invert());
-
-        // Compute current world position and rotate it around centerWorld by rotationDelta
-        const worldPos = new Vector3();
-        obj.getWorldPosition(worldPos);
-        const offset = worldPos.clone().sub(centerWorld);
-        const rotatedOffset = offset.clone().applyQuaternion(rotationDelta);
-        const newWorldPos = centerWorld.clone().add(rotatedOffset);
-
-        // Convert new world position into parent's local space and assign
-        const newLocalPos = parent.worldToLocal(newWorldPos.clone());
-        obj.position.copy(newLocalPos);
-
-        // Finally set the object's local rotation to the desired local quaternion
-        obj.quaternion.copy(desiredLocalQuat);
-      } catch (e) {
-        // fallback to original behavior
-        this._currentObject.rotation.copy(rotation);
+    /**
+     * Set absolute local position (meters) for the named object.
+     * value: [x, y, z]
+     */
+    position(objectName: string, value: [number, number, number]) {
+      if (
+        !Array.isArray(value) ||
+        value.length !== 3 ||
+        value.some((v) => typeof v !== 'number')
+      ) {
+        throw new Error(
+          'Invalid value array. Expected an array of three numbers representing position [x,y,z].'
+        );
       }
-      this[$scene].updateBoundingBox();
-      this[$scene].updateShadow();
+
+      if (objectName !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+
+      if (!this._currentObject) {
+        this._currentObject = this[$scene].getObjectByName(objectName);
+      }
+
+      if (!this._currentObject) return;
+
+      const obj = this._currentObject as Object3D;
+      try {
+        obj.position.set(value[0], value[1], value[2]);
+      } catch (e) {
+        // ignore invalid sets
+      }
+
+      this.requestShadowUpdate();
+      this[$needsRender]();
+    }
+
+    /**
+     * Set absolute local scale for the named object.
+     * value: [sx, sy, sz]
+     */
+    scale(objectName: string, value: [number, number, number]) {
+      if (
+        !Array.isArray(value) ||
+        value.length !== 3 ||
+        value.some((v) => typeof v !== 'number')
+      ) {
+        throw new Error(
+          'Invalid value array. Expected an array of three numbers representing scale [sx,sy,sz].'
+        );
+      }
+
+      if (objectName !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+
+      if (!this._currentObject) {
+        this._currentObject = this[$scene].getObjectByName(objectName);
+      }
+
+      if (!this._currentObject) return;
+
+      const obj = this._currentObject as Object3D;
+      try {
+        obj.scale.set(value[0], value[1], value[2]);
+      } catch (e) {
+        // ignore invalid sets (e.g., zero/NaN)
+      }
+
+      this.requestShadowUpdate();
       this[$needsRender]();
     }
 
@@ -638,6 +680,41 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // swallow
       }
     };
+
+    private _shadowUpdateHandle: number | null = null;
+    private _shadowUpdatePending: boolean = false;
+
+    private requestShadowUpdate() {
+      console.log('request shadows');
+      if (this._shadowUpdatePending) return;
+      this._shadowUpdatePending = true;
+      this._shadowUpdateHandle = window.requestAnimationFrame(() => {
+        try {
+          console.log(
+            'udpate shadows',
+            this[$scene].updateBoundingBox,
+            this[$scene].updateShadow
+          );
+          this[$scene].updateBoundingBox?.();
+          this[$scene].updateShadow?.();
+
+          this[$scene].traverse((n) =>
+            console.log(n.name, n.castShadow, n.receiveShadow, n)
+          );
+        } catch (e) {}
+        (this as any)[$needsRender]();
+        this._shadowUpdatePending = false;
+        this._shadowUpdateHandle = null;
+      });
+    }
+
+    private cancelRequestedShadowUpdate() {
+      if (this._shadowUpdateHandle != null) {
+        window.cancelAnimationFrame(this._shadowUpdateHandle);
+        this._shadowUpdateHandle = null;
+        this._shadowUpdatePending = false;
+      }
+    }
 
     private _activePlacementSession: PlacementSession | null = null;
 
@@ -1908,6 +1985,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this.updateSnappingPointSlots();
       } catch (e) {}
+
+      this.requestShadowUpdate();
     }
 
     private updateDragPosition() {
@@ -1950,12 +2029,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.checkAndApplySnapping(object, intersectionPoint);
         }
 
-        try {
-          (this as any)[$scene].updateShadow &&
-            (this as any)[$scene].updateShadow();
-        } catch (e) {}
-
-        (this as any)[$needsRender]();
+        this.requestShadowUpdate();
+        this[$needsRender]();
         try {
           this.updateSnappingPointSlots();
         } catch (e) {}
@@ -2022,6 +2097,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch (e) {}
         this.pendingSnapConnection = null;
       }
+
+      // update shadows/bbox after drag ends / reparenting done
+      this.requestShadowUpdate();
 
       if ((this as any)[$controls]) {
         try {
@@ -2516,53 +2594,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           })
         );
       } catch (e) {}
-    }
-
-    /**
-     * Translate a specific node by the given offset
-     */
-    translateNode(
-      node: Object3D,
-      offset: { x: number; y: number; z: number }
-    ): boolean {
-      if (!node) return false;
-      try {
-        const oldPosition = node.position.clone();
-        node.position.add(new Vector3(offset.x, offset.y, offset.z));
-
-        // Fire events for individual parts if this is a group
-        this._firePartsStateEvents(node, 'translate', {
-          oldPosition,
-          newPosition: node.position.clone(),
-        });
-
-        (this as any)[$needsRender]();
-        return true;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    /**
-     * Rotate a specific node by the given angle (in degrees) around Y axis
-     */
-    rotateNode(node: Object3D, angleDegrees: number): boolean {
-      if (!node) return false;
-      try {
-        const oldRotation = node.rotation.clone();
-        node.rotateY((angleDegrees * Math.PI) / 180);
-
-        // Fire events for individual parts if this is a group
-        this._firePartsStateEvents(node, 'rotate', {
-          oldRotation,
-          newRotation: node.rotation.clone(),
-        });
-
-        (this as any)[$needsRender]();
-        return true;
-      } catch (e) {
-        return false;
-      }
     }
 
     /**
