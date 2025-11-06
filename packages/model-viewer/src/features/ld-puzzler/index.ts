@@ -77,9 +77,16 @@ export declare interface LDPuzzlerInterface {
   attachMaterial: AttachMaterialFunction;
   clear: ClearSceneFunction;
 
-  rotate(objectName: string, anglesDegrees: [number, number, number]): void;
-  position(objectName: string, value: [number, number, number]): void;
-  scale(objectName: string, value: [number, number, number]): void;
+  setRotation(
+    objectName: string,
+    anglesDegrees: [number, number, number]
+  ): void;
+  setPosition(objectName: string, value: [number, number, number]): void;
+  setScale(objectName: string, value: [number, number, number]): void;
+
+  getRotation(objectName: string): [number, number, number];
+  getPosition(objectName: string): [number, number, number];
+  getScale(objectName: string): [number, number, number];
 
   setSrcFromBuffer(buffer: ArrayBuffer): void;
 
@@ -350,7 +357,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     //   this[$needsRender]();
     // }, 400);
 
-    rotate(
+    setRotation(
       objectName: string,
       value: [number, number, number],
       order: EulerOrder = 'XYZ'
@@ -394,7 +401,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Set absolute local position (meters) for the named object.
      * value: [x, y, z]
      */
-    position(objectName: string, value: [number, number, number]) {
+    setPosition(objectName: string, value: [number, number, number]) {
       if (
         !Array.isArray(value) ||
         value.length !== 3 ||
@@ -430,7 +437,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Set absolute local scale for the named object.
      * value: [sx, sy, sz]
      */
-    scale(objectName: string, value: [number, number, number]) {
+    setScale(objectName: string, value: [number, number, number]) {
       if (
         !Array.isArray(value) ||
         value.length !== 3 ||
@@ -460,6 +467,60 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.requestShadowUpdate();
       this[$needsRender]();
+    }
+
+    getRotation(objectName: string): [number, number, number] {
+      if (objectName !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+      if (!this._currentObject) {
+        this._currentObject = this[$scene].getObjectByName(objectName);
+      }
+      if (!this._currentObject) {
+        throw new Error(`Object with name "${objectName}" not found.`);
+      }
+
+      return [
+        this._currentObject.rotation.x * (180 / Math.PI),
+        this._currentObject.rotation.y * (180 / Math.PI),
+        this._currentObject.rotation.z * (180 / Math.PI),
+      ];
+    }
+
+    getPosition(objectName: string): [number, number, number] {
+      if (objectName !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+      if (!this._currentObject) {
+        this._currentObject = this[$scene].getObjectByName(objectName);
+      }
+      if (!this._currentObject) {
+        throw new Error(`Object with name "${objectName}" not found.`);
+      }
+
+      return [
+        this._currentObject.position.x,
+        this._currentObject.position.y,
+        this._currentObject.position.z,
+      ];
+    }
+
+    getScale(objectName: string): [number, number, number] {
+      if (objectName !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+      if (!this._currentObject) {
+        this._currentObject = this[$scene].getObjectByName(objectName);
+      }
+      if (!this._currentObject) {
+        throw new Error(`Object with name "${objectName}" not found.`);
+      }
+
+      return [
+        this._currentObject.scale.x,
+        this._currentObject.scale.y,
+        this._currentObject.scale.z,
+      ];
     }
 
     /* Remove draco compression from a glb

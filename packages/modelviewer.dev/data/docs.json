@@ -1564,6 +1564,30 @@
         "htmlName": "deDraco",
         "description": "Removes DRACO compression from a GLB file provided as an ArrayBuffer. Returns a Promise that resolves to an uncompressed GLB ArrayBuffer. This is useful for compatibility with systems that don't support DRACO compression.",
         "links": ["<a href=\"../examples/ld_puzzler\">Related examples</a>"]
+      },
+      {
+        "name": "setRotation(objectName: string, anglesDegrees: [number, number, number]): void",
+        "htmlName": "setRotation",
+        "description": "Set absolute local rotation for the named object. Angles are provided as [xDeg, yDeg, zDeg] in degrees and applied in the default Euler order (XYZ) unless otherwise specified.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setPosition(objectName: string, value: [number, number, number]): void",
+        "htmlName": "setPosition",
+        "description": "Set absolute local position (in meters) for the named object. The value is an array [x, y, z].",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setScale(objectName: string, value: [number, number, number]): void",
+        "htmlName": "setScale",
+        "description": "Set absolute local scale for the named object. The value is an array [sx, sy, sz].",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
       }
     ]
   }
