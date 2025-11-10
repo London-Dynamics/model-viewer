@@ -1566,14 +1566,6 @@
         "links": ["<a href=\"../examples/ld_puzzler\">Related examples</a>"]
       },
       {
-        "name": "setRotation(objectName: string, anglesDegrees: [number, number, number]): void",
-        "htmlName": "setRotation",
-        "description": "Set absolute local rotation for the named object. Angles are provided as [xDeg, yDeg, zDeg] in degrees and applied in the default Euler order (XYZ) unless otherwise specified.",
-        "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
-        ]
-      },
-      {
         "name": "setPosition(objectName: string, value: [number, number, number]): void",
         "htmlName": "setPosition",
         "description": "Set absolute local position (in meters) for the named object. The value is an array [x, y, z].",
@@ -1582,9 +1574,113 @@
         ]
       },
       {
+        "name": "setPositionX(objectName: string, x: number): void",
+        "htmlName": "setPositionX",
+        "description": "Set a single local position axis (X, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setPositionY(objectName: string, y: number): void",
+        "htmlName": "setPositionY",
+        "description": "Set a single local position axis (Y, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setPositionZ(objectName: string, z: number): void",
+        "htmlName": "setPositionZ",
+        "description": "Set a single local position axis (Z, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setRotation(objectName: string, anglesDegrees: [number, number, number]): void",
+        "htmlName": "setRotation",
+        "description": "Set absolute local rotation for the named object. Angles are provided as [xDeg, yDeg, zDeg] in degrees and applied in the default Euler order (XYZ) unless otherwise specified.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setRotationX(objectName: string, xDeg: number, order?: string): void",
+        "htmlName": "setRotationX",
+        "description": "Set a single local rotation axis (X) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setRotationY(objectName: string, yDeg: number, order?: string): void",
+        "htmlName": "setRotationY",
+        "description": "Set a single local rotation axis (Y) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setRotationZ(objectName: string, zDeg: number, order?: string): void",
+        "htmlName": "setRotationZ",
+        "description": "Set a single local rotation axis (Z) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
         "name": "setScale(objectName: string, value: [number, number, number]): void",
         "htmlName": "setScale",
         "description": "Set absolute local scale for the named object. The value is an array [sx, sy, sz].",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setScaleX(objectName: string, sx: number): void",
+        "htmlName": "setScaleX",
+        "description": "Set a single local scale axis (X) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setScaleY(objectName: string, sy: number): void",
+        "htmlName": "setScaleY",
+        "description": "Set a single local scale axis (Y) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setScaleZ(objectName: string, sz: number): void",
+        "htmlName": "setScaleZ",
+        "description": "Set a single local scale axis (Z) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getPosition(objectName: string): [number, number, number]",
+        "htmlName": "getPosition",
+        "description": "Return the current local position [x, y, z] (in meters) for the named object. Throws if the object is not found.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getRotation(objectName: string): [number, number, number]",
+        "htmlName": "getRotation",
+        "description": "Return the current local rotation as degrees [xDeg, yDeg, zDeg] for the named object. Throws if the object is not found.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getScale(objectName: string): [number, number, number]",
+        "htmlName": "getScale",
+        "description": "Return the current local scale [sx, sy, sz] for the named object. Throws if the object is not found.",
         "links": [
           "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
         ]

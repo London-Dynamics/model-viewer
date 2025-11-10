@@ -1071,70 +1071,33 @@
                       document.querySelectorAll('.rotate').forEach((el) => {
                         el.addEventListener('input', (e) => {
                           const { objectName, axis } = e.target.dataset;
-                          const angle = parseFloat(el.value);
+                          const val = parseFloat(el.value);
 
-                          const rotation = [0, 0, 0];
                           if (axis === 'x') {
-                            rotation[0] = angle;
-                            rotation[1] = 0;
-                          } else {
-                            rotation[1] = angle;
-                            rotation[0] = 0;
+                            modelViewer.setRotationX(objectName, val);
+                          } else if (axis === 'y') {
+                            modelViewer.setRotationY(objectName, val);
+                          } else if (axis === 'z') {
+                            modelViewer.setRotationZ(objectName, val);
                           }
-
-                          modelViewer.setRotation(objectName, rotation);
                         });
                       });
 
-                      // Keep per-object translation state so updating one axis
-                      // doesn't reset the others to zero on each input event.
-                      const translations = new Map();
-
+                      // Per-axis translate sliders now call the per-axis
+                      // setters directly so we don't need to track/seed
+                      // a translations Map in the example.
                       document.querySelectorAll('.translate').forEach((el) => {
                         el.addEventListener('input', (e) => {
                           const { objectName, axis } = e.target.dataset;
                           const val = parseFloat(el.value);
 
-                          const key = objectName || 'Scene';
-                          let t = translations.get(key);
-                          if (!t) {
-                            // Try to seed from the model's current position if available
-                            let seeded = false;
-                            try {
-                              if (
-                                typeof modelViewer.getPosition === 'function'
-                              ) {
-                                const pos = modelViewer.getPosition(objectName);
-                                console.log('get pos', pos);
-                                if (Array.isArray(pos) && pos.length >= 3) {
-                                  t = [
-                                    Number(pos[0]) || 0,
-                                    Number(pos[1]) || 0,
-                                    Number(pos[2]) || 0,
-                                  ];
-                                  seeded = true;
-                                } else if (pos && typeof pos.x === 'number') {
-                                  t = [pos.x || 0, pos.y || 0, pos.z || 0];
-                                  seeded = true;
-                                }
-                              }
-                            } catch (e) {
-                              // ignore any errors from getPosition
-                            }
-                            if (!seeded) {
-                              // Fallback to zero
-                              t = [0, 0, 0];
-                            }
+                          if (axis === 'x') {
+                            modelViewer.setPositionX(objectName, val);
+                          } else if (axis === 'y') {
+                            modelViewer.setPositionY(objectName, val);
+                          } else if (axis === 'z') {
+                            modelViewer.setPositionZ(objectName, val);
                           }
-
-                          if (axis === 'x') t[0] = val;
-                          else if (axis === 'y') t[1] = val;
-                          else if (axis === 'z') t[2] = val;
-
-                          translations.set(key, t);
-
-                          // setPosition expects an array [x,y,z]
-                          modelViewer.setPosition(objectName, t);
                         });
                       });
                     })();

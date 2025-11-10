@@ -77,15 +77,27 @@ export declare interface LDPuzzlerInterface {
   attachMaterial: AttachMaterialFunction;
   clear: ClearSceneFunction;
 
+  setPosition(objectName: string, value: [number, number, number]): void;
   setRotation(
     objectName: string,
     anglesDegrees: [number, number, number]
   ): void;
-  setPosition(objectName: string, value: [number, number, number]): void;
   setScale(objectName: string, value: [number, number, number]): void;
 
-  getRotation(objectName: string): [number, number, number];
+  setRotationX(objectName: string, x: number): void;
+  setRotationY(objectName: string, y: number): void;
+  setRotationZ(objectName: string, z: number): void;
+
+  setPositionX(objectName: string, x: number): void;
+  setPositionY(objectName: string, y: number): void;
+  setPositionZ(objectName: string, z: number): void;
+
+  setScaleX(objectName: string, sx: number): void;
+  setScaleY(objectName: string, sy: number): void;
+  setScaleZ(objectName: string, sz: number): void;
+
   getPosition(objectName: string): [number, number, number];
+  getRotation(objectName: string): [number, number, number];
   getScale(objectName: string): [number, number, number];
 
   setSrcFromBuffer(buffer: ArrayBuffer): void;
@@ -398,6 +410,53 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
+     * Convenience: set single rotation axis (degrees) without clobbering others.
+     * These call through to `setRotation` after seeding the existing rotation
+     * (via `getRotation`) so callers can update one axis at a time.
+     */
+    setRotationX(objectName: string, x: number, order: EulerOrder = 'XYZ') {
+      if (typeof x !== 'number' || Number.isNaN(x)) {
+        throw new Error('Invalid x value for setRotationX');
+      }
+      let rot: [number, number, number] = [0, 0, 0];
+      try {
+        rot = this.getRotation(objectName);
+      } catch (e) {
+        // ignore; fallback to zeros
+      }
+      rot[0] = x;
+      this.setRotation(objectName, rot, order);
+    }
+
+    setRotationY(objectName: string, y: number, order: EulerOrder = 'XYZ') {
+      if (typeof y !== 'number' || Number.isNaN(y)) {
+        throw new Error('Invalid y value for setRotationY');
+      }
+      let rot: [number, number, number] = [0, 0, 0];
+      try {
+        rot = this.getRotation(objectName);
+      } catch (e) {
+        // ignore; fallback to zeros
+      }
+      rot[1] = y;
+      this.setRotation(objectName, rot, order);
+    }
+
+    setRotationZ(objectName: string, z: number, order: EulerOrder = 'XYZ') {
+      if (typeof z !== 'number' || Number.isNaN(z)) {
+        throw new Error('Invalid z value for setRotationZ');
+      }
+      let rot: [number, number, number] = [0, 0, 0];
+      try {
+        rot = this.getRotation(objectName);
+      } catch (e) {
+        // ignore; fallback to zeros
+      }
+      rot[2] = z;
+      this.setRotation(objectName, rot, order);
+    }
+
+    /**
      * Set absolute local position (meters) for the named object.
      * value: [x, y, z]
      */
@@ -434,6 +493,53 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
+     * Convenience: set single position axis without clobbering others.
+     * These call through to `setPosition` after seeding the existing
+     * position (via `getPosition`) so callers can update one axis at a time.
+     */
+    setPositionX(objectName: string, x: number) {
+      if (typeof x !== 'number' || Number.isNaN(x)) {
+        throw new Error('Invalid x value for setPositionX');
+      }
+      let pos: [number, number, number] = [0, 0, 0];
+      try {
+        pos = this.getPosition(objectName);
+      } catch (e) {
+        // ignore; fallback to zeros
+      }
+      pos[0] = x;
+      this.setPosition(objectName, pos);
+    }
+
+    setPositionY(objectName: string, y: number) {
+      if (typeof y !== 'number' || Number.isNaN(y)) {
+        throw new Error('Invalid y value for setPositionY');
+      }
+      let pos: [number, number, number] = [0, 0, 0];
+      try {
+        pos = this.getPosition(objectName);
+      } catch (e) {
+        // ignore; fallback to zeros
+      }
+      pos[1] = y;
+      this.setPosition(objectName, pos);
+    }
+
+    setPositionZ(objectName: string, z: number) {
+      if (typeof z !== 'number' || Number.isNaN(z)) {
+        throw new Error('Invalid z value for setPositionZ');
+      }
+      let pos: [number, number, number] = [0, 0, 0];
+      try {
+        pos = this.getPosition(objectName);
+      } catch (e) {
+        // ignore; fallback to zeros
+      }
+      pos[2] = z;
+      this.setPosition(objectName, pos);
+    }
+
+    /**
      * Set absolute local scale for the named object.
      * value: [sx, sy, sz]
      */
@@ -467,6 +573,53 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.requestShadowUpdate();
       this[$needsRender]();
+    }
+
+    /**
+     * Convenience: set single scale axis without clobbering others.
+     * These call through to `setScale` after seeding the existing
+     * scale (via `getScale`) so callers can update one axis at a time.
+     */
+    setScaleX(objectName: string, sx: number) {
+      if (typeof sx !== 'number' || Number.isNaN(sx)) {
+        throw new Error('Invalid sx value for setScaleX');
+      }
+      let s: [number, number, number] = [1, 1, 1];
+      try {
+        s = this.getScale(objectName);
+      } catch (e) {
+        // ignore; fallback to ones
+      }
+      s[0] = sx;
+      this.setScale(objectName, s);
+    }
+
+    setScaleY(objectName: string, sy: number) {
+      if (typeof sy !== 'number' || Number.isNaN(sy)) {
+        throw new Error('Invalid sy value for setScaleY');
+      }
+      let s: [number, number, number] = [1, 1, 1];
+      try {
+        s = this.getScale(objectName);
+      } catch (e) {
+        // ignore; fallback to ones
+      }
+      s[1] = sy;
+      this.setScale(objectName, s);
+    }
+
+    setScaleZ(objectName: string, sz: number) {
+      if (typeof sz !== 'number' || Number.isNaN(sz)) {
+        throw new Error('Invalid sz value for setScaleZ');
+      }
+      let s: [number, number, number] = [1, 1, 1];
+      try {
+        s = this.getScale(objectName);
+      } catch (e) {
+        // ignore; fallback to ones
+      }
+      s[2] = sz;
+      this.setScale(objectName, s);
     }
 
     getRotation(objectName: string): [number, number, number] {
