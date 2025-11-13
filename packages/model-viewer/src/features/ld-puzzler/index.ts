@@ -65,8 +65,12 @@ type LoadManyFunction = (
   items: Array<{ src: string; id: string }>
 ) => Promise<GLTF[]>;
 
-type AttachFunction = (id: string, options?: PositionOptions) => void;
-type AttachMaterialFunction = (id: string) => void;
+type AttachFunction = (
+  objectId: string,
+  targetId?: string,
+  options?: PositionOptions
+) => void;
+type AttachMaterialFunction = (materialId: string, targetId: string) => void;
 
 type ClearSceneFunction = () => void;
 
