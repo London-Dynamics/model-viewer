@@ -1083,9 +1083,6 @@
                         });
                       });
 
-                      // Per-axis translate sliders now call the per-axis
-                      // setters directly so we don't need to track/seed
-                      // a translations Map in the example.
                       document.querySelectorAll('.translate').forEach((el) => {
                         el.addEventListener('input', (e) => {
                           const { objectName, axis } = e.target.dataset;
