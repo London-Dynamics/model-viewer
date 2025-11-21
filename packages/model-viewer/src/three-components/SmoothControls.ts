@@ -298,9 +298,11 @@ export class SmoothControls extends EventDispatcher<{
   // }
 
   // HACK
-  updateNearFar(_: number, farPlane: number) {
+  updateNearFar(nearPlane: number, farPlane: number) {
     this.camera.far = farPlane === 0 ? 2 : farPlane;
-    this.camera.near = 0.1;
+    this.camera.near = this.scene.hasGround
+      ? 0.1
+      : Math.max(nearPlane, this.camera.far / 1000);
     this.camera.updateProjectionMatrix();
   }
 

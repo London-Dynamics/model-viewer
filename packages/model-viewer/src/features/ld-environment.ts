@@ -95,8 +95,9 @@ export const LDEnvironmentMixin = <
 
         /* This to make sure plane is at floor level */
 				this[$water].rotation.x = - Math.PI / 2;
+        this[$scene].add(this[$water]);
 
-				this[$scene].add( this[$water] );
+        this[$scene].hasGround = true;
 
         this[$animateEnvironment]();
       }
