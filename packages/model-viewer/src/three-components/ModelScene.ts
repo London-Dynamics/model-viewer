@@ -97,6 +97,9 @@ export class ModelScene extends Scene {
   public shadowSoftness = 1;
   public bakedShadows = new Set<Mesh>();
 
+  // Hack
+  public hasGround: boolean = false;
+
   public exposure = 1;
   public toneMapping: ToneMapping = ACESFilmicToneMapping;
   public canScale = true;
