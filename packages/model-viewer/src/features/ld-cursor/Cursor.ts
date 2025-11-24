@@ -40,8 +40,6 @@ export class Cursor extends Object3D {
   private radius: number = 0.1;
   private colour: string = '#165dfc';
   private lineWidth: number = 3;
-  // Enable local debug logging when true
-  private DEBUG: boolean = false;
 
   constructor(
     scene: any,
@@ -248,7 +246,11 @@ export class Cursor extends Object3D {
   }
 
   private positionAtFloorLevel() {
-    if (this.scene && this.scene.boundingBox) {
+    if (
+      this.scene &&
+      this.scene.boundingBox &&
+      !this.scene.boundingBox.isEmpty()
+    ) {
       // Compute world-space floor Y and convert it into the cursor's parent's local space.
       const worldFloor = new Vector3(0, this.scene.boundingBox.min.y, 0);
       const parentForConversion = this.parent ?? this.targetObject ?? null;
@@ -259,6 +261,7 @@ export class Cursor extends Object3D {
       } else {
         this.position.y = this.scene.boundingBox.min.y;
       }
+    } else {
     }
   }
 
@@ -307,9 +310,15 @@ export class Cursor extends Object3D {
     this.worldPlacementPosition.copy(worldIntersectionPoint);
 
     // Compute world-space floor point at same X/Z
+    // Use the bounding box if valid (not empty), otherwise fall back to intersection point
+    let floorY = worldIntersectionPoint.y;
+    if (this.scene?.boundingBox && !this.scene.boundingBox.isEmpty()) {
+      floorY = this.scene.boundingBox.min.y;
+    }
+
     const worldFloor = new Vector3(
       worldIntersectionPoint.x,
-      this.scene?.boundingBox?.min?.y ?? worldIntersectionPoint.y,
+      floorY,
       worldIntersectionPoint.z
     );
 
@@ -318,50 +327,17 @@ export class Cursor extends Object3D {
     if (parentForConversion) {
       const localFloor = worldFloor.clone();
       parentForConversion.worldToLocal(localFloor);
-      this.position.copy(localFloor);
+      // Update position, but importantly: always update Y to catch bounding box changes
+      this.position.x = localFloor.x;
+      this.position.y = localFloor.y;
+      this.position.z = localFloor.z;
     } else {
       // no parent — place in world coords
       this.position.copy(worldFloor);
     }
 
-    // Debug — confirm world/local mapping
     const worldPos = new Vector3();
     this.getWorldPosition(worldPos);
-    if (this.DEBUG) {
-      console.log('scene.floorY', this.scene?.boundingBox?.min?.y);
-      console.log('worldIntersection', worldIntersectionPoint.toArray());
-      console.log(
-        'parent.matrixWorld',
-        parentForConversion?.matrixWorld?.elements
-      );
-      console.log('cursor.localPosition', this.position.toArray());
-      console.log('cursor.worldPosition', worldPos.toArray());
-
-      // Mesh geometry diagnostics
-      if (this.mesh && (this.mesh.geometry as any).attributes) {
-        const pos = (this.mesh.geometry as any).attributes.position.array as
-          | Float32Array
-          | number[];
-        console.log('mesh.bbox', (this.mesh.geometry as any).boundingBox);
-        console.log('mesh.firstVerts', pos.slice(0, 9));
-        const meshWorldPos = new Vector3();
-        this.mesh.getWorldPosition(meshWorldPos);
-        console.log('mesh.worldPos', meshWorldPos.toArray());
-      }
-
-      if (this.contourLine) {
-        const contourPos = new Vector3();
-        this.contourLine.getWorldPosition(contourPos);
-        console.log('contour.worldPos', contourPos.toArray());
-        // dump first contour vertex from geometry (LineGeometry stores positions)
-        // @ts-ignore
-        const lineGeom: any = this.contourLine.geometry;
-        if (lineGeom && lineGeom.attributes?.position?.array) {
-          const arr = lineGeom.attributes.position.array;
-          console.log('contour.firstVerts', Array.from(arr.slice(0, 9)));
-        }
-      }
-    }
 
     this.setVisible(true);
   }
