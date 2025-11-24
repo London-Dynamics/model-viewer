@@ -48,7 +48,12 @@ type PlacementOptions = {
   mass?: number;
   name?: string;
   selectable?: boolean;
+  editable?: boolean;
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
+  // Callback to fetch the low-res URL
+  getLowResUrl?: () => Promise<string | undefined>;
+  // Callback to fetch the high-res URL
+  getHighResUrl?: () => Promise<string | undefined>;
 };
 
 type SelectionScope = 'part' | 'group' | 'all';
@@ -109,9 +114,9 @@ export declare interface LDPuzzlerInterface {
   deDraco: (inputBuffer: ArrayBuffer) => Promise<ArrayBuffer>;
 
   beginPlacement?: (
-    lowResSrc: string,
-    highResSrc: string,
-    options?: any,
+    lowResSrc: string | undefined,
+    highResSrc: string | undefined,
+    options?: PlacementOptions,
     initialMouse?: { clientX: number; clientY: number }
   ) => any;
 
@@ -2971,8 +2976,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * it will be returned instead of creating a new one.
      */
     beginPlacement(
-      lowResSrc: string,
-      highResSrc: string,
+      lowResSrc?: string,
+      highResSrc?: string,
       options?: PlacementOptions,
       initialMouse?: { clientX: number; clientY: number }
     ): PlacementSession {
@@ -3161,13 +3166,13 @@ class PlacementSession extends EventTarget {
   state: 'placing' | 'loading' | 'ended' | 'cancelled' = 'placing';
   placeholder: Object3D | null = null;
   private _element: InstanceType<ReturnType<typeof LDPuzzlerMixin>> | null;
-  private _lowResSrc: string;
-  private _highResSrc?: string;
+  private _lowResSrc: string | undefined;
+  private _highResSrc: string | undefined;
   private _options?: PlacementOptions;
 
   constructor(
     element: any,
-    lowResSrc: string,
+    lowResSrc?: string,
     highResSrc?: string,
     options?: PlacementOptions
   ) {
@@ -3189,25 +3194,31 @@ class PlacementSession extends EventTarget {
     if (!scene) return;
 
     try {
+      // Resolve low-res URL: use callback if no direct URL provided
+      let lowResUrl = this._lowResSrc;
+      if (!lowResUrl && this._options?.getLowResUrl) {
+        lowResUrl = await this._options.getLowResUrl();
+      }
+
+      if (!lowResUrl) {
+        throw new Error('No low-res URL provided and no getLowResUrl callback');
+      }
+
       const loader = (this._element as any)[$renderer].loader;
-      const gltf = await loader.load(
-        this._lowResSrc,
-        this._element,
-        (p: number) => {
-          // Progress for placeholder load (0..1)
-          try {
-            this.dispatchEvent(
-              new CustomEvent('progress', {
-                detail: {
-                  sessionId: this.id,
-                  phase: 'placeholder',
-                  progress: p,
-                },
-              })
-            );
-          } catch (e) {}
-        }
-      );
+      const gltf = await loader.load(lowResUrl, this._element, (p: number) => {
+        // Progress for placeholder load (0..1)
+        try {
+          this.dispatchEvent(
+            new CustomEvent('progress', {
+              detail: {
+                sessionId: this.id,
+                phase: 'placeholder',
+                progress: p,
+              },
+            })
+          );
+        } catch (e) {}
+      });
 
       if (!gltf || !gltf.scene) return;
 
@@ -3257,7 +3268,13 @@ class PlacementSession extends EventTarget {
       (this._element as any)[$needsRender]();
     } catch (error) {
       this.dispatchEvent(
-        new CustomEvent('error', { detail: { sessionId: this.id, error } })
+        new CustomEvent('error', {
+          detail: {
+            type: 'placementfailure',
+            sessionId: this.id,
+            sourceError: error,
+          },
+        })
       );
       this.cancel();
     }
@@ -3294,7 +3311,7 @@ class PlacementSession extends EventTarget {
         }
       }
 
-      this.placeholder.position.set(world.x, world.y, world.z);
+      this.placeholder.position.set(world.x, 0, world.z);
 
       // Check for snapping during interactive placement if snapping is enabled
       if (
@@ -3377,7 +3394,13 @@ class PlacementSession extends EventTarget {
     } catch (error) {
       // If helper is not present or fails, emit error and no-op
       this.dispatchEvent(
-        new CustomEvent('error', { detail: { sessionId: this.id, error } })
+        new CustomEvent('error', {
+          detail: {
+            type: 'placementfailure',
+            sessionId: this.id,
+            sourceError: error,
+          },
+        })
       );
     }
   }
@@ -3409,25 +3432,72 @@ class PlacementSession extends EventTarget {
       centerDetail = null;
     }
 
+    console.log('[puzzler] PlacementSession.commit: loading final model', {
+      finalSrc,
+      highResSrc: this._highResSrc,
+      getHighResUrl: this._options?.getHighResUrl,
+      sessionId: this.id,
+    });
+
+    // Resolve high-res URL: use callback if no direct URL provided
+    let srcToLoad = finalSrc || this._highResSrc;
+    console.log('[puzzler] PlacementSession.commit: resolved finalSrc', {
+      srcToLoad,
+    });
+    if (!srcToLoad && this._options?.getHighResUrl) {
+      console.log(
+        '[puzzler] PlacementSession.commit: invoking getHighResUrl callback'
+      );
+      try {
+        srcToLoad = await this._options.getHighResUrl();
+      } catch (e) {
+        console.error(
+          '[puzzler] PlacementSession.commit: getHighResUrl callback failed',
+          e
+        );
+        this.dispatchEvent(
+          new CustomEvent('error', {
+            detail: {
+              type: 'placementfailure',
+              sessionId: this.id,
+              sourceError: e,
+            },
+          })
+        );
+        this._endInteractive();
+        return;
+      }
+    }
+
+    if (!srcToLoad) {
+      const error = new Error(
+        'No high-res URL provided and no getHighResUrl callback'
+      );
+      console.error('[puzzler] PlacementSession.commit: no high-res URL', {
+        sessionId: this.id,
+      });
+      this.dispatchEvent(
+        new CustomEvent('error', {
+          detail: {
+            type: 'placementfailure',
+            sessionId: this.id,
+            sourceError: error,
+          },
+        })
+      );
+      this._endInteractive();
+      return;
+    }
+
     this.dispatchEvent(
       new CustomEvent('loading-start', {
         detail: {
           sessionId: this.id,
-          src: finalSrc || this._highResSrc,
+          src: srcToLoad,
           center: centerDetail,
         },
       })
     );
-
-    const srcToLoad = finalSrc || this._highResSrc;
-    if (!srcToLoad) {
-      const err = new Error('No finalSrc provided to commit');
-      this.dispatchEvent(
-        new CustomEvent('error', { detail: { sessionId: this.id, error: err } })
-      );
-      this._cleanupPlaceholder();
-      return Promise.reject(err);
-    }
 
     // Allow new interactive sessions now; capture element ref so we can
     // continue the final load in the background and still clean up the
@@ -3627,7 +3697,13 @@ class PlacementSession extends EventTarget {
       this._cleanupPlaceholder();
       this.state = 'cancelled';
       this.dispatchEvent(
-        new CustomEvent('error', { detail: { sessionId: this.id, error } })
+        new CustomEvent('error', {
+          detail: {
+            type: 'placementfailure',
+            sessionId: this.id,
+            sourceError: error,
+          },
+        })
       );
       try {
         (element as any)[$needsRender]();
