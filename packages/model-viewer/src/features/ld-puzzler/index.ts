@@ -354,8 +354,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._loadStatusMap.clear();
     }
 
-    attachObject(id: string, options?: PositionOptions) {
-      console.log('attachObject', id, options);
+    attachObject(id: string, target?: string, options?: PositionOptions) {
+      console.log('attachObject', id, 'to', target, 'with options', options);
     }
 
     detachObject(id: string) {
