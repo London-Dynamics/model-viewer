@@ -40,6 +40,8 @@ export class Cursor extends Object3D {
   private radius: number = 0.1;
   private colour: string = '#165dfc';
   private lineWidth: number = 3;
+  // Enable local debug logging when true
+  private DEBUG: boolean = false;
 
   constructor(
     scene: any,
@@ -56,8 +58,12 @@ export class Cursor extends Object3D {
     // default position outside window
     this.position.set(10000, 10000, 10000);
 
-    // Add to target object and position at floor level
-    targetObject.add(this);
+    // Add to the root of the target's hierarchy (scene root) so cursor local Y
+    // matches world Y regardless of intermediate parent translations.
+    let rootParent: Object3D = targetObject;
+    while (rootParent.parent) rootParent = rootParent.parent;
+    rootParent.add(this);
+
     this.positionAtFloorLevel();
 
     this.radius = radius;
@@ -79,9 +85,12 @@ export class Cursor extends Object3D {
       return;
     }
 
+    // Update radius and apply scale to existing geometries. Avoid
+    // recreating geometry unless absolutely necessary — scaling is
+    // significantly cheaper and keeps buffers stable.
     this.radius = newRadius;
     this.baseRadius = newRadius;
-    this.createCursorGeometry();
+    this.updateScale();
   }
 
   getRadius(): number {
@@ -151,9 +160,16 @@ export class Cursor extends Object3D {
   }
 
   private createCursorGeometry() {
+    // Keep existing children intact and recreate only if there's no mesh
+    // (first construction) or if required. We'll create unit geometries
+    // (radius = 1) in the XZ plane and then scale them to the requested
+    // radius. This makes radius changes and per-frame animation cheap.
     this.clear();
 
-    const geometry = new CircleGeometry(this.radius, 32);
+    // Create unit circle geometry (radius = 1) in XZ plane
+    const geometry = new CircleGeometry(1, 32);
+    geometry.rotateX(-Math.PI / 2);
+
     const material = new MeshBasicMaterial({
       color: this.colour,
       transparent: true,
@@ -161,69 +177,50 @@ export class Cursor extends Object3D {
       depthTest: false,
       depthWrite: false,
     });
+
     this.mesh = new Mesh(geometry, material);
-    this.mesh.rotation.x = -Math.PI / 2;
-    this.mesh.position.set(0, 0.01, 0);
     this.mesh.castShadow = false;
-
     this.mesh.renderOrder = RENDER_ORDER;
-
+    this.mesh.position.set(0, 0, 0);
     this.add(this.mesh);
 
-    const contourPoints: Vector3[] = [];
+    // Create unit contour positions for LineGeometry (unit circle in XZ)
     const segments = 64;
-
-    for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      contourPoints.push(
-        new Vector3(
-          Math.cos(angle) * this.radius,
-          0,
-          Math.sin(angle) * this.radius
-        )
-      );
-    }
-
-    // Convert contour points to a flat Float32 array for LineGeometry
     const positions: number[] = [];
-    for (let i = 0; i < contourPoints.length; i++) {
-      const p = contourPoints[i];
-      positions.push(p.x, p.y, p.z);
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      positions.push(Math.cos(angle), 0, Math.sin(angle));
     }
+    // close loop
+    positions.push(positions[0], positions[1], positions[2]);
 
     const lineGeo = new LineGeometry();
     lineGeo.setPositions(positions);
 
-    // Create LineMaterial - linewidth is in pixels
     const lineMat = new LineMaterial({
       color: this.colour,
       linewidth: this.lineWidth,
       dashed: false,
     });
-    // Set initial resolution (required)
     lineMat.resolution = new Vector2(window.innerWidth, window.innerHeight);
-
-    // Configure blending/transparency/depth so opacity works reliably
     lineMat.transparent = true;
     lineMat.opacity = 0.8;
-    // Disable depth testing and writing so the outline is always visible on top
     lineMat.depthTest = false;
     lineMat.depthWrite = false;
     lineMat.blending = NormalBlending;
-    // Force recompile/update of the material
     lineMat.needsUpdate = true;
 
     const line = new Line2(lineGeo, lineMat);
     line.position.set(0, 0, 0);
     line.computeLineDistances();
-    // Ensure the outline is drawn after the disc mesh so it appears on top
     line.renderOrder = RENDER_ORDER + 1;
-    // Also bump mesh renderOrder to the same high base so both render after scene
-    if (this.mesh) this.mesh.renderOrder = RENDER_ORDER;
 
     this.contourLine = line;
     this.contourLineMaterial = lineMat;
     this.add(this.contourLine);
+
+    // Apply initial scale based on current radius
+    this.updateScale();
 
     // Keep lineMat resolution updated on resize
     if (!this._onResize) {
@@ -240,10 +237,28 @@ export class Cursor extends Object3D {
     }
   }
 
+  // Update runtime scales on mesh/line according to this.radius/baseRadius
+  private updateScale() {
+    // Unit geometry has radius = 1, so scale the mesh/line directly by the
+    // desired radius to get world-space radius = this.radius.
+    const scaleFactor = this.radius;
+    if (this.mesh) this.mesh.scale.set(scaleFactor, 1, scaleFactor);
+    if (this.contourLine)
+      this.contourLine.scale.set(scaleFactor, 1, scaleFactor);
+  }
+
   private positionAtFloorLevel() {
     if (this.scene && this.scene.boundingBox) {
-      // Position at the minimum Y of the bounding box (placement level)
-      this.position.y = this.scene.boundingBox.min.y;
+      // Compute world-space floor Y and convert it into the cursor's parent's local space.
+      const worldFloor = new Vector3(0, this.scene.boundingBox.min.y, 0);
+      const parentForConversion = this.parent ?? this.targetObject ?? null;
+      if (parentForConversion) {
+        const localFloor = worldFloor.clone();
+        parentForConversion.worldToLocal(localFloor);
+        this.position.y = localFloor.y;
+      } else {
+        this.position.y = this.scene.boundingBox.min.y;
+      }
     }
   }
 
@@ -291,25 +306,61 @@ export class Cursor extends Object3D {
     // Store the world position for placement purposes
     this.worldPlacementPosition.copy(worldIntersectionPoint);
 
-    // For the cursor visual position, we need to consider its parent (target object)
-    if (this.targetObject) {
-      const localPosition = worldIntersectionPoint.clone();
-      this.targetObject.worldToLocal(localPosition);
-      this.position.copy(localPosition);
+    // Compute world-space floor point at same X/Z
+    const worldFloor = new Vector3(
+      worldIntersectionPoint.x,
+      this.scene?.boundingBox?.min?.y ?? worldIntersectionPoint.y,
+      worldIntersectionPoint.z
+    );
 
-      const targetBoundingBoxMin = new Vector3(
-        0,
-        this.scene.boundingBox?.min.y || 0,
-        0
-      );
-      this.targetObject.worldToLocal(targetBoundingBoxMin);
-      this.position.y = targetBoundingBoxMin.y;
+    // Convert the world floor into the cursor's parent's local space (safer than forcing targetObject)
+    const parentForConversion = this.parent ?? this.targetObject ?? null;
+    if (parentForConversion) {
+      const localFloor = worldFloor.clone();
+      parentForConversion.worldToLocal(localFloor);
+      this.position.copy(localFloor);
     } else {
-      this.position.copy(worldIntersectionPoint);
-      this.position.y =
-        this.scene && this.scene.boundingBox
-          ? this.scene.boundingBox.min.y
-          : worldIntersectionPoint.y;
+      // no parent — place in world coords
+      this.position.copy(worldFloor);
+    }
+
+    // Debug — confirm world/local mapping
+    const worldPos = new Vector3();
+    this.getWorldPosition(worldPos);
+    if (this.DEBUG) {
+      console.log('scene.floorY', this.scene?.boundingBox?.min?.y);
+      console.log('worldIntersection', worldIntersectionPoint.toArray());
+      console.log(
+        'parent.matrixWorld',
+        parentForConversion?.matrixWorld?.elements
+      );
+      console.log('cursor.localPosition', this.position.toArray());
+      console.log('cursor.worldPosition', worldPos.toArray());
+
+      // Mesh geometry diagnostics
+      if (this.mesh && (this.mesh.geometry as any).attributes) {
+        const pos = (this.mesh.geometry as any).attributes.position.array as
+          | Float32Array
+          | number[];
+        console.log('mesh.bbox', (this.mesh.geometry as any).boundingBox);
+        console.log('mesh.firstVerts', pos.slice(0, 9));
+        const meshWorldPos = new Vector3();
+        this.mesh.getWorldPosition(meshWorldPos);
+        console.log('mesh.worldPos', meshWorldPos.toArray());
+      }
+
+      if (this.contourLine) {
+        const contourPos = new Vector3();
+        this.contourLine.getWorldPosition(contourPos);
+        console.log('contour.worldPos', contourPos.toArray());
+        // dump first contour vertex from geometry (LineGeometry stores positions)
+        // @ts-ignore
+        const lineGeom: any = this.contourLine.geometry;
+        if (lineGeom && lineGeom.attributes?.position?.array) {
+          const arr = lineGeom.attributes.position.array;
+          console.log('contour.firstVerts', Array.from(arr.slice(0, 9)));
+        }
+      }
     }
 
     this.setVisible(true);
@@ -327,15 +378,23 @@ export class Cursor extends Object3D {
     const oscillation = Math.sin(phase * 2 * Math.PI) * amplitude;
 
     this.radius = this.baseRadius * (1 + oscillation);
-    this.createCursorGeometry();
+    // Update mesh/line scale directly; unit geometry has radius 1 so scale by
+    // the desired world-space radius.
+    const scaleFactor = this.radius;
+    if (this.mesh) this.mesh.scale.set(scaleFactor, 1, scaleFactor);
+    if (this.contourLine)
+      this.contourLine.scale.set(scaleFactor, 1, scaleFactor);
 
-    if (this.needsRender) {
-      this.needsRender();
-    }
+    if (this.needsRender) this.needsRender();
   }
 
   private stopAnimation() {
     this.radius = this.baseRadius;
     this.elapsedTime = 0;
+    // Reset any runtime scaling applied in tick() to match the baseRadius
+    // (unit geometry scaled by world radius)
+    if (this.mesh) this.mesh.scale.set(this.radius, 1, this.radius);
+    if (this.contourLine)
+      this.contourLine.scale.set(this.radius, 1, this.radius);
   }
 }
