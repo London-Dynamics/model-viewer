@@ -9,6 +9,7 @@ import {
   Quaternion,
   EulerOrder,
 } from 'three';
+import type { Part } from '@london-dynamics/types/product';
 
 import { Constructor } from '../../utilities.js';
 import ModelViewerElementBase, {
@@ -44,9 +45,11 @@ import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_objec
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
 
-type PlacementOptions = {
+export type PlacementOptions = {
   mass?: number;
   name?: string;
+  id?: string;
+  part?: Part;
   selectable?: boolean;
   editable?: boolean;
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
@@ -113,7 +116,7 @@ export declare interface LDPuzzlerInterface {
 
   deDraco: (inputBuffer: ArrayBuffer) => Promise<ArrayBuffer>;
 
-  beginPlacement?: (
+  beginPlacement: (
     lowResSrc: string | undefined,
     highResSrc: string | undefined,
     options?: PlacementOptions,
@@ -121,7 +124,7 @@ export declare interface LDPuzzlerInterface {
   ) => any;
 
   // Higher-level API functions
-  getSelectedNode?: () => Object3D | null;
+  getSelectedObject: () => Object3D | null;
   selectPart?: (node: Object3D) => boolean;
   selectGroup?: (node: Object3D) => boolean;
   ungroupSelectedObject?: () => boolean;
@@ -804,10 +807,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           return;
         }
 
-        // Collect selectable candidates from hits. For each hit, walk up
-        // the ancestor chain and record selectable nodes. Later choose the
-        // best candidate: prefer placed parts over PuzzlerRoot groups, then
-        // fallback to first selectable.
+        // Collect selectable candidates from hits.
+        // Selection priority (all modes):
+        // 1. isPlacedObject (user-explicitly-placed items) — highest priority
+        // 2. isSnappedGroup (actual user-created groups) — group mode only
+        // 3. Generic nodes (PuzzlerRoot containers, fallback)
         const candidates: { node: any; depth: number }[] = [];
         for (const hit of hits) {
           let node: any = hit.object;
@@ -823,33 +827,33 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         let selectedNode: Object3D | null = null;
         if (candidates.length > 0) {
-          // Apply intelligent selection based on scope, but use _isNodeSelectable for filtering
-          if (this.selectionScope === 'part') {
-            // In part mode, prefer the nearest individual part
-            const placed = candidates
-              .filter((c) => c.node?.userData?.isPlacedObject === true)
-              .sort((a, b) => a.depth - b.depth);
-            if (placed.length > 0) {
-              selectedNode = placed[0].node;
-            } else {
-              // fallback to any selectable candidate
-              candidates.sort((a, b) => a.depth - b.depth);
-              selectedNode = candidates[0].node;
-            }
+          // In both part and group modes, strongly prefer isPlacedObject (user-placed items).
+          // Generic PuzzlerRoot containers should only be selected if no placed items exist.
+          const placed = candidates
+            .filter((c) => c.node?.userData?.isPlacedObject === true)
+            .sort((a, b) => a.depth - b.depth);
+
+          if (placed.length > 0) {
+            // Found a placed item; use it in any mode
+            selectedNode = placed[0].node;
+          } else if (this.selectionScope === 'part') {
+            // Part mode, no placed items: pick the closest selectable candidate
+            candidates.sort((a, b) => a.depth - b.depth);
+            selectedNode = candidates[0].node;
           } else if (this.selectionScope === 'group') {
-            // In group mode, prefer groups over individual parts
+            // Group mode, no placed items: prefer snapped groups over generic PuzzlerRoot
             const groups = candidates
               .filter((c) => c.node?.userData?.isSnappedGroup === true)
               .sort((a, b) => a.depth - b.depth);
             if (groups.length > 0) {
               selectedNode = groups[0].node;
             } else {
-              // fallback to any selectable candidate (individual parts, etc.)
+              // Last resort: pick closest candidate
               candidates.sort((a, b) => a.depth - b.depth);
               selectedNode = candidates[0].node;
             }
           } else {
-            // 'all' mode: just pick the nearest selectable
+            // 'all' mode: pick the closest selectable
             candidates.sort((a, b) => a.depth - b.depth);
             selectedNode = candidates[0].node;
           }
@@ -921,9 +925,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this[$scene].updateBoundingBox?.();
           this[$scene].updateShadow?.();
 
-          this[$scene].traverse((n) =>
-            console.log(n.name, n.castShadow, n.receiveShadow, n)
-          );
+          // this[$scene].traverse((n) =>
+          //   console.log(n.name, n.castShadow, n.receiveShadow, n)
+          // );
         } catch (e) {}
         (this as any)[$needsRender]();
         this._shadowUpdatePending = false;
@@ -1980,6 +1984,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onMouseDown(event: MouseEvent) {
+      // Only handle puzzler mouse interactions when edit-mode is active.
+      if (!this.editMode) return;
       if (event.button !== 0) return;
 
       this.updateMousePosition(event as any);
@@ -2008,6 +2014,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onMouseMove(event: MouseEvent) {
+      // Only handle puzzler mouse interactions when edit-mode is active.
+      if (!this.editMode) return;
+
       this.updateMousePosition(event as any);
 
       if (this.isDragging && this.selectedObjects.length) {
@@ -2016,6 +2025,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onMouseUp(event: MouseEvent) {
+      // Only handle puzzler mouse interactions when edit-mode is active.
+      if (!this.editMode) return;
+
       if (this.isDragging) {
         this.stopDragging();
       } else {
@@ -2040,6 +2052,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onTouchStart(event: TouchEvent) {
+      // Only handle puzzler touch interactions when edit-mode is active.
+      if (!this.editMode) return;
       if (event.touches.length === 1) {
         const touch = event.touches[0];
         this.updateMousePositionFromTouch(touch);
@@ -2069,6 +2083,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onTouchMove(event: TouchEvent) {
+      // Only handle puzzler touch interactions when edit-mode is active.
+      if (!this.editMode) return;
       if (event.touches.length === 1 && this.isDragging) {
         const touch = event.touches[0];
         this.updateMousePositionFromTouch(touch);
@@ -2078,6 +2094,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onTouchEnd(event: TouchEvent) {
+      // Only handle puzzler touch interactions when edit-mode is active.
+      if (!this.editMode) return;
       if (this.isDragging) {
         this.stopDragging();
       } else if (event.changedTouches.length === 1) {
@@ -2743,7 +2761,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Get the currently selected node based on selection scope
      */
-    getSelectedNode(): Object3D | null {
+    getSelectedObject() {
       return this.selectedObjects.length > 0 ? this.selectedObjects[0] : null;
     }
 
@@ -3535,7 +3553,12 @@ class PlacementSession extends EventTarget {
 
       // Mark as placed so selection logic recognizes it
       gltf.scene.name = this._options?.name || this.id;
-      gltf.scene.userData = { ...gltf.scene.userData };
+      gltf.scene.userData = {
+        ...gltf.scene.userData,
+        id: this._options?.id || this.id,
+        name: this._options?.name || this.id,
+        part: this._options?.part,
+      };
       // Preserve any snappingPoints provided during placement so the final
       // placed model participates in snapping discovery.
       if (this._options?.snappingPoints) {
