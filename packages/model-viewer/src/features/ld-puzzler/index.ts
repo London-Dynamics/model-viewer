@@ -762,6 +762,13 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Only allow selection when in edit mode
       if (!this.editMode) return;
 
+      // Ignore clicks originating from slotted elements or marked elements.
+      // Slotted elements (UI panels, controls) should call stopPropagation() if
+      // they want to block selection. Elements with [data-no-raycast] are
+      // explicitly marked to never trigger raycasting.
+      const target = e.target as HTMLElement;
+      if (target && (target.hasAttribute('slot') || target.closest('[slot], [data-no-raycast]'))) return;
+
       // Avoid reacting to non-primary buttons
       // (PointerEvent has button, MouseEvent too)
       const btn = (e as any).button;
