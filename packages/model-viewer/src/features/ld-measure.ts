@@ -815,6 +815,39 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       return targetObject;
     }
 
+    private _enableMeasurementListeners() {
+      // Only set up listeners if they haven't been set up yet
+      if (!this._clickHandler && this._modelLoaded) {
+        this._clickHandler = (e: MouseEvent) => this._handleClick(e);
+        this._pointerDownHandler = (e: PointerEvent) => {
+          this._pointerDwn = [e.offsetX, e.offsetY];
+        };
+        this._pointerUpHandler = (e: PointerEvent) => {
+          this._pointerUp = [e.offsetX, e.offsetY];
+        };
+
+        this.addEventListener('pointerdown', this._pointerDownHandler);
+        this.addEventListener('pointerup', this._pointerUpHandler);
+        this.addEventListener('click', this._clickHandler);
+      }
+    }
+
+    private _disableMeasurementListeners() {
+      // Remove listeners if they were set up
+      if (this._clickHandler) {
+        this.removeEventListener('click', this._clickHandler);
+        this._clickHandler = null;
+      }
+      if (this._pointerDownHandler) {
+        this.removeEventListener('pointerdown', this._pointerDownHandler);
+        this._pointerDownHandler = null;
+      }
+      if (this._pointerUpHandler) {
+        this.removeEventListener('pointerup', this._pointerUpHandler);
+        this._pointerUpHandler = null;
+      }
+    }
+
     private _handleClick(event: MouseEvent) {
       const { _pointerDwn, _pointerUp } = this;
       const d = Math.hypot(
@@ -832,6 +865,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _modelLoaded = false;
+    private _clickHandler: ((e: MouseEvent) => void) | null = null;
+    private _pointerDownHandler: ((e: PointerEvent) => void) | null = null;
+    private _pointerUpHandler: ((e: PointerEvent) => void) | null = null;
 
     private _handleProgress(event: Event) {
       const progress = (event as any).detail.totalProgress;
@@ -855,7 +891,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const enabled = !!this['measure'];
 
+      // Manage event listeners based on enabled state
       if (enabled) {
+        this._enableMeasurementListeners();
         this._handleCameraChange();
 
         const measureObjects = this._parseMeasureObjects();
@@ -870,6 +908,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
             this._measureObject(object);
           }
         }
+      } else {
+        this._disableMeasurementListeners();
       }
     }
 
@@ -950,6 +990,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.removeEventListener('load', this._handleLoad);
       this.removeEventListener('progress', this._handleProgress);
 
+      // Clean up measurement listeners
+      this._disableMeasurementListeners();
+
       this._measureWidthElement = null;
       this._measureHeightElement = null;
       this._measureDepthElement = null;
@@ -958,13 +1001,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$onModelLoad]() {
       super[$onModelLoad]();
 
-      this.addEventListener('pointerdown', (e) => {
-        this._pointerDwn = [e.offsetX, e.offsetY];
-      });
-      this.addEventListener('pointerup', (e) => {
-        this._pointerUp = [e.offsetX, e.offsetY];
-      });
-      this.addEventListener('click', this._handleClick);
+      // Note: Event listeners are now managed by _enableMeasurementListeners()
+      // and _disableMeasurementListeners() based on the measure attribute state.
+      // This ensures measurements only activate when measure={true}
     }
   }
 
