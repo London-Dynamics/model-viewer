@@ -49,7 +49,7 @@ export type PlacementOptions = {
   mass?: number;
   name?: string;
   id?: string;
-  part?: Part;
+  part?: Partial<Part>;
   selectable?: boolean;
   editable?: boolean;
   snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
@@ -122,6 +122,12 @@ export declare interface LDPuzzlerInterface {
     options?: PlacementOptions,
     initialMouse?: { clientX: number; clientY: number }
   ) => any;
+
+  replacePart: (
+    objectUuid: string,
+    src?: string,
+    options?: PlacementOptions
+  ) => Promise<void>;
 
   // Higher-level API functions
   getSelectedObject: () => Object3D | null;
@@ -761,18 +767,37 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _onPointerEvent = (e: PointerEvent | MouseEvent) => {
       // Only allow selection when in edit mode
       if (!this.editMode) return;
-
+      console.log('LDPuzzlerMixin: _onPointerEvent');
       // Ignore clicks originating from slotted elements or marked elements.
       // Slotted elements (UI panels, controls) should call stopPropagation() if
       // they want to block selection. Elements with [data-no-raycast] are
       // explicitly marked to never trigger raycasting.
       const target = e.target as HTMLElement;
-      if (target && (target.hasAttribute('slot') || target.closest('[slot], [data-no-raycast]'))) return;
+      if (
+        target &&
+        (target.hasAttribute('slot') ||
+          target.closest('[slot]') ||
+          target.closest('[data-no-raycast]'))
+      )
+        return;
+
+      // Additional safety: also check if the event was stopped by something
+      // (handlers should call stopPropagation to prevent unwanted selection)
+      if (e.cancelBubble || (e as any).defaultPrevented) return;
+
+      // Also check if the click came from inside the floating control strip
+      // by checking if any [data-no-raycast] ancestor exists in the light DOM
+      const floatingControlStrip = this.querySelector('[data-no-raycast]');
+      if (floatingControlStrip && floatingControlStrip.contains(target)) return;
 
       // Avoid reacting to non-primary buttons
       // (PointerEvent has button, MouseEvent too)
       const btn = (e as any).button;
       if (typeof btn === 'number' && btn !== 0) return;
+
+      console.log(
+        'LDPuzzlerMixin: _onPointerEvent continued - performing raycast'
+      );
 
       try {
         const clientX = (e as any).clientX;
@@ -3176,6 +3201,240 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
 
       return session;
+    }
+
+    /**
+     * Replace an existing placed object with a new GLB model, preserving its
+     * position, transforms, grouping, and optionally merging userData.parts.
+     *
+     * @param objectUuid - The UUID of the object to replace
+     * @param src - Optional direct URL to the replacement GLB
+     * @param options - Optional PlacementOptions, including getHighResUrl callback
+     * @returns Promise that resolves when replacement is complete
+     */
+    async replacePart(
+      objectUuid: string,
+      src?: string,
+      options?: PlacementOptions
+    ): Promise<void> {
+      if (!objectUuid) {
+        throw new Error('objectUuid is required');
+      }
+
+      const scene = (this as any)[$scene];
+      if (!scene) {
+        throw new Error('Scene not available');
+      }
+
+      // Find the object to replace by UUID using Three.js built-in method
+      const objectToReplace = scene.getObjectByProperty('uuid', objectUuid) as
+        | Object3D
+        | undefined;
+
+      if (!objectToReplace) {
+        throw new Error(`Object with UUID "${objectUuid}" not found`);
+      }
+
+      // Resolve the URL: use src parameter or call getHighResUrl callback
+      let srcToLoad = src;
+      if (!srcToLoad && options?.getHighResUrl) {
+        try {
+          srcToLoad = await options.getHighResUrl();
+        } catch (error) {
+          throw new Error(
+            `Failed to resolve URL via getHighResUrl: ${getErrorMessage(error)}`
+          );
+        }
+      }
+
+      if (!srcToLoad) {
+        throw new Error(
+          'No URL provided: src parameter or options.getHighResUrl is required'
+        );
+      }
+
+      // Save the original object's transform, parent, and metadata
+      const originalParent = objectToReplace.parent;
+      const originalPosition = objectToReplace.position.clone();
+      const originalQuaternion = objectToReplace.quaternion.clone();
+      const originalScale = objectToReplace.scale.clone();
+      const originalUserData = { ...objectToReplace.userData };
+      const originalName = objectToReplace.name;
+
+      // Load the new GLB
+      const loader = (this as any)[$renderer].loader;
+      let gltf: GLTF;
+      try {
+        gltf = await loader.load(srcToLoad, this, (p: number) => {
+          // Emit progress events
+          try {
+            this.dispatchEvent(
+              new CustomEvent('progress', {
+                detail: {
+                  totalProgress: p,
+                  reason: 'replace-part',
+                  objectUuid,
+                },
+              })
+            );
+          } catch (e) {
+            // ignore
+          }
+        });
+      } catch (error) {
+        throw new Error(
+          `Failed to load replacement GLB from "${srcToLoad}": ${getErrorMessage(
+            error
+          )}`
+        );
+      }
+
+      if (!gltf || !gltf.scene) {
+        throw new Error('Loaded GLTF missing scene');
+      }
+
+      const newObject = gltf.scene;
+
+      // Apply the original transform to the new object
+      newObject.position.copy(originalPosition);
+      newObject.quaternion.copy(originalQuaternion);
+      newObject.scale.copy(originalScale);
+
+      // Restore name
+      newObject.name = originalName;
+
+      // Merge userData: start with original, then apply new options
+      newObject.userData = {
+        ...originalUserData,
+        ...newObject.userData,
+      };
+
+      // If options.part is provided, merge it with existing userData.part
+      if (options?.part) {
+        try {
+          if (originalUserData.part) {
+            // Merge the parts objects
+            newObject.userData.part = {
+              ...originalUserData.part,
+              ...options.part,
+            };
+          } else {
+            newObject.userData.part = options.part;
+          }
+        } catch (e) {
+          // If merge fails, just use the new part
+          newObject.userData.part = options.part;
+        }
+      }
+
+      // Apply other options if provided
+      if (options?.id !== undefined) {
+        newObject.userData.id = options.id;
+      }
+      if (options?.name !== undefined) {
+        newObject.userData.name = options.name;
+        newObject.name = options.name;
+      }
+      if (options?.mass !== undefined) {
+        newObject.userData.mass = options.mass;
+      }
+      if (options?.selectable !== undefined) {
+        newObject.userData.selectable = options.selectable;
+      }
+      if (options?.editable !== undefined) {
+        newObject.userData.editable = options.editable;
+      }
+      if (options?.snappingPoints) {
+        newObject.userData.snappingPoints = options.snappingPoints;
+      }
+
+      // Check if the target object is part of a group
+      const parentGroup = this._findEnclosingGroup(objectToReplace);
+
+      // Remove the old object from its parent
+      if (originalParent) {
+        originalParent.remove(objectToReplace);
+      }
+
+      // Add the new object to the same parent
+      if (originalParent) {
+        originalParent.add(newObject);
+      } else {
+        // Fallback: add to scene target
+        try {
+          scene.target.add(newObject);
+        } catch (e) {
+          scene.add(newObject);
+        }
+      }
+
+      // If the object was in a group, update any snap connections that reference it
+      if (parentGroup && parentGroup.userData?.snapConnections) {
+        try {
+          const connections = parentGroup.userData.snapConnections;
+          connections.forEach((connection: any) => {
+            // Update connections that reference the old object
+            if (connection.a === originalName) {
+              connection.a = newObject.name;
+            }
+            if (connection.b === originalName) {
+              connection.b = newObject.name;
+            }
+            if (connection.object1 === objectToReplace) {
+              connection.object1 = newObject;
+            }
+            if (connection.object2 === objectToReplace) {
+              connection.object2 = newObject;
+            }
+            if (connection.objectA === objectToReplace) {
+              connection.objectA = newObject;
+            }
+            if (connection.objectB === objectToReplace) {
+              connection.objectB = newObject;
+            }
+          });
+
+          // Update group mesh cache
+          this.updateGroupMeshCache(parentGroup);
+        } catch (e) {
+          // Ignore errors updating group metadata
+        }
+      }
+
+      // Update selection if the replaced object was selected
+      try {
+        const wasSelected =
+          this.selectedObjects &&
+          this.selectedObjects.some((obj) => obj.uuid === objectUuid);
+        if (wasSelected) {
+          this.selectedObjects = this.selectedObjects.map((obj) =>
+            obj.uuid === objectUuid ? newObject : obj
+          );
+          // Update outline
+          this.updateOutlineSelection();
+        }
+      } catch (e) {
+        // Ignore selection update errors
+      }
+
+      // Request shadow update and render
+      this.requestShadowUpdate();
+      this[$needsRender]();
+
+      // Emit completion event
+      try {
+        this.dispatchEvent(
+          new CustomEvent('replace-part-complete', {
+            detail: {
+              objectUuid,
+              oldObject: objectToReplace,
+              newObject,
+            },
+          })
+        );
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
