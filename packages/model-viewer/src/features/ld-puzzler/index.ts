@@ -41,6 +41,7 @@ import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
+import { easeInOutQuad } from '../../utilities/animation.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
@@ -301,6 +302,49 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         if (this._breakLinkSlotsVisible) this.updateBreakLinkSlots();
       } catch (e) {}
+
+      // Step rotation animations (framerate independent) and clear shadow
+      // update pending flags. `delta` is the time since the last tick and
+      // is used to advance animations by real time rather than frame count.
+      try {
+        if (this._rotationAnimationMap.size > 0) {
+          for (const [obj, anim] of Array.from(
+            this._rotationAnimationMap.entries()
+          )) {
+            anim.elapsed += delta;
+            const t = Math.min(1, Math.max(0, anim.elapsed / anim.duration));
+            const eased = easeInOutQuad(t);
+
+            // slerp from the stored startQuat to endQuat
+            try {
+              obj.quaternion.copy(anim.startQuat);
+              obj.quaternion.slerp(anim.endQuat, eased);
+            } catch (err) {
+              // ignore per-object errors
+            }
+
+            if (t >= 1) {
+              try {
+                obj.quaternion.copy(anim.endQuat);
+              } catch (e) {}
+              this._rotationAnimationMap.delete(obj);
+            }
+          }
+
+          this.requestShadowUpdate();
+          this[$needsRender]();
+        }
+      } catch (e) {}
+
+      // Process any pending shadow update requested via requestShadowUpdate()
+      try {
+        if (this._shadowUpdatePending) {
+          this._shadowUpdatePending = false;
+          // Ensure a render is requested so shadow maps (or other per-frame
+          // updates) can be updated by the render loop.
+          this[$needsRender]();
+        }
+      } catch (e) {}
     }
 
     async setSrcFromBuffer(buffer: ArrayBuffer) {
@@ -317,8 +361,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _currentObject: Object3D | undefined = undefined;
 
-    // Track in-progress rotation animations so they can be cancelled/replaced
-    private _rotationAnimationMap: WeakMap<Object3D, number> = new WeakMap();
+    // Track in-progress rotation animations so they can be stepped from [$tick]
+    // Map<Object3D, { elapsed: number; duration: number; startQuat: Quaternion; endQuat: Quaternion }>
+    private _rotationAnimationMap: Map<
+      Object3D,
+      {
+        elapsed: number;
+        duration: number;
+        startQuat: Quaternion;
+        endQuat: Quaternion;
+      }
+    > = new Map();
 
     async load(src: string, id: string): Promise<GLTF> {
       const loader = new GLTFLoader();
@@ -576,44 +629,25 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         // Do not cancel any existing animation here — we already prevented
         // new instructions from starting while an animation is active. Use
-        // the current quaternion as the start.
+        // the current quaternion as the start and register an animation
+        // state that will be stepped from [$tick](time, delta). This makes
+        // the animation framerate independent.
         const startQuat = obj.quaternion.clone();
 
         const duration = TRANSITION_DURATION;
-        const startTime = performance.now();
 
-        const easeInOutCubic = (t: number) =>
-          t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        this._rotationAnimationMap.set(obj, {
+          elapsed: 0,
+          duration,
+          startQuat,
+          endQuat,
+        });
 
-        const step = (now: number) => {
-          const elapsed = now - startTime;
-          let t = Math.min(1, Math.max(0, elapsed / duration));
-          const eased = easeInOutCubic(t);
-
-          // slerp into the object's quaternion. Copy start each frame so
-          // we slerp consistently from the original start to the end.
-          obj.quaternion.copy(startQuat);
-          // Quaternion.prototype.slerp interpolates this quaternion towards
-          // the target by the given factor.
-          obj.quaternion.slerp(endQuat, eased);
-
-          this.requestShadowUpdate();
-          this[$needsRender]();
-
-          if (t < 1) {
-            const id = requestAnimationFrame(step);
-            this._rotationAnimationMap.set(obj, id);
-          } else {
-            // Ensure final state is exact
-            obj.quaternion.copy(endQuat);
-            this._rotationAnimationMap.delete(obj);
-            this.requestShadowUpdate();
-            this[$needsRender]();
-          }
-        };
-
-        const id = requestAnimationFrame(step);
-        this._rotationAnimationMap.set(obj, id);
+        // Ensure we render so [$tick] will be entered and the animation
+        // state will begin progressing on the next frame.
+        this.requestShadowUpdate();
+        this[$needsRender]();
+        return;
       } catch (e) {
         // Fallback to immediate set on error: prefer quaternion end if
         // available, otherwise use rotation Euler.
@@ -1158,39 +1192,23 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     };
 
-    private _shadowUpdateHandle: number | null = null;
     private _shadowUpdatePending: boolean = false;
 
     private requestShadowUpdate() {
-      console.log('request shadows');
+      // Schedule a shadow update for the next tick. We set a pending flag
+      // which is processed from [$tick] — this avoids using raw
+      // requestAnimationFrame and allows the update to be driven by the
+      // same tick loop the rest of the mixin uses.
       if (this._shadowUpdatePending) return;
       this._shadowUpdatePending = true;
-      this._shadowUpdateHandle = window.requestAnimationFrame(() => {
-        try {
-          console.log(
-            'udpate shadows',
-            this[$scene].updateBoundingBox,
-            this[$scene].updateShadow
-          );
-          this[$scene].updateBoundingBox?.();
-          this[$scene].updateShadow?.();
-
-          // this[$scene].traverse((n) =>
-          //   console.log(n.name, n.castShadow, n.receiveShadow, n)
-          // );
-        } catch (e) {}
-        (this as any)[$needsRender]();
-        this._shadowUpdatePending = false;
-        this._shadowUpdateHandle = null;
-      });
+      // Ask the render loop to run; the pending flag will be handled in [$tick]
+      this[$needsRender]();
     }
 
     private cancelRequestedShadowUpdate() {
-      if (this._shadowUpdateHandle != null) {
-        window.cancelAnimationFrame(this._shadowUpdateHandle);
-        this._shadowUpdateHandle = null;
-        this._shadowUpdatePending = false;
-      }
+      // Clear any pending shadow update request. The pending flag is
+      // observed and processed from [$tick].
+      this._shadowUpdatePending = false;
     }
 
     private _activePlacementSession: PlacementSession | null = null;
