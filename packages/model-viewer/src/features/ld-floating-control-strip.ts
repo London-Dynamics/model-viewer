@@ -38,17 +38,17 @@ export const LDFloatingControlStripMixin = <
   ModelViewerElementBase: T
 ): Constructor<FloatingControlStripInterface> & T => {
   class FloatingControlStripModelViewerElement extends ModelViewerElementBase {
-    @property({ type: Boolean, attribute: 'floating-controls-enabled' })
-    floatingControlsEnabled: boolean = false;
+    @property({ type: Boolean, attribute: 'disable-floating-controls' })
+    disableFloatingControls: boolean = false;
 
-    private [$modularControlsContainer]: HTMLElement | null = null;
+    private [$modularControlsContainer]: HTMLSlotElement | null = null;
     private [$selectedObject]: Object3D | null = null;
 
     [$onModelLoad]() {
       super[$onModelLoad]();
       this[$modularControlsContainer] = this.shadowRoot?.querySelector(
         'slot[name="floating-control-strip"]'
-      ) as HTMLElement;
+      ) as HTMLSlotElement;
     }
 
     [$selectObjectForControls](object: Object3D): void {
@@ -64,7 +64,7 @@ export const LDFloatingControlStripMixin = <
     [$tick](time: number, delta: number) {
       super[$tick](time, delta);
 
-      if (this.floatingControlsEnabled && this[$selectedObject]) {
+      if (!this.disableFloatingControls && this[$selectedObject]) {
         this[$updateModularControls]();
       }
     }
@@ -82,7 +82,7 @@ export const LDFloatingControlStripMixin = <
     }
 
     private [$updateModularControls](): void {
-      if (!this[$modularControlsContainer] || !this.floatingControlsEnabled) {
+      if (!this[$modularControlsContainer] || this.disableFloatingControls) {
         if (this[$modularControlsContainer]) {
           this[$modularControlsContainer].style.display = 'none';
         }
@@ -92,6 +92,29 @@ export const LDFloatingControlStripMixin = <
       if (!this[$selectedObject]) {
         this[$modularControlsContainer].style.display = 'none';
         return;
+      }
+
+      // Set dataset both on the slot and (preferably) on the assigned child
+      // so that the slotted element can read the data attributes directly.
+      const slot = this[$modularControlsContainer] as HTMLSlotElement;
+      if (slot) {
+        // Keep compatibility by setting on the slot itself
+        slot.dataset.objectName = this[$selectedObject].name || '';
+        slot.dataset.objectUuid = this[$selectedObject].uuid || '';
+
+        // Prefer setting on the first assigned element so the light-DOM
+        // child receives the attributes directly.
+        const assigned = slot.assignedElements({ flatten: true });
+        if (assigned && assigned.length > 0) {
+          const target = assigned[0] as HTMLElement;
+          try {
+            target.dataset.objectName = this[$selectedObject].name || '';
+            target.dataset.objectUuid = this[$selectedObject].uuid || '';
+          } catch (e) {
+            // If for some reason we can't set dataset on the assigned element,
+            // leave the attributes on the slot as a fallback.
+          }
+        }
       }
 
       // Calculate bounding box center and bottom

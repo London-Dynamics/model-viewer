@@ -99,7 +99,6 @@ export declare interface LDPuzzlerInterface {
   setRotationX(objectName: string, x: number): void;
   setRotationY(objectName: string, y: number): void;
   setRotationZ(objectName: string, z: number): void;
-
   setPositionX(objectName: string, x: number): void;
   setPositionY(objectName: string, y: number): void;
   setPositionZ(objectName: string, z: number): void;
@@ -388,34 +387,74 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     // }, 400);
 
     setRotation(
-      objectName: string,
-      value: [number, number, number],
+      name: string,
+      value: [number | string, number | string, number | string],
       order: EulerOrder = 'XYZ'
     ) {
+      // Accept either absolute numeric degrees or relative strings like
+      // "+90", "-45", "+=90" (relatively add/subtract). Validation
+      // is intentionally permissive for numeric strings as well.
+      const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         !Array.isArray(value) ||
         value.length !== 3 ||
-        value.some((angle) => typeof angle !== 'number')
+        value.some(
+          (angle) =>
+            !(
+              typeof angle === 'number' ||
+              (typeof angle === 'string' && relOrNumRE.test(angle))
+            )
+        )
       ) {
         throw new Error(
-          'Invalid value array. Expected an array of three numbers representing angles in degrees.'
+          'Invalid value array. Expected an array of three numbers (absolute degrees) or strings like "+90" / "-45" for relative changes.'
         );
       }
 
-      if (objectName !== this._currentObject?.name) {
+      if (name !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
 
       if (!this._currentObject) {
-        this._currentObject = this[$scene].getObjectByName(objectName);
+        this._currentObject = this[$scene].getObjectByName(name);
       }
 
       if (!this._currentObject) return;
 
+      // Seed current rotation in degrees (fallback to zeros on error)
+      let current: [number, number, number] = [0, 0, 0];
+      try {
+        current = this.getRotation(name);
+      } catch (e) {
+        // keep zeros
+      }
+
+      const computeAngle = (input: number | string, curDeg: number) => {
+        if (typeof input === 'number') return input;
+        const s = String(input).trim();
+        // Relative syntax: "+90", "-45", "+=90", "-=45"
+        const relMatch = s.match(/^([+-])=?\s*([+-]?\d+(?:\.\d+)?)$/);
+        if (relMatch) {
+          const sign = relMatch[1] === '-' ? -1 : 1;
+          const val = parseFloat(relMatch[2]);
+          return curDeg + sign * val;
+        }
+        // Fallback: parse absolute numeric string
+        const parsed = parseFloat(s);
+        if (!Number.isNaN(parsed)) return parsed;
+        throw new Error(`Invalid rotation input: "${input}"`);
+      };
+
+      const finalDegs: [number, number, number] = [
+        computeAngle(value[0], current[0]),
+        computeAngle(value[1], current[1]),
+        computeAngle(value[2], current[2]),
+      ];
+
       const rotation = new Euler(
-        value[0] * (Math.PI / 180),
-        value[1] * (Math.PI / 180),
-        value[2] * (Math.PI / 180),
+        finalDegs[0] * (Math.PI / 180),
+        finalDegs[1] * (Math.PI / 180),
+        finalDegs[2] * (Math.PI / 180),
         order
       );
 
@@ -432,53 +471,65 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setRotation` after seeding the existing rotation
      * (via `getRotation`) so callers can update one axis at a time.
      */
-    setRotationX(objectName: string, x: number, order: EulerOrder = 'XYZ') {
-      if (typeof x !== 'number' || Number.isNaN(x)) {
+    setRotationX(name: string, x: number | string, order: EulerOrder = 'XYZ') {
+      const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
+      if (
+        typeof x !== 'number' &&
+        !(typeof x === 'string' && relOrNumRE.test(x))
+      ) {
         throw new Error('Invalid x value for setRotationX');
       }
-      let rot: [number, number, number] = [0, 0, 0];
+      let rot: [number | string, number | string, number | string] = [0, 0, 0];
       try {
-        rot = this.getRotation(objectName);
+        rot = this.getRotation(name);
       } catch (e) {
         // ignore; fallback to zeros
       }
       rot[0] = x;
-      this.setRotation(objectName, rot, order);
+      this.setRotation(name, rot as any, order);
     }
 
-    setRotationY(objectName: string, y: number, order: EulerOrder = 'XYZ') {
-      if (typeof y !== 'number' || Number.isNaN(y)) {
+    setRotationY(name: string, y: number | string, order: EulerOrder = 'XYZ') {
+      const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
+      if (
+        typeof y !== 'number' &&
+        !(typeof y === 'string' && relOrNumRE.test(y))
+      ) {
         throw new Error('Invalid y value for setRotationY');
       }
-      let rot: [number, number, number] = [0, 0, 0];
+      let rot: [number | string, number | string, number | string] = [0, 0, 0];
       try {
-        rot = this.getRotation(objectName);
+        rot = this.getRotation(name);
       } catch (e) {
         // ignore; fallback to zeros
       }
       rot[1] = y;
-      this.setRotation(objectName, rot, order);
+      this.setRotation(name, rot as any, order);
     }
 
-    setRotationZ(objectName: string, z: number, order: EulerOrder = 'XYZ') {
-      if (typeof z !== 'number' || Number.isNaN(z)) {
+    setRotationZ(name: string, z: number | string, order: EulerOrder = 'XYZ') {
+      const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
+      if (
+        typeof z !== 'number' &&
+        !(typeof z === 'string' && relOrNumRE.test(z))
+      ) {
         throw new Error('Invalid z value for setRotationZ');
       }
-      let rot: [number, number, number] = [0, 0, 0];
+      let rot: [number | string, number | string, number | string] = [0, 0, 0];
       try {
-        rot = this.getRotation(objectName);
+        rot = this.getRotation(name);
       } catch (e) {
         // ignore; fallback to zeros
       }
       rot[2] = z;
-      this.setRotation(objectName, rot, order);
+      this.setRotation(name, rot as any, order);
     }
 
     /**
      * Set absolute local position (meters) for the named object.
      * value: [x, y, z]
      */
-    setPosition(objectName: string, value: [number, number, number]) {
+    setPosition(name: string, value: [number, number, number]) {
       if (
         !Array.isArray(value) ||
         value.length !== 3 ||
@@ -489,12 +540,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
       }
 
-      if (objectName !== this._currentObject?.name) {
+      if (name !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
 
       if (!this._currentObject) {
-        this._currentObject = this[$scene].getObjectByName(objectName);
+        this._currentObject = this[$scene].getObjectByName(name);
       }
 
       if (!this._currentObject) return;
@@ -515,53 +566,53 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setPosition` after seeding the existing
      * position (via `getPosition`) so callers can update one axis at a time.
      */
-    setPositionX(objectName: string, x: number) {
+    setPositionX(name: string, x: number) {
       if (typeof x !== 'number' || Number.isNaN(x)) {
         throw new Error('Invalid x value for setPositionX');
       }
       let pos: [number, number, number] = [0, 0, 0];
       try {
-        pos = this.getPosition(objectName);
+        pos = this.getPosition(name);
       } catch (e) {
         // ignore; fallback to zeros
       }
       pos[0] = x;
-      this.setPosition(objectName, pos);
+      this.setPosition(name, pos);
     }
 
-    setPositionY(objectName: string, y: number) {
+    setPositionY(name: string, y: number) {
       if (typeof y !== 'number' || Number.isNaN(y)) {
         throw new Error('Invalid y value for setPositionY');
       }
       let pos: [number, number, number] = [0, 0, 0];
       try {
-        pos = this.getPosition(objectName);
+        pos = this.getPosition(name);
       } catch (e) {
         // ignore; fallback to zeros
       }
       pos[1] = y;
-      this.setPosition(objectName, pos);
+      this.setPosition(name, pos);
     }
 
-    setPositionZ(objectName: string, z: number) {
+    setPositionZ(name: string, z: number) {
       if (typeof z !== 'number' || Number.isNaN(z)) {
         throw new Error('Invalid z value for setPositionZ');
       }
       let pos: [number, number, number] = [0, 0, 0];
       try {
-        pos = this.getPosition(objectName);
+        pos = this.getPosition(name);
       } catch (e) {
         // ignore; fallback to zeros
       }
       pos[2] = z;
-      this.setPosition(objectName, pos);
+      this.setPosition(name, pos);
     }
 
     /**
      * Set absolute local scale for the named object.
      * value: [sx, sy, sz]
      */
-    setScale(objectName: string, value: [number, number, number]) {
+    setScale(name: string, value: [number, number, number]) {
       if (
         !Array.isArray(value) ||
         value.length !== 3 ||
@@ -572,12 +623,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
       }
 
-      if (objectName !== this._currentObject?.name) {
+      if (name !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
 
       if (!this._currentObject) {
-        this._currentObject = this[$scene].getObjectByName(objectName);
+        this._currentObject = this[$scene].getObjectByName(name);
       }
 
       if (!this._currentObject) return;
@@ -598,57 +649,57 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setScale` after seeding the existing
      * scale (via `getScale`) so callers can update one axis at a time.
      */
-    setScaleX(objectName: string, sx: number) {
+    setScaleX(name: string, sx: number) {
       if (typeof sx !== 'number' || Number.isNaN(sx)) {
         throw new Error('Invalid sx value for setScaleX');
       }
       let s: [number, number, number] = [1, 1, 1];
       try {
-        s = this.getScale(objectName);
+        s = this.getScale(name);
       } catch (e) {
         // ignore; fallback to ones
       }
       s[0] = sx;
-      this.setScale(objectName, s);
+      this.setScale(name, s);
     }
 
-    setScaleY(objectName: string, sy: number) {
+    setScaleY(name: string, sy: number) {
       if (typeof sy !== 'number' || Number.isNaN(sy)) {
         throw new Error('Invalid sy value for setScaleY');
       }
       let s: [number, number, number] = [1, 1, 1];
       try {
-        s = this.getScale(objectName);
+        s = this.getScale(name);
       } catch (e) {
         // ignore; fallback to ones
       }
       s[1] = sy;
-      this.setScale(objectName, s);
+      this.setScale(name, s);
     }
 
-    setScaleZ(objectName: string, sz: number) {
+    setScaleZ(name: string, sz: number) {
       if (typeof sz !== 'number' || Number.isNaN(sz)) {
         throw new Error('Invalid sz value for setScaleZ');
       }
       let s: [number, number, number] = [1, 1, 1];
       try {
-        s = this.getScale(objectName);
+        s = this.getScale(name);
       } catch (e) {
         // ignore; fallback to ones
       }
       s[2] = sz;
-      this.setScale(objectName, s);
+      this.setScale(name, s);
     }
 
-    getRotation(objectName: string): [number, number, number] {
-      if (objectName !== this._currentObject?.name) {
+    getRotation(name: string): [number, number, number] {
+      if (name !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
       if (!this._currentObject) {
-        this._currentObject = this[$scene].getObjectByName(objectName);
+        this._currentObject = this[$scene].getObjectByName(name);
       }
       if (!this._currentObject) {
-        throw new Error(`Object with name "${objectName}" not found.`);
+        throw new Error(`Object with name "${name}" not found.`);
       }
 
       return [
@@ -658,15 +709,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       ];
     }
 
-    getPosition(objectName: string): [number, number, number] {
-      if (objectName !== this._currentObject?.name) {
+    getPosition(name: string): [number, number, number] {
+      if (name !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
       if (!this._currentObject) {
-        this._currentObject = this[$scene].getObjectByName(objectName);
+        this._currentObject = this[$scene].getObjectByName(name);
       }
       if (!this._currentObject) {
-        throw new Error(`Object with name "${objectName}" not found.`);
+        throw new Error(`Object with name "${name}" not found.`);
       }
 
       return [
@@ -676,15 +727,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       ];
     }
 
-    getScale(objectName: string): [number, number, number] {
-      if (objectName !== this._currentObject?.name) {
+    getScale(name: string): [number, number, number] {
+      if (name !== this._currentObject?.name) {
         this._currentObject = undefined;
       }
       if (!this._currentObject) {
-        this._currentObject = this[$scene].getObjectByName(objectName);
+        this._currentObject = this[$scene].getObjectByName(name);
       }
       if (!this._currentObject) {
-        throw new Error(`Object with name "${objectName}" not found.`);
+        throw new Error(`Object with name "${name}" not found.`);
       }
 
       return [
@@ -905,6 +956,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           } catch (e) {}
           return;
         }
+
+        console.log('selectedNode:', selectedNode);
 
         // Notify floating controls mixin, set outline selection, and record
         // the selected object so dragging targets the correct node.
@@ -2180,19 +2233,28 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targetObject = this.findTargetObject();
       if (!targetObject) return null;
 
-      const partObjects: Object3D[] = [];
+      // Collect only objects explicitly marked as placed
+      const partCandidates: Object3D[] = [];
       targetObject.traverse((child: any) => {
-        if (child.name && child.name.startsWith('part__'))
-          partObjects.push(child);
+        if (child && child.userData && child.userData.isPlacedObject === true) {
+          partCandidates.push(child);
+        }
       });
 
-      const intersects = this.raycaster.intersectObjects(partObjects, true);
+      if (partCandidates.length === 0) return null;
+
+      const intersects = this.raycaster.intersectObjects(partCandidates, true);
       if (intersects.length > 0) {
         let selectedPart = intersects[0].object as any;
-        while (selectedPart.parent && !selectedPart.name.startsWith('part__')) {
+        // Climb to the nearest ancestor that is marked as a placed object
+        while (
+          selectedPart &&
+          selectedPart.parent &&
+          selectedPart.userData?.isPlacedObject !== true
+        ) {
           selectedPart = selectedPart.parent;
         }
-        if (selectedPart.name && selectedPart.name.startsWith('part__'))
+        if (selectedPart && selectedPart.userData?.isPlacedObject === true)
           return selectedPart;
       }
       return null;
@@ -3511,8 +3573,10 @@ class PlacementSession extends EventTarget {
       if (!placeholder) return;
 
       this.placeholder = placeholder;
-      placeholder.name =
-        this._options?.name || `placement_placeholder_${this.id}`;
+      placeholder.name = this._options?.name
+        ? this._options.name + `_${+new Date()}`
+        : this.id;
+
       placeholder.userData = placeholder.userData || {};
       placeholder.userData.isPlacementPlaceholder = true;
       // If the placement was started with snappingPoints, attach them to
@@ -3815,10 +3879,14 @@ class PlacementSession extends EventTarget {
         gltf.scene.position.copy(this.placeholder.position);
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
+        gltf.scene.name = this.placeholder.name;
+      } else {
+        gltf.scene.name = this._options?.name
+          ? this._options.name + `_${+new Date()}`
+          : this.id;
       }
 
       // Mark as placed so selection logic recognizes it
-      gltf.scene.name = this._options?.name || this.id;
       gltf.scene.userData = {
         ...gltf.scene.userData,
         id: this._options?.id || this.id,

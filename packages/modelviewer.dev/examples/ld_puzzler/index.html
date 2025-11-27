@@ -182,7 +182,6 @@
                     max-field-of-view="180"
                     field-of-view="10deg"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
-                    floating-controls-enabled
                     snapping-enabled
                     edit-mode
                   >
@@ -821,12 +820,17 @@
                           if (el.getAttribute('aria-checked') === 'true') {
                             el.setAttribute('aria-checked', 'false');
 
-                            modelViewer.floatingControlsEnabled?.(false);
+                            modelViewer.setAttribute(
+                              'disable-floating-controls',
+                              ''
+                            );
                             console.log('Floating controls disabled');
                           } else {
                             el.setAttribute('aria-checked', 'true');
 
-                            modelViewer.floatingControlsEnabled?.(true);
+                            modelViewer.removeAttribute(
+                              'disable-floating-controls'
+                            );
                             console.log('Floating controls enabled');
                           }
                         });
@@ -834,6 +838,19 @@
                       const controlStrip = document.getElementById(
                         'floating-control-strip'
                       );
+
+                      const getObjectFromControlStrip = () => {
+                        if (!controlStrip) return null;
+
+                        const dataset = controlStrip.parentNode.dataset;
+
+                        return dataset
+                          ? {
+                              name: dataset.objectName,
+                              uuid: dataset.objectUuid,
+                            }
+                          : null;
+                      };
 
                       // Stop propagation on all clicks within the control strip
                       // so that clicks in empty areas don't deselect the object
@@ -854,7 +871,12 @@
                       if (rotateLeftButton) {
                         rotateLeftButton.addEventListener('click', (e) => {
                           e.stopPropagation();
-                          modelViewer.rotateSelected(90);
+
+                          const { name } = getObjectFromControlStrip() || {};
+                          if (name) {
+                            modelViewer.setRotationY(name, `+=90`);
+                            return;
+                          }
                         });
                         rotateLeftButton.addEventListener('mouseup', (e) => {
                           e.stopPropagation();
@@ -866,7 +888,12 @@
                       if (rotateLeftButton) {
                         rotateRightButton.addEventListener('click', (e) => {
                           e.stopPropagation();
-                          modelViewer.rotateSelected(-90);
+
+                          const { name } = getObjectFromControlStrip() || {};
+                          if (name) {
+                            modelViewer.setRotationY(name, `-=90`);
+                            return;
+                          }
                         });
                         rotateRightButton.addEventListener('mouseup', (e) => {
                           e.stopPropagation();
