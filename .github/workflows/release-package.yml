@@ -38,6 +38,8 @@ jobs:
       - run: npm ci
         env:
           LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN}}
+      - name: Check npm identity
+        run: npm whoami --registry=https://npm.pkg.github.com/ || true
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
