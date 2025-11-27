@@ -14,7 +14,14 @@
  */
 
 import { clamp } from '../utilities.js';
-import { Object3D, Quaternion } from 'three';
+import { Object3D, Quaternion, Vector3 } from 'three';
+
+const TRANSITION_DURATION = 300;
+
+export const easeInQuint: TimingFunction = (t: number) => t * t * t * t * t;
+
+// Simple ease-in for scale-out animations
+export const easeInQuad: TimingFunction = (t: number) => t * t;
 
 // Adapted from https://gist.github.com/gre/1650294
 export const easeInOutQuad: TimingFunction = (t: number) =>
@@ -123,7 +130,7 @@ export interface QuatAnimation {
 export const createQuatAnimation = (
   startQuat: Quaternion,
   endQuat: Quaternion,
-  duration: number
+  duration = TRANSITION_DURATION
 ): QuatAnimation => ({
   elapsed: 0,
   duration,
@@ -165,6 +172,77 @@ export const stepQuatAnimations = (
 
 export const stopQuatAnimation = (
   map: Map<Object3D, QuatAnimation>,
+  obj: Object3D
+): void => {
+  map.delete(obj);
+};
+
+/**
+ * Scale animation state used for stepping scale lerps driven by an
+ * external tick (delta time in ms).
+ */
+export interface ScaleAnimation {
+  elapsed: number;
+  duration: number; // ms
+  start: Vector3;
+  end: Vector3;
+  onComplete?: (obj: Object3D) => void;
+}
+
+/**
+ * Create a scale animation state. Clones vectors to avoid accidental
+ * mutation by callers.
+ */
+export const createScaleAnimation = (
+  start: Vector3,
+  end: Vector3,
+  onComplete?: (obj: Object3D) => void,
+  duration = TRANSITION_DURATION
+): ScaleAnimation => ({
+  elapsed: 0,
+  duration,
+  start: start.clone(),
+  end: end.clone(),
+  onComplete,
+});
+
+/**
+ * Step a map of scale animations by `deltaMs` milliseconds. This will
+ * lerp each object's scale towards its target and remove completed
+ * animations from the map. Uses `easeInQuint` easing by default.
+ */
+export const stepScaleAnimations = (
+  map: Map<Object3D, ScaleAnimation>,
+  deltaMs: number
+): void => {
+  if (!map || map.size === 0) return;
+
+  for (const [obj, anim] of Array.from(map.entries())) {
+    anim.elapsed += deltaMs;
+    const t = Math.min(1, Math.max(0, anim.elapsed / anim.duration));
+    const eased = easeInQuint(t);
+
+    try {
+      const v = anim.start.clone().lerp(anim.end, eased);
+      obj.scale.copy(v);
+    } catch (e) {
+      // ignore per-object failures
+    }
+
+    if (t >= 1) {
+      try {
+        obj.scale.copy(anim.end);
+      } catch (e) {}
+      try {
+        if (anim.onComplete) anim.onComplete(obj);
+      } catch (e) {}
+      map.delete(obj);
+    }
+  }
+};
+
+export const stopScaleAnimation = (
+  map: Map<Object3D, ScaleAnimation>,
   obj: Object3D
 ): void => {
   map.delete(obj);

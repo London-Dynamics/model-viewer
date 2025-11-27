@@ -909,7 +909,14 @@
                       if (deleteSelectedButton) {
                         deleteSelectedButton.addEventListener('click', (e) => {
                           e.stopPropagation();
-                          modelViewer.deleteSelected();
+
+                          const { name } = getObjectFromControlStrip() || {};
+                          if (name) {
+                            modelViewer.removeObject(name, {
+                              animate: true,
+                            });
+                            return;
+                          }
                         });
                         deleteSelectedButton.addEventListener(
                           'mouseup',

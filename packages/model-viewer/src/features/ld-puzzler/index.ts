@@ -44,6 +44,8 @@ import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_objec
 import {
   createQuatAnimation,
   stepQuatAnimations,
+  createScaleAnimation,
+  stepScaleAnimations,
 } from '../../utilities/animation.js';
 
 // Re-export SnappingPoint type for external use
@@ -62,9 +64,6 @@ export type PlacementOptions = {
   // Callback to fetch the high-res URL
   getHighResUrl?: () => Promise<string | undefined>;
 };
-
-// Animation duration for transforms (ms)
-const TRANSITION_DURATION = 300;
 
 type SelectionScope = 'part' | 'group' | 'all';
 
@@ -159,6 +158,8 @@ export declare interface LDPuzzlerInterface {
   selectGroup?: (node: Object3D) => boolean;
   ungroupSelectedObject?: () => boolean;
   clearSelection?: () => void;
+
+  removeObject?: (objectName: string, options?: { animate?: boolean }) => void;
 
   deleteNode?: (node: Object3D) => boolean;
   groupSelectedObjects?: () => Object3D | null;
@@ -310,9 +311,21 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // update pending flags. `delta` is the time since the last tick and
       // is used to advance animations by real time rather than frame count.
       try {
-        // Step registered quaternion animations (delta is in ms)
+        // Step registered quaternion and scale animations (delta is in ms)
+        const rotBefore = this._rotationAnimationMap.size;
         stepQuatAnimations(this._rotationAnimationMap, delta);
-        if (this._rotationAnimationMap.size > 0) {
+        const rotAfter = this._rotationAnimationMap.size;
+
+        const scaleBefore = this._scaleAnimationMap.size;
+        stepScaleAnimations(this._scaleAnimationMap, delta);
+        const scaleAfter = this._scaleAnimationMap.size;
+
+        if (
+          rotBefore > 0 ||
+          rotAfter > 0 ||
+          scaleBefore > 0 ||
+          scaleAfter > 0
+        ) {
           this.requestShadowUpdate();
           this[$needsRender]();
         }
@@ -344,16 +357,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _currentObject: Object3D | undefined = undefined;
 
     // Track in-progress rotation animations so they can be stepped from [$tick]
-    // Map<Object3D, { elapsed: number; duration: number; startQuat: Quaternion; endQuat: Quaternion }>
-    private _rotationAnimationMap: Map<
-      Object3D,
-      {
-        elapsed: number;
-        duration: number;
-        startQuat: Quaternion;
-        endQuat: Quaternion;
-      }
-    > = new Map();
+    // Map<Object3D, QuatAnimation>
+    private _rotationAnimationMap: Map<Object3D, any> = new Map();
+
+    // Track in-progress scale animations (for removal/scale-out)
+    private _scaleAnimationMap: Map<Object3D, any> = new Map();
 
     async load(src: string, id: string): Promise<GLTF> {
       const loader = new GLTFLoader();
@@ -618,7 +626,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         this._rotationAnimationMap.set(
           obj,
-          createQuatAnimation(startQuat, endQuat, TRANSITION_DURATION)
+          createQuatAnimation(startQuat, endQuat)
         );
 
         // Ensure we render so [$tick] will be entered and the animation
@@ -3114,6 +3122,109 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         return true;
       } catch (e) {
         return false;
+      }
+    }
+
+    /**
+     * Remove an object by name. Optionally animate its scale down before
+     * removing. Uses tick-driven scale animations when `options.animate` is true.
+     */
+    removeObject(objectName: string, options?: { animate?: boolean }) {
+      try {
+        if (!objectName) return;
+        const scene = (this as any)[$scene];
+        const obj = scene.getObjectByName(objectName) as Object3D | null;
+        if (!obj) return;
+
+        // Find enclosing snapped group (if any)
+        const group = this._findEnclosingGroup(obj);
+
+        // Deselect logic
+        if (group) {
+          // If the group is selected, clear selection
+          if (
+            this.selectedObjects.length > 0 &&
+            this.selectedObjects[0] === group
+          ) {
+            this.clearSelection();
+          }
+        } else {
+          // If the object itself is selected, clear selection
+          if (this.selectedObjects.includes(obj)) {
+            this.clearSelection();
+          }
+        }
+
+        // Break connections in group metadata so the group no longer references this object
+        if (
+          group &&
+          group.userData &&
+          Array.isArray(group.userData.snapConnections)
+        ) {
+          const name = obj.name || String(obj.id);
+          group.userData.snapConnections =
+            group.userData.snapConnections.filter((c: any) => {
+              try {
+                if (c.a || c.b) {
+                  return c.a !== name && c.b !== name;
+                }
+                if (c.object1 && c.object2) {
+                  const n1 = c.object1?.name || String(c.object1?.id);
+                  const n2 = c.object2?.name || String(c.object2?.id);
+                  return n1 !== name && n2 !== name;
+                }
+                if (c.objectA && c.objectB) {
+                  const n1 = c.objectA?.name || String(c.objectA?.id);
+                  const n2 = c.objectB?.name || String(c.objectB?.id);
+                  return n1 !== name && n2 !== name;
+                }
+              } catch (e) {}
+              return true;
+            });
+          try {
+            this.updateGroupMeshCache(group);
+          } catch (e) {}
+        }
+
+        const doRemoveNow = () => {
+          try {
+            // Clear any lingering in-group metadata
+            try {
+              if (obj.userData) {
+                delete obj.userData.groupId;
+                delete obj.userData.isInGroup;
+              }
+            } catch (e) {}
+
+            if (obj.parent) obj.parent.remove(obj);
+            this[$needsRender]();
+          } catch (e) {}
+        };
+
+        // Animated removal
+        if (options?.animate) {
+          try {
+            const start = obj.scale.clone();
+            const end = new Vector3(0, 0, 0);
+            this._scaleAnimationMap.set(
+              obj,
+              createScaleAnimation(start, end, (_o: Object3D) => {
+                // After scale-out, remove the object and ensure group metadata cleaned
+                doRemoveNow();
+              })
+            );
+            this.requestShadowUpdate();
+            this[$needsRender]();
+            return;
+          } catch (e) {
+            // fallback to immediate removal below
+          }
+        }
+
+        // Immediate removal
+        doRemoveNow();
+      } catch (e) {
+        // swallow
       }
     }
 
