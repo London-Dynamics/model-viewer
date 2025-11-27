@@ -59,6 +59,9 @@ export type PlacementOptions = {
   getHighResUrl?: () => Promise<string | undefined>;
 };
 
+// Animation duration for transforms (ms)
+const TRANSITION_DURATION = 300;
+
 type SelectionScope = 'part' | 'group' | 'all';
 
 type PositionOptions = {
@@ -82,6 +85,11 @@ type AttachMaterialFunction = (materialId: string, targetId: string) => void;
 
 type ClearSceneFunction = () => void;
 
+type RotationOptions = {
+  order?: EulerOrder;
+  animate?: boolean;
+};
+
 export declare interface LDPuzzlerInterface {
   load: LoadFunction;
   loadMany: LoadManyFunction;
@@ -92,13 +100,26 @@ export declare interface LDPuzzlerInterface {
   setPosition(objectName: string, value: [number, number, number]): void;
   setRotation(
     objectName: string,
-    anglesDegrees: [number, number, number]
+    anglesDegrees: [number, number, number],
+    options?: RotationOptions
   ): void;
   setScale(objectName: string, value: [number, number, number]): void;
 
-  setRotationX(objectName: string, x: number): void;
-  setRotationY(objectName: string, y: number): void;
-  setRotationZ(objectName: string, z: number): void;
+  setRotationX(
+    objectName: string,
+    x: number | string,
+    options?: RotationOptions
+  ): void;
+  setRotationY(
+    objectName: string,
+    y: number | string,
+    options?: RotationOptions
+  ): void;
+  setRotationZ(
+    objectName: string,
+    z: number | string,
+    options?: RotationOptions
+  ): void;
   setPositionX(objectName: string, x: number): void;
   setPositionY(objectName: string, y: number): void;
   setPositionZ(objectName: string, z: number): void;
@@ -296,6 +317,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _currentObject: Object3D | undefined = undefined;
 
+    // Track in-progress rotation animations so they can be cancelled/replaced
+    private _rotationAnimationMap: WeakMap<Object3D, number> = new WeakMap();
+
     async load(src: string, id: string): Promise<GLTF> {
       const loader = new GLTFLoader();
 
@@ -389,8 +413,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     setRotation(
       name: string,
       value: [number | string, number | string, number | string],
-      order: EulerOrder = 'XYZ'
+      options?: RotationOptions
     ) {
+      const { order = 'XYZ', animate = false } = options || {};
+
       // Accept either absolute numeric degrees or relative strings like
       // "+90", "-45", "+=90" (relatively add/subtract). Validation
       // is intentionally permissive for numeric strings as well.
@@ -421,49 +447,188 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (!this._currentObject) return;
 
-      // Seed current rotation in degrees (fallback to zeros on error)
-      let current: [number, number, number] = [0, 0, 0];
-      try {
-        current = this.getRotation(name);
-      } catch (e) {
-        // keep zeros
+      const obj = this._currentObject as Object3D;
+
+      // If this object is currently animating, ignore any new instructions
+      // (prevents competing instructions causing small overshoots when callers
+      // spam "+=..." while an animation is running).
+      if (this._rotationAnimationMap.has(obj)) {
+        return;
       }
 
-      const computeAngle = (input: number | string, curDeg: number) => {
-        if (typeof input === 'number') return input;
+      // Seed current rotation in degrees (fallback to zeros on error).
+      // When animating, derive the current rotation from the object's
+      // quaternion to avoid races with in-flight animations; otherwise
+      // use getRotation which reads the Euler directly.
+      let current: [number, number, number] = [0, 0, 0];
+      if (animate) {
+        try {
+          const startEuler = new Euler().setFromQuaternion(
+            obj.quaternion,
+            order
+          );
+          current = [
+            startEuler.x * (180 / Math.PI),
+            startEuler.y * (180 / Math.PI),
+            startEuler.z * (180 / Math.PI),
+          ];
+        } catch (e) {
+          // keep zeros
+        }
+      } else {
+        try {
+          current = this.getRotation(name);
+        } catch (e) {
+          // keep zeros
+        }
+      }
+
+      // Parse inputs: detect relative vs absolute for each axis and extract
+      // numeric deltas/values. We'll prefer an incremental-quaternion path when
+      // all non-relative axes match the current rotation (typical for
+      // setRotationX/Y/Z helpers), so repeated "+=90" calls always rotate
+      // in the intended direction.
+
+      const parsed: {
+        isRelative: boolean;
+        delta?: number; // degrees for relative
+        absolute?: number; // degrees for absolute
+      }[] = [0, 1, 2].map((i) => {
+        const input = value[i];
+        if (typeof input === 'number') {
+          return { isRelative: false, absolute: input };
+        }
         const s = String(input).trim();
         // Relative syntax: "+90", "-45", "+=90", "-=45"
         const relMatch = s.match(/^([+-])=?\s*([+-]?\d+(?:\.\d+)?)$/);
         if (relMatch) {
           const sign = relMatch[1] === '-' ? -1 : 1;
           const val = parseFloat(relMatch[2]);
-          return curDeg + sign * val;
+          return { isRelative: true, delta: sign * val };
         }
         // Fallback: parse absolute numeric string
-        const parsed = parseFloat(s);
-        if (!Number.isNaN(parsed)) return parsed;
+        const parsedNum = parseFloat(s);
+        if (!Number.isNaN(parsedNum))
+          return { isRelative: false, absolute: parsedNum };
         throw new Error(`Invalid rotation input: "${input}"`);
-      };
+      });
 
-      const finalDegs: [number, number, number] = [
-        computeAngle(value[0], current[0]),
-        computeAngle(value[1], current[1]),
-        computeAngle(value[2], current[2]),
-      ];
+      // Determine if delta-quaternion approach is safe: any relative inputs
+      // AND all absolute inputs match the current rotation (so callers used
+      // helpers that seeded the non-modified axes with current values).
+      const hasRelative = parsed.some((p) => p.isRelative);
+      const allAbsoluteMatchCurrent = parsed.every((p, i) => {
+        if (p.isRelative) return true;
+        // small epsilon to allow floating point differences
+        const eps = 1e-6;
+        return Math.abs((p.absolute ?? 0) - current[i]) < eps;
+      });
 
-      const rotation = new Euler(
-        finalDegs[0] * (Math.PI / 180),
-        finalDegs[1] * (Math.PI / 180),
-        finalDegs[2] * (Math.PI / 180),
-        order
-      );
+      let endQuat: Quaternion;
+      let rotation: Euler | null = null;
 
-      const obj = this._currentObject as Object3D;
+      if (animate && hasRelative && allAbsoluteMatchCurrent) {
+        // Build a delta Euler from the relative deltas and convert to a
+        // quaternion. We'll apply this delta to the current quaternion so
+        // the rotation direction matches the sign of the delta.
+        const deltaDegs: [number, number, number] = [
+          parsed[0].isRelative ? parsed[0].delta! : 0,
+          parsed[1].isRelative ? parsed[1].delta! : 0,
+          parsed[2].isRelative ? parsed[2].delta! : 0,
+        ];
+        const deltaEuler = new Euler(
+          deltaDegs[0] * (Math.PI / 180),
+          deltaDegs[1] * (Math.PI / 180),
+          deltaDegs[2] * (Math.PI / 180),
+          order
+        );
+        const deltaQuat = new Quaternion().setFromEuler(deltaEuler);
+        const startQuat = obj.quaternion.clone();
+        endQuat = startQuat.clone().multiply(deltaQuat);
+        // rotation left null because we're animating quaternions directly
+      } else {
+        // Compute final absolute degrees for each axis (current + delta for
+        // relative inputs, absolute for absolute inputs).
+        const finalDegs: [number, number, number] = [0, 1, 2].map((i) =>
+          parsed[i].isRelative
+            ? current[i] + parsed[i].delta!
+            : parsed[i].absolute ?? current[i]
+        ) as [number, number, number];
 
-      obj.rotation.copy(rotation);
+        rotation = new Euler(
+          finalDegs[0] * (Math.PI / 180),
+          finalDegs[1] * (Math.PI / 180),
+          finalDegs[2] * (Math.PI / 180),
+          order
+        );
+        endQuat = new Quaternion().setFromEuler(rotation);
+      }
 
-      this.requestShadowUpdate();
-      this[$needsRender]();
+      if (!animate) {
+        // Immediate set (existing behavior)
+        obj.rotation.copy(rotation!);
+        this.requestShadowUpdate();
+        this[$needsRender]();
+        return;
+      }
+
+      // Animated path: slerp between current quaternion and target quaternion
+      try {
+        // Do not cancel any existing animation here — we already prevented
+        // new instructions from starting while an animation is active. Use
+        // the current quaternion as the start.
+        const startQuat = obj.quaternion.clone();
+
+        const duration = TRANSITION_DURATION;
+        const startTime = performance.now();
+
+        const easeInOutCubic = (t: number) =>
+          t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+        const step = (now: number) => {
+          const elapsed = now - startTime;
+          let t = Math.min(1, Math.max(0, elapsed / duration));
+          const eased = easeInOutCubic(t);
+
+          // slerp into the object's quaternion. Copy start each frame so
+          // we slerp consistently from the original start to the end.
+          obj.quaternion.copy(startQuat);
+          // Quaternion.prototype.slerp interpolates this quaternion towards
+          // the target by the given factor.
+          obj.quaternion.slerp(endQuat, eased);
+
+          this.requestShadowUpdate();
+          this[$needsRender]();
+
+          if (t < 1) {
+            const id = requestAnimationFrame(step);
+            this._rotationAnimationMap.set(obj, id);
+          } else {
+            // Ensure final state is exact
+            obj.quaternion.copy(endQuat);
+            this._rotationAnimationMap.delete(obj);
+            this.requestShadowUpdate();
+            this[$needsRender]();
+          }
+        };
+
+        const id = requestAnimationFrame(step);
+        this._rotationAnimationMap.set(obj, id);
+      } catch (e) {
+        // Fallback to immediate set on error: prefer quaternion end if
+        // available, otherwise use rotation Euler.
+        try {
+          if (typeof endQuat !== 'undefined') {
+            obj.quaternion.copy(endQuat);
+          } else if (rotation) {
+            obj.rotation.copy(rotation);
+          }
+        } catch (err) {
+          // ignore
+        }
+        this.requestShadowUpdate();
+        this[$needsRender]();
+      }
     }
 
     /**
@@ -471,7 +636,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setRotation` after seeding the existing rotation
      * (via `getRotation`) so callers can update one axis at a time.
      */
-    setRotationX(name: string, x: number | string, order: EulerOrder = 'XYZ') {
+    setRotationX(name: string, x: number | string, options?: RotationOptions) {
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof x !== 'number' &&
@@ -486,10 +651,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // ignore; fallback to zeros
       }
       rot[0] = x;
-      this.setRotation(name, rot as any, order);
+      this.setRotation(name, rot as any, options);
     }
 
-    setRotationY(name: string, y: number | string, order: EulerOrder = 'XYZ') {
+    setRotationY(name: string, y: number | string, options?: RotationOptions) {
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof y !== 'number' &&
@@ -504,10 +669,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // ignore; fallback to zeros
       }
       rot[1] = y;
-      this.setRotation(name, rot as any, order);
+      this.setRotation(name, rot as any, options);
     }
 
-    setRotationZ(name: string, z: number | string, order: EulerOrder = 'XYZ') {
+    setRotationZ(name: string, z: number | string, options?: RotationOptions) {
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof z !== 'number' &&
@@ -522,7 +687,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // ignore; fallback to zeros
       }
       rot[2] = z;
-      this.setRotation(name, rot as any, order);
+      this.setRotation(name, rot as any, options);
     }
 
     /**

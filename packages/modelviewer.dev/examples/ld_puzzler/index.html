@@ -874,7 +874,9 @@
 
                           const { name } = getObjectFromControlStrip() || {};
                           if (name) {
-                            modelViewer.setRotationY(name, `+=90`);
+                            modelViewer.setRotationY(name, `+=90`, {
+                              animate: true,
+                            });
                             return;
                           }
                         });
@@ -891,7 +893,9 @@
 
                           const { name } = getObjectFromControlStrip() || {};
                           if (name) {
-                            modelViewer.setRotationY(name, `-=90`);
+                            modelViewer.setRotationY(name, `-=90`, {
+                              animate: true,
+                            });
                             return;
                           }
                         });
