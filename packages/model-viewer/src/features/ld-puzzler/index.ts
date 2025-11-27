@@ -41,7 +41,10 @@ import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
-import { easeInOutQuad } from '../../utilities/animation.js';
+import {
+  createQuatAnimation,
+  stepQuatAnimations,
+} from '../../utilities/animation.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
@@ -307,30 +310,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // update pending flags. `delta` is the time since the last tick and
       // is used to advance animations by real time rather than frame count.
       try {
+        // Step registered quaternion animations (delta is in ms)
+        stepQuatAnimations(this._rotationAnimationMap, delta);
         if (this._rotationAnimationMap.size > 0) {
-          for (const [obj, anim] of Array.from(
-            this._rotationAnimationMap.entries()
-          )) {
-            anim.elapsed += delta;
-            const t = Math.min(1, Math.max(0, anim.elapsed / anim.duration));
-            const eased = easeInOutQuad(t);
-
-            // slerp from the stored startQuat to endQuat
-            try {
-              obj.quaternion.copy(anim.startQuat);
-              obj.quaternion.slerp(anim.endQuat, eased);
-            } catch (err) {
-              // ignore per-object errors
-            }
-
-            if (t >= 1) {
-              try {
-                obj.quaternion.copy(anim.endQuat);
-              } catch (e) {}
-              this._rotationAnimationMap.delete(obj);
-            }
-          }
-
           this.requestShadowUpdate();
           this[$needsRender]();
         }
@@ -634,14 +616,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // the animation framerate independent.
         const startQuat = obj.quaternion.clone();
 
-        const duration = TRANSITION_DURATION;
-
-        this._rotationAnimationMap.set(obj, {
-          elapsed: 0,
-          duration,
-          startQuat,
-          endQuat,
-        });
+        this._rotationAnimationMap.set(
+          obj,
+          createQuatAnimation(startQuat, endQuat, TRANSITION_DURATION)
+        );
 
         // Ensure we render so [$tick] will be entered and the animation
         // state will begin progressing on the next frame.
