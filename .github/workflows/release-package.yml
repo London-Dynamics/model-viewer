@@ -11,9 +11,6 @@ defaults:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    env:
-      # Set the npm version you want the runner to use. Change this value as needed.
-      NPM_VERSION: '10.8.2'
     permissions:
       packages: write
       contents: read
@@ -24,17 +21,6 @@ jobs:
           node-version: 20.15.0
           registry-url: https://npm.pkg.github.com/
           scope: '@london-dynamics'
-      # Ensure a specific npm version is installed (overrides the npm bundled with Node)
-      - name: Install specified npm version
-        run: |
-          if [ -n "${{ env.NPM_VERSION }}" ]; then
-            echo "Installing npm@${{ env.NPM_VERSION }}"
-            npm install -g "npm@${{ env.NPM_VERSION }}"
-            npm --version
-          else
-            echo "NPM_VERSION not set; using bundled npm"
-            npm --version
-          fi
       - run: npm ci
         env:
           LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN}}
