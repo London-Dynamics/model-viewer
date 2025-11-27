@@ -21,19 +21,10 @@ jobs:
           node-version: 20.15.0
           registry-url: https://npm.pkg.github.com/
           scope: '@london-dynamics'
-          always-auth: true
-
-      - name: Configure npm for GitHub Packages
-        run: |
-          echo "@london-dynamics:registry=https://npm.pkg.github.com/" >> ~/.npmrc
-          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> ~/.npmrc
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm ci
         env:
           LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN}}
-      - name: Check npm identity
-        run: npm whoami --registry=https://npm.pkg.github.com/ || true
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN}}
