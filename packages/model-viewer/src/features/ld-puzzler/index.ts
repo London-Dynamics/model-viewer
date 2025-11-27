@@ -159,7 +159,7 @@ export declare interface LDPuzzlerInterface {
   ungroupSelectedObject?: () => boolean;
   clearSelection?: () => void;
 
-  removeObject?: (objectName: string, options?: { animate?: boolean }) => void;
+  removeObject: (objectName: string, options?: { animate?: boolean }) => void;
 
   deleteNode?: (node: Object3D) => boolean;
   groupSelectedObjects?: () => Object3D | null;
