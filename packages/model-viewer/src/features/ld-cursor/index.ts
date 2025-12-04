@@ -147,7 +147,16 @@ export const LDCursorMixin = <T extends Constructor<ModelViewerElementBase>>(
       const raycaster = new Raycaster();
       raycaster.setFromCamera(new Vector2(ndcX, ndcY), camera);
 
-      const placementY = scene.boundingBox ? scene.boundingBox.min.y : 0;
+      // Use scene.target's world Y position as the floor level
+      // (scene.boundingBox.min.y doesn't account for scene.target's offset)
+      let placementY = 0;
+      if (scene.target) {
+        const targetWorldPos = new Vector3();
+        scene.target.getWorldPosition(targetWorldPos);
+        placementY = targetWorldPos.y;
+      } else if (scene.boundingBox) {
+        placementY = scene.boundingBox.min.y;
+      }
 
       const dir = raycaster.ray.direction;
       const origin = raycaster.ray.origin;

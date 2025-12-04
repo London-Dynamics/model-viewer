@@ -3823,6 +3823,9 @@ class PlacementSession extends EventTarget {
   private _options?: PlacementOptions;
   private _lastCursorPosition: { x: number; y: number; z: number } | null =
     null;
+  // Store the target position where the bottom-center of the bounding box should be
+  private _targetBottomCenter: { x: number; y: number; z: number } | null =
+    null;
 
   constructor(
     element: any,
@@ -3963,6 +3966,8 @@ class PlacementSession extends EventTarget {
 
       // Store cursor position for later use (even if no placeholder exists)
       this._lastCursorPosition = { x: world.x, y: world.y, z: world.z };
+      // Also store this as the target bottom-center position
+      this._targetBottomCenter = { x: world.x, y: world.y, z: world.z };
       console.log(
         '[puzzler] updatePosition: cursor at',
         this._lastCursorPosition
@@ -3992,7 +3997,13 @@ class PlacementSession extends EventTarget {
         }
       }
 
-      this.placeholder.position.set(world.x, 0, world.z);
+      // Position placeholder at cursor location (convert world to local space)
+      const worldPos = new Vector3(world.x, world.y, world.z);
+      const element = this._element as any;
+      if (element && element[$scene] && element[$scene].target) {
+        element[$scene].target.worldToLocal(worldPos);
+      }
+      this.placeholder.position.copy(worldPos);
 
       // Check for snapping during interactive placement if snapping is enabled
       if (
@@ -4212,20 +4223,59 @@ class PlacementSession extends EventTarget {
 
       // Place final model at placeholder transform (if present)
       if (this.placeholder) {
+        // Copy all transforms from placeholder (already in correct local space)
         gltf.scene.position.copy(this.placeholder.position);
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
+
         console.log(
           '[puzzler] Placed object using placeholder position:',
           gltf.scene.position.toArray()
         );
       } else {
-        // No placeholder - use last cursor position if available
-        if (this._lastCursorPosition) {
+        // No placeholder - calculate position with bbox adjustment
+        if (this._targetBottomCenter) {
+          // Calculate bbox in local space first (object at origin)
+          gltf.scene.position.set(0, 0, 0);
+          gltf.scene.updateMatrixWorld(true);
+          const bboxLocal = new Box3().setFromObject(gltf.scene);
+
+          // Bottom-center in object's local coordinate system
+          const bottomCenterLocal = new Vector3(
+            (bboxLocal.min.x + bboxLocal.max.x) / 2,
+            bboxLocal.min.y,
+            (bboxLocal.min.z + bboxLocal.max.z) / 2
+          );
+
+          // Get scene.target's world position
+          const target = (scene as any).target;
+          if (target) {
+            target.updateMatrixWorld(true);
+          }
+          const targetWorldPos = new Vector3();
+          if (target) {
+            target.getWorldPosition(targetWorldPos);
+          }
+
+          // Cursor is in world space
+          const cursorWorld = new Vector3(
+            this._targetBottomCenter.x,
+            this._targetBottomCenter.y,
+            this._targetBottomCenter.z
+          );
+
+          // Calculate local position: (cursorWorld - targetWorldPos) - bottomCenterOffset
+          // This ensures: targetWorldPos + objectLocalPos + bottomCenterOffset = cursorWorld
+          const objectLocalPos = new Vector3()
+            .subVectors(cursorWorld, targetWorldPos)
+            .sub(bottomCenterLocal);
+
+          gltf.scene.position.copy(objectLocalPos);
+        } else if (this._lastCursorPosition) {
           gltf.scene.position.set(
             this._lastCursorPosition.x,
-            0,
+            this._lastCursorPosition.y,
             this._lastCursorPosition.z
           );
           console.log(
@@ -4262,11 +4312,15 @@ class PlacementSession extends EventTarget {
       if (this._options?.selectable === false)
         gltf.scene.userData.selectable = false;
 
+      // Add object to scene.target (required for camera controls)
       try {
         scene.target.add(gltf.scene);
       } catch (e) {
         scene.add(gltf.scene);
       }
+
+      // Request render update
+      (this._element as any)[$needsRender]();
 
       // Fallback: if no pending connection was recorded (or it was lost),
       // do an immediate check between the newly placed model and existing

@@ -56,11 +56,8 @@ export class Cursor extends Object3D {
     // default position outside window
     this.position.set(10000, 10000, 10000);
 
-    // Add to the root of the target's hierarchy (scene root) so cursor local Y
-    // matches world Y regardless of intermediate parent translations.
-    let rootParent: Object3D = targetObject;
-    while (rootParent.parent) rootParent = rootParent.parent;
-    rootParent.add(this);
+    // Add to targetObject (scene.target) so cursor shares coordinate space with placed objects
+    targetObject.add(this);
 
     this.positionAtFloorLevel();
 
@@ -310,9 +307,13 @@ export class Cursor extends Object3D {
     this.worldPlacementPosition.copy(worldIntersectionPoint);
 
     // Compute world-space floor point at same X/Z
-    // Use the bounding box if valid (not empty), otherwise fall back to intersection point
+    // Use scene.target's world Y as the floor (not bounding box which doesn't account for offset)
     let floorY = worldIntersectionPoint.y;
-    if (this.scene?.boundingBox && !this.scene.boundingBox.isEmpty()) {
+    if (this.targetObject) {
+      const targetWorldPos = new Vector3();
+      this.targetObject.getWorldPosition(targetWorldPos);
+      floorY = targetWorldPos.y;
+    } else if (this.scene?.boundingBox && !this.scene.boundingBox.isEmpty()) {
       floorY = this.scene.boundingBox.min.y;
     }
 
@@ -326,7 +327,14 @@ export class Cursor extends Object3D {
     const parentForConversion = this.parent ?? this.targetObject ?? null;
     if (parentForConversion) {
       const localFloor = worldFloor.clone();
+
+      // Ensure parent matrix is up to date
+      if (parentForConversion.updateMatrixWorld) {
+        parentForConversion.updateMatrixWorld(true);
+      }
+
       parentForConversion.worldToLocal(localFloor);
+
       // Update position, but importantly: always update Y to catch bounding box changes
       this.position.x = localFloor.x;
       this.position.y = localFloor.y;
