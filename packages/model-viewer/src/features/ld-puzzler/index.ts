@@ -1000,36 +1000,48 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       (this as any)[$needsRender]();
     }
 
+    /**
+     * Helper method to check if an event target is a UI element that should not trigger selection changes.
+     * Returns true if the target is a UI element (slotted element, data-no-raycast, etc.)
+     */
+    private _isUIElement(target: EventTarget | null): boolean {
+      if (!target) return false;
+      const element = target as HTMLElement;
+      if (!element) return false;
+
+      // Check if target has slot attribute or is within a slotted element
+      if (element.hasAttribute?.('slot') || element.closest?.('[slot]')) {
+        return true;
+      }
+
+      // Check if target is within an element marked as data-no-raycast
+      if (element.closest?.('[data-no-raycast]')) {
+        return true;
+      }
+
+      return false;
+    }
+
     private _onPointerEvent = (e: PointerEvent | MouseEvent) => {
       // Only allow selection when in edit mode
       if (!this.editMode) return;
       console.log('LDPuzzlerMixin: _onPointerEvent');
-      // Ignore clicks originating from slotted elements or marked elements.
-      // Slotted elements (UI panels, controls) should call stopPropagation() if
-      // they want to block selection. Elements with [data-no-raycast] are
-      // explicitly marked to never trigger raycasting.
-      const target = e.target as HTMLElement;
-      if (
-        target &&
-        (target.hasAttribute('slot') ||
-          target.closest('[slot]') ||
-          target.closest('[data-no-raycast]'))
-      )
-        return;
 
-      // Additional safety: also check if the event was stopped by something
-      // (handlers should call stopPropagation to prevent unwanted selection)
-      if (e.cancelBubble || (e as any).defaultPrevented) return;
-
-      // Also check if the click came from inside the floating control strip
-      // by checking if any [data-no-raycast] ancestor exists in the light DOM
-      const floatingControlStrip = this.querySelector('[data-no-raycast]');
-      if (floatingControlStrip && floatingControlStrip.contains(target)) return;
-
-      // Avoid reacting to non-primary buttons
-      // (PointerEvent has button, MouseEvent too)
+      // Avoid reacting to non-primary buttons (button 0 = primary/left click)
       const btn = (e as any).button;
       if (typeof btn === 'number' && btn !== 0) return;
+
+      // Check if the event was stopped by something
+      if (e.cancelBubble || (e as any).defaultPrevented) return;
+
+      const target = e.target as HTMLElement;
+      if (!target) return;
+
+      // IMPORTANT: Don't clear selection when clicking on UI elements.
+      if (this._isUIElement(target)) {
+        console.log('LDPuzzlerMixin: Click on slotted element, ignoring');
+        return;
+      }
 
       console.log(
         'LDPuzzlerMixin: _onPointerEvent continued - performing raycast'
@@ -2242,6 +2254,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.editMode) return;
       if (event.button !== 0) return;
 
+      // Ignore clicks on UI elements
+      if (this._isUIElement(event.target)) return;
+
       this.updateMousePosition(event as any);
       this.lastClickTime = performance.now();
       this.lastClickPosition.copy(this.currentMousePosition);
@@ -2282,6 +2297,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Only handle puzzler mouse interactions when edit-mode is active.
       if (!this.editMode) return;
 
+      // Ignore clicks on UI elements
+      if (this._isUIElement(event.target)) return;
+
       if (this.isDragging) {
         this.stopDragging();
       } else {
@@ -2308,6 +2326,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private onTouchStart(event: TouchEvent) {
       // Only handle puzzler touch interactions when edit-mode is active.
       if (!this.editMode) return;
+
+      // Ignore touches on UI elements
+      if (
+        event.touches.length > 0 &&
+        this._isUIElement(event.touches[0].target)
+      )
+        return;
+
       if (event.touches.length === 1) {
         const touch = event.touches[0];
         this.updateMousePositionFromTouch(touch);
@@ -2350,6 +2376,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private onTouchEnd(event: TouchEvent) {
       // Only handle puzzler touch interactions when edit-mode is active.
       if (!this.editMode) return;
+
+      // Ignore touches on UI elements
+      if (
+        event.changedTouches.length > 0 &&
+        this._isUIElement(event.changedTouches[0].target)
+      )
+        return;
+
       if (this.isDragging) {
         this.stopDragging();
       } else if (event.changedTouches.length === 1) {
