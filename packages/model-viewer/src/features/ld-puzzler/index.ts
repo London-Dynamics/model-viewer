@@ -144,7 +144,7 @@ export declare interface LDPuzzlerInterface {
     highResSrc: string | undefined,
     options?: PlacementOptions,
     initialMouse?: { clientX: number; clientY: number }
-  ) => any;
+  ) => PlacementSession;
 
   replacePart: (
     objectUuid: string,
@@ -3787,6 +3787,8 @@ class PlacementSession extends EventTarget {
   private _lowResSrc: string | undefined;
   private _highResSrc: string | undefined;
   private _options?: PlacementOptions;
+  private _lastCursorPosition: { x: number; y: number; z: number } | null =
+    null;
 
   constructor(
     element: any,
@@ -3818,8 +3820,13 @@ class PlacementSession extends EventTarget {
         lowResUrl = await this._options.getLowResUrl();
       }
 
+      // If no low-res URL is available, skip placeholder loading
+      // The session will track cursor position and place highres on commit
       if (!lowResUrl) {
-        throw new Error('No low-res URL provided and no getLowResUrl callback');
+        console.log(
+          '[puzzler] PlacementSession: No low-res URL provided, skipping placeholder'
+        );
+        return;
       }
 
       const loader = (this._element as any)[$renderer].loader;
@@ -3903,7 +3910,7 @@ class PlacementSession extends EventTarget {
   // Update placeholder position. Accepts client coordinates and converts
   // them to a world point using the LDCursor mixin's helper.
   updatePosition(clientX: number, clientY: number) {
-    if (!this.placeholder || !this._element) return;
+    if (!this._element) return;
 
     try {
       const world = (this._element as any)[$getMouseWorldPoint](
@@ -3915,6 +3922,26 @@ class PlacementSession extends EventTarget {
         this.dispatchEvent(
           new CustomEvent('update', {
             detail: { sessionId: this.id, worldPoint: null },
+          })
+        );
+        return;
+      }
+
+      // Store cursor position for later use (even if no placeholder exists)
+      this._lastCursorPosition = { x: world.x, y: world.y, z: world.z };
+      console.log(
+        '[puzzler] updatePosition: cursor at',
+        this._lastCursorPosition
+      );
+
+      // If no placeholder exists, just track position and return
+      if (!this.placeholder) {
+        this.dispatchEvent(
+          new CustomEvent('update', {
+            detail: {
+              sessionId: this.id,
+              worldPoint: { x: world.x, y: world.y, z: world.z },
+            },
           })
         );
         return;
@@ -4047,6 +4074,9 @@ class PlacementSession extends EventTarget {
         const center = new Vector3();
         box.getCenter(center);
         centerDetail = { x: center.x, y: center.y, z: center.z };
+      } else if (this._lastCursorPosition) {
+        // No placeholder, use last cursor position
+        centerDetail = this._lastCursorPosition;
       }
     } catch (e) {
       centerDetail = null;
@@ -4152,7 +4182,29 @@ class PlacementSession extends EventTarget {
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
+        console.log(
+          '[puzzler] Placed object using placeholder position:',
+          gltf.scene.position.toArray()
+        );
       } else {
+        // No placeholder - use last cursor position if available
+        if (this._lastCursorPosition) {
+          gltf.scene.position.set(
+            this._lastCursorPosition.x,
+            0,
+            this._lastCursorPosition.z
+          );
+          console.log(
+            '[puzzler] Placed object using cursor position:',
+            gltf.scene.position.toArray(),
+            'from cursor:',
+            this._lastCursorPosition
+          );
+        } else {
+          console.warn(
+            '[puzzler] No placeholder or cursor position - object placed at origin'
+          );
+        }
         gltf.scene.name = this._options?.name
           ? this._options.name + `_${+new Date()}`
           : this.id;

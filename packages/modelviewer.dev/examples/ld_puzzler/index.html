@@ -636,7 +636,8 @@
                             modelViewer.setAttribute('cursor-visible', '');
 
                             const lowresSrc = `../../shared-assets/models/${filename}`;
-                            const highResSrc = lowresSrc;
+                            const highResSrc =
+                              'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/32f04048-97af-5829-3a6f-56f64349a052.glb';
 
                             // Capture initial mouse position so the placeholder
                             // can be positioned immediately even if it loads
@@ -646,8 +647,10 @@
                               clientY: e.clientY,
                             };
 
+                            // Pass undefined as lowResSrc to skip placeholder loading
+                            // and directly place the highres model on commit
                             session = modelViewer.beginPlacement(
-                              lowresSrc,
+                              undefined,
                               highResSrc,
                               placementOptions,
                               initialMouse
