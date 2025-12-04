@@ -4108,20 +4108,50 @@ class PlacementSession extends EventTarget {
     this.state = 'loading';
 
     // Compute a reasonable center point for the placeholder so callers
-    // can position UI (hotspots) at the geometric center of the object
-    // rather than at the floor or origin.
+    // can position UI (hotspots) at the geometric center of the object.
+    // Hotspots expect positions in local space (relative to scene.target).
     let centerDetail: { x: number; y: number; z: number } | null = null;
     try {
       if (this.placeholder) {
-        // Ensure world matrices are up to date
-        this.placeholder.updateMatrixWorld(true);
-        const box = new Box3().setFromObject(this.placeholder);
-        const center = new Vector3();
-        box.getCenter(center);
-        centerDetail = { x: center.x, y: center.y, z: center.z };
+        // Placeholder is already in local space, use its position directly
+        centerDetail = { 
+          x: this.placeholder.position.x, 
+          y: this.placeholder.position.y, 
+          z: this.placeholder.position.z 
+        };
+      } else if (this._targetBottomCenter) {
+        // No placeholder, convert cursor world position to local space
+        const scene = (this._element as any)[$scene];
+        const target = scene?.target;
+        
+        const cursorWorld = new Vector3(
+          this._targetBottomCenter.x,
+          this._targetBottomCenter.y,
+          this._targetBottomCenter.z
+        );
+        
+        // Convert world to local space
+        if (target) {
+          target.worldToLocal(cursorWorld);
+        }
+        
+        centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
       } else if (this._lastCursorPosition) {
-        // No placeholder, use last cursor position
-        centerDetail = this._lastCursorPosition;
+        // Fallback: convert last cursor position from world to local space
+        const scene = (this._element as any)[$scene];
+        const target = scene?.target;
+        
+        const cursorWorld = new Vector3(
+          this._lastCursorPosition.x,
+          this._lastCursorPosition.y,
+          this._lastCursorPosition.z
+        );
+        
+        if (target) {
+          target.worldToLocal(cursorWorld);
+        }
+        
+        centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
       }
     } catch (e) {
       centerDetail = null;
