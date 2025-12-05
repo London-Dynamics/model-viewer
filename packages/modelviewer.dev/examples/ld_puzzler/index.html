@@ -172,15 +172,13 @@
                   <model-viewer
                     src="../../shared-assets/models/empty.glb"
                     id="modular-demo"
-                    ld-puzzler
                     camera-controls
+                    touch-action="pan-y"
                     interaction-prompt="none"
                     autoplay
                     ar
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
-                    max-field-of-view="180"
-                    field-of-view="10deg"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     snapping-enabled
                     edit-mode
@@ -218,7 +216,8 @@
                     <effect-composer render-mode="quality">
                       <outline-effect
                         color="#165dfc"
-                        strength="10"
+                        strength="20"
+                        smoothing="2"
                         blend-mode="skip"
                       ></outline-effect>
                       <color-grade-effect></color-grade-effect>
