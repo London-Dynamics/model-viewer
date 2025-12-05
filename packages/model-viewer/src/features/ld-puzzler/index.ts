@@ -3966,10 +3966,6 @@ class PlacementSession extends EventTarget {
       this._lastCursorPosition = { x: world.x, y: world.y, z: world.z };
       // Also store this as the target bottom-center position
       this._targetBottomCenter = { x: world.x, y: world.y, z: world.z };
-      console.log(
-        '[puzzler] updatePosition: cursor at',
-        this._lastCursorPosition
-      );
 
       // If no placeholder exists, just track position and return
       if (!this.placeholder) {
@@ -4044,32 +4040,13 @@ class PlacementSession extends EventTarget {
       // Cursor is in world space
       const cursorWorld = new Vector3(world.x, world.y, world.z);
 
-      console.log('[puzzler] updatePosition DEBUG:', {
-        cursorWorld: cursorWorld.toArray(),
-        targetWorldPos: targetWorldPos.toArray(),
-        bboxLocal: {
-          min: bboxLocal.min.toArray(),
-          max: bboxLocal.max.toArray(),
-        },
-        bottomCenterLocal: bottomCenterLocal.toArray(),
-      });
-
       // Calculate local position: (cursorWorld - targetWorldPos) - bottomCenterOffset
       // This ensures: targetWorldPos + objectLocalPos + bottomCenterOffset = cursorWorld
       const objectLocalPos = new Vector3()
         .subVectors(cursorWorld, targetWorldPos)
         .sub(bottomCenterLocal);
 
-      console.log(
-        '[puzzler] updatePosition calculated objectLocalPos:',
-        objectLocalPos.toArray()
-      );
-
       this.placeholder.position.copy(objectLocalPos);
-      console.log(
-        '[puzzler] updatePosition set placeholder.position to:',
-        this.placeholder.position.toArray()
-      );
 
       // Check for snapping during interactive placement if snapping is enabled
       if (
@@ -4239,18 +4216,8 @@ class PlacementSession extends EventTarget {
       centerDetail = null;
     }
 
-    console.log('[puzzler] PlacementSession.commit: loading final model', {
-      finalSrc,
-      highResSrc: this._highResSrc,
-      getHighResUrl: this._options?.getHighResUrl,
-      sessionId: this.id,
-    });
-
     // Resolve high-res URL: use callback if no direct URL provided
     let srcToLoad = finalSrc || this._highResSrc;
-    console.log('[puzzler] PlacementSession.commit: resolved finalSrc', {
-      srcToLoad,
-    });
     if (!srcToLoad && this._options?.getHighResUrl) {
       console.log(
         '[puzzler] PlacementSession.commit: invoking getHighResUrl callback'
@@ -4336,20 +4303,10 @@ class PlacementSession extends EventTarget {
       // Place final model at placeholder transform (if present)
       if (this.placeholder) {
         // Copy all transforms from placeholder (already in correct local space)
-        console.log('[puzzler] commit: About to copy from placeholder:', {
-          position: this.placeholder.position.toArray(),
-          hasParent: !!this.placeholder.parent,
-          parentName: this.placeholder.parent?.name,
-        });
         gltf.scene.position.copy(this.placeholder.position);
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
-
-        console.log(
-          '[puzzler] Placed object using placeholder position:',
-          gltf.scene.position.toArray()
-        );
       } else {
         // No placeholder - calculate position with bbox adjustment
         if (this._targetBottomCenter) {
