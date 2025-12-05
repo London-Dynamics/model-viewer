@@ -3878,10 +3878,18 @@ class PlacementSession extends EventTarget {
           const height = bounds.max[1] - bounds.min[1];
           const depth = bounds.max[2] - bounds.min[2];
 
-          // Create a simple white box mesh
+          // Create a simple white box mesh with 50% transparency
           const geometry = new BoxGeometry(width, height, depth);
-          const material = new MeshBasicMaterial({ color: 0xffffff });
+          const material = new MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.5,
+          });
           const boxMesh = new Mesh(geometry, material);
+
+          // Disable shadows for the box placeholder
+          boxMesh.castShadow = false;
+          boxMesh.receiveShadow = false;
 
           // Position the box so its bounds match the provided bounds
           // The box geometry is centered at origin, so we need to offset it
