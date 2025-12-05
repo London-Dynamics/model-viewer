@@ -3547,10 +3547,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             );
             // Use the same check path as dragging: allow the placeholder
             // to be considered as the dragged object for snapping checks.
-            try {
-              // Ensure placeholder position is up to date
-              ph.position.copy(wp);
-            } catch (e) {}
+            // NOTE: Do NOT set ph.position here - updatePosition() already
+            // calculated the correct local position with bbox adjustment
             try {
               this.checkAndApplySnapping(ph, wp);
             } catch (e) {}
@@ -3997,13 +3995,81 @@ class PlacementSession extends EventTarget {
         }
       }
 
-      // Position placeholder at cursor location (convert world to local space)
-      const worldPos = new Vector3(world.x, world.y, world.z);
-      const element = this._element as any;
-      if (element && element[$scene] && element[$scene].target) {
-        element[$scene].target.worldToLocal(worldPos);
+      // Position placeholder at cursor location with bbox adjustment
+      // Calculate bbox in true local space by temporarily removing from parent
+      const parent = this.placeholder.parent;
+      const originalPos = this.placeholder.position.clone();
+      const originalQuat = this.placeholder.quaternion.clone();
+      const originalScale = this.placeholder.scale.clone();
+
+      // Temporarily remove from parent to calculate bbox in world space = local space
+      if (parent) {
+        parent.remove(this.placeholder);
       }
-      this.placeholder.position.copy(worldPos);
+
+      this.placeholder.position.set(0, 0, 0);
+      this.placeholder.quaternion.set(0, 0, 0, 1);
+      this.placeholder.scale.set(1, 1, 1);
+      this.placeholder.updateMatrixWorld(true);
+
+      const bboxLocal = new Box3().setFromObject(this.placeholder);
+
+      // Bottom-center in object's local coordinate system
+      const bottomCenterLocal = new Vector3(
+        (bboxLocal.min.x + bboxLocal.max.x) / 2,
+        bboxLocal.min.y,
+        (bboxLocal.min.z + bboxLocal.max.z) / 2
+      );
+
+      // Restore to parent
+      if (parent) {
+        parent.add(this.placeholder);
+      }
+      this.placeholder.position.copy(originalPos);
+      this.placeholder.quaternion.copy(originalQuat);
+      this.placeholder.scale.copy(originalScale);
+
+      // Get scene.target's world position
+      const element = this._element as any;
+      const scene = element[$scene];
+      const target = scene?.target;
+      if (target) {
+        target.updateMatrixWorld(true);
+      }
+      const targetWorldPos = new Vector3();
+      if (target) {
+        target.getWorldPosition(targetWorldPos);
+      }
+
+      // Cursor is in world space
+      const cursorWorld = new Vector3(world.x, world.y, world.z);
+
+      console.log('[puzzler] updatePosition DEBUG:', {
+        cursorWorld: cursorWorld.toArray(),
+        targetWorldPos: targetWorldPos.toArray(),
+        bboxLocal: {
+          min: bboxLocal.min.toArray(),
+          max: bboxLocal.max.toArray(),
+        },
+        bottomCenterLocal: bottomCenterLocal.toArray(),
+      });
+
+      // Calculate local position: (cursorWorld - targetWorldPos) - bottomCenterOffset
+      // This ensures: targetWorldPos + objectLocalPos + bottomCenterOffset = cursorWorld
+      const objectLocalPos = new Vector3()
+        .subVectors(cursorWorld, targetWorldPos)
+        .sub(bottomCenterLocal);
+
+      console.log(
+        '[puzzler] updatePosition calculated objectLocalPos:',
+        objectLocalPos.toArray()
+      );
+
+      this.placeholder.position.copy(objectLocalPos);
+      console.log(
+        '[puzzler] updatePosition set placeholder.position to:',
+        this.placeholder.position.toArray()
+      );
 
       // Check for snapping during interactive placement if snapping is enabled
       if (
@@ -4055,7 +4121,15 @@ class PlacementSession extends EventTarget {
                 targetWorld,
                 draggedWorld
               );
+              console.log(
+                '[puzzler] updatePosition applying snap offset:',
+                offset.toArray()
+              );
               this.placeholder.position.add(offset);
+              console.log(
+                '[puzzler] updatePosition after snap:',
+                this.placeholder.position.toArray()
+              );
 
               // Record pending connection for commit
               (this._element as any).pendingSnapConnection = {
@@ -4114,43 +4188,51 @@ class PlacementSession extends EventTarget {
     try {
       if (this.placeholder) {
         // Placeholder is already in local space, use its position directly
-        centerDetail = { 
-          x: this.placeholder.position.x, 
-          y: this.placeholder.position.y, 
-          z: this.placeholder.position.z 
+        console.log(
+          '[puzzler] commit: reading placeholder.position:',
+          this.placeholder.position.toArray()
+        );
+        centerDetail = {
+          x: this.placeholder.position.x,
+          y: this.placeholder.position.y,
+          z: this.placeholder.position.z,
         };
+        console.log(
+          '[puzzler] commit: centerDetail from placeholder:',
+          centerDetail
+        );
       } else if (this._targetBottomCenter) {
         // No placeholder, convert cursor world position to local space
         const scene = (this._element as any)[$scene];
         const target = scene?.target;
-        
+
         const cursorWorld = new Vector3(
           this._targetBottomCenter.x,
           this._targetBottomCenter.y,
           this._targetBottomCenter.z
         );
-        
+
         // Convert world to local space
         if (target) {
           target.worldToLocal(cursorWorld);
         }
-        
+
         centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
       } else if (this._lastCursorPosition) {
         // Fallback: convert last cursor position from world to local space
         const scene = (this._element as any)[$scene];
         const target = scene?.target;
-        
+
         const cursorWorld = new Vector3(
           this._lastCursorPosition.x,
           this._lastCursorPosition.y,
           this._lastCursorPosition.z
         );
-        
+
         if (target) {
           target.worldToLocal(cursorWorld);
         }
-        
+
         centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
       }
     } catch (e) {
@@ -4254,6 +4336,11 @@ class PlacementSession extends EventTarget {
       // Place final model at placeholder transform (if present)
       if (this.placeholder) {
         // Copy all transforms from placeholder (already in correct local space)
+        console.log('[puzzler] commit: About to copy from placeholder:', {
+          position: this.placeholder.position.toArray(),
+          hasParent: !!this.placeholder.parent,
+          parentName: this.placeholder.parent?.name,
+        });
         gltf.scene.position.copy(this.placeholder.position);
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
