@@ -260,28 +260,19 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       let value: string | null = null;
 
       value = convertMeters(width, unit, precision);
-      this._measureWidthElement.textContent = `${value} ${unit}`;
+      this._measureWidthElement.textContent = value;
       this._measureWidthElement.style.display = 'block';
-      this._measureWidthElement.setAttribute(
-        'aria-label',
-        `Width: ${value} ${unit}`
-      );
+      this._measureWidthElement.setAttribute('aria-label', `Width: ${value}`);
 
       value = convertMeters(height, unit, precision);
-      this._measureHeightElement.textContent = `${value} ${unit}`;
+      this._measureHeightElement.textContent = value;
       this._measureHeightElement.style.display = 'block';
-      this._measureHeightElement.setAttribute(
-        'aria-label',
-        `Height: ${value} ${unit}`
-      );
+      this._measureHeightElement.setAttribute('aria-label', `Height: ${value}`);
 
       value = convertMeters(depth, unit, precision);
-      this._measureDepthElement.textContent = `${value} ${unit}`;
+      this._measureDepthElement.textContent = value;
       this._measureDepthElement.style.display = 'block';
-      this._measureDepthElement.setAttribute(
-        'aria-label',
-        `Depth: ${value} ${unit}`
-      );
+      this._measureDepthElement.setAttribute('aria-label', `Depth: ${value}`);
     }
 
     private _updateMarkerPosition() {
