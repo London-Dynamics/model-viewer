@@ -647,6 +647,25 @@
                               clientY: e.clientY,
                             };
 
+                            placementOptions.part = {
+                              type: 'scene',
+                              bounds: {
+                                center: [
+                                  2.384185791015625e-7, 0.4542551338672638,
+                                  0.00022783875465393066,
+                                ],
+                                max: [
+                                  0.5236807465553284, 0.9086406826972961,
+                                  1.3349015712738037,
+                                ],
+                                min: [
+                                  -0.5232250690460205, -0.00013043890066910535,
+                                  -1.3349010944366455,
+                                ],
+                                radius: 1.459686040878296,
+                              },
+                            };
+
                             // Pass undefined as lowResSrc to skip placeholder loading
                             // and directly place the highres model on commit
                             session = modelViewer.beginPlacement(
@@ -659,7 +678,7 @@
                             session.addEventListener(
                               'placeholder-loaded',
                               (e) => {
-                                modelViewer.removeAttribute('cursor-visible');
+                                //modelViewer.removeAttribute('cursor-visible');
                               }
                             );
 

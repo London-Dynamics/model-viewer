@@ -8,6 +8,9 @@ import {
   Plane,
   Quaternion,
   EulerOrder,
+  Mesh,
+  BoxGeometry,
+  MeshBasicMaterial,
 } from 'three';
 import type { Part } from '@london-dynamics/types/product';
 
@@ -3849,15 +3852,93 @@ class PlacementSession extends EventTarget {
     if (!scene) return;
 
     try {
+      // Check if we have part.bounds to create a simple box placeholder
+      const part = this._options?.part as any;
+      const hasBounds =
+        part &&
+        part.type === 'scene' &&
+        part.bounds &&
+        part.bounds.min &&
+        part.bounds.max;
+
       // Resolve low-res URL: use callback if no direct URL provided
+      // Skip getLowResUrl if we have bounds (box placeholder will be used instead)
       let lowResUrl = this._lowResSrc;
-      if (!lowResUrl && this._options?.getLowResUrl) {
+      if (!lowResUrl && !hasBounds && this._options?.getLowResUrl) {
         lowResUrl = await this._options.getLowResUrl();
       }
 
-      // If no low-res URL is available, skip placeholder loading
-      // The session will track cursor position and place highres on commit
+      // If no low-res URL is available, check if we should create a box placeholder
       if (!lowResUrl) {
+        if (hasBounds) {
+          const bounds = part.bounds;
+
+          // Calculate box dimensions from bounds
+          const width = bounds.max[0] - bounds.min[0];
+          const height = bounds.max[1] - bounds.min[1];
+          const depth = bounds.max[2] - bounds.min[2];
+
+          // Create a simple white box mesh
+          const geometry = new BoxGeometry(width, height, depth);
+          const material = new MeshBasicMaterial({ color: 0xffffff });
+          const boxMesh = new Mesh(geometry, material);
+
+          // Position the box so its bounds match the provided bounds
+          // The box geometry is centered at origin, so we need to offset it
+          boxMesh.position.set(
+            (bounds.max[0] + bounds.min[0]) / 2,
+            (bounds.max[1] + bounds.min[1]) / 2,
+            (bounds.max[2] + bounds.min[2]) / 2
+          );
+
+          // Create a container object to hold the mesh
+          const placeholder = new Object3D();
+          placeholder.add(boxMesh);
+
+          this.placeholder = placeholder;
+          placeholder.name = this._options?.name
+            ? this._options.name + `_${+new Date()}`
+            : this.id;
+
+          placeholder.userData = placeholder.userData || {};
+          placeholder.userData.isPlacementPlaceholder = true;
+
+          if (this._options?.snappingPoints) {
+            try {
+              placeholder.userData.snappingPoints =
+                this._options.snappingPoints;
+            } catch (e) {
+              // ignore
+            }
+          }
+          if (this._options?.selectable === false)
+            placeholder.userData.selectable = false;
+
+          // Insert into scene target
+          try {
+            scene.target.add(placeholder);
+          } catch (e) {
+            scene.add(placeholder);
+          }
+
+          // Keep the placeholder hidden until first pointer update
+          try {
+            placeholder.visible = false;
+          } catch (e) {
+            // ignore if property not present
+          }
+
+          this.dispatchEvent(
+            new CustomEvent('placeholder-loaded', {
+              detail: { sessionId: this.id, placeholder },
+            })
+          );
+          // Request render
+          (this._element as any)[$needsRender]();
+          return;
+        }
+
+        // No placeholder - session will track cursor position only
         console.log(
           '[puzzler] PlacementSession: No low-res URL provided, skipping placeholder'
         );
