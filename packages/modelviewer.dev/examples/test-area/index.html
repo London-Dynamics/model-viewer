@@ -1,0 +1,177 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; Test Area</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; test area"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+
+
+    <!-- 💁 OPTIONAL: The :focus-visible polyfill removes the focus ring for some input types -->
+    <script
+      src="../../node_modules/focus-visible/dist/focus-visible.js"
+      defer
+    ></script>
+  </head>
+  <body>
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="test1" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+             <h4 id="intro"><span class="font-medium">Test Area. </span>Mostly testing GLB loading and rendering.</h4>
+
+          <div class="heading">
+            <h2 class="demo-title">Test 1</h2>
+            <h4></h4>
+          </div>
+              <example-snippet stamp-to="test1" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/shishkebab.glb"
+                    alt="An animated 3D model a bedside lamp"
+                    tone-mapping="agx"
+                  >
+
+                  </model-viewer>
+
+
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="test2" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+
+          <div class="heading">
+            <h2 class="demo-title">10cm box</h2>
+            <h4></h4>
+          </div>
+              <example-snippet stamp-to="test2" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/10cm.glb"
+                    alt="An animated 3D model a bedside lamp"
+                    tone-mapping="agx"
+                  >
+
+                  </model-viewer>
+
+
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="test3" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+
+          <div class="heading">
+            <h2 class="demo-title">1cm box</h2>
+            <h4></h4>
+          </div>
+              <example-snippet stamp-to="test3" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/1cm.glb"
+                    alt="An animated 3D model a bedside lamp"
+                    tone-mapping="agx"
+                  >
+
+                  </model-viewer>
+
+
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-test');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+    <script src="/node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"></script>
+  </body>
+</html>

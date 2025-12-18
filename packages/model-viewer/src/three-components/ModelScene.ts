@@ -97,7 +97,7 @@ export class ModelScene extends Scene {
   public shadowSoftness = 1;
   public bakedShadows = new Set<Mesh>();
 
-  // Hack
+  // HACK
   public hasGround: boolean = false;
 
   public exposure = 1;
@@ -558,7 +558,7 @@ export class ModelScene extends Scene {
     }
   }
 
-  //HACK
+  // HACK
   farRadius() {
         return this.boundingSphere.radius *
         (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1) + (this.hasGround ? 1000 : 0);
