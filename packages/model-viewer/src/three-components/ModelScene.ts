@@ -146,6 +146,9 @@ export class ModelScene extends Scene {
   public shadowSoftness = 1;
   public bakedShadows = new Set<Mesh>();
 
+  // HACK
+  public hasGround: boolean = false;
+
   public exposure = 1;
   public toneMapping: ToneMapping = NeutralToneMapping;
   public canScale = true;
@@ -647,7 +650,7 @@ export class ModelScene extends Scene {
     return (
       this.boundingSphere.radius *
         (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1) +
-      1000
+      (this.hasGround ? 1000 : 0)
     );
   }
 
