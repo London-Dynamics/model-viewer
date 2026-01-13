@@ -1409,6 +1409,38 @@
   },
 
   {
+    "Title": "LD Selection",
+    "htmlName": "ld_selection",
+    "Attributes": [
+      {
+        "name": "selection-scope",
+        "htmlName": "selectionScope",
+        "description": "Selection granularity: 'part' selects individual placed parts, 'group' selects snapped groups (default), 'all' allows selecting any scene node.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "group", "options": "part, group, all" }
+      },
+      {
+        "name": "highlight-selected",
+        "htmlName": "highlightSelected",
+        "description": "When enabled, visually highlights the currently selected object. The highlight method can be overridden in subclasses for custom highlight behavior.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+        ],
+        "default": { "default": "false", "options": "true, false" }
+      }
+    ],
+    "Events": [
+      {
+        "name": "selection-change",
+        "htmlName": "selectionChange",
+        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). Listen to this event to react to selection changes programmatically."
+      }
+    ]
+  },
+
+  {
     "Title": "LD Puzzler",
     "htmlName": "ld_puzzler",
     "Attributes": [
@@ -1420,15 +1452,6 @@
           "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
         ],
         "default": { "default": "false", "options": "true, false" }
-      },
-      {
-        "name": "selection-scope",
-        "htmlName": "selectionScope",
-        "description": "Selection granularity: 'part' selects individual placed parts, 'group' selects snapped groups (default), 'all' allows selecting any scene node.",
-        "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
-        ],
-        "default": { "default": "group", "options": "part, group, all" }
       },
       {
         "name": "snap-distance",
