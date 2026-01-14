@@ -185,6 +185,10 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   };
 }
 
+// Constants for tap detection (matching SmoothControls)
+const TAP_DISTANCE = 2;
+const TAP_MS = 300;
+
 /**
  * Concrete adapter implementation that wraps a 3rd party controls library
  * This class adapts the 3rd party interface to match the expected SmoothControls interface
@@ -192,6 +196,7 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
 class ThirdPartyControlsAdapter implements ControlsAdapter {
   private thirdPartyControls: CameraControls;
   private domElement: HTMLElement;
+  private scene: any; // ModelScene reference for recenter functionality
   private _inputSensitivity: number = 1;
   private _orbitSensitivity: number = 1;
   private _zoomSensitivity: number = 1;
@@ -199,6 +204,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _disableZoom: boolean = false;
   private _enablePan: boolean = true;
   private _enableTap: boolean = true;
+
+  // Tap detection state
+  private startTime: number = 0;
+  private startPointerPosition: { clientX: number; clientY: number } = {
+    clientX: 0,
+    clientY: 0,
+  };
 
   changeSource: ChangeSource = ChangeSource.NONE;
 
@@ -294,16 +306,17 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   set enableTap(value: boolean) {
     this._enableTap = value;
-    // CameraControls doesn't have direct tap control - this would need custom implementation
+    // Tap handling is implemented via pointer event listeners in enableInteraction/disableInteraction
   }
 
   constructor(
     camera: THREE.PerspectiveCamera,
     element: HTMLElement,
-    _scene: any
+    scene: any
   ) {
     this.thirdPartyControls = new CameraControls(camera, element);
     this.domElement = element;
+    this.scene = scene; // Store scene reference for recenter functionality
 
     // Initialize default settings to match SmoothControls behavior
     this.thirdPartyControls.smoothTime = 0.25;
@@ -398,10 +411,101 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   enableInteraction(): void {
     this.thirdPartyControls.enabled = true;
+    // Add tap detection listeners using mouse events (not pointer events)
+    // to avoid conflicts with CameraControls' setPointerCapture
+    this.domElement.addEventListener('mousedown', this.onMouseDown);
+    this.domElement.addEventListener('mouseup', this.onMouseUp);
+    this.domElement.addEventListener('touchstart', this.onTouchStart);
+    this.domElement.addEventListener('touchend', this.onTouchEnd);
   }
 
   disableInteraction(): void {
     this.thirdPartyControls.enabled = false;
+    // Remove tap detection listeners
+    this.domElement.removeEventListener('mousedown', this.onMouseDown);
+    this.domElement.removeEventListener('mouseup', this.onMouseUp);
+    this.domElement.removeEventListener('touchstart', this.onTouchStart);
+    this.domElement.removeEventListener('touchend', this.onTouchEnd);
+  }
+
+  /**
+   * Handle mouse down for tap detection
+   */
+  private onMouseDown = (event: MouseEvent) => {
+    // Only track left mouse button
+    if (event.button !== 0) return;
+    this.startTime = performance.now();
+    this.startPointerPosition.clientX = event.clientX;
+    this.startPointerPosition.clientY = event.clientY;
+  };
+
+  /**
+   * Handle touch start for tap detection
+   */
+  private onTouchStart = (event: TouchEvent) => {
+    if (event.changedTouches.length === 0) return;
+    this.startTime = performance.now();
+    this.startPointerPosition.clientX = event.changedTouches[0].clientX;
+    this.startPointerPosition.clientY = event.changedTouches[0].clientY;
+  };
+
+  /**
+   * Handle mouse up - check if it was a tap and recenter if so
+   */
+  private onMouseUp = (event: MouseEvent) => {
+    // Only handle left mouse button
+    if (event.button !== 0) return;
+    if (this._enablePan && this._enableTap) {
+      this.recenter(event.clientX, event.clientY);
+    }
+  };
+
+  /**
+   * Handle touch end - check if it was a tap and recenter if so
+   */
+  private onTouchEnd = (event: TouchEvent) => {
+    if (event.changedTouches.length === 0) return;
+    if (this._enablePan && this._enableTap) {
+      this.recenter(
+        event.changedTouches[0].clientX,
+        event.changedTouches[0].clientY
+      );
+    }
+  };
+
+  /**
+   * Recenter the camera target on tap (matching SmoothControls behavior)
+   * This is called when the user taps (short click without dragging)
+   */
+  private recenter(clientX: number, clientY: number) {
+    // Check if this was a tap (short duration, small movement)
+    if (
+      performance.now() > this.startTime + TAP_MS ||
+      Math.abs(clientX - this.startPointerPosition.clientX) > TAP_DISTANCE ||
+      Math.abs(clientY - this.startPointerPosition.clientY) > TAP_DISTANCE
+    ) {
+      return;
+    }
+
+    const { scene } = this;
+    if (!scene) return;
+
+    // Get normalized device coordinates for the click position
+    const ndc = scene.getNDC(clientX, clientY);
+    const hit = scene.positionAndNormalFromPoint(ndc);
+
+    if (hit == null) {
+      // No hit - reset to default target and zoom out
+      const { cameraTarget } = scene.element;
+      scene.element.cameraTarget = '';
+      scene.element.cameraTarget = cameraTarget;
+      // Zoom all the way out (increase radius)
+      this.thirdPartyControls.dolly(-1, true);
+    } else {
+      // Hit something - set target to hit position
+      scene.target.worldToLocal(hit.position);
+      scene.setTarget(hit.position.x, hit.position.y, hit.position.z);
+    }
   }
 
   applyOptions(options: any): void {
