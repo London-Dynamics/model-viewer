@@ -2,8 +2,8 @@ import { property } from 'lit/decorators.js';
 import {
   Box3,
   BufferGeometry,
+  Line,
   LineBasicMaterial,
-  LineSegments,
   Matrix4,
   Object3D,
   Object3DEventMap,
@@ -37,7 +37,7 @@ export declare interface LDMeasureInterface {
 }
 
 type LineGroup = {
-  lines: LineSegments[];
+  lines: Line[];
 };
 
 const $measureContainer = Symbol('measureContainer');
@@ -689,11 +689,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       edgeGroups.forEach((group) => {
-        const lines: LineSegments[] = [];
+        const lines: Line[] = [];
 
         group.forEach((edge) => {
           const geometry = new BufferGeometry().setFromPoints(edge);
-          const line = new LineSegments(geometry, lineMaterial);
+          const line = new Line(geometry, lineMaterial);
 
           line.userData.noHit = true; // unique model-viewer attribute to prevent hit testing
 
