@@ -8,6 +8,7 @@ import {
   Object3D,
   Object3DEventMap,
   Vector3,
+  NormalBlending,
 } from 'three';
 
 import ModelViewerElementBase, {
@@ -405,195 +406,392 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       _corners: Vector3[],
       length: number,
       margin: number,
-      object: Object3D
+      _object: Object3D
     ) {
-      const corners = _corners.map((corner) =>
-        corner.clone().applyMatrix4(object.matrixWorld)
-      );
+      // Corners are already in world space, just clone them
+      const corners = _corners.map((corner) => corner.clone());
+
+      // Extension lines should go from near the corner to past the dimension line
+      // gap: small space between extension line and object corner
+      // overshoot: how far past the dimension line the extension extends
+      const gap = margin * 0.25;
+      const overshoot = margin * 0;
 
       return [
         [
-          /* Lower north side */
+          /* Lower north side (negative Z) */
           /* Dimension line, left extension, right extension */
           [
-            corners[0].clone().setZ(corners[0].z - length - margin),
-            corners[1].clone().setZ(corners[1].z - length - margin),
+            new Vector3(
+              corners[0].x,
+              corners[0].y,
+              corners[0].z - length - margin
+            ),
+            new Vector3(
+              corners[1].x,
+              corners[1].y,
+              corners[1].z - length - margin
+            ),
           ],
           [
-            corners[0].clone().setZ(corners[0].z - margin),
-            corners[0].clone().setZ(corners[0].z - length - margin),
+            new Vector3(corners[0].x, corners[0].y, corners[0].z - gap),
+            new Vector3(
+              corners[0].x,
+              corners[0].y,
+              corners[0].z - length - margin - overshoot
+            ),
           ],
           [
-            corners[1].clone().setZ(corners[1].z - margin),
-            corners[1].clone().setZ(corners[1].z - length - margin),
+            new Vector3(corners[1].x, corners[1].y, corners[1].z - gap),
+            new Vector3(
+              corners[1].x,
+              corners[1].y,
+              corners[1].z - length - margin - overshoot
+            ),
           ],
         ],
         [
-          /* Lower east side */
+          /* Lower east side (positive X) */
           /* Dimension line, left extension, right extension */
           [
-            corners[1].clone().setX(corners[1].x + length + margin),
-            corners[5].clone().setX(corners[5].x + length + margin),
+            new Vector3(
+              corners[1].x + length + margin,
+              corners[1].y,
+              corners[1].z
+            ),
+            new Vector3(
+              corners[5].x + length + margin,
+              corners[5].y,
+              corners[5].z
+            ),
           ],
           [
-            corners[1].clone().setX(corners[1].x + margin),
-            corners[1].clone().setX(corners[1].x + length + margin),
+            new Vector3(corners[1].x + gap, corners[1].y, corners[1].z),
+            new Vector3(
+              corners[1].x + length + margin + overshoot,
+              corners[1].y,
+              corners[1].z
+            ),
           ],
           [
-            corners[5].clone().setX(corners[5].x + margin),
-            corners[5].clone().setX(corners[5].x + length + margin),
+            new Vector3(corners[5].x + gap, corners[5].y, corners[5].z),
+            new Vector3(
+              corners[5].x + length + margin + overshoot,
+              corners[5].y,
+              corners[5].z
+            ),
           ],
         ],
         [
-          /* Lower south side */
+          /* Lower south side (positive Z) */
           /* Dimension line, left extension, right extension */
           [
-            corners[4].clone().setZ(corners[4].z + length + margin),
-            corners[5].clone().setZ(corners[5].z + length + margin),
+            new Vector3(
+              corners[4].x,
+              corners[4].y,
+              corners[4].z + length + margin
+            ),
+            new Vector3(
+              corners[5].x,
+              corners[5].y,
+              corners[5].z + length + margin
+            ),
           ],
           [
-            corners[4].clone().setZ(corners[4].z + margin),
-            corners[4].clone().setZ(corners[4].z + length + margin),
+            new Vector3(corners[4].x, corners[4].y, corners[4].z + gap),
+            new Vector3(
+              corners[4].x,
+              corners[4].y,
+              corners[4].z + length + margin + overshoot
+            ),
           ],
           [
-            corners[5].clone().setZ(corners[5].z + margin),
-            corners[5].clone().setZ(corners[5].z + length + margin),
+            new Vector3(corners[5].x, corners[5].y, corners[5].z + gap),
+            new Vector3(
+              corners[5].x,
+              corners[5].y,
+              corners[5].z + length + margin + overshoot
+            ),
           ],
         ],
         [
-          /* Lower west side */
+          /* Lower west side (negative X) */
           /* Dimension line, left extension, right extension */
           [
-            corners[0].clone().setX(corners[0].x - length - margin),
-            corners[4].clone().setX(corners[4].x - length - margin),
+            new Vector3(
+              corners[0].x - length - margin,
+              corners[0].y,
+              corners[0].z
+            ),
+            new Vector3(
+              corners[4].x - length - margin,
+              corners[4].y,
+              corners[4].z
+            ),
           ],
           [
-            corners[0].clone().setX(corners[0].x - margin),
-            corners[0].clone().setX(corners[0].x - length - margin),
+            new Vector3(corners[0].x - gap, corners[0].y, corners[0].z),
+            new Vector3(
+              corners[0].x - length - margin - overshoot,
+              corners[0].y,
+              corners[0].z
+            ),
           ],
           [
-            corners[4].clone().setX(corners[4].x - margin),
-            corners[4].clone().setX(corners[4].x - length - margin),
-          ],
-        ],
-        // North Wall A
-        [
-          [
-            corners[0].clone().setZ(corners[0].z - length - margin),
-            corners[3].clone().setZ(corners[3].z - length - margin),
-          ],
-          [
-            corners[0].clone().setZ(corners[0].z - margin),
-            corners[0].clone().setZ(corners[0].z - length - margin),
-          ],
-          [
-            corners[3].clone().setZ(corners[3].z - margin),
-            corners[3].clone().setZ(corners[3].z - length - margin),
-          ],
-        ],
-        // North Wall B
-        [
-          [
-            corners[1].clone().setZ(corners[1].z - length - margin),
-            corners[2].clone().setZ(corners[2].z - length - margin),
-          ],
-          [
-            corners[1].clone().setZ(corners[1].z - margin),
-            corners[1].clone().setZ(corners[1].z - length - margin),
-          ],
-          [
-            corners[2].clone().setZ(corners[2].z - margin),
-            corners[2].clone().setZ(corners[2].z - length - margin),
+            new Vector3(corners[4].x - gap, corners[4].y, corners[4].z),
+            new Vector3(
+              corners[4].x - length - margin - overshoot,
+              corners[4].y,
+              corners[4].z
+            ),
           ],
         ],
-        // East Wall A
+        // North Wall A (height on north-west edge)
         [
           [
-            corners[1].clone().setX(corners[1].x + length + margin),
-            corners[2].clone().setX(corners[2].x + length + margin),
+            new Vector3(
+              corners[0].x,
+              corners[0].y,
+              corners[0].z - length - margin
+            ),
+            new Vector3(
+              corners[3].x,
+              corners[3].y,
+              corners[3].z - length - margin
+            ),
           ],
           [
-            corners[1].clone().setX(corners[1].x + margin),
-            corners[1].clone().setX(corners[1].x + length + margin),
+            new Vector3(corners[0].x, corners[0].y, corners[0].z - gap),
+            new Vector3(
+              corners[0].x,
+              corners[0].y,
+              corners[0].z - length - margin - overshoot
+            ),
           ],
           [
-            corners[2].clone().setX(corners[2].x + margin),
-            corners[2].clone().setX(corners[2].x + length + margin),
+            new Vector3(corners[3].x, corners[3].y, corners[3].z - gap),
+            new Vector3(
+              corners[3].x,
+              corners[3].y,
+              corners[3].z - length - margin - overshoot
+            ),
           ],
         ],
-        // East Wall B
+        // North Wall B (height on north-east edge)
         [
           [
-            corners[5].clone().setX(corners[5].x + length + margin),
-            corners[6].clone().setX(corners[6].x + length + margin),
+            new Vector3(
+              corners[1].x,
+              corners[1].y,
+              corners[1].z - length - margin
+            ),
+            new Vector3(
+              corners[2].x,
+              corners[2].y,
+              corners[2].z - length - margin
+            ),
           ],
           [
-            corners[5].clone().setX(corners[5].x + margin),
-            corners[5].clone().setX(corners[5].x + length + margin),
+            new Vector3(corners[1].x, corners[1].y, corners[1].z - gap),
+            new Vector3(
+              corners[1].x,
+              corners[1].y,
+              corners[1].z - length - margin - overshoot
+            ),
           ],
           [
-            corners[6].clone().setX(corners[6].x + margin),
-            corners[6].clone().setX(corners[6].x + length + margin),
+            new Vector3(corners[2].x, corners[2].y, corners[2].z - gap),
+            new Vector3(
+              corners[2].x,
+              corners[2].y,
+              corners[2].z - length - margin - overshoot
+            ),
           ],
         ],
-        // South Wall A
+        // East Wall A (height on north-east edge)
         [
           [
-            corners[5].clone().setZ(corners[5].z + length + margin),
-            corners[6].clone().setZ(corners[6].z + length + margin),
+            new Vector3(
+              corners[1].x + length + margin,
+              corners[1].y,
+              corners[1].z
+            ),
+            new Vector3(
+              corners[2].x + length + margin,
+              corners[2].y,
+              corners[2].z
+            ),
           ],
           [
-            corners[5].clone().setZ(corners[5].z + margin),
-            corners[5].clone().setZ(corners[5].z + length + margin),
+            new Vector3(corners[1].x + gap, corners[1].y, corners[1].z),
+            new Vector3(
+              corners[1].x + length + margin + overshoot,
+              corners[1].y,
+              corners[1].z
+            ),
           ],
           [
-            corners[6].clone().setZ(corners[6].z + margin),
-            corners[6].clone().setZ(corners[6].z + length + margin),
+            new Vector3(corners[2].x + gap, corners[2].y, corners[2].z),
+            new Vector3(
+              corners[2].x + length + margin + overshoot,
+              corners[2].y,
+              corners[2].z
+            ),
           ],
         ],
-        // South Wall B
+        // East Wall B (height on south-east edge)
         [
           [
-            corners[4].clone().setZ(corners[4].z + length + margin),
-            corners[7].clone().setZ(corners[7].z + length + margin),
+            new Vector3(
+              corners[5].x + length + margin,
+              corners[5].y,
+              corners[5].z
+            ),
+            new Vector3(
+              corners[6].x + length + margin,
+              corners[6].y,
+              corners[6].z
+            ),
           ],
           [
-            corners[4].clone().setZ(corners[4].z + margin),
-            corners[4].clone().setZ(corners[4].z + length + margin),
+            new Vector3(corners[5].x + gap, corners[5].y, corners[5].z),
+            new Vector3(
+              corners[5].x + length + margin + overshoot,
+              corners[5].y,
+              corners[5].z
+            ),
           ],
           [
-            corners[7].clone().setZ(corners[7].z + margin),
-            corners[7].clone().setZ(corners[7].z + length + margin),
+            new Vector3(corners[6].x + gap, corners[6].y, corners[6].z),
+            new Vector3(
+              corners[6].x + length + margin + overshoot,
+              corners[6].y,
+              corners[6].z
+            ),
           ],
         ],
-        // West Wall A
+        // South Wall A (height on south-east edge)
         [
           [
-            corners[4].clone().setX(corners[4].x - length - margin),
-            corners[7].clone().setX(corners[7].x - length - margin),
+            new Vector3(
+              corners[5].x,
+              corners[5].y,
+              corners[5].z + length + margin
+            ),
+            new Vector3(
+              corners[6].x,
+              corners[6].y,
+              corners[6].z + length + margin
+            ),
           ],
           [
-            corners[4].clone().setX(corners[4].x - margin),
-            corners[4].clone().setX(corners[4].x - length - margin),
+            new Vector3(corners[5].x, corners[5].y, corners[5].z + gap),
+            new Vector3(
+              corners[5].x,
+              corners[5].y,
+              corners[5].z + length + margin + overshoot
+            ),
           ],
           [
-            corners[7].clone().setX(corners[7].x - margin),
-            corners[7].clone().setX(corners[7].x - length - margin),
+            new Vector3(corners[6].x, corners[6].y, corners[6].z + gap),
+            new Vector3(
+              corners[6].x,
+              corners[6].y,
+              corners[6].z + length + margin + overshoot
+            ),
           ],
         ],
-        // West Wall B
+        // South Wall B (height on south-west edge)
         [
           [
-            corners[0].clone().setX(corners[0].x - length - margin),
-            corners[3].clone().setX(corners[3].x - length - margin),
+            new Vector3(
+              corners[4].x,
+              corners[4].y,
+              corners[4].z + length + margin
+            ),
+            new Vector3(
+              corners[7].x,
+              corners[7].y,
+              corners[7].z + length + margin
+            ),
           ],
           [
-            corners[0].clone().setX(corners[0].x - margin),
-            corners[0].clone().setX(corners[0].x - length - margin),
+            new Vector3(corners[4].x, corners[4].y, corners[4].z + gap),
+            new Vector3(
+              corners[4].x,
+              corners[4].y,
+              corners[4].z + length + margin + overshoot
+            ),
           ],
           [
-            corners[3].clone().setX(corners[3].x - margin),
-            corners[3].clone().setX(corners[3].x - length - margin),
+            new Vector3(corners[7].x, corners[7].y, corners[7].z + gap),
+            new Vector3(
+              corners[7].x,
+              corners[7].y,
+              corners[7].z + length + margin + overshoot
+            ),
+          ],
+        ],
+        // West Wall A (height on south-west edge)
+        [
+          [
+            new Vector3(
+              corners[4].x - length - margin,
+              corners[4].y,
+              corners[4].z
+            ),
+            new Vector3(
+              corners[7].x - length - margin,
+              corners[7].y,
+              corners[7].z
+            ),
+          ],
+          [
+            new Vector3(corners[4].x - gap, corners[4].y, corners[4].z),
+            new Vector3(
+              corners[4].x - length - margin - overshoot,
+              corners[4].y,
+              corners[4].z
+            ),
+          ],
+          [
+            new Vector3(corners[7].x - gap, corners[7].y, corners[7].z),
+            new Vector3(
+              corners[7].x - length - margin - overshoot,
+              corners[7].y,
+              corners[7].z
+            ),
+          ],
+        ],
+        // West Wall B (height on north-west edge)
+        [
+          [
+            new Vector3(
+              corners[0].x - length - margin,
+              corners[0].y,
+              corners[0].z
+            ),
+            new Vector3(
+              corners[3].x - length - margin,
+              corners[3].y,
+              corners[3].z
+            ),
+          ],
+          [
+            new Vector3(corners[0].x - gap, corners[0].y, corners[0].z),
+            new Vector3(
+              corners[0].x - length - margin - overshoot,
+              corners[0].y,
+              corners[0].z
+            ),
+          ],
+          [
+            new Vector3(corners[3].x - gap, corners[3].y, corners[3].z),
+            new Vector3(
+              corners[3].x - length - margin - overshoot,
+              corners[3].y,
+              corners[3].z
+            ),
           ],
         ],
       ];
@@ -641,17 +839,27 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         new Vector3(min.x, max.y, max.z),
       ];
 
-      const corners = boundingBoxCorners.map((corner) =>
-        object.worldToLocal(corner.clone())
-      );
+      // Corners stay in world space - the bounding box is world-axis-aligned
+      const corners = boundingBoxCorners;
 
       // Create a material for the lines
       const lineMaterial = new LineBasicMaterial({ color: 0x000000 });
       lineMaterial.transparent = true;
-      lineMaterial.opacity = 0.75;
-      lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
 
-      const length = this._extensionLineLength;
+      lineMaterial.opacity = 1;
+      lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
+      //lineMaterial.blending = NormalBlending;
+
+      const inverseLineMaterial = lineMaterial.clone();
+      inverseLineMaterial.color.set(0xffffff);
+      inverseLineMaterial.opacity = 0.6;
+
+      // Calculate extension line length based on the object's bounding box
+      // Use a proportion of the smallest dimension
+      const objectSize = boundingBox.getSize(new Vector3());
+      const minDimension = Math.min(objectSize.x, objectSize.y, objectSize.z);
+      const length =
+        minDimension > 0 ? minDimension / 10 : this._extensionLineLength;
       const margin = length / 2; // Margin between dimensions and model.
 
       const edgeGroups = this._getEdgeGroups(corners, length, margin, object);
@@ -660,39 +868,52 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const lineParent = new Object3D();
       lineParent.name = 'ld-measurements';
 
-      // Apply the inverse transformation to lineParent
-      const inverseMatrix = new Matrix4().copy(object.matrixWorld).invert();
-      lineParent.applyMatrix4(inverseMatrix);
+      // Determine the parent for the lines and get its inverse matrix
+      let linesParentObject: Object3D | null = null;
+      const inverseMatrix = new Matrix4();
+      let needsCoordinateTransform = false;
 
       if (object === scene) {
-        let targetObject: Object3D | undefined;
-
-        try {
-          scene.traverse((child) => {
-            if (child.name === 'Target') {
-              targetObject = child;
-              throw new Error('found target object'); // Stop traversal when found
-            }
-          });
-        } catch (e) {
-          if ((e as Error).message !== 'found target object') throw e;
-        }
-
-        if (targetObject) {
-          targetObject.add(lineParent);
-        } else {
-          console.warn('Target object not found in the scene.');
-          scene.add(lineParent); // Fallback to adding to the scene if Target is not found
-        }
+        // Find the Target object and add lines there
+        // scene.boundingBox is already in Target's local space, so no transform needed
+        scene.traverse((child) => {
+          if (child.name === 'Target') {
+            linesParentObject = child;
+          }
+        });
+        needsCoordinateTransform = false;
       } else {
-        object.add(lineParent);
+        // Add to the selected object itself
+        // boundingBox.expandByObject returns world coordinates, so we need to transform
+        linesParentObject = object;
+        needsCoordinateTransform = true;
       }
+
+      if (linesParentObject) {
+        if (needsCoordinateTransform) {
+          // Get the inverse of the parent's world matrix to convert world coords to local
+          linesParentObject.updateWorldMatrix(true, false);
+          inverseMatrix.copy(linesParentObject.matrixWorld).invert();
+        }
+        linesParentObject.add(lineParent);
+      }
+
+      // Helper function to convert world point to parent's local space
+      const toLocalSpace = (point: Vector3): Vector3 => {
+        if (needsCoordinateTransform) {
+          return point.clone().applyMatrix4(inverseMatrix);
+        }
+        return point.clone();
+      };
 
       edgeGroups.forEach((group) => {
         const lines: Line[] = [];
 
         group.forEach((edge) => {
-          const geometry = new BufferGeometry().setFromPoints(edge);
+          // Convert edge points from world space to parent's local space
+          const localEdge = edge.map((point) => toLocalSpace(point));
+
+          const geometry = new BufferGeometry().setFromPoints(localEdge);
           const line = new Line(geometry, lineMaterial);
 
           line.userData.noHit = true; // unique model-viewer attribute to prevent hit testing
@@ -700,6 +921,29 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           line.renderOrder = 9999; // Render on top of the model
 
           line.visible = false; // Hide the lines initially
+
+          // Prevent frustum culling which might hide the lines
+          line.frustumCulled = false;
+
+          lineParent.add(line);
+          lines.push(line);
+        });
+
+        group.forEach((edge) => {
+          // Convert edge points from world space to parent's local space
+          const localEdge = edge.map((point) => toLocalSpace(point));
+
+          const geometry = new BufferGeometry().setFromPoints(localEdge);
+          const line = new Line(geometry, inverseLineMaterial);
+
+          line.userData.noHit = true; // unique model-viewer attribute to prevent hit testing
+
+          line.renderOrder = 9999; // Render on top of the model
+
+          line.visible = false; // Hide the lines initially
+
+          // Prevent frustum culling which might hide the lines
+          line.frustumCulled = false;
 
           lineParent.add(line);
           lines.push(line);
@@ -763,7 +1007,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     };
 
     private _onObjectDrag = (event: Event) => {
-      // Update marker positions when the object being measured is dragged
+      // Update measurements when the object being measured is dragged
       if (!this.measure || !this._lastClickedObject) {
         return;
       }
@@ -786,7 +1030,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         measuredObject.parent === object;
 
       if (shouldUpdate) {
-        this._updateMarkerPosition();
+        // Re-measure the object to update line positions
+        // Since lines are attached to scene, we need to recreate them at new positions
+        this._measureObject(measuredObject, true);
       }
     };
 
