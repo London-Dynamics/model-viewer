@@ -77,6 +77,7 @@
                     shadow-intensity="1"
                     src="../../shared-assets/models/textureCubes.gltf"
                     alt="An animated 3D model a bedside lamp"
+                    selection-scope="scene"
                   >
                     <!-- <div slot="ruler-width" class="ld-ruler"></div>
                     <div slot="ruler-height" class="ld-ruler"></div>
@@ -147,7 +148,7 @@
                             <div
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
-                              <div class="flex w-1/2 items-center gap-4">
+                              <div class="flex items-center gap-4">
                                 <h4 class="text-sm! font-medium text-gray-900">
                                   Unit
                                 </h4>
@@ -156,49 +157,50 @@
                                 >
                                   <button
                                     type="button"
-                                    class="measure-unit relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
                                     data-unit="m"
+                                    aria-checked="true"
                                   >
                                     m
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
                                     data-unit="cm"
                                   >
                                     cm
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
                                     data-unit="mm"
                                   >
                                     mm
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
                                     data-unit="yd"
                                   >
                                     yd
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
                                     data-unit="ft"
                                   >
                                     ft
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
                                     data-unit="in"
                                   >
                                     in
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-smfont-semibold text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600 rounded-r-md"
                                     data-unit="ft-in"
                                   >
                                     ft/in
@@ -226,38 +228,32 @@
                             >
                               <div class="flex items-center gap-4">
                                 <h4 class="text-sm! font-medium text-gray-900">
-                                  Measure
+                                  Scope
                                 </h4>
                                 <span
                                   class="block isolate inline-flex rounded-md shadow-xs"
                                 >
                                   <button
                                     type="button"
-                                    class="relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
-                                    id="measure-scene"
+                                    class="relative selection-scope inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    data-value="scene"
+                                    aria-checked="true"
                                   >
                                     Scene
                                   </button>
                                   <button
                                     type="button"
-                                    class="relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
-                                    id="measure-objects"
+                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    data-value="group"
                                   >
-                                    Any Object
+                                    Any Group
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-object relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
-                                    data-mesh="Box"
+                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600 rounded-r-md"
+                                    data-value="part"
                                   >
-                                    Box L
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="measure-object relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
-                                    data-mesh="Box_1"
-                                  >
-                                    Box R
+                                    Any Part
                                   </button>
                                 </span>
                               </div>
@@ -338,23 +334,19 @@
                         });
 
                       document
-                        .getElementById('measure-scene')
-                        .addEventListener('click', () => {
-                          modelViewer.setAttribute('measure-objects', '');
-                        });
-                      document
-                        .getElementById('measure-objects')
-                        .addEventListener('click', () => {
-                          modelViewer.setAttribute('measure-objects', '*');
-                        });
-
-                      document
-                        .querySelectorAll('button.measure-object')
+                        .querySelectorAll('button.selection-scope')
                         .forEach((el) => {
                           el.addEventListener('click', (e) => {
+                            // toggle aria-checked states for this button, and unset for siblings
+                            document
+                              .querySelectorAll('button.selection-scope')
+                              .forEach((sibling) => {
+                                sibling.setAttribute('aria-checked', 'false');
+                              });
+                            el.setAttribute('aria-checked', 'true');
                             modelViewer.setAttribute(
-                              'measure-objects',
-                              e.target.getAttribute('data-mesh')
+                              'selection-scope',
+                              e.target.getAttribute('data-value')
                             );
                           });
                         });
@@ -385,6 +377,12 @@
                         .querySelectorAll('button.measure-unit')
                         .forEach((el) => {
                           el.addEventListener('click', (e) => {
+                            document
+                              .querySelectorAll('button.measure-unit')
+                              .forEach((sibling) => {
+                                sibling.setAttribute('aria-checked', 'false');
+                              });
+                            el.setAttribute('aria-checked', 'true');
                             modelViewer.setAttribute(
                               'measurement-unit',
                               e.target.getAttribute('data-unit')

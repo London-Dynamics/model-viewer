@@ -1419,7 +1419,7 @@
         "links": [
           "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
         ],
-        "default": { "default": "group", "options": "part, group, all" }
+        "default": { "default": "scene", "options": "scene, part, group, all" }
       },
       {
         "name": "highlight-selected",
