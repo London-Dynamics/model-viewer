@@ -181,6 +181,7 @@
                     shadow-intensity="1"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     snapping-enabled
+                    highlight-selected
                     edit-mode
                   >
                     <div slot="floating-control-strip">
@@ -214,12 +215,10 @@
                       </div>
                     </div>
                     <effect-composer render-mode="quality">
-                      <outline-effect
+                      <selection-outline-effect
                         color="#165dfc"
-                        strength="20"
-                        smoothing="2"
                         blend-mode="skip"
-                      ></outline-effect>
+                      ></selection-outline-effect>
                       <color-grade-effect></color-grade-effect>
                     </effect-composer>
                     <div
@@ -636,7 +635,7 @@
 
                             const lowresSrc = `../../shared-assets/models/${filename}`;
                             const highResSrc =
-                              'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/32f04048-97af-5829-3a6f-56f64349a052.glb';
+                              'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/5bd99edf-30e7-d4c3-f116-7a0b97b1a51e.glb';
 
                             // Capture initial mouse position so the placeholder
                             // can be positioned immediately even if it loads
