@@ -183,14 +183,6 @@ export class SelectionOutlineEffect extends LitElement {
     // Store ALPHA as the default blend function for colored outlines
     this._defaultBlendFunction = BlendFunction.ALPHA;
 
-    console.log('[SelectionOutlineEffect] Created outline effect', {
-      edgeStrength: outlineEffect.edgeStrength,
-      blurEnabled: outlineEffect.blurPass.enabled,
-      visibleEdgeColor: outlineEffect.visibleEdgeColor,
-      blendFunction: outlineEffect.blendMode.blendFunction,
-      selectionLayer: outlineEffect.selection.layer,
-    });
-
     this.effects = [outlineEffect as unknown as IMVEffect];
   }
 
@@ -221,10 +213,6 @@ export class SelectionOutlineEffect extends LitElement {
 
     // Initialize previous blend mode from the current attribute value
     this._previousBlendMode = this.blendMode.toUpperCase() as BlendMode;
-    console.log('[SelectionOutlineEffect] connectedCallback', {
-      initialBlendMode: this._previousBlendMode,
-      defaultBlendFunction: this._defaultBlendFunction,
-    });
 
     // Apply initial properties
     this[$updateProperties]();
@@ -297,18 +285,7 @@ export class SelectionOutlineEffect extends LitElement {
   private _applySelection(): void {
     const outlineEffect = this.effects[0] as unknown as OutlineEffect;
 
-    console.log('[SelectionOutlineEffect] _applySelection called', {
-      selectionLength: this._selection.length,
-      effectComposerConnected: !!this[$effectComposer],
-      hasOutlineEffect: !!outlineEffect,
-      hasSelection: !!outlineEffect?.selection,
-      outlineEffectType: outlineEffect?.constructor?.name,
-    });
-
     if (!outlineEffect?.selection) {
-      console.log(
-        '[SelectionOutlineEffect] No outline effect selection available'
-      );
       return;
     }
 
@@ -317,56 +294,13 @@ export class SelectionOutlineEffect extends LitElement {
       const objects = this._selection.filter(
         (item): item is Object3D => item instanceof Object3D
       );
-      console.log(
-        '[SelectionOutlineEffect] Setting selection with objects:',
-        objects.length
-      );
-
-      // Log the selection layer being used
-      console.log(
-        '[SelectionOutlineEffect] Selection layer:',
-        outlineEffect.selection.layer
-      );
 
       // Clear first, then add objects one by one
       outlineEffect.selection.clear();
       for (const obj of objects) {
-        // Log the object's layers before and after adding
-        const layersBefore = obj.layers.mask;
         outlineEffect.selection.add(obj);
-        const layersAfter = obj.layers.mask;
-        if (objects.indexOf(obj) < 3) {
-          // Only log first 3
-          console.log('[SelectionOutlineEffect] Added object to selection:', {
-            name: obj.name,
-            type: obj.type,
-            layersBefore: layersBefore.toString(2),
-            layersAfter: layersAfter.toString(2),
-            selectionLayer: outlineEffect.selection.layer,
-          });
-        }
       }
-
-      // Log what's actually in the selection
-      const selectionArray = Array.from(outlineEffect.selection);
-      console.log('[SelectionOutlineEffect] Selection contains:', {
-        size: outlineEffect.selection.size,
-        layer: outlineEffect.selection.layer,
-        objectNames: selectionArray.map((o: Object3D) => o.name).slice(0, 5),
-        firstObjectType: selectionArray[0]?.type,
-        firstObjectLayers: selectionArray[0]?.layers?.mask?.toString(2),
-      });
-
-      // Log the actual state of the selection after setting
-      console.log('[SelectionOutlineEffect] Selection after set:', {
-        selectionSize: outlineEffect.selection.size,
-        edgeStrength: outlineEffect.edgeStrength,
-        visibleEdgeColor: outlineEffect.visibleEdgeColor,
-        blendFunction: outlineEffect.blendMode.blendFunction,
-        disabled: (outlineEffect as any).disabled,
-      });
     } else {
-      console.log('[SelectionOutlineEffect] Clearing selection');
       outlineEffect.selection.clear();
     }
 
@@ -381,26 +315,10 @@ export class SelectionOutlineEffect extends LitElement {
     const wasSkip = this._previousBlendMode === 'SKIP';
     const isSkip = blendModeUpper === 'SKIP';
 
-    console.log('[SelectionOutlineEffect] _updateBlendMode BEFORE', {
-      blendMode: this.blendMode,
-      blendModeUpper,
-      previousBlendMode: this._previousBlendMode,
-      wasSkip,
-      isSkip,
-      defaultBlendFunction: this._defaultBlendFunction,
-      BlendFunctionADD: BlendFunction.ADD,
-      BlendFunctionSKIP: BlendFunction.SKIP,
-    });
-
     this.effects.forEach((effect) => {
-      const blendFunctionBefore = effect.blendMode.blendFunction;
-
       if (blendModeUpper === 'DEFAULT') {
         // Restore default blend function - use ALPHA for colored outlines
-        console.log('[SelectionOutlineEffect] Setting to DEFAULT (ALPHA)', {
-          _defaultBlendFunction: this._defaultBlendFunction,
-          usingValue: BlendFunction.ALPHA,
-        });
+
         effect.blendMode.blendFunction = BlendFunction.ALPHA;
       } else if (blendModeUpper === 'SKIP') {
         effect.blendMode.blendFunction = BlendFunction.SKIP;
@@ -413,13 +331,6 @@ export class SelectionOutlineEffect extends LitElement {
       }
 
       effect.disabled = isSkip;
-      console.log('[SelectionOutlineEffect] Effect updated AFTER', {
-        blendFunctionBefore,
-        blendFunctionAfter: effect.blendMode.blendFunction,
-        disabled: effect.disabled,
-        assignmentWorked:
-          effect.blendMode.blendFunction !== blendFunctionBefore,
-      });
     });
 
     // Store previous value for next time
@@ -428,28 +339,11 @@ export class SelectionOutlineEffect extends LitElement {
     // Rebuild effect passes if toggling to/from skip
     // This is critical - when going FROM skip TO enabled, we need to rebuild
     if (wasSkip !== isSkip) {
-      console.log(
-        '[SelectionOutlineEffect] Toggling skip state, calling updateEffects'
-      );
       this.effectComposer?.updateEffects();
 
       // IMPORTANT: Re-apply the selection AFTER updateEffects rebuilds the passes
       // The selection needs to be set on the effect when it's part of the new pass
       this._applySelection();
-
-      // Log our effect's state after update
-      setTimeout(() => {
-        const outlineEffect = this.effects[0] as unknown as OutlineEffect;
-        console.log(
-          '[SelectionOutlineEffect] After updateEffects - effect state:',
-          {
-            ourEffectDisabled: this.effects[0]?.disabled,
-            ourEffectBlendFunction: this.effects[0]?.blendMode?.blendFunction,
-            selectionSize: outlineEffect?.selection?.size,
-            edgeStrength: outlineEffect?.edgeStrength,
-          }
-        );
-      }, 100);
     }
 
     this.effectComposer?.queueRender();
