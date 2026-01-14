@@ -19,6 +19,11 @@ import ModelViewerElementBase, {
 import { Constructor } from '../utilities.js';
 import { $controls } from './controls.js';
 import {
+  LDSelectionMixin,
+  SelectionChangeDetail,
+  SelectionScope,
+} from './ld-selection/index.js';
+import {
   AZIMUTHAL_OCTANT_LABELS,
   convertMeters,
   HALF_PI,
@@ -40,12 +45,12 @@ const $measureContainer = Symbol('measureContainer');
 export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDMeasureInterface> & T => {
-  class LDMeasureModelViewerElement extends ModelViewerElement {
+  // Apply the selection mixin first so we have access to selectionScope and selection events
+  const SelectionBase = LDSelectionMixin(ModelViewerElement);
+
+  class LDMeasureModelViewerElement extends SelectionBase {
     @property({ type: Boolean, attribute: 'measure' })
     measure: boolean = false;
-
-    @property({ type: String, attribute: 'measure-objects' })
-    measureObjects: string = '';
 
     @property({ type: String, attribute: 'measurement-unit' })
     measurementUnit: string = 'm';
@@ -55,6 +60,15 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({ type: String, attribute: 'measurement-overrides' })
     measurementOverrides: string = '';
+
+    @property({ type: String, attribute: 'grid' })
+    showGrid: boolean = false;
+
+    @property({ type: String, attribute: 'grid-major-step' })
+    gridMajor: number = 1;
+
+    @property({ type: String, attribute: 'grid-minor-step' })
+    gridMinor: number = 0.5;
 
     @property({ type: Boolean, attribute: 'disable-measurement-lines' })
     disableMeasurementLines: boolean = false;
@@ -71,8 +85,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _heightElementAnchorIndex: number = -1;
     private _depthElementAnchorIndex: number = -1;
 
-    private _pointerDwn = [0, 0];
-    private _pointerUp = [0, 0];
     private _lineGroups: LineGroup[] = [];
     private _lastClickedObject: Object3D | null = null;
     private _lastCameraAngle: string = '';
@@ -201,13 +213,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         .filter((set) => set.w && set.h && set.d);
     }
 
-    private _parseMeasureObjects(): string[] {
-      return this.measureObjects
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-    }
-
     private _updateMarkerText(boundingBox: Box3, object: Object3D) {
       if (
         !this._measureWidthElement ||
@@ -223,33 +228,13 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const precision = this.measurementPrecision;
 
       const overrides = this._parseMeasurementOverrides();
-      const measureObjects = this._parseMeasureObjects();
 
       function getPureOrOverriddenValues() {
         const size = boundingBox.getSize(new Vector3());
 
-        if (overrides.length && !measureObjects.length && object === scene) {
+        // If we have overrides, use the first one (for scene measurements)
+        if (overrides.length && object === scene) {
           return [overrides[0].w, overrides[0].h, overrides[0].d];
-        }
-
-        if (
-          overrides.length &&
-          measureObjects[0] !== '*' &&
-          measureObjects.length == 1
-        ) {
-          return [overrides[0].w, overrides[0].h, overrides[0].d];
-        }
-
-        if (overrides.length && measureObjects.length) {
-          const objectIndex = measureObjects.indexOf(object.name);
-
-          if (objectIndex !== -1 && overrides[objectIndex]) {
-            return [
-              overrides[objectIndex].w,
-              overrides[objectIndex].h,
-              overrides[objectIndex].d,
-            ];
-          }
         }
 
         return [size.x, size.y, size.z];
@@ -359,34 +344,17 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _getBoundingBox(
       scene: ModelScene,
-
       object: Object3D<Object3DEventMap>
     ): Box3 {
       const boundingBox = new Box3();
 
-      const measureObjects = this._parseMeasureObjects();
-
-      if (measureObjects.length === 0) {
-        // Case 1: measureObjects is empty or undefined, measure the entire scene
+      // If measuring the scene itself, return the scene's bounding box
+      if (object === scene) {
         return scene.boundingBox;
-      } else if (measureObjects.includes('*')) {
-        // Case 2: measureObjects contains ["*"], expand to the closest clicked on
-        boundingBox.expandByObject(object);
-      } else {
-        // Case 3: measureObjects has more than 0 items, expand to closest parent if exists
-        let parentObject = object;
-        while (parentObject && parentObject.parent) {
-          if (measureObjects.includes(parentObject.name)) {
-            boundingBox.setFromObject(parentObject);
-            return boundingBox;
-          }
-
-          parentObject = parentObject.parent;
-        }
-
-        return boundingBox;
       }
 
+      // Otherwise, compute the bounding box of the selected object
+      boundingBox.expandByObject(object);
       return boundingBox;
     }
 
@@ -750,22 +718,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._measureObject(scene, true);
     }
 
-    objectFromPoint(x: number, y: number): Object3D | null {
-      const scene = this[$scene];
-      const ndcCoords = scene.getNDC(x, y);
-      const hit = scene.hitFromPoint(ndcCoords);
-
-      return hit?.object || null;
-    }
-
-    private _measureModelAtPoint(x: number, y: number) {
-      const object = this.objectFromPoint(x, y);
-
-      if (object) {
-        this._measureObject(object);
-      }
-    }
-
     private _handleCameraChange() {
       /* @ts-ignore */
       const { theta, phi } = this.getCameraOrbit();
@@ -784,81 +736,61 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._updateMarkerPosition();
     }
 
-    private _findObjectByName(name: string): Object3D | null {
+    private _onSelectionChange = (event: Event) => {
+      const customEvent = event as CustomEvent<SelectionChangeDetail>;
+      const { selectedObjects, type } = customEvent.detail;
+
+      // Only respond to selection changes when measure is enabled
+      if (!this.measure) {
+        return;
+      }
+
+      // If selection-scope is 'scene', we always measure the scene (handled in handleNewAttributes)
+      if ((this as any).selectionScope === 'scene') {
+        return;
+      }
+
+      // Handle selection changes for part/group/all modes
+      if (type === 'clear' || selectedObjects.length === 0) {
+        this._clearMeasurements(true);
+        return;
+      }
+
+      // Measure the first selected object
+      if (selectedObjects.length > 0) {
+        this._measureObject(selectedObjects[0], true);
+      }
+    };
+
+    private _onObjectDrag = (event: Event) => {
+      // Update marker positions when the object being measured is dragged
+      if (!this.measure || !this._lastClickedObject) {
+        return;
+      }
+
+      const customEvent = event as CustomEvent<{
+        object: Object3D;
+        position: Vector3;
+      }>;
+      const { object } = customEvent.detail;
+
+      // Check if the dragged object is the one we're measuring, or if it's a parent/child
       const scene = this[$scene];
-      let targetObject = null;
+      const measuredObject = this._lastClickedObject;
 
-      try {
-        scene.traverse((child) => {
-          if (child.name === name) {
-            targetObject = child;
+      // Update if we're measuring the dragged object, its parent group, or the scene
+      const shouldUpdate =
+        measuredObject === object ||
+        measuredObject === scene ||
+        object.parent === measuredObject ||
+        measuredObject.parent === object;
 
-            // Throw an exception to terminate the traversal
-            throw new Error('Object found');
-          }
-        });
-      } catch (e) {
-        if ((e as Error).message !== 'Object found') {
-          throw e; // Re-throw if it's not the expected error
-        }
+      if (shouldUpdate) {
+        this._updateMarkerPosition();
       }
-
-      return targetObject;
-    }
-
-    private _enableMeasurementListeners() {
-      // Only set up listeners if they haven't been set up yet
-      if (!this._clickHandler && this._modelLoaded) {
-        this._clickHandler = (e: MouseEvent) => this._handleClick(e);
-        this._pointerDownHandler = (e: PointerEvent) => {
-          this._pointerDwn = [e.offsetX, e.offsetY];
-        };
-        this._pointerUpHandler = (e: PointerEvent) => {
-          this._pointerUp = [e.offsetX, e.offsetY];
-        };
-
-        this.addEventListener('pointerdown', this._pointerDownHandler);
-        this.addEventListener('pointerup', this._pointerUpHandler);
-        this.addEventListener('click', this._clickHandler);
-      }
-    }
-
-    private _disableMeasurementListeners() {
-      // Remove listeners if they were set up
-      if (this._clickHandler) {
-        this.removeEventListener('click', this._clickHandler);
-        this._clickHandler = null;
-      }
-      if (this._pointerDownHandler) {
-        this.removeEventListener('pointerdown', this._pointerDownHandler);
-        this._pointerDownHandler = null;
-      }
-      if (this._pointerUpHandler) {
-        this.removeEventListener('pointerup', this._pointerUpHandler);
-        this._pointerUpHandler = null;
-      }
-    }
-
-    private _handleClick(event: MouseEvent) {
-      const { _pointerDwn, _pointerUp } = this;
-      const d = Math.hypot(
-        _pointerUp[0] - _pointerDwn[0],
-        _pointerUp[1] - _pointerDwn[1]
-      );
-      /* This to allow for a small drag on sensetive input devices */
-      if (d > 4) return;
-
-      const measureObjects = this._parseMeasureObjects();
-
-      if (!!this['measure'] && measureObjects.length > 0) {
-        this._measureModelAtPoint(event.clientX, event.clientY);
-      }
-    }
+    };
 
     private _modelLoaded = false;
-    private _clickHandler: ((e: MouseEvent) => void) | null = null;
-    private _pointerDownHandler: ((e: PointerEvent) => void) | null = null;
-    private _pointerUpHandler: ((e: PointerEvent) => void) | null = null;
 
     private _handleProgress(event: Event) {
       const progress = (event as any).detail.totalProgress;
@@ -881,26 +813,22 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._clearMeasurements(resetEverything);
 
       const enabled = !!this['measure'];
+      const scope = (this as any).selectionScope as SelectionScope;
 
-      // Manage event listeners based on enabled state
       if (enabled) {
-        this._enableMeasurementListeners();
         this._handleCameraChange();
 
-        const measureObjects = this._parseMeasureObjects();
-
-        if (this._lastClickedObject) {
-          this._measureObject(this._lastClickedObject, true);
-        } else if (!measureObjects.length) {
+        // If selection-scope is 'scene', measure the entire scene
+        if (scope === 'scene') {
           this._measureScene();
-        } else if (measureObjects.length == 1) {
-          const object = this._findObjectByName(measureObjects[0]);
-          if (object) {
-            this._measureObject(object);
+        } else {
+          // For part/group/all modes, measure whatever is currently selected
+          const selectedObjects = (this as any).getSelectedObjects?.() || [];
+          if (selectedObjects.length > 0) {
+            this._measureObject(selectedObjects[0], true);
           }
+          // If nothing is selected, wait for user to click (selection will trigger _onSelectionChange)
         }
-      } else {
-        this._disableMeasurementListeners();
       }
     }
 
@@ -910,7 +838,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this._modelLoaded) {
         if (
           changedProperties.has('measure') ||
-          changedProperties.has('measureObjects')
+          changedProperties.has('selectionScope')
         ) {
           this.handleNewAttributes(true);
         } else if (
@@ -931,6 +859,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.addEventListener('camera-change', this._handleCameraChange);
       this.addEventListener('load', this._handleLoad);
       this.addEventListener('progress', this._handleProgress);
+      this.addEventListener(
+        'selection-change',
+        this._onSelectionChange as EventListener
+      );
+      this.addEventListener('object-drag', this._onObjectDrag as EventListener);
 
       const shadowRoot = this.shadowRoot;
 
@@ -980,9 +913,14 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.removeEventListener('camera-change', this._handleCameraChange);
       this.removeEventListener('load', this._handleLoad);
       this.removeEventListener('progress', this._handleProgress);
-
-      // Clean up measurement listeners
-      this._disableMeasurementListeners();
+      this.removeEventListener(
+        'selection-change',
+        this._onSelectionChange as EventListener
+      );
+      this.removeEventListener(
+        'object-drag',
+        this._onObjectDrag as EventListener
+      );
 
       this._measureWidthElement = null;
       this._measureHeightElement = null;
