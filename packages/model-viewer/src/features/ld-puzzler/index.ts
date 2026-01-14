@@ -2144,7 +2144,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any)[$scene].camera
       );
       const intersects = (this as any).raycaster.intersectObject(object, true);
-      return intersects.length > 0;
+      // Filter out objects marked as noHit (e.g., measurement lines)
+      const validIntersects = intersects.filter(
+        (hit: any) => hit.object.visible && !hit.object.userData?.noHit
+      );
+      return validIntersects.length > 0;
     }
 
     private startDragging(_event?: MouseEvent | TouchEvent) {
@@ -2285,6 +2289,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         try {
           this.updateSnappingPointSlots();
         } catch (e) {}
+
+        // Dispatch event so other mixins (like measure) can update
+        (this as any).dispatchEvent(
+          new CustomEvent('object-drag', {
+            detail: {
+              object,
+              position: object.position.clone(),
+            },
+            bubbles: true,
+            composed: true,
+          })
+        );
       }
     }
 

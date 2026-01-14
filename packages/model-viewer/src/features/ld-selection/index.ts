@@ -99,7 +99,7 @@ import { Object3D, Vector2, Raycaster } from 'three';
 // Re-export the selection outline effect
 export { SelectionOutlineEffect } from './selection-outline-effect.js';
 
-export type SelectionScope = 'part' | 'group' | 'all';
+export type SelectionScope = 'scene' | 'part' | 'group' | 'all';
 
 export interface SelectionChangeDetail {
   selectedObjects: Object3D[];
@@ -120,10 +120,11 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Which selection mode is active. Options:
      * - 'part': select individual parts (closest placed object, or PuzzlerRoot as fallback)
      * - 'group' (default): select groups (closest group node, or parent of closest PuzzlerRoot as fallback)
+     * - 'scene': don't select anything
      * - 'all': allow any scene node to be selected
      */
     @property({ type: String, attribute: 'selection-scope' })
-    selectionScope: SelectionScope = 'group';
+    selectionScope: SelectionScope = 'scene';
 
     @property({ type: Boolean, attribute: 'highlight-selected' })
     highlightSelected: boolean = false;
@@ -394,9 +395,14 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Perform raycast
-      const intersects = this.raycaster.intersectObjects(
+      const allIntersects = this.raycaster.intersectObjects(
         allPlacedObjects,
         true
+      );
+
+      // Filter out objects marked as noHit (e.g., measurement lines, helpers)
+      const intersects = allIntersects.filter(
+        (hit) => hit.object.visible && !hit.object.userData?.noHit
       );
 
       console.log('[Selection] _performSelectionRaycast: intersects', {
