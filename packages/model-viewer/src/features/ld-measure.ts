@@ -848,11 +848,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       lineMaterial.opacity = 1;
       lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
-      //lineMaterial.blending = NormalBlending;
-
-      const inverseLineMaterial = lineMaterial.clone();
-      inverseLineMaterial.color.set(0xffffff);
-      inverseLineMaterial.opacity = 0.6;
+      lineMaterial.blending = NormalBlending;
 
       // Calculate extension line length based on the object's bounding box
       // Use a proportion of the smallest dimension
@@ -915,26 +911,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           const geometry = new BufferGeometry().setFromPoints(localEdge);
           const line = new Line(geometry, lineMaterial);
-
-          line.userData.noHit = true; // unique model-viewer attribute to prevent hit testing
-
-          line.renderOrder = 9999; // Render on top of the model
-
-          line.visible = false; // Hide the lines initially
-
-          // Prevent frustum culling which might hide the lines
-          line.frustumCulled = false;
-
-          lineParent.add(line);
-          lines.push(line);
-        });
-
-        group.forEach((edge) => {
-          // Convert edge points from world space to parent's local space
-          const localEdge = edge.map((point) => toLocalSpace(point));
-
-          const geometry = new BufferGeometry().setFromPoints(localEdge);
-          const line = new Line(geometry, inverseLineMaterial);
 
           line.userData.noHit = true; // unique model-viewer attribute to prevent hit testing
 
