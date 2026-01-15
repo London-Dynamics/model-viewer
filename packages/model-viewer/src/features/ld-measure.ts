@@ -26,7 +26,8 @@ import {
 } from './ld-selection/index.js';
 import {
   AZIMUTHAL_OCTANT_LABELS,
-  convertMeters,
+  formatMetersWithUnit,
+  convertToMeters,
   HALF_PI,
   QUARTER_PI,
   TAU,
@@ -42,6 +43,7 @@ type LineGroup = {
 };
 
 const $measureContainer = Symbol('measureContainer');
+const $gridContainer = Symbol('gridContainer');
 
 export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
@@ -62,13 +64,16 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: String, attribute: 'measurement-overrides' })
     measurementOverrides: string = '';
 
-    @property({ type: String, attribute: 'grid' })
+    @property({ type: Boolean, attribute: 'grid' })
     showGrid: boolean = false;
 
-    @property({ type: String, attribute: 'grid-major-step' })
+    @property({ type: Number, attribute: 'grid-size' })
+    gridSize: number = 100;
+
+    @property({ type: Number, attribute: 'grid-major-step' })
     gridMajor: number = 1;
 
-    @property({ type: String, attribute: 'grid-minor-step' })
+    @property({ type: Number, attribute: 'grid-minor-step' })
     gridMinor: number = 0.5;
 
     @property({ type: Boolean, attribute: 'disable-measurement-lines' })
@@ -77,6 +82,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     protected [$measureContainer]: HTMLElement = this.shadowRoot!.querySelector(
       '.slot.ld-measure'
     ) as HTMLElement;
+
+    protected [$gridContainer]: Object3D | null = null;
 
     protected _measureWidthElement: HTMLElement | null = null;
     protected _measureHeightElement: HTMLElement | null = null;
@@ -245,17 +252,17 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       let value: string | null = null;
 
-      value = convertMeters(width, unit, precision);
+      value = formatMetersWithUnit(width, unit, precision);
       this._measureWidthElement.textContent = value;
       this._measureWidthElement.style.display = 'block';
       this._measureWidthElement.setAttribute('aria-label', `Width: ${value}`);
 
-      value = convertMeters(height, unit, precision);
+      value = formatMetersWithUnit(height, unit, precision);
       this._measureHeightElement.textContent = value;
       this._measureHeightElement.style.display = 'block';
       this._measureHeightElement.setAttribute('aria-label', `Height: ${value}`);
 
-      value = convertMeters(depth, unit, precision);
+      value = formatMetersWithUnit(depth, unit, precision);
       this._measureDepthElement.textContent = value;
       this._measureDepthElement.style.display = 'block';
       this._measureDepthElement.setAttribute('aria-label', `Depth: ${value}`);
@@ -368,6 +375,239 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const min = Math.min(size.x, size.y, size.z);
 
       this._extensionLineLength = min / 10;
+    }
+
+    private _createGrid() {
+      const scene = this[$scene];
+
+      // Remove existing grid if any
+      this._clearGrid();
+
+      if (!this.showGrid) {
+        return;
+      }
+
+      // Don't draw grid if both spacings are 0
+      if (this.gridMajor <= 0 && this.gridMinor <= 0) {
+        return;
+      }
+
+      // Find the Target object to add the grid
+      let targetObject: Object3D | undefined;
+      scene.traverse((child) => {
+        if (child.name === 'Target') {
+          targetObject = child;
+        }
+      });
+
+      if (!targetObject) {
+        console.warn('Target object not found for grid');
+        return;
+      }
+
+      // Type assertion after null check
+      const target = targetObject as Object3D;
+
+      // Create grid container
+      const gridContainer = new Object3D();
+      gridContainer.name = 'ld-grid';
+      this[$gridContainer] = gridContainer;
+
+      // Convert grid spacing from display units to meters
+      const minorSpacing = convertToMeters(
+        this.gridMinor,
+        this.measurementUnit
+      );
+      const majorSpacing = convertToMeters(
+        this.gridMajor,
+        this.measurementUnit
+      );
+
+      // Materials for major and minor grid lines
+      const minorMaterial = new LineBasicMaterial({
+        color: 0x888888,
+        transparent: true,
+        opacity: 0.2,
+        depthTest: true,
+      });
+
+      const majorMaterial = new LineBasicMaterial({
+        color: 0x888888,
+        transparent: true,
+        opacity: 0.5,
+        depthTest: true,
+        linewidth: 2, // Note: linewidth only works in WebGLRenderer with specific settings
+      });
+
+      // Get the floor Y position (bottom of bounding box)
+      const floorY = scene.boundingBox.min.y;
+
+      // Calculate grid bounds using gridSize attribute (centered at origin)
+      const halfSize = this.gridSize / 2;
+      const startX = -halfSize;
+      const endX = halfSize;
+      const startZ = -halfSize;
+      const endZ = halfSize;
+
+      // Create vertical lines (parallel to Z axis)
+      if (this.gridMinor > 0) {
+        for (
+          let x = Math.floor(startX / minorSpacing) * minorSpacing;
+          x <= endX;
+          x += minorSpacing
+        ) {
+          const isMajor =
+            this.gridMajor > 0 && Math.abs(x % majorSpacing) < 0.001;
+
+          // Skip minor lines if only drawing major
+          if (!isMajor && this.gridMajor > 0) {
+            // Draw as minor line
+            const points = [
+              new Vector3(x, floorY, startZ),
+              new Vector3(x, floorY, endZ),
+            ];
+            const geometry = new BufferGeometry().setFromPoints(points);
+            const line = new Line(geometry, minorMaterial);
+            line.userData.noHit = true;
+            line.frustumCulled = false;
+            gridContainer.add(line);
+          } else if (isMajor) {
+            // Draw as major line
+            const points = [
+              new Vector3(x, floorY, startZ),
+              new Vector3(x, floorY, endZ),
+            ];
+            const geometry = new BufferGeometry().setFromPoints(points);
+            const line = new Line(geometry, majorMaterial);
+            line.userData.noHit = true;
+            line.frustumCulled = false;
+            gridContainer.add(line);
+          } else if (this.gridMajor <= 0) {
+            // No major lines, draw as minor
+            const points = [
+              new Vector3(x, floorY, startZ),
+              new Vector3(x, floorY, endZ),
+            ];
+            const geometry = new BufferGeometry().setFromPoints(points);
+            const line = new Line(geometry, minorMaterial);
+            line.userData.noHit = true;
+            line.frustumCulled = false;
+            gridContainer.add(line);
+          }
+        }
+      } else if (this.gridMajor > 0) {
+        // Only draw major lines when minor is 0
+        for (
+          let x = Math.floor(startX / majorSpacing) * majorSpacing;
+          x <= endX;
+          x += majorSpacing
+        ) {
+          const points = [
+            new Vector3(x, floorY, startZ),
+            new Vector3(x, floorY, endZ),
+          ];
+          const geometry = new BufferGeometry().setFromPoints(points);
+          const line = new Line(geometry, majorMaterial);
+          line.userData.noHit = true;
+          line.frustumCulled = false;
+          gridContainer.add(line);
+        }
+      }
+
+      // Create horizontal lines (parallel to X axis)
+      if (this.gridMinor > 0) {
+        for (
+          let z = Math.floor(startZ / minorSpacing) * minorSpacing;
+          z <= endZ;
+          z += minorSpacing
+        ) {
+          const isMajor =
+            this.gridMajor > 0 && Math.abs(z % majorSpacing) < 0.001;
+
+          // Skip minor lines if only drawing major
+          if (!isMajor && this.gridMajor > 0) {
+            // Draw as minor line
+            const points = [
+              new Vector3(startX, floorY, z),
+              new Vector3(endX, floorY, z),
+            ];
+            const geometry = new BufferGeometry().setFromPoints(points);
+            const line = new Line(geometry, minorMaterial);
+            line.userData.noHit = true;
+            line.frustumCulled = false;
+            gridContainer.add(line);
+          } else if (isMajor) {
+            // Draw as major line
+            const points = [
+              new Vector3(startX, floorY, z),
+              new Vector3(endX, floorY, z),
+            ];
+            const geometry = new BufferGeometry().setFromPoints(points);
+            const line = new Line(geometry, majorMaterial);
+            line.userData.noHit = true;
+            line.frustumCulled = false;
+            gridContainer.add(line);
+          } else if (this.gridMajor <= 0) {
+            // No major lines, draw as minor
+            const points = [
+              new Vector3(startX, floorY, z),
+              new Vector3(endX, floorY, z),
+            ];
+            const geometry = new BufferGeometry().setFromPoints(points);
+            const line = new Line(geometry, minorMaterial);
+            line.userData.noHit = true;
+            line.frustumCulled = false;
+            gridContainer.add(line);
+          }
+        }
+      } else if (this.gridMajor > 0) {
+        // Only draw major lines when minor is 0
+        for (
+          let z = Math.floor(startZ / majorSpacing) * majorSpacing;
+          z <= endZ;
+          z += majorSpacing
+        ) {
+          const points = [
+            new Vector3(startX, floorY, z),
+            new Vector3(endX, floorY, z),
+          ];
+          const geometry = new BufferGeometry().setFromPoints(points);
+          const line = new Line(geometry, majorMaterial);
+          line.userData.noHit = true;
+          line.frustumCulled = false;
+          gridContainer.add(line);
+        }
+      }
+
+      // Add grid to Target object
+      target.add(gridContainer);
+      this[$needsRender]();
+    }
+
+    private _clearGrid() {
+      if (!this[$gridContainer]) {
+        return;
+      }
+
+      // Remove from parent
+      if (this[$gridContainer].parent) {
+        this[$gridContainer].parent.remove(this[$gridContainer]);
+      }
+
+      // Dispose geometries and materials
+      this[$gridContainer].traverse((child) => {
+        if (child instanceof Line) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((mat) => mat.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+
+      this[$gridContainer] = null;
+      this[$needsRender]();
     }
 
     private _clearMeasurements(resetEverything = false) {
@@ -1029,6 +1269,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._setExtensionLineLength();
 
       this.handleNewAttributes();
+      this._createGrid();
     }
 
     private handleNewAttributes(resetEverything = false) {
@@ -1071,6 +1312,17 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           !!this['measure']
         ) {
           this.handleNewAttributes();
+        }
+
+        // Handle grid-related property changes
+        if (
+          changedProperties.has('showGrid') ||
+          changedProperties.has('gridSize') ||
+          changedProperties.has('gridMajor') ||
+          changedProperties.has('gridMinor') ||
+          (changedProperties.has('measurementUnit') && this.showGrid)
+        ) {
+          this._createGrid();
         }
       }
     }
@@ -1144,6 +1396,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._onObjectDrag as EventListener
       );
 
+      this._clearGrid();
       this._measureWidthElement = null;
       this._measureHeightElement = null;
       this._measureDepthElement = null;
