@@ -30,6 +30,7 @@ import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
 import { LDCursorMixin } from './features/ld-cursor/index.js';
 import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
+import { LDSelectionMixin } from './features/ld-selection/index.js';
 
 // Import custom effects to register them
 import './features/ld-selection/selection-outline-effect.js';
@@ -45,16 +46,20 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
     LDCursorMixin(
       LDMeasureMixin(
         LDPuzzlerMixin(
-          LDLightsMixin(
-            LDCameraMixin(
-              LDEnvironmentMixin(
-                AnnotationMixin(
-                  SceneGraphMixin(
-                    StagingMixin(
-                      EnvironmentMixin(
-                        LDControlsMixin(
-                          ARMixin(
-                            LoadingMixin(AnimationMixin(ModelViewerElementBase))
+          LDSelectionMixin(
+            LDLightsMixin(
+              LDCameraMixin(
+                LDEnvironmentMixin(
+                  AnnotationMixin(
+                    SceneGraphMixin(
+                      StagingMixin(
+                        EnvironmentMixin(
+                          LDControlsMixin(
+                            ARMixin(
+                              LoadingMixin(
+                                AnimationMixin(ModelViewerElementBase)
+                              )
+                            )
                           )
                         )
                       )

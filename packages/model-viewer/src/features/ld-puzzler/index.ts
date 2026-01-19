@@ -14,10 +14,7 @@ import {
 import type { Part } from '@london-dynamics/types/product';
 
 import { Constructor } from '../../utilities.js';
-import {
-  LDSelectionMixin,
-  SelectionChangeDetail,
-} from '../ld-selection/index.js';
+import { SelectionChangeDetail } from '../ld-selection/index.js';
 import ModelViewerElementBase, {
   $needsRender,
   $scene,
@@ -174,10 +171,9 @@ export declare interface LDPuzzlerInterface {
 export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDPuzzlerInterface> & T => {
-  // First apply the selection mixin
-  const SelectionBase = LDSelectionMixin(ModelViewerElement);
-
-  class LDPuzzlerModelViewerElement extends SelectionBase {
+  // LDSelectionMixin is now applied in the main mixin composition chain,
+  // so we inherit selection functionality without reapplying it
+  class LDPuzzlerModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'edit-mode' })
     editMode: boolean = false;
 
@@ -194,13 +190,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     snappingPointsVisible: boolean = false;
     // (snapping-debug removed)
 
+    // Store bound event handler reference
+    private _boundSelectionChangeHandler: ((event: Event) => void) | null =
+      null;
+
     connectedCallback() {
       super.connectedCallback();
-      // Listen to selection changes from the selection mixin
-      (this as any).addEventListener(
-        'selection-change',
-        this._onSelectionChange as EventListener
-      );
+
+      // Use inline arrow function wrapper for event listener
+      this.addEventListener('selection-change', (event: Event) => {
+        this._onSelectionChangeForPuzzler(event);
+      });
+
       // Setup drag handlers for puzzler
       try {
         this.setupDragHandlers();
@@ -210,10 +211,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     disconnectedCallback() {
       super.disconnectedCallback();
       this.cancelRequestedShadowUpdate();
-      (this as any).removeEventListener(
-        'selection-change',
-        this._onSelectionChange as EventListener
-      );
+
+      // Clean up event listener
+      if (this._boundSelectionChangeHandler) {
+        this.removeEventListener(
+          'selection-change',
+          this._boundSelectionChangeHandler as EventListener
+        );
+        this._boundSelectionChangeHandler = null;
+      }
+
       this.teardownDragHandlers();
       // Clear selected object state when removed
       try {
@@ -228,7 +235,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Use the slot maps and clearSlots helper so they are considered used
         this.clearSlots(this._snappingPointSlots);
         this.clearSlots(this._breakLinkSlots);
-        this.clearSlots(this._rotationSlots);
       } catch (e) {}
       try {
         // Clear selected groups bookkeeping
@@ -561,7 +567,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const finalDegs: [number, number, number] = [0, 1, 2].map((i) =>
           parsed[i].isRelative
             ? current[i] + parsed[i].delta!
-            : parsed[i].absolute ?? current[i]
+            : (parsed[i].absolute ?? current[i])
         ) as [number, number, number];
 
         rotation = new Euler(
@@ -966,17 +972,42 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _activePlacementSession: PlacementSession | null = null;
 
     // Selection change handler to react to selection changes from the selection mixin
-    private _onSelectionChange = (event: Event) => {
+    private _onSelectionChangeForPuzzler(event: Event) {
       const customEvent = event as CustomEvent<SelectionChangeDetail>;
       const { selectedObjects, type } = customEvent.detail;
-
-      console.log('[Puzzler] Selection changed:', type, selectedObjects);
 
       // Update snapping point slots when selection changes
       try {
         this.updateSnappingPointSlots();
       } catch (e) {
         console.error('[Puzzler] Failed to update snapping points:', e);
+      }
+
+      // Update floating control strip when exactly one object is selected
+      if (type === 'select' && selectedObjects.length === 1) {
+        const selected = selectedObjects[0];
+        try {
+          // Access symbol methods via any cast (they're available via the mixin chain)
+          const selectFn = (this as any)[$selectObjectForControls];
+          if (typeof selectFn === 'function') {
+            selectFn.call(this, selected);
+          } else {
+            console.warn('[Puzzler] $selectObjectForControls not available');
+          }
+        } catch (e) {
+          console.error('[Puzzler] Failed to select object for controls:', e);
+        }
+      } else {
+        try {
+          const clearFn = (this as any)[$clearSelectedObject];
+          if (typeof clearFn === 'function') {
+            clearFn.call(this);
+          } else {
+            console.warn('[Puzzler] $clearSelectedObject not available');
+          }
+        } catch (e) {
+          console.error('[Puzzler] Failed to clear selected object:', e);
+        }
       }
 
       // Update break-link slots when a group is selected
@@ -999,16 +1030,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       (this as any)[$needsRender]();
-    };
+    }
 
     // When dragging, prefer to move the enclosing group (if any).
     private _currentDragTarget: Object3D | null = null;
 
-    // Slot maps for UI (snapping points, break-link/ungroup, rotation controls)
+    // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
     // (snapping-debug related debug slots removed)
     private _breakLinkSlots: Map<string, HTMLElement> = new Map();
-    private _rotationSlots: Map<string, HTMLElement> = new Map();
     private _breakLinkSlotsVisible: boolean = false;
 
     // Drag / snapping runtime state (ported)
@@ -2011,25 +2041,16 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onMouseDown(event: MouseEvent) {
-      console.log('[Puzzler] onMouseDown', {
-        editMode: this.editMode,
-        button: event.button,
-        selectedCount: (this as any).selectedObjects?.length || 0,
-      });
-
       // Only handle puzzler mouse interactions when edit-mode is active.
       if (!this.editMode) {
-        console.log('[Puzzler] onMouseDown: edit mode not active');
         return;
       }
       if (event.button !== 0) {
-        console.log('[Puzzler] onMouseDown: not left button');
         return;
       }
 
       // Ignore clicks on UI elements
       if ((this as any)._isUIElement(event.target)) {
-        console.log('[Puzzler] onMouseDown: UI element clicked');
         return;
       }
 
@@ -2040,16 +2061,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         const isOnSelectedObject = (this as any).selectedObjects.some(
           (obj: any) => this.isPointOnObject(this.currentMousePosition, obj)
         );
-        console.log('[Puzzler] onMouseDown: checking selected objects', {
-          isOnSelectedObject,
-          selectedObjects: (this as any).selectedObjects.map(
-            (o: any) => o.name || o.uuid
-          ),
-        });
         if (isOnSelectedObject) {
-          console.log(
-            '[Puzzler] onMouseDown: starting drag on selected object'
-          );
           event.stopImmediatePropagation();
           event.preventDefault();
           this.startDragging(event);
@@ -2057,9 +2069,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      console.log(
-        '[Puzzler] onMouseDown: allowing event to propagate for selection'
-      );
       // Don't stop propagation - let the selection mixin handle selection via click event
     }
 
@@ -2074,7 +2083,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.editMode) return;
 
       if ((this as any).isDragging) {
-        console.log('[Puzzler] onMouseUp: stopping drag');
         this.stopDragging();
       }
     }
@@ -2152,16 +2160,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private startDragging(_event?: MouseEvent | TouchEvent) {
-      console.log('[Puzzler] startDragging', {
-        selectedObjectsCount: (this as any).selectedObjects?.length || 0,
-        selectedObjects: (this as any).selectedObjects?.map(
-          (o: any) => o.name || o.uuid
-        ),
-        selectionScope: (this as any).selectionScope,
-      });
-
       if (!(this as any).selectedObjects.length) {
-        console.log('[Puzzler] startDragging: no selected objects, returning');
         return;
       }
 
@@ -2305,14 +2304,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private stopDragging() {
-      console.log('[Puzzler] stopDragging', {
-        isDragging: (this as any).isDragging,
-        currentDragTarget:
-          this._currentDragTarget?.name || this._currentDragTarget?.uuid,
-      });
-
       if (!(this as any).isDragging) {
-        console.log('[Puzzler] stopDragging: not dragging, returning');
         return;
       }
 
@@ -2762,8 +2754,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this._breakLinkSlots;
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-      void this._rotationSlots;
-      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
       void this._recentlyDisconnectedPairs;
       // methods
       // eslint-disable-next-line @typescript-eslint/no-unused-expressions
@@ -2799,15 +2789,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!success) return false;
 
       try {
-        // Puzzler-specific: update control strip
-        (this as any)[$selectObjectForControls](node);
-
-        // Hide break link slots for individual parts
-        this._breakLinkSlotsVisible = false;
-        this.clearSlots(this._breakLinkSlots);
-
-        // Note: snapping points and break-link slots will be updated by _onSelectionChange handler
-
+        // Note: control strip, snapping points and break-link slots will be updated by _onSelectionChange handler
         return true;
       } catch (e) {
         console.error('[Puzzler] selectPart error:', e);
@@ -2834,11 +2816,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!success) return false;
 
       try {
-        // Puzzler-specific: update control strip
-        (this as any)[$selectObjectForControls](node);
-
-        // Note: snapping points and break-link slots will be updated by _onSelectionChange handler
-
+        // Note: control strip, snapping points and break-link slots will be updated by _onSelectionChange handler
         return true;
       } catch (e) {
         console.error('[Puzzler] selectGroup error:', e);

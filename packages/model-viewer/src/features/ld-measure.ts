@@ -19,11 +19,7 @@ import ModelViewerElementBase, {
 
 import { Constructor } from '../utilities.js';
 import { $controls } from './controls.js';
-import {
-  LDSelectionMixin,
-  SelectionChangeDetail,
-  SelectionScope,
-} from './ld-selection/index.js';
+import { SelectionChangeDetail, SelectionScope } from './ld-selection/index.js';
 import {
   AZIMUTHAL_OCTANT_LABELS,
   formatMetersWithUnit,
@@ -48,10 +44,9 @@ const $gridContainer = Symbol('gridContainer');
 export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDMeasureInterface> & T => {
-  // Apply the selection mixin first so we have access to selectionScope and selection events
-  const SelectionBase = LDSelectionMixin(ModelViewerElement);
-
-  class LDMeasureModelViewerElement extends SelectionBase {
+  // LDPuzzlerMixin (which this wraps) already applies LDSelectionMixin,
+  // so we inherit selection functionality without reapplying it
+  class LDMeasureModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'measure' })
     measure: boolean = false;
 
@@ -97,6 +92,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _lastClickedObject: Object3D | null = null;
     private _lastCameraAngle: string = '';
     private _extensionLineLength: number = 0.2;
+
+    private _boundSelectionChangeHandler?: (event: Event) => void;
 
     private _worldToScreen(position: Vector3): { x: number; y: number } {
       const width = this[$scene].width;
@@ -1196,7 +1193,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._updateMarkerPosition();
     }
 
-    private _onSelectionChange = (event: Event) => {
+    private _onSelectionChangeForMeasure = (event: Event) => {
       const customEvent = event as CustomEvent<SelectionChangeDetail>;
       const { selectedObjects, type } = customEvent.detail;
 
@@ -1290,7 +1287,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (selectedObjects.length > 0) {
             this._measureObject(selectedObjects[0], true);
           }
-          // If nothing is selected, wait for user to click (selection will trigger _onSelectionChange)
+          // If nothing is selected, wait for user to click (selection will trigger _onSelectionChangeForMeasure)
         }
       }
     }
@@ -1333,10 +1330,16 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.addEventListener('camera-change', this._handleCameraChange);
       this.addEventListener('load', this._handleLoad);
       this.addEventListener('progress', this._handleProgress);
+
+      // Store bound handler for cleanup
+      this._boundSelectionChangeHandler = (event: Event) => {
+        this._onSelectionChangeForMeasure(event);
+      };
       this.addEventListener(
         'selection-change',
-        this._onSelectionChange as EventListener
+        this._boundSelectionChangeHandler
       );
+
       this.addEventListener('object-drag', this._onObjectDrag as EventListener);
 
       const shadowRoot = this.shadowRoot;
@@ -1387,10 +1390,14 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.removeEventListener('camera-change', this._handleCameraChange);
       this.removeEventListener('load', this._handleLoad);
       this.removeEventListener('progress', this._handleProgress);
-      this.removeEventListener(
-        'selection-change',
-        this._onSelectionChange as EventListener
-      );
+
+      if (this._boundSelectionChangeHandler) {
+        this.removeEventListener(
+          'selection-change',
+          this._boundSelectionChangeHandler
+        );
+      }
+
       this.removeEventListener(
         'object-drag',
         this._onObjectDrag as EventListener

@@ -33,7 +33,7 @@ export const $clearSelectedObject = Symbol('clearSelectedObject');
 
 // Mixin that adds floating controls functionality
 export const LDFloatingControlStripMixin = <
-  T extends Constructor<ModelViewerElementBase>
+  T extends Constructor<ModelViewerElementBase>,
 >(
   ModelViewerElementBase: T
 ): Constructor<FloatingControlStripInterface> & T => {
@@ -142,6 +142,9 @@ export const LDFloatingControlStripMixin = <
         this[$modularControlsContainer].style.zIndex = '100';
         this[$modularControlsContainer].style.pointerEvents = 'auto';
       } else {
+        console.log(
+          '[FloatingControlStrip] Controls not visible (behind camera)'
+        );
         this[$modularControlsContainer].style.display = 'none';
       }
 
