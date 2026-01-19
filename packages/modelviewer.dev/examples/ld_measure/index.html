@@ -53,16 +53,22 @@
               <div class="heading">
                 <h2 class="demo-title">Display measurements</h2>
                 <p>
-                  Toggle measurements by setting
-                  <span class="attribute">measure</span> attribute. The default
-                  is the total bounding box of the scene. If you also want to
-                  measure the size of individual objects, you can set the
-                  <span class="attribute">measure-objects</span> attribute.
+                  <b>How measurement works:</b> By default, the measurement overlay shows the total bounding box of the entire scene. To enable interactive measurement of individual objects, use the <span class="attribute">measure-objects</span> attribute.
                 </p>
-                <p>Default is an empty string.</p>
                 <p>
-                  "*" will let the user click any object. "name1,name2" will let
-                  the user click objects with the names "name1" and "name2".
+                  <b>measure-objects</b> can be set to <code>*</code> to allow clicking any selectable object, or to a comma-separated list of object names (e.g. <code>name1,name2</code>) to restrict measurement to those objects. If left empty, only the scene bounding box is measured.
+                </p>
+                <p>
+                  <b>Selection scope:</b> The <span class="attribute">selection-scope</span> attribute controls what can be selected for measurement:
+                  <ul>
+                    <li><b>scene</b>: Only the whole scene can be measured.</li>
+                    <li><b>group</b>: Groups or the whole scene can be measured.</li>
+                    <li><b>part</b>: Individual parts, groups, or the scene can be measured.</li>
+                  </ul>
+                  The selection logic now supports both placed objects (from modular scenes) and regular model nodes.
+                </p>
+                <p>
+                  <b>Tip:</b> If your model uses modular/placed objects (e.g. with the Puzzler feature), measurement and selection will work for those objects. Otherwise, it will work for any named node in the model.
                 </p>
               </div>
               <example-snippet stamp-to="measure" highlight-as="html">
@@ -70,10 +76,8 @@
                   <model-viewer
                     id="three-demo"
                     camera-controls
+                    touch-action="pan-y"
                     interaction-prompt="none"
-                    autoplay
-                    ar
-                    ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
                     src="../../shared-assets/models/textureCubes.gltf"
                     alt="An animated 3D model a bedside lamp"
@@ -122,6 +126,28 @@
                               </div>
                               <div class="flex items-center">
                                 <button
+                                  id="toggle-grid"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-labelledby="enable-grid-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-grid-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
                                   id="toggle-lines"
                                   type="button"
                                   class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
@@ -139,7 +165,7 @@
                                   id="enable-lines-label"
                                 >
                                   <span class="font-medium text-gray-900"
-                                    >Lines</span
+                                    >Dimension Lines</span
                                   >
                                 </span>
                               </div>
@@ -263,6 +289,41 @@
                             >
                               <div class="flex items-center gap-4">
                                 <h4 class="text-sm! font-medium text-gray-900">
+                                  Grid
+                                </h4>
+                                <span
+                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                >
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    data-value="scene"
+                                    aria-checked="true"
+                                  >
+                                    Scene
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    data-value="group"
+                                  >
+                                    Any Group
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600 rounded-r-md"
+                                    data-value="part"
+                                  >
+                                    Any Part
+                                  </button>
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="text-sm! font-medium text-gray-900">
                                   Dimensions
                                 </h4>
                                 <span
@@ -315,6 +376,18 @@
                           }
                         });
 
+                      document
+                        .getElementById('toggle-grid')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid', '');
+                          }
+                        });
                       document
                         .getElementById('toggle-lines')
                         .addEventListener('click', (e) => {
@@ -422,10 +495,8 @@
                   <model-viewer
                     id="three-demo-2"
                     camera-controls
+                    touch-action="pan-y"
                     interaction-prompt="none"
-                    autoplay
-                    ar
-                    ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
                     src="../../shared-assets/models/textureCubes.gltf"
                     alt="An animated 3D model a bedside lamp"

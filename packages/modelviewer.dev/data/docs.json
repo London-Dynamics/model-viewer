@@ -1330,27 +1330,75 @@
       {
         "name": "measure",
         "htmlName": "measure",
-        "description": "Toggle dimension lines and label on the model.",
+        "description": "Show or hide dimension lines and labels on the model.",
         "links": [
           "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ]
       },
       {
+        "name": "grid",
+        "htmlName": "grid",
+        "description": "Show or hide a measurement grid on the ground plane, using the selected measurement unit.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "grid-size",
+        "htmlName": "gridSize",
+        "description": "The total width and depth of the grid, centered at the origin, in the selected measurement unit.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "100",
+          "options": "number (in meters)"
+        }
+      },
+      {
+        "name": "grid-major-step",
+        "htmlName": "gridMajor",
+        "description": "Spacing between major grid lines, in the selected measurement unit.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "1",
+          "options": "number (in selected unit)"
+        }
+      },
+      {
+        "name": "grid-minor-step",
+        "htmlName": "gridMinor",
+        "description": "Spacing between minor grid lines, in the selected measurement unit.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+        ],
+        "default": {
+          "default": "0.5",
+          "options": "number (in selected unit)"
+        }
+      },
+      {
         "name": "measurement-unit",
         "htmlName": "measureUnit",
-        "description": "The unit to display measurements in.",
+        "description": "Sets the unit for measurements and the grid. Use 'ft-in' for the typical feet and inches display (e.g., 1' 2\"), which is more familiar to most imperial unit users than just inches.",
         "links": [
           "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
         "default": {
           "default": "m",
-          "options": "m, cm, mm, yd, ft, in"
+          "options": "m, cm, mm, yd, ft, in, ft-in"
         }
       },
       {
         "name": "measurement-precision",
         "htmlName": "measurePrecision",
-        "description": "Number of decimals to round the measurements to.",
+        "description": "Number of decimal places to show for measurements.",
         "links": [
           "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
@@ -1360,21 +1408,9 @@
         }
       },
       {
-        "name": "measure-objects",
-        "htmlName": "measureObjects",
-        "description": "If left empty, toggling the measure attribute will measure all objects in the scene. If set to a string, only objects with a matching name will be measured.\n\nTo enable selecting multiple objects, set the attribute to a comma-separated list of object names. If the attribute is set to a single object name, this will be togglable with the measure attribute.",
-        "links": [
-          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
-        ],
-        "default": {
-          "default": "empty string",
-          "options": "see description above"
-        }
-      },
-      {
         "name": "measurement-overrides",
         "htmlName": "measureOverrides",
-        "description": "Override the default measurements for specific objects or the entire scene. The attribute should have the format \"w h d\". If measure-objects is set to either full scene or one object, the attribute should be a single string. If measure-objects is set to multiple objects, the attribute should be a comma-separated list of strings, i.e. \"w1 h1 d1,w2 h2 d2\".",
+        "description": "Override default measurements for objects or the whole scene. Use \"w h d\" for one object or the scene, or a comma-separated list (\"w1 h1 d1,w2 h2 d2\") for multiple objects.",
         "links": [
           "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ],
@@ -1386,19 +1422,13 @@
       {
         "name": "disable-measurement-lines",
         "htmlName": "disableMeasurementLines",
-        "description": "Only show number markers.",
+        "description": "Show only numeric markers, hiding dimension lines.",
         "links": [
           "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ]
       }
     ],
-    "Methods": [
-      {
-        "name": "objectFromPoint()",
-        "htmlName": "objectFromPoint",
-        "description": "Returns the object at the point in the scene corresponding to the input pixel coordinates given relative to the screen. If no object is hit, the result is null."
-      }
-    ],
+    "Methods": [],
     "Slots": [
       {
         "name": "Dimension Labels",

@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <title>&lt;model-viewer&gt; LD Puzzler</title>
@@ -82,7 +82,9 @@
         height: 10px;
         border-radius: 50%;
         background-color: #fefefe;
-        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+        box-shadow:
+          0 0 2px rgba(0, 0, 0, 0.5),
+          0 0 4px rgba(0, 0, 0, 0.5);
         pointer-events: none;
       }
 
@@ -92,7 +94,9 @@
         border-radius: 50%;
         color: #333;
         background-color: #fefefe;
-        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+        box-shadow:
+          0 0 2px rgba(0, 0, 0, 0.5),
+          0 0 4px rgba(0, 0, 0, 0.5);
         pointer-events: auto;
         cursor: pointer;
         display: flex;
@@ -106,8 +110,8 @@
       #modular-demo::part(ld-rotation-icon) {
         font-size: 16px;
         line-height: 1;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-          sans-serif;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
 
       #modular-demo::part(ld-break-link) {
@@ -116,7 +120,9 @@
         border-radius: 50%;
         color: #333;
         background-color: #fefefe;
-        box-shadow: 0 0 2px rgba(0, 0, 0, 0.5), 0 0 4px rgba(0, 0, 0, 0.5);
+        box-shadow:
+          0 0 2px rgba(0, 0, 0, 0.5),
+          0 0 4px rgba(0, 0, 0, 0.5);
         pointer-events: auto;
         cursor: pointer;
         display: flex;
@@ -133,8 +139,8 @@
         font-size: 16px;
 
         line-height: 1;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-          sans-serif;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
     </style>
   </head>
@@ -636,8 +642,7 @@
                             modelViewer.setAttribute('cursor-visible', '');
 
                             const lowresSrc = `../../shared-assets/models/${filename}`;
-                            const highResSrc =
-                              'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/5bd99edf-30e7-d4c3-f116-7a0b97b1a51e.glb';
+                            const highResSrc = lowresSrc;
 
                             // Capture initial mouse position so the placeholder
                             // can be positioned immediately even if it loads
@@ -693,8 +698,8 @@
                               const pos = center
                                 ? center
                                 : session.placeholder
-                                ? session.placeholder.position
-                                : null;
+                                  ? session.placeholder.position
+                                  : null;
                               createLoaderHotspot(sessionId, pos);
                               // When placeholder becomes available later, update hotspot position
                               session.addEventListener(
