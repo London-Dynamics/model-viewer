@@ -13,8 +13,17 @@
  * limitations under the License.
  */
 
+import { ModelScene } from '../three-components/ModelScene.js';
 import { clamp } from '../utilities.js';
-import { Object3D, Quaternion, Vector3 } from 'three';
+import {
+  Box3,
+  Mesh,
+  MeshBasicMaterial,
+  Object3D,
+  Quaternion,
+  TetrahedronGeometry,
+  Vector3,
+} from 'three';
 
 const TRANSITION_DURATION = 300;
 
@@ -177,73 +186,200 @@ export const stopQuatAnimation = (
   map.delete(obj);
 };
 
+// Track in-progress explosion animations (Star Fox-style fragments)
+const explosionFragments: Array<{
+  mesh: Mesh;
+  velocity: Vector3;
+  angularVelocity: Vector3;
+  startScale: Vector3;
+  elapsedFrames: number;
+  maxFrames: number;
+  scaleStartFrame: number;
+}> = [];
+
 /**
- * Scale animation state used for stepping scale lerps driven by an
- * external tick (delta time in ms).
+ * Create Star Fox-style explosion fragments for an object.
+ * Spawns 3-6 tetrahedron fragments that fly outward while rotating and scaling down.
  */
-export interface ScaleAnimation {
-  elapsed: number;
-  duration: number; // ms
-  start: Vector3;
-  end: Vector3;
-  onComplete?: (obj: Object3D) => void;
+export function createExplosionFragments(
+  obj: Object3D,
+  scene: ModelScene | undefined,
+  options?: {
+    fragmentCount?: number; // Number of fragments (default: 8)
+    fragmentSize?: number; // Size of each fragment (default: 0.2)
+    duration?: number; // Total frames the animation lasts (default: 40)
+    distance?: number; // Max distance to travel (default: object radius, min 1)
+    scaleStartFrame?: number; // Frame at which scaling begins (default: 15)
+    onComplete?: () => void;
+    setupComplete?: () => void;
+  }
+) {
+  const {
+    fragmentCount = 8,
+    fragmentSize = 0.1,
+    duration = 30,
+    distance: distanceOption,
+    scaleStartFrame = 20,
+    onComplete,
+  } = options || {};
+
+  if (!scene) return;
+
+  // Calculate the center point of the object
+  const box = new Box3().setFromObject(obj);
+  const center = new Vector3();
+  box.getCenter(center);
+
+  // Calculate object radius and use it for distance if not provided
+  const size = new Vector3();
+  box.getSize(size);
+  const radius = Math.max(size.x, size.y, size.z) / 2;
+  const distance = distanceOption ?? Math.max(radius, 1);
+
+  // Calculate speed based on duration and distance
+  const speed = distance / duration;
+
+  // Create fragments
+  for (let i = 0; i < fragmentCount; i++) {
+    // Create a small tetrahedron for each fragment
+    const geometry = new TetrahedronGeometry(fragmentSize, 0);
+    const material = new MeshBasicMaterial({
+      color: 0xffffff, // Math.random() * 0xffffff Random color per fragment
+    });
+    const fragment = new Mesh(geometry, material);
+
+    // Position at object center
+    fragment.position.copy(center);
+
+    // Random outward velocity
+    const velocity = new Vector3(
+      (Math.random() - 0.5) * speed * 2,
+      (Math.random() - 0.5) * speed * 2,
+      (Math.random() - 0.5) * speed * 2
+    );
+
+    // Ensure some minimum outward velocity
+    if (velocity.length() < speed * 0.5) {
+      velocity.normalize().multiplyScalar(speed * 0.5);
+    }
+
+    // Random angular velocity for rotation
+    const angularVelocity = new Vector3(
+      (Math.random() - 0.5) * 0.3,
+      (Math.random() - 0.5) * 0.3,
+      (Math.random() - 0.5) * 0.3
+    );
+
+    // Add to scene
+    scene.add(fragment);
+
+    // Track fragment animation state
+    explosionFragments.push({
+      mesh: fragment,
+      velocity,
+      angularVelocity,
+      startScale: new Vector3(1, 1, 1),
+      elapsedFrames: 0,
+      maxFrames: duration,
+      scaleStartFrame,
+    });
+  }
+
+  // Store completion callback on the first fragment (any will do)
+  if (onComplete && explosionFragments.length > 0) {
+    (
+      explosionFragments[explosionFragments.length - fragmentCount] as any
+    )._onComplete = onComplete;
+  }
+
+  options?.setupComplete?.();
 }
 
 /**
- * Create a scale animation state. Clones vectors to avoid accidental
- * mutation by callers.
+ * Step explosion fragment animations forward by one frame.
+ * Moves fragments outward, rotates them, and scales them down over time.
  */
-export const createScaleAnimation = (
-  start: Vector3,
-  end: Vector3,
-  onComplete?: (obj: Object3D) => void,
-  duration = TRANSITION_DURATION
-): ScaleAnimation => ({
-  elapsed: 0,
-  duration,
-  start: start.clone(),
-  end: end.clone(),
-  onComplete,
-});
+export function stepExplosionFragments(scene: ModelScene) {
+  if (explosionFragments.length === 0) return false;
 
-/**
- * Step a map of scale animations by `deltaMs` milliseconds. This will
- * lerp each object's scale towards its target and remove completed
- * animations from the map. Uses `easeInQuint` easing by default.
- */
-export const stepScaleAnimations = (
-  map: Map<Object3D, ScaleAnimation>,
-  deltaMs: number
-): void => {
-  if (!map || map.size === 0) return;
+  // Step explosion fragment animations
+  const explosionBefore = explosionFragments.length;
 
-  for (const [obj, anim] of Array.from(map.entries())) {
-    anim.elapsed += deltaMs;
-    const t = Math.min(1, Math.max(0, anim.elapsed / anim.duration));
-    const eased = easeInQuint(t);
+  const toRemove: number[] = [];
 
-    try {
-      const v = anim.start.clone().lerp(anim.end, eased);
-      obj.scale.copy(v);
-    } catch (e) {
-      // ignore per-object failures
+  for (let i = 0; i < explosionFragments.length; i++) {
+    const fragment = explosionFragments[i];
+    fragment.elapsedFrames++;
+
+    // Move fragment outward
+    fragment.mesh.position.add(fragment.velocity);
+
+    // Rotate fragment
+    fragment.mesh.rotation.x += fragment.angularVelocity.x;
+    fragment.mesh.rotation.y += fragment.angularVelocity.y;
+    fragment.mesh.rotation.z += fragment.angularVelocity.z;
+
+    // Scale down only after scaleStartFrame
+    if (fragment.elapsedFrames >= fragment.scaleStartFrame) {
+      const scaleDuration = fragment.maxFrames - fragment.scaleStartFrame;
+      const scaleProgress =
+        (fragment.elapsedFrames - fragment.scaleStartFrame) / scaleDuration;
+      const scale = Math.max(0, 1 - scaleProgress);
+      fragment.mesh.scale.set(scale, scale, scale);
     }
 
-    if (t >= 1) {
+    // Mark for removal if animation complete
+    if (fragment.elapsedFrames >= fragment.maxFrames) {
+      toRemove.push(i);
+      if (scene) {
+        scene.remove(fragment.mesh);
+      }
+      // Dispose geometry and material to free memory
       try {
-        obj.scale.copy(anim.end);
+        fragment.mesh.geometry.dispose();
+        if (Array.isArray(fragment.mesh.material)) {
+          fragment.mesh.material.forEach((m) => m.dispose());
+        } else {
+          (fragment.mesh.material as MeshBasicMaterial).dispose();
+        }
       } catch (e) {}
-      try {
-        if (anim.onComplete) anim.onComplete(obj);
-      } catch (e) {}
-      map.delete(obj);
     }
   }
-};
 
-export const stopScaleAnimation = (
-  map: Map<Object3D, ScaleAnimation>,
-  obj: Object3D
-): void => {
-  map.delete(obj);
-};
+  // Remove completed fragments (iterate backwards to avoid index issues)
+  for (let i = toRemove.length - 1; i >= 0; i--) {
+    const idx = toRemove[i];
+    const removed = explosionFragments.splice(idx, 1)[0];
+    // Call completion callback if this fragment had one
+    if ((removed as any)._onComplete) {
+      try {
+        (removed as any)._onComplete();
+      } catch (e) {}
+    }
+  }
+
+  const explosionAfter = explosionFragments.length;
+
+  if (explosionBefore > 0 || explosionAfter > 0) {
+    return true;
+  }
+  return false;
+}
+
+export function clearExplosionFragments(scene: ModelScene) {
+  if (scene) {
+    for (const fragment of explosionFragments) {
+      scene.remove(fragment.mesh);
+      // Dispose geometry and material to free memory
+      try {
+        fragment.mesh.geometry.dispose();
+        if (Array.isArray(fragment.mesh.material)) {
+          fragment.mesh.material.forEach((m) => m.dispose());
+        } else {
+          (fragment.mesh.material as MeshBasicMaterial).dispose();
+        }
+      } catch (e) {}
+    }
+  }
+  explosionFragments.length = 0;
+}

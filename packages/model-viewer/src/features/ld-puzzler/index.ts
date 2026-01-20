@@ -45,10 +45,11 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';
 import { createSafeObjectUrlFromArrayBuffer } from '../../utilities/create_object_url.js';
 import {
+  clearExplosionFragments,
+  createExplosionFragments,
   createQuatAnimation,
+  stepExplosionFragments,
   stepQuatAnimations,
-  createScaleAnimation,
-  stepScaleAnimations,
 } from '../../utilities/animation.js';
 
 // Re-export SnappingPoint type for external use
@@ -249,6 +250,11 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // reference touch helper to silence unused-method lint
         this._touchUnused();
       } catch (e) {}
+
+      // Clean up explosion fragments
+      try {
+        clearExplosionFragments(this[$scene]);
+      } catch (e) {}
     }
 
     [$tick](time: number, delta: number) {
@@ -283,21 +289,14 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // update pending flags. `delta` is the time since the last tick and
       // is used to advance animations by real time rather than frame count.
       try {
-        // Step registered quaternion and scale animations (delta is in ms)
+        // Step registered quaternion animations (delta is in ms)
         const rotBefore = this._rotationAnimationMap.size;
         stepQuatAnimations(this._rotationAnimationMap, delta);
         const rotAfter = this._rotationAnimationMap.size;
 
-        const scaleBefore = this._scaleAnimationMap.size;
-        stepScaleAnimations(this._scaleAnimationMap, delta);
-        const scaleAfter = this._scaleAnimationMap.size;
+        const explosionsUpdated = stepExplosionFragments((this as any)[$scene]);
 
-        if (
-          rotBefore > 0 ||
-          rotAfter > 0 ||
-          scaleBefore > 0 ||
-          scaleAfter > 0
-        ) {
+        if (rotBefore > 0 || rotAfter > 0 || explosionsUpdated) {
           this.requestShadowUpdate();
           (this as any)[$needsRender]();
         }
@@ -331,9 +330,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     // Track in-progress rotation animations so they can be stepped from [$tick]
     // Map<Object3D, QuatAnimation>
     private _rotationAnimationMap: Map<Object3D, any> = new Map();
-
-    // Track in-progress scale animations (for removal/scale-out)
-    private _scaleAnimationMap: Map<Object3D, any> = new Map();
 
     async load(src: string, id: string): Promise<GLTF> {
       const loader = new GLTFLoader();
@@ -2884,8 +2880,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Remove an object by name. Optionally animate its scale down before
-     * removing. Uses tick-driven scale animations when `options.animate` is true.
+     * Remove an object by name. Optionally animate with a Star Fox-style explosion effect.
+     * When `options.animate` is true, spawns tetrahedron fragments that fly outward while
+     * rotating and scaling down, then removes the object.
      */
     removeObject(objectName: string, options?: { animate?: boolean }) {
       try {
@@ -2959,18 +2956,17 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           } catch (e) {}
         };
 
-        // Animated removal
+        // Animated removal - Star Fox-style explosion
         if (options?.animate) {
           try {
-            const start = obj.scale.clone();
-            const end = new Vector3(0, 0, 0);
-            this._scaleAnimationMap.set(
-              obj,
-              createScaleAnimation(start, end, (_o: Object3D) => {
-                // After scale-out, remove the object and ensure group metadata cleaned
-                doRemoveNow();
-              })
-            );
+            createExplosionFragments(obj, this[$scene], {
+              onComplete: () => doRemoveNow(),
+              setupComplete: () => {
+                (this as any)[$needsRender]();
+              },
+            });
+            // Immediately hide the original object
+            obj.visible = false;
             this.requestShadowUpdate();
             (this as any)[$needsRender]();
             return;
