@@ -1,6 +1,6 @@
 {
   "name": "@london-dynamics/model-viewer",
-  "version": "4.2.0-beta.28",
+  "version": "4.2.0-beta.29",
   "description": "Easily display interactive 3D models on the web and in AR!",
   "repository": {
     "url": "git+https://github.com/london-dynamics/model-viewer.git"
@@ -87,7 +87,8 @@
   "dependencies": {
     "@monogrid/gainmap-js": "^3.1.0",
     "camera-controls": "^3.1.0",
-    "lit": "^3.2.1"
+    "lit": "^3.2.1",
+    "postprocessing": "^6.37.1"
   },
   "peerDependencies": {
     "three": "^0.172.0"

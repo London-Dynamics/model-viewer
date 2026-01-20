@@ -90,6 +90,7 @@ interface IMVEffect extends Effect {
   requireNormals?: boolean;
   requireDirtyRender?: boolean;
   disabled?: boolean;
+  blendMode: any;
 }
 
 /**
