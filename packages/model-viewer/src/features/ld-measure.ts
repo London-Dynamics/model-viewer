@@ -15,6 +15,7 @@ import ModelViewerElementBase, {
   $scene,
   $onModelLoad,
   $needsRender,
+  $tick,
 } from '../model-viewer-base.js';
 
 import { Constructor } from '../utilities.js';
@@ -1407,6 +1408,14 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._measureWidthElement = null;
       this._measureHeightElement = null;
       this._measureDepthElement = null;
+    }
+
+    [$tick](time: number, delta: number) {
+      super[$tick](time, delta);
+
+      if (this.measure && this._lineGroups.length) {
+        this._updateMarkerPosition();
+      }
     }
 
     [$onModelLoad]() {
