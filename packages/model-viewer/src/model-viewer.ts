@@ -22,6 +22,7 @@ import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 
 import { LDControlsMixin } from './features/ld-controls.js';
+import { LDDebugMixin } from './features/ld-debug.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
 import { LDCameraMixin } from './features/ld-camera.js';
 import { LDFloatingControlStripMixin } from './features/ld-floating-control-strip.js';
@@ -50,14 +51,16 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
             LDLightsMixin(
               LDCameraMixin(
                 LDEnvironmentMixin(
-                  AnnotationMixin(
-                    SceneGraphMixin(
-                      StagingMixin(
-                        EnvironmentMixin(
-                          LDControlsMixin(
-                            ARMixin(
-                              LoadingMixin(
-                                AnimationMixin(ModelViewerElementBase)
+                  LDDebugMixin(
+                    AnnotationMixin(
+                      SceneGraphMixin(
+                        StagingMixin(
+                          EnvironmentMixin(
+                            LDControlsMixin(
+                              ARMixin(
+                                LoadingMixin(
+                                  AnimationMixin(ModelViewerElementBase)
+                                )
                               )
                             )
                           )

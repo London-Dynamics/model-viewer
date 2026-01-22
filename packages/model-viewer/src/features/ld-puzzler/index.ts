@@ -403,15 +403,22 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     attachObject(id: string, target?: string, options?: PositionOptions) {
-      console.log('attachObject', id, 'to', target, 'with options', options);
+      (this as any).log(
+        'attachObject',
+        id,
+        'to',
+        target,
+        'with options',
+        options
+      );
     }
 
     detachObject(id: string) {
-      console.log('detachObject', id);
+      (this as any).log('detachObject', id);
     }
 
     attachMaterial(id: string) {
-      console.log('attachMaterial', id);
+      (this as any).log('attachMaterial', id);
     }
 
     clear() {}
@@ -976,7 +983,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this.updateSnappingPointSlots();
       } catch (e) {
-        console.error('[Puzzler] Failed to update snapping points:', e);
+        (this as any).error('[Puzzler] Failed to update snapping points:', e);
       }
 
       // Update floating control strip when exactly one object is selected
@@ -988,10 +995,15 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (typeof selectFn === 'function') {
             selectFn.call(this, selected);
           } else {
-            console.warn('[Puzzler] $selectObjectForControls not available');
+            (this as any).warn(
+              '[Puzzler] $selectObjectForControls not available'
+            );
           }
         } catch (e) {
-          console.error('[Puzzler] Failed to select object for controls:', e);
+          (this as any).error(
+            '[Puzzler] Failed to select object for controls:',
+            e
+          );
         }
       } else {
         try {
@@ -999,10 +1011,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (typeof clearFn === 'function') {
             clearFn.call(this);
           } else {
-            console.warn('[Puzzler] $clearSelectedObject not available');
+            (this as any).warn('[Puzzler] $clearSelectedObject not available');
           }
         } catch (e) {
-          console.error('[Puzzler] Failed to clear selected object:', e);
+          (this as any).error('[Puzzler] Failed to clear selected object:', e);
         }
       }
 
@@ -1014,7 +1026,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           try {
             this.updateBreakLinkSlots();
           } catch (e) {
-            console.error('[Puzzler] Failed to update break-link slots:', e);
+            (this as any).error(
+              '[Puzzler] Failed to update break-link slots:',
+              e
+            );
           }
         } else {
           this._breakLinkSlotsVisible = false;
@@ -1084,7 +1099,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Log pending connection changes for debugging
       try {
-        console.debug('[puzzler] _setPendingSnapConnection ->', v);
+        (this as any).log('[puzzler] _setPendingSnapConnection ->', v);
       } catch (e) {}
       this.pendingSnapConnection = v;
 
@@ -1139,7 +1154,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           try {
             (mover as Object3D).position.copy(desiredLocal);
             try {
-              console.debug(
+              (this as any).log(
                 '[puzzler] _setPendingSnapConnection applied visual alignment',
                 { moverName: mover.name || mover.uuid, desiredLocal }
               );
@@ -1214,7 +1229,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._recentlyDisconnectedPairs.add(pairKey);
 
           try {
-            console.debug(
+            (this as any).log(
               '[puzzler] tracking disconnected pair for hysteresis',
               {
                 id1,
@@ -1373,7 +1388,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Move children from group2 into group1 and merge connections
       try {
         try {
-          console.debug('[puzzler] mergeSnappedGroups', {
+          (this as any).log('[puzzler] mergeSnappedGroups', {
             g1: group1.name || group1.uuid,
             g2: group2.name || group2.uuid,
             connection,
@@ -1420,7 +1435,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       try {
         try {
-          console.debug('[puzzler] addObjectToSnappedGroup', {
+          (this as any).log('[puzzler] addObjectToSnappedGroup', {
             group: group.name || group.uuid,
             newObject: newObject.name || newObject.uuid,
             connection,
@@ -1511,7 +1526,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           (this as any)[$scene].setTarget(center.x, center.y, center.z);
         } catch (e) {}
         try {
-          console.debug('[puzzler] completeSnapConnection focusGroup', {
+          (this as any).log('[puzzler] completeSnapConnection focusGroup', {
             name: focusGroup.name || focusGroup.uuid,
             userData: focusGroup.userData,
           });
@@ -1527,7 +1542,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       try {
-        console.debug('[puzzler] selection after completeSnapConnection', {
+        (this as any).log('[puzzler] selection after completeSnapConnection', {
           selected:
             (this as any).selectedObjects[0]?.name ||
             (this as any).selectedObjects[0]?.uuid,
@@ -1554,7 +1569,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Recompute connected components and split group if necessary.
       try {
         try {
-          console.debug('[puzzler] reorganizeGroupAfterBreakLink', {
+          (this as any).log('[puzzler] reorganizeGroupAfterBreakLink', {
             name: group.name || group.uuid,
             userData: group.userData,
           });
@@ -1628,7 +1643,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (components.length <= 1) {
           // nothing to split
           try {
-            console.debug(
+            (this as any).log(
               '[puzzler] reorganizeGroupAfterBreakLink nothing to split',
               {
                 components: components.length,
@@ -1714,9 +1729,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         });
 
         try {
-          console.debug('[puzzler] reorganizeGroupAfterBreakLink completed', {
-            components: components.length,
-          });
+          (this as any).log(
+            '[puzzler] reorganizeGroupAfterBreakLink completed',
+            {
+              components: components.length,
+            }
+          );
         } catch (e) {}
 
         (this as any)[$needsRender]();
@@ -2262,7 +2280,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         object.position.set(desiredX, desiredY, desiredZ);
         try {
-          console.debug('[puzzler] updateDragPosition', {
+          (this as any).log('[puzzler] updateDragPosition', {
             target: object.name || object.uuid,
             pos: { x: desiredX, y: desiredY, z: desiredZ },
             dragTarget:
@@ -2336,15 +2354,18 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
                     ? scene.target.add(draggedObject)
                     : scene.add(draggedObject);
                 } catch (e) {
-                  console.debug('[puzzler] failed to re-parent dragged part', {
-                    e,
-                  });
+                  (this as any).log(
+                    '[puzzler] failed to re-parent dragged part',
+                    {
+                      e,
+                    }
+                  );
                 }
               }
             }
           }
         } catch (e) {
-          console.debug('[puzzler] error ensuring part placement status', {
+          (this as any).log('[puzzler] error ensuring part placement status', {
             e,
           });
         }
@@ -2427,7 +2448,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               : this.snapDistance;
 
             try {
-              console.debug('[puzzler] checking snap with hysteresis', {
+              (this as any).log('[puzzler] checking snap with hysteresis', {
                 draggedId,
                 targetId,
                 pairKey,
@@ -2440,7 +2461,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             const connections = findSnappingConnections(snappableObj, child);
 
             try {
-              console.debug('[puzzler] connections found', {
+              (this as any).log('[puzzler] connections found', {
                 draggedId,
                 targetId,
                 pairKey,
@@ -2456,7 +2477,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
               : connections;
 
             try {
-              console.debug('[puzzler] after filtering', {
+              (this as any).log('[puzzler] after filtering', {
                 draggedId,
                 targetId,
                 pairKey,
@@ -2518,7 +2539,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (!selectedGroup?.userData?.isSnappedGroup) return;
 
         try {
-          console.debug('[puzzler] breakSpecificConnection selectedGroup', {
+          (this as any).log('[puzzler] breakSpecificConnection selectedGroup', {
             name: selectedGroup.name || selectedGroup.uuid,
             userData: selectedGroup.userData,
             connectionId,
@@ -2579,7 +2600,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             this._recentlyDisconnectedPairs.add(pairKey);
 
             try {
-              console.debug(
+              (this as any).log(
                 '[puzzler] tracking broken connection pair for hysteresis',
                 {
                   id1,
@@ -2604,7 +2625,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (connections.length === 0) {
           try {
             try {
-              console.debug(
+              (this as any).log(
                 '[puzzler] breakSpecificConnection: no connections remain — ungrouping',
                 {
                   group: selectedGroup.name || selectedGroup.uuid,
@@ -2614,7 +2635,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             const ungrouped = this.ungroupSnappedGroup(selectedGroup);
             try {
-              console.debug('[puzzler] ungroupSnappedGroup result', {
+              (this as any).log('[puzzler] ungroupSnappedGroup result', {
                 ungrouped,
               });
             } catch (e) {}
@@ -2641,7 +2662,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             (this as any)[$needsRender]();
           } catch (e) {
             try {
-              console.debug('[puzzler] ungroup error', { e });
+              (this as any).log('[puzzler] ungroup error', { e });
             } catch (e) {}
           }
           return;
@@ -2685,7 +2706,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             selectedGroup.parent.remove(selectedGroup);
         } catch (e) {
           try {
-            console.debug('[puzzler] post-break cleanup failed', { e });
+            (this as any).log('[puzzler] post-break cleanup failed', { e });
           } catch (e) {}
         }
 
@@ -2719,7 +2740,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           const children = parentObj
             ? [...(parentObj as Object3D).children]
             : [];
-          console.debug('[puzzler] post-break selectedGroup children', {
+          (this as any).log('[puzzler] post-break selectedGroup children', {
             parent: parentObj?.name || parentObj?.uuid,
             children: children
               .filter((c) => c.name && c.name.startsWith('part__'))
@@ -2788,7 +2809,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Note: control strip, snapping points and break-link slots will be updated by _onSelectionChange handler
         return true;
       } catch (e) {
-        console.error('[Puzzler] selectPart error:', e);
+        (this as any).error('[Puzzler] selectPart error:', e);
         return false;
       }
     }
@@ -2815,7 +2836,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Note: control strip, snapping points and break-link slots will be updated by _onSelectionChange handler
         return true;
       } catch (e) {
-        console.error('[Puzzler] selectGroup error:', e);
+        (this as any).error('[Puzzler] selectGroup error:', e);
         return false;
       }
     }
@@ -2836,7 +2857,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._breakLinkSlotsVisible = false;
         this.clearSlots(this._breakLinkSlots);
       } catch (e) {
-        console.error('[Puzzler] clearSelection error:', e);
+        (this as any).error('[Puzzler] clearSelection error:', e);
       }
 
       // Parent selection mixin logic (inlined to avoid prototype chain issues)
@@ -3664,7 +3685,7 @@ class PlacementSession extends EventTarget {
         }
 
         // No placeholder - session will track cursor position only
-        console.log(
+        (this as any).log(
           '[puzzler] PlacementSession: No low-res URL provided, skipping placeholder'
         );
         return;
@@ -3904,12 +3925,12 @@ class PlacementSession extends EventTarget {
                 targetWorld,
                 draggedWorld
               );
-              console.log(
+              (this as any).log(
                 '[puzzler] updatePosition applying snap offset:',
                 offset.toArray()
               );
               this.placeholder.position.add(offset);
-              console.log(
+              (this as any).log(
                 '[puzzler] updatePosition after snap:',
                 this.placeholder.position.toArray()
               );
@@ -3971,7 +3992,7 @@ class PlacementSession extends EventTarget {
     try {
       if (this.placeholder) {
         // Placeholder is already in local space, use its position directly
-        console.log(
+        (this as any).log(
           '[puzzler] commit: reading placeholder.position:',
           this.placeholder.position.toArray()
         );
@@ -3980,7 +4001,7 @@ class PlacementSession extends EventTarget {
           y: this.placeholder.position.y,
           z: this.placeholder.position.z,
         };
-        console.log(
+        (this as any).log(
           '[puzzler] commit: centerDetail from placeholder:',
           centerDetail
         );
@@ -4025,13 +4046,13 @@ class PlacementSession extends EventTarget {
     // Resolve high-res URL: use callback if no direct URL provided
     let srcToLoad = finalSrc || this._highResSrc;
     if (!srcToLoad && this._options?.getHighResUrl) {
-      console.log(
+      (this as any).log(
         '[puzzler] PlacementSession.commit: invoking getHighResUrl callback'
       );
       try {
         srcToLoad = await this._options.getHighResUrl();
       } catch (e) {
-        console.error(
+        (this as any).error(
           '[puzzler] PlacementSession.commit: getHighResUrl callback failed',
           e
         );
@@ -4053,9 +4074,12 @@ class PlacementSession extends EventTarget {
       const error = new Error(
         'No high-res URL provided and no getHighResUrl callback'
       );
-      console.error('[puzzler] PlacementSession.commit: no high-res URL', {
-        sessionId: this.id,
-      });
+      (this as any).error(
+        '[puzzler] PlacementSession.commit: no high-res URL',
+        {
+          sessionId: this.id,
+        }
+      );
       (this as any).dispatchEvent(
         new CustomEvent('error', {
           detail: {
@@ -4158,14 +4182,14 @@ class PlacementSession extends EventTarget {
             this._lastCursorPosition.y,
             this._lastCursorPosition.z
           );
-          console.log(
+          (this as any).log(
             '[puzzler] Placed object using cursor position:',
             gltf.scene.position.toArray(),
             'from cursor:',
             this._lastCursorPosition
           );
         } else {
-          console.warn(
+          (this as any).warn(
             '[puzzler] No placeholder or cursor position - object placed at origin'
           );
         }
@@ -4211,7 +4235,7 @@ class PlacementSession extends EventTarget {
           el && el.pendingSnapConnection ? el.pendingSnapConnection : null;
         if (!pending) {
           try {
-            console.debug(
+            (this as any).log(
               'ld-puzzler: PlacementSession.commit running fallback snap search for new node',
               { node: gltf.scene.name }
             );
@@ -4252,7 +4276,7 @@ class PlacementSession extends EventTarget {
                     if (connections && connections.length > 0) {
                       const closest = connections[0];
                       try {
-                        console.debug(
+                        (this as any).log(
                           'ld-puzzler: PlacementSession.commit fallback found connection',
                           { dragged: snappableObj.name, target: child.name }
                         );
