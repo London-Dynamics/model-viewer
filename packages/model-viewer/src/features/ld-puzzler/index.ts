@@ -402,6 +402,35 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._loadStatusMap.clear();
     }
 
+    getSceneStructure() {
+      const scene = this[$scene];
+      const results: any[] = [];
+
+      function extractData(obj: Object3D) {
+        return {
+          name: obj.name,
+          uuid: obj.uuid,
+          position: obj.position.clone(),
+          rotation: obj.rotation.clone(),
+          scale: obj.scale.clone(),
+          userData: obj.userData,
+          part: obj.userData?.part,
+          isGroup: !!obj.userData?.isSnappedGroup,
+          children: obj.children.map((child) => child.uuid),
+        };
+      }
+
+      const root = scene.target || scene;
+      root.traverse((obj: Object3D) => {
+        // Only include placed objects and groups
+        if (obj.userData?.isPlacedObject || obj.userData?.isSnappedGroup) {
+          results.push(extractData(obj));
+        }
+      });
+
+      return results;
+    }
+
     attachObject(id: string, target?: string, options?: PositionOptions) {
       (this as any).log(
         'attachObject',
@@ -3679,7 +3708,8 @@ class PlacementSession extends EventTarget {
               detail: { sessionId: this.id, placeholder },
             })
           );
-          // Request render
+
+          if (!this._element) return;
           (this._element as any)[$needsRender]();
           return;
         }
@@ -3691,6 +3721,7 @@ class PlacementSession extends EventTarget {
         return;
       }
 
+      if (!this._element) return;
       const loader = (this._element as any)[$renderer].loader;
       const gltf = await loader.load(lowResUrl, this._element, (p: number) => {
         // Progress for placeholder load (0..1)
@@ -3753,7 +3784,7 @@ class PlacementSession extends EventTarget {
           detail: { sessionId: this.id, placeholder },
         })
       );
-      // Request render
+      if (!this._element) return;
       (this._element as any)[$needsRender]();
     } catch (error) {
       (this as any).dispatchEvent(
@@ -3960,6 +3991,8 @@ class PlacementSession extends EventTarget {
           },
         })
       );
+
+      if (!this._element) return;
       (this._element as any)[$needsRender]();
     } catch (error) {
       // If helper is not present or fails, emit error and no-op
@@ -4224,7 +4257,7 @@ class PlacementSession extends EventTarget {
       }
 
       // Request render update
-      (this._element as any)[$needsRender]();
+      (element as any)[$needsRender]();
 
       // Fallback: if no pending connection was recorded (or it was lost),
       // do an immediate check between the newly placed model and existing
@@ -4346,11 +4379,12 @@ class PlacementSession extends EventTarget {
 
       // Clean up placeholder (we can still remove it even though the
       // interactive session has been ended)
-      this._cleanupPlaceholder();
+      this._cleanupPlaceholder(element);
 
       // Request a render so the newly added final model is visible
       // immediately (camera movement shouldn't be required).
       try {
+        if (!element) return;
         (element as any)[$needsRender]();
         // Also refresh snapping-point slots so UI updates immediately
         try {
@@ -4367,7 +4401,8 @@ class PlacementSession extends EventTarget {
       return { id: this.id, node: gltf.scene };
     } catch (error) {
       // On failure, remove placeholder and emit error
-      this._cleanupPlaceholder();
+
+      this._cleanupPlaceholder(element);
       this.state = 'cancelled';
       (this as any).dispatchEvent(
         new CustomEvent('error', {
@@ -4394,7 +4429,7 @@ class PlacementSession extends EventTarget {
     this._endInteractive();
   }
 
-  private _cleanupPlaceholder() {
+  private _cleanupPlaceholder(element?: any) {
     if (!this.placeholder) return;
     try {
       if (this.placeholder.parent)
@@ -4409,8 +4444,11 @@ class PlacementSession extends EventTarget {
       // ignore
     }
     this.placeholder = null;
-    // If the interactive element is still around, request a render.
-    if (this._element) (this._element as any)[$needsRender]();
+
+    const el = element || this._element;
+    if (el) {
+      (el as any)[$needsRender]();
+    }
   }
 
   private _endInteractive() {
