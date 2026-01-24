@@ -147,7 +147,7 @@ export class ModelScene extends Scene {
   public bakedShadows = new Set<Mesh>();
 
   // HACK
-  public hasGround: boolean = false;
+  public hasCustomGroundPlane: boolean = false;
 
   public exposure = 1;
   public toneMapping: ToneMapping = NeutralToneMapping;
@@ -485,7 +485,7 @@ export class ModelScene extends Scene {
     const orientation = parseExpressions(this.element.orientation)[0].terms as [
       NumberNode,
       NumberNode,
-      NumberNode
+      NumberNode,
     ];
 
     const roll = normalizeUnit(orientation[0]).number;
@@ -497,7 +497,7 @@ export class ModelScene extends Scene {
     const scale = parseExpressions(this.element.scale)[0].terms as [
       NumberNode,
       NumberNode,
-      NumberNode
+      NumberNode,
     ];
 
     model.scale.set(scale[0].number, scale[1].number, scale[2].number);
@@ -650,7 +650,7 @@ export class ModelScene extends Scene {
     return (
       this.boundingSphere.radius *
         (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1) +
-      (this.hasGround ? 1000 : 0)
+      (this.hasCustomGroundPlane ? 1000 : 0)
     );
   }
 

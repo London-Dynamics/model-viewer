@@ -1,6 +1,7 @@
 import { property } from 'lit/decorators.js';
 import {
   MathUtils,
+  Object3D,
   PlaneGeometry,
   PMREMGenerator,
   RepeatWrapping,
@@ -41,7 +42,7 @@ export declare interface LDEnvironmentInterface {
 }
 
 export const LDEnvironmentMixin = <
-  T extends Constructor<ModelViewerElementBase>
+  T extends Constructor<ModelViewerElementBase>,
 >(
   ModelViewerElement: T
 ): Constructor<LDEnvironmentInterface> & T => {
@@ -64,6 +65,9 @@ export const LDEnvironmentMixin = <
     @property({ type: Number, attribute: 'sun-azimuth' })
     sunAzimuth: number | undefined = undefined;
 
+    @property({ type: Number, attribute: 'ground-elevation' })
+    groundElevation: number | null = null;
+
     private [$water]: Water | null = null;
     private [$sky]: Sky | null = null;
     private [$sun]: Vector3 | null = null;
@@ -85,6 +89,21 @@ export const LDEnvironmentMixin = <
       if (this[$scene] && !this[$water]) {
         const { waterTexture } = this;
 
+        // Find the Target object to add the grid
+        let targetObject: Object3D | undefined;
+        this[$scene].traverse((child) => {
+          if (child.name === 'Target') {
+            targetObject = child;
+          }
+        });
+
+        if (!targetObject) {
+          console.warn('Target object not found for water placement.');
+          return;
+        }
+
+        const target = targetObject as Object3D;
+
         const waterGeometry = new PlaneGeometry(10000, 10000);
 
         this[$water] = new Water(waterGeometry, {
@@ -105,8 +124,11 @@ export const LDEnvironmentMixin = <
 
         /* This to make sure plane is at floor level */
         this[$water].rotation.x = -Math.PI / 2;
+        this[$water].position.y = this.groundElevation || 0;
 
-        this[$scene].add(this[$water]);
+        this[$scene].hasCustomGroundPlane = true;
+
+        target.add(this[$water]);
 
         this[$animateEnvironment]();
       }
