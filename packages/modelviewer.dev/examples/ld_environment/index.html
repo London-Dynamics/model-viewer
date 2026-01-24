@@ -73,7 +73,7 @@
                     water-texture="../../shared-assets/normals/waternormals.jpg"
                     sky
                     alt="A 3D model of a boat in the sea"
-                    src="../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
+                    src="https://assets.v2.londondynamics.com/1b1c190d-7aa3-4075-9bb2-edb1afe09477/puzzle/946be855-ec97-2c4c-214f-67910f930841.glb"
                     ar
                     camera-controls
                     touch-action="pan-y"
@@ -82,7 +82,7 @@
                     camera-target="auto 0m auto"
                     exposure="1.2"
                     interaction-prompt="none"
-                    ground-elevation="0.2"
+                    ground-elevation="0.6"
                   >
                     <div class="absolute bottom-0 inset-x-0 p-2">
                       <div class="bg-white shadow-sm rounded-lg">
@@ -142,7 +142,7 @@
                             >
                               <label
                                 for="water-size"
-                                class="block text-sm font-medium text-gray-400"
+                                class="block text-sm font-medium text-gray-500"
                                 >Water Size</label
                               >
                               <input
@@ -160,7 +160,7 @@
                             >
                               <label
                                 for="sun-elevation"
-                                class="block text-sm font-medium text-gray-400"
+                                class="block text-sm font-medium text-gray-500"
                                 >Sun Elevation</label
                               >
                               <input
@@ -178,7 +178,7 @@
                             >
                               <label
                                 for="sun-azimuth"
-                                class="block text-sm font-medium text-gray-400"
+                                class="block text-sm font-medium text-gray-500"
                                 >Sun Azimuth</label
                               >
                               <input
@@ -200,6 +200,18 @@
                   <script type="module">
                     (() => {
                       const modelViewer = document.querySelector('#water-demo');
+
+                      modelViewer.addEventListener('load', () => {
+                        modelViewer.setAnimationSettings('src', {
+                          name: 'bob',
+                          amplitude: 0.04,
+                          frequency: 0.3,
+                          pitchAmplitude: 2,
+                          pitchFrequency: 0.25,
+                          rollAmplitude: 1.5,
+                          rollFrequency: 0.2,
+                        });
+                      });
 
                       let controlPanelButton = document.querySelector(
                         '[data-toggle="collapse"]'

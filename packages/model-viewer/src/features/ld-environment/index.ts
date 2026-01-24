@@ -126,6 +126,8 @@ export const LDEnvironmentMixin = <
         this[$water].rotation.x = -Math.PI / 2;
         this[$water].position.y = this.groundElevation || 0;
 
+        this[$water].userData.environment = true;
+
         this[$scene].hasCustomGroundPlane = true;
 
         target.add(this[$water]);
