@@ -69,6 +69,17 @@ export type PlacementOptions = {
   getHighResUrl?: () => Promise<string | undefined>;
 };
 
+export type PlacementGraphNode = {
+  name: string;
+  uuid: string;
+  position: Vector3;
+  rotation: Euler;
+  scale: Vector3;
+  part: Partial<Part> | undefined;
+  snappingPoints?: SnappingPoint[];
+  children?: PlacementGraphNode[];
+};
+
 type PositionOptions = {
   position?: Vector3;
   rotation?: Euler;
@@ -404,26 +415,44 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getSceneStructure() {
       const scene = this[$scene];
-      const results: any[] = [];
+      const results: PlacementGraphNode[] = [];
 
-      function extractData(obj: Object3D) {
+      function extractData(obj: Object3D): PlacementGraphNode {
+        const isGroup = !!obj.userData?.isSnappedGroup;
         return {
           name: obj.name,
           uuid: obj.uuid,
           position: obj.position.clone(),
           rotation: obj.rotation.clone(),
           scale: obj.scale.clone(),
-          userData: obj.userData,
           part: obj.userData?.part,
-          isGroup: !!obj.userData?.isSnappedGroup,
-          children: obj.children.map((child) => child.uuid),
+          snappingPoints: obj.userData?.snappingPoints,
+          ...(isGroup && {
+            children: obj.children.map((child) => extractData(child)),
+          }),
         };
       }
 
       const root = scene.target || scene;
+      // First, collect all group objects and their children
+      const groupChildren = new Set<string>();
       root.traverse((obj: Object3D) => {
-        // Only include placed objects and groups
-        if (obj.userData?.isPlacedObject || obj.userData?.isSnappedGroup) {
+        if (obj.userData?.isSnappedGroup) {
+          obj.children.forEach((child) => {
+            groupChildren.add(child.uuid);
+          });
+        }
+      });
+
+      root.traverse((obj: Object3D) => {
+        if (obj.userData?.isSnappedGroup) {
+          // Add group itself
+          results.push(extractData(obj));
+        } else if (
+          obj.userData?.isPlacedObject &&
+          !groupChildren.has(obj.uuid)
+        ) {
+          // Add placed object only if not part of a group
           results.push(extractData(obj));
         }
       });

@@ -454,6 +454,12 @@
                       const modelViewer =
                         document.querySelector('#modular-demo');
 
+                      modelViewer.debugMode = true;
+
+                      modelViewer.addEventListener('part-state-change', (e) => {
+                        console.log('*** part-state-change', e.detail);
+                      });
+
                       const relativeMouseCoordinates = (e) => {
                         const rect = modelViewer.getBoundingClientRect();
                         return {
@@ -716,6 +722,7 @@
                                     if (wrapper) {
                                       wrapper.dataset.position = posStr;
                                     }
+
                                     // Inform model-viewer to update the hotspot position
                                     try {
                                       modelViewer.updateHotspot?.({
@@ -734,6 +741,13 @@
                               console.log('Loaded placed object');
                               modelViewer.removeAttribute('cursor-visible');
                               removeLoaderHotspot(e.detail.sessionId);
+                              const sceneGraph =
+                                modelViewer.getSceneStructure();
+
+                              console.log(
+                                'Scene graph after placement:',
+                                sceneGraph
+                              );
                               session = null;
                             });
 
@@ -747,6 +761,11 @@
                             });
 
                             session.addEventListener('error', (e) => {
+                              console.error(
+                                'Error during placement:',
+                                e.detail
+                              );
+
                               // Clean up loader if load failed
                               removeLoaderHotspot(e.detail.sessionId);
                             });
