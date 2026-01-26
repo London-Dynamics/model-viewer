@@ -499,16 +499,30 @@ export function createSnappedGroup(
     },
   ];
 
-  // Remove objects from their current parent and add to group
+  // Calculate the midpoint of the two objects' positions to set as group position
+  // Do this BEFORE any reparenting operations
+  const groupPosition = new Vector3()
+    .addVectors(object1.position, object2.position)
+    .multiplyScalar(0.5);
+
+  // Add group to parent first
   const parent = object1.parent;
   if (parent) {
-    parent.remove(object1);
-    parent.remove(object2);
     parent.add(group);
   }
 
-  group.add(object1);
-  group.add(object2);
+  // Set the group's position in the parent's coordinate space
+  group.position.copy(groupPosition);
+
+  // Update matrix so attach() works correctly
+  group.updateMatrixWorld(true);
+
+  // Use attach() to move objects to the group while preserving world transforms
+  // attach() automatically removes objects from their current parent
+  object1.updateMatrixWorld(true);
+  object2.updateMatrixWorld(true);
+  group.attach(object1);
+  group.attach(object2);
 
   // Don't mark the original snap points as used - keep them visible
   // The connection information is stored in snapConnections for ungrouping

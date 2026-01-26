@@ -413,7 +413,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._loadStatusMap.clear();
     }
 
-    getSceneStructure() {
+    getPlacementTree() {
       const scene = this[$scene];
       const results: PlacementGraphNode[] = [];
 
@@ -1370,18 +1370,24 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           // Parent both objects under the new group while preserving world transforms
           const parent = draggedObject.parent || (this as any)[$scene];
+
+          // Calculate the center point of the two objects in the parent's coordinate space
+          // Since both objects are children of the same parent, use their local positions
+          const groupPosition = new Vector3()
+            .addVectors(draggedObject.position, targetObject.position)
+            .multiplyScalar(0.5);
+
           parent.add(group);
+          group.position.copy(groupPosition);
+
+          // Update the group's matrix so attach works correctly for children
+          group.updateMatrixWorld(true);
 
           [draggedObject, targetObject].forEach((obj: any) => {
-            // save world transform
+            // Use attach() instead of add() to preserve world transform
+            // attach() automatically converts the object's position to be relative to the group
             obj.updateMatrixWorld(true);
-            const worldPos = new Vector3();
-            obj.getWorldPosition(worldPos);
-            group.add(obj);
-            // set local pos so world position remains
-            obj.getWorldPosition(worldPos);
-            if (obj.parent) obj.parent.worldToLocal(worldPos);
-            obj.position.copy(worldPos);
+            group.attach(obj);
             obj.userData = obj.userData || {};
             obj.userData.groupId = group.name;
           });
@@ -1454,14 +1460,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch (e) {}
         const children = [...group2.children];
         children.forEach((child) => {
-          // preserve world transform
+          // Use attach() to preserve world transform when moving to new group
           child.updateMatrixWorld(true);
-          const worldPos = new Vector3();
-          child.getWorldPosition(worldPos);
-          group2.remove(child);
-          group1.add(child);
-          if (child.parent) child.parent.worldToLocal(worldPos);
-          child.position.copy(worldPos);
+          group1.attach(child);
           child.userData = child.userData || {};
           child.userData.groupId = group1.name;
           child.userData.isInGroup = true;
@@ -1499,14 +1500,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             connection,
           });
         } catch (e) {}
+        // Use attach() to preserve world transform when reparenting
         newObject.updateMatrixWorld(true);
-        const worldPos = new Vector3();
-        newObject.getWorldPosition(worldPos);
-        const oldParent = newObject.parent;
-        if (oldParent) oldParent.remove(newObject);
-        group.add(newObject);
-        if (newObject.parent) newObject.parent.worldToLocal(worldPos);
-        newObject.position.copy(worldPos);
+        group.attach(newObject);
         newObject.userData = newObject.userData || {};
         newObject.userData.groupId = group.name;
         newObject.userData.isInGroup = true;
