@@ -443,6 +443,15 @@
                                 </span>
                               </div>
                             </div>
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                id="log-scene-graph"
+                              >
+                                Log current scene graph
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -453,12 +462,6 @@
                     (() => {
                       const modelViewer =
                         document.querySelector('#modular-demo');
-
-                      modelViewer.debugMode = true;
-
-                      modelViewer.addEventListener('part-state-change', (e) => {
-                        console.log('*** part-state-change', e.detail);
-                      });
 
                       const relativeMouseCoordinates = (e) => {
                         const rect = modelViewer.getBoundingClientRect();
@@ -623,6 +626,18 @@
                         ],
                       };
 
+                      const logSceneGraph = () => {
+                        const sceneGraph = modelViewer.getPlacementTree();
+
+                        console.log('Current scene graph:', sceneGraph);
+                      };
+
+                      document
+                        .getElementById('log-scene-graph')
+                        .addEventListener('click', (e) => {
+                          logSceneGraph();
+                        });
+
                       document
                         .querySelectorAll('.place-glb')
                         .forEach((button) => {
@@ -741,12 +756,7 @@
                               console.log('Loaded placed object');
                               modelViewer.removeAttribute('cursor-visible');
                               removeLoaderHotspot(e.detail.sessionId);
-                              const sceneGraph = modelViewer.getPlacementTree();
-
-                              console.log(
-                                'Scene graph after placement:',
-                                sceneGraph
-                              );
+                              logSceneGraph();
                               session = null;
                             });
 
