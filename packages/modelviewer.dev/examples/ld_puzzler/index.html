@@ -741,8 +741,7 @@
                               console.log('Loaded placed object');
                               modelViewer.removeAttribute('cursor-visible');
                               removeLoaderHotspot(e.detail.sessionId);
-                              const sceneGraph =
-                                modelViewer.getSceneStructure();
+                              const sceneGraph = modelViewer.getPlacementTree();
 
                               console.log(
                                 'Scene graph after placement:',

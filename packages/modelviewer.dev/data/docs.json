@@ -1259,6 +1259,18 @@
           "default": "180",
           "options": "any number between -180 and 180"
         }
+      },
+      {
+        "name": "ground-elevation",
+        "htmlName": "groundElevation",
+        "description": "Sets the vertical offset (in meters) of the ground plane relative to the model's origin. Use this to raise or lower the ground for custom staging or water effects.",
+        "links": [
+          "<a href=\"../examples/ld-environment/#ground-elevation\">Related examples</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "any number (meters)"
+        }
       }
     ]
   },
@@ -1574,6 +1586,21 @@
         ]
       },
       {
+        "name": "setSrcFromBuffer(buffer: ArrayBuffer)",
+        "htmlName": "setSrcFromBuffer",
+        "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",
+        "links": [
+          "<a href=\"../examples/ld_puzzler/#set-src-from-buffer\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "deDraco(inputBuffer: ArrayBuffer)",
+        "htmlName": "deDraco",
+        "description": "Removes DRACO compression from a GLB file provided as an ArrayBuffer. Returns a Promise that resolves to an uncompressed GLB ArrayBuffer. This is useful for compatibility with systems that don't support DRACO compression.",
+        "links": ["<a href=\"../examples/ld_puzzler\">Related examples</a>"]
+      },
+
+      {
         "name": "attachObject(id: string, options?: PositionOptions): void",
         "htmlName": "attachObject",
         "description": "Instantiate or attach a previously-loaded model (by id) into the scene. Optional position/rotation/scale anchor may be provided.",
@@ -1604,20 +1631,7 @@
           "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
         ]
       },
-      {
-        "name": "setSrcFromBuffer(buffer: ArrayBuffer)",
-        "htmlName": "setSrcFromBuffer",
-        "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",
-        "links": [
-          "<a href=\"../examples/ld_puzzler/#set-src-from-buffer\">Related examples</a>"
-        ]
-      },
-      {
-        "name": "deDraco(inputBuffer: ArrayBuffer)",
-        "htmlName": "deDraco",
-        "description": "Removes DRACO compression from a GLB file provided as an ArrayBuffer. Returns a Promise that resolves to an uncompressed GLB ArrayBuffer. This is useful for compatibility with systems that don't support DRACO compression.",
-        "links": ["<a href=\"../examples/ld_puzzler\">Related examples</a>"]
-      },
+
       {
         "name": "setPosition(objectName: string, value: [number, number, number]): void",
         "htmlName": "setPosition",
@@ -1714,6 +1728,7 @@
           "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
         ]
       },
+
       {
         "name": "getPosition(objectName: string): [number, number, number]",
         "htmlName": "getPosition",
@@ -1737,6 +1752,11 @@
         "links": [
           "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
         ]
+      },
+      {
+        "name": "getPlacementTree()",
+        "htmlName": "getPlacementTree",
+        "description": "Returns a structured representation of the current scene's placed objects and groups, formatted as a tree. This includes object names, UUIDs, transforms, and group hierarchy, reflecting the logical assembly as seen by the user."
       }
     ]
   }
