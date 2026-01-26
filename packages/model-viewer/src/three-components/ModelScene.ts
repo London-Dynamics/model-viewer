@@ -98,7 +98,7 @@ export class ModelScene extends Scene {
   public bakedShadows = new Set<Mesh>();
 
   // HACK
-  public hasGround: boolean = false;
+  public hasCustomGroundPlane: boolean = false;
 
   public exposure = 1;
   public toneMapping: ToneMapping = ACESFilmicToneMapping;
@@ -561,7 +561,7 @@ export class ModelScene extends Scene {
   // HACK
   farRadius() {
         return this.boundingSphere.radius *
-        (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1) + (this.hasGround ? 1000 : 0);
+        (this.groundedSkybox.parent != null ? GROUNDED_SKYBOX_SIZE : 1) + (this.hasCustomGroundPlane ? 1000 : 0);
   }
 
   setGroundedSkybox() {
