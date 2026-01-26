@@ -1569,7 +1569,6 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           connection.draggedPoint,
           connection.targetPoint
         );
-        (this as any).selectedObjects = [snappedGroup];
         focusGroup = snappedGroup;
       }
 
@@ -1591,7 +1590,8 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       // which group we're operating on.
       if (focusGroup) {
         try {
-          (this as any).selectedObjects = [focusGroup];
+          // Use _selectObject to properly update selection including highlighting
+          (this as any)._selectObject(focusGroup);
         } catch (e) {}
       }
 
