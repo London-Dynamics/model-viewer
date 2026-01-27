@@ -3705,7 +3705,10 @@ class PlacementSession extends EventTarget {
             ? this._options.name + `_${+new Date()}`
             : this.id;
 
-          placeholder.userData = placeholder.userData || {};
+          placeholder.userData = {
+            selectable: true,
+            ...(placeholder.userData || {}),
+          };
           placeholder.userData.isPlacementPlaceholder = true;
 
           if (this._options?.snappingPoints) {
@@ -3716,8 +3719,8 @@ class PlacementSession extends EventTarget {
               // ignore
             }
           }
-          if (this._options?.selectable === false)
-            placeholder.userData.selectable = false;
+          if (typeof this._options?.selectable !== 'undefined')
+            placeholder.userData.selectable = this._options.selectable;
 
           // Insert into scene target
           try {
@@ -3791,8 +3794,8 @@ class PlacementSession extends EventTarget {
           // ignore
         }
       }
-      if (this._options?.selectable === false)
-        placeholder.userData.selectable = false;
+      if (typeof this._options?.selectable !== 'undefined')
+        placeholder.userData.selectable = this._options.selectable;
 
       // Insert into scene target
       try {
@@ -4263,6 +4266,7 @@ class PlacementSession extends EventTarget {
 
       // Mark as placed so selection logic recognizes it
       gltf.scene.userData = {
+        selectable: true,
         ...gltf.scene.userData,
         id: this._options?.id || this.id,
         name: this._options?.name || this.id,
@@ -4276,8 +4280,8 @@ class PlacementSession extends EventTarget {
         } catch (e) {}
       }
       gltf.scene.userData.isPlacedObject = true;
-      if (this._options?.selectable === false)
-        gltf.scene.userData.selectable = false;
+      if (typeof this._options?.selectable !== 'undefined')
+        gltf.scene.userData.selectable = this._options.selectable;
 
       // Add object to scene.target (required for camera controls)
       try {

@@ -310,6 +310,15 @@ export class ModelScene extends Scene {
 
     if (gltf != null) {
       // HACK
+      if (gltf.scene && this.element.disableBaseModelSelection) {
+        gltf.scene.userData.selectable = false;
+        // Optionally mark all children too
+        gltf.scene.traverse((child) => {
+          child.userData.selectable = false;
+        });
+      }
+
+      // HACK
       gltf.scene.userData['filepath'] = url;
       gltf.scene.userData['filename'] = url.split('/').pop() || '';
       this._model = gltf.scene;
