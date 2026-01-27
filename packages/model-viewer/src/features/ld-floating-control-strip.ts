@@ -123,7 +123,7 @@ export const LDFloatingControlStripMixin = <
 
       // Position controls slightly below and in the middle of bounding box
       const controlsPosition = center.clone();
-      controlsPosition.y = boundingBox.min.y - 0.2; // 0.2 units below bottom
+      controlsPosition.y = boundingBox.min.y - 0.5; // 0.2 units below bottom
 
       // Convert to screen coordinates
       const screenPosition = this[$worldToScreen](controlsPosition);
