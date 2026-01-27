@@ -330,7 +330,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this._performSelectionRaycast(e);
       } catch (error) {
-        console.error('LDSelectionMixin: raycast error', error);
+        console.error('[selection]: raycast error', error);
       }
     };
 
@@ -622,13 +622,13 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!node) return false;
       try {
         if (!node.userData?.isPlacedObject) {
-          console.warn('selectPart: node is not a placed object');
+          console.warn('[selection]: selectPart: node is not a placed object');
           return false;
         }
         this._selectObject(node);
         return true;
       } catch (e) {
-        console.error('selectPart error:', e);
+        console.error('[selection]: selectPart error:', e);
         return false;
       }
     }
@@ -644,7 +644,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._selectObject(node);
         return true;
       } catch (e) {
-        console.error('selectGroup error:', e);
+        console.error('[selection]: selectGroup error:', e);
         return false;
       }
     }

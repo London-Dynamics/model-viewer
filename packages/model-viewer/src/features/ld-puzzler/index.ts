@@ -1041,7 +1041,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this.updateSnappingPointSlots();
       } catch (e) {
-        (this as any).error('[Puzzler] Failed to update snapping points:', e);
+        (this as any).error('[puzzler] Failed to update snapping points:', e);
       }
 
       // Update floating control strip when exactly one object is selected
@@ -1054,12 +1054,12 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             selectFn.call(this, selected);
           } else {
             (this as any).warn(
-              '[Puzzler] $selectObjectForControls not available'
+              '[puzzler] $selectObjectForControls not available'
             );
           }
         } catch (e) {
           (this as any).error(
-            '[Puzzler] Failed to select object for controls:',
+            '[puzzler] Failed to select object for controls:',
             e
           );
         }
@@ -1069,10 +1069,10 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (typeof clearFn === 'function') {
             clearFn.call(this);
           } else {
-            (this as any).warn('[Puzzler] $clearSelectedObject not available');
+            (this as any).warn('[puzzler] $clearSelectedObject not available');
           }
         } catch (e) {
-          (this as any).error('[Puzzler] Failed to clear selected object:', e);
+          (this as any).error('[puzzler] Failed to clear selected object:', e);
         }
       }
 
@@ -1085,7 +1085,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
             this.updateBreakLinkSlots();
           } catch (e) {
             (this as any).error(
-              '[Puzzler] Failed to update break-link slots:',
+              '[puzzler] Failed to update break-link slots:',
               e
             );
           }
@@ -2863,7 +2863,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Note: control strip, snapping points and break-link slots will be updated by _onSelectionChange handler
         return true;
       } catch (e) {
-        (this as any).error('[Puzzler] selectPart error:', e);
+        (this as any).error('[puzzler] selectPart error:', e);
         return false;
       }
     }
@@ -2890,7 +2890,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Note: control strip, snapping points and break-link slots will be updated by _onSelectionChange handler
         return true;
       } catch (e) {
-        (this as any).error('[Puzzler] selectGroup error:', e);
+        (this as any).error('[puzzler] selectGroup error:', e);
         return false;
       }
     }
@@ -2911,7 +2911,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._breakLinkSlotsVisible = false;
         this.clearSlots(this._breakLinkSlots);
       } catch (e) {
-        (this as any).error('[Puzzler] clearSelection error:', e);
+        (this as any).error('[puzzler] clearSelection error:', e);
       }
 
       // Parent selection mixin logic (inlined to avoid prototype chain issues)
