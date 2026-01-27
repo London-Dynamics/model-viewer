@@ -51,6 +51,7 @@ import {
   stepExplosionFragments,
   stepQuatAnimations,
 } from '../../utilities/animation.js';
+import { LogFunction } from '../ld-debug.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
@@ -3204,6 +3205,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const session = new PlacementSession(
         this,
+        (this as any).log,
         lowResSrc,
         highResSrc,
         options || {}
@@ -3610,6 +3612,7 @@ class PlacementSession extends EventTarget {
   id: string;
   state: 'placing' | 'loading' | 'ended' | 'cancelled' = 'placing';
   placeholder: Object3D | null = null;
+  private log: LogFunction;
   private _element: InstanceType<ReturnType<typeof LDPuzzlerMixin>> | null;
   private _lowResSrc: string | undefined;
   private _highResSrc: string | undefined;
@@ -3622,6 +3625,7 @@ class PlacementSession extends EventTarget {
 
   constructor(
     element: any,
+    log: LogFunction,
     lowResSrc?: string,
     highResSrc?: string,
     options?: PlacementOptions
@@ -3632,6 +3636,7 @@ class PlacementSession extends EventTarget {
     this._lowResSrc = lowResSrc;
     this._highResSrc = highResSrc;
     this._options = options;
+    this.log = log;
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
@@ -3739,8 +3744,8 @@ class PlacementSession extends EventTarget {
           return;
         }
 
-        // No placeholder - session will track cursor position only
-        (this as any).log(
+        // No placeholder - session will track cursor position only, but will never commit
+        this.log(
           '[puzzler] PlacementSession: No low-res URL provided, skipping placeholder'
         );
         return;
@@ -3981,12 +3986,12 @@ class PlacementSession extends EventTarget {
                 targetWorld,
                 draggedWorld
               );
-              (this as any).log(
+              this.log(
                 '[puzzler] updatePosition applying snap offset:',
                 offset.toArray()
               );
               this.placeholder.position.add(offset);
-              (this as any).log(
+              this.log(
                 '[puzzler] updatePosition after snap:',
                 this.placeholder.position.toArray()
               );
@@ -4050,7 +4055,7 @@ class PlacementSession extends EventTarget {
     try {
       if (this.placeholder) {
         // Placeholder is already in local space, use its position directly
-        (this as any).log(
+        this.log(
           '[puzzler] commit: reading placeholder.position:',
           this.placeholder.position.toArray()
         );
@@ -4059,7 +4064,7 @@ class PlacementSession extends EventTarget {
           y: this.placeholder.position.y,
           z: this.placeholder.position.z,
         };
-        (this as any).log(
+        this.log(
           '[puzzler] commit: centerDetail from placeholder:',
           centerDetail
         );
@@ -4104,7 +4109,7 @@ class PlacementSession extends EventTarget {
     // Resolve high-res URL: use callback if no direct URL provided
     let srcToLoad = finalSrc || this._highResSrc;
     if (!srcToLoad && this._options?.getHighResUrl) {
-      (this as any).log(
+      this.log(
         '[puzzler] PlacementSession.commit: invoking getHighResUrl callback'
       );
       try {
@@ -4240,7 +4245,7 @@ class PlacementSession extends EventTarget {
             this._lastCursorPosition.y,
             this._lastCursorPosition.z
           );
-          (this as any).log(
+          this.log(
             '[puzzler] Placed object using cursor position:',
             gltf.scene.position.toArray(),
             'from cursor:',
@@ -4293,7 +4298,7 @@ class PlacementSession extends EventTarget {
           el && el.pendingSnapConnection ? el.pendingSnapConnection : null;
         if (!pending) {
           try {
-            (this as any).log(
+            this.log(
               'ld-puzzler: PlacementSession.commit running fallback snap search for new node',
               { node: gltf.scene.name }
             );
@@ -4334,7 +4339,7 @@ class PlacementSession extends EventTarget {
                     if (connections && connections.length > 0) {
                       const closest = connections[0];
                       try {
-                        (this as any).log(
+                        this.log(
                           'ld-puzzler: PlacementSession.commit fallback found connection',
                           { dragged: snappableObj.name, target: child.name }
                         );
