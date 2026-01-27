@@ -166,6 +166,8 @@ export declare interface LDPuzzlerInterface {
     options?: PlacementOptions
   ) => Promise<void>;
 
+  getPlacementTree(): PlacementGraphNode[];
+
   // Higher-level API functions
   getSelectedObject: () => Object3D | null;
   selectPart?: (node: Object3D) => boolean;
