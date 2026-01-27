@@ -107,6 +107,10 @@ export interface SelectionChangeDetail {
   type: 'select' | 'deselect' | 'clear';
 }
 
+export interface LDSelectionInterface {
+  disableBaseModelSelection: boolean;
+}
+
 /**
  * LDSelectionMixin handles object selection in edit mode based on a configurable
  * selection scope (part, group, or all). It emits selection-change events that
@@ -114,7 +118,7 @@ export interface SelectionChangeDetail {
  */
 export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
-): T => {
+): Constructor<LDSelectionInterface> & T => {
   class LDSelectionModelViewerElement extends ModelViewerElement {
     /**
      * Which selection mode is active. Options:
@@ -128,6 +132,9 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({ type: Boolean, attribute: 'highlight-selected' })
     highlightSelected: boolean = false;
+
+    @property({ type: Boolean, attribute: 'disable-base-model-selection' })
+    disableBaseModelSelection: boolean = false;
 
     // Track selected objects
     protected selectedObjects: Object3D[] = [];
@@ -378,8 +385,12 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       // Filter out objects marked as noHit (e.g., measurement lines, helpers)
+      // and objects marked as not selectable
       const intersects = allIntersects.filter(
-        (hit) => hit.object.visible && !hit.object.userData?.noHit
+        (hit) =>
+          hit.object.visible &&
+          !hit.object.userData?.noHit &&
+          hit.object.userData?.selectable !== false
       );
 
       if (intersects.length === 0) {
@@ -688,5 +699,5 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
   }
 
-  return LDSelectionModelViewerElement as any as T;
+  return LDSelectionModelViewerElement;
 };

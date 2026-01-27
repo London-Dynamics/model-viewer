@@ -50,6 +50,8 @@ export class Cursor extends Object3D {
     super();
     this.name = 'cursor';
     this.visible = false;
+    this.userData.selectable = false; // Prevent cursor from being selected
+    this.userData.noHit = true; // Prevent cursor from being hit by raycasts
     this.scene = scene;
     this.targetObject = targetObject;
 
@@ -177,6 +179,8 @@ export class Cursor extends Object3D {
     this.mesh.castShadow = false;
     this.mesh.renderOrder = RENDER_ORDER;
     this.mesh.position.set(0, 0, 0);
+    this.mesh.userData.selectable = false; // Prevent cursor mesh from being selected
+    this.mesh.userData.noHit = true; // Prevent cursor mesh from being hit by raycasts
     this.add(this.mesh);
 
     // Create unit contour positions for LineGeometry (unit circle in XZ)
@@ -209,6 +213,8 @@ export class Cursor extends Object3D {
     line.position.set(0, 0, 0);
     line.computeLineDistances();
     line.renderOrder = RENDER_ORDER + 1;
+    line.userData.selectable = false; // Prevent cursor line from being selected
+    line.userData.noHit = true; // Prevent cursor line from being hit by raycasts
 
     this.contourLine = line;
     this.contourLineMaterial = lineMat;
