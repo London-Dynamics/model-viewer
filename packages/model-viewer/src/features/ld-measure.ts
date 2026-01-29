@@ -421,7 +421,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.measurementUnit
       );
 
-      // Materials for major and minor grid lines
+      // Materials for major and minor grid lines (shared across all lines)
       const minorMaterial = new LineBasicMaterial({
         color: 0x888888,
         transparent: true,
@@ -434,7 +434,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         transparent: true,
         opacity: 0.5,
         depthTest: true,
-        linewidth: 2, // Note: linewidth only works in WebGLRenderer with specific settings
+        linewidth: 2,
       });
 
       // Get the floor Y position (bottom of bounding box)
@@ -447,6 +447,33 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const startZ = -halfSize;
       const endZ = halfSize;
 
+      // Create template geometries (one for vertical, one for horizontal)
+      const verticalTemplateGeometry = new BufferGeometry().setFromPoints([
+        new Vector3(0, floorY, startZ),
+        new Vector3(0, floorY, endZ),
+      ]);
+
+      const horizontalTemplateGeometry = new BufferGeometry().setFromPoints([
+        new Vector3(startX, floorY, 0),
+        new Vector3(endX, floorY, 0),
+      ]);
+
+      // Helper function to create and position a line
+      const createLine = (
+        templateGeometry: BufferGeometry,
+        material: LineBasicMaterial,
+        position: Vector3
+      ): Line => {
+        const geometry = templateGeometry.clone();
+        const line = new Line(geometry, material);
+        line.position.copy(position);
+        line.userData.noHit = true;
+        line.frustumCulled = false;
+        line.castShadow = false;
+        line.receiveShadow = false;
+        return line;
+      };
+
       // Create vertical lines (parallel to Z axis)
       if (this.gridMinor > 0) {
         for (
@@ -457,39 +484,29 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           const isMajor =
             this.gridMajor > 0 && Math.abs(x % majorSpacing) < 0.001;
 
-          // Skip minor lines if only drawing major
           if (!isMajor && this.gridMajor > 0) {
             // Draw as minor line
-            const points = [
-              new Vector3(x, floorY, startZ),
-              new Vector3(x, floorY, endZ),
-            ];
-            const geometry = new BufferGeometry().setFromPoints(points);
-            const line = new Line(geometry, minorMaterial);
-            line.userData.noHit = true;
-            line.frustumCulled = false;
+            const line = createLine(
+              verticalTemplateGeometry,
+              minorMaterial,
+              new Vector3(x, 0, 0)
+            );
             gridContainer.add(line);
           } else if (isMajor) {
             // Draw as major line
-            const points = [
-              new Vector3(x, floorY, startZ),
-              new Vector3(x, floorY, endZ),
-            ];
-            const geometry = new BufferGeometry().setFromPoints(points);
-            const line = new Line(geometry, majorMaterial);
-            line.userData.noHit = true;
-            line.frustumCulled = false;
+            const line = createLine(
+              verticalTemplateGeometry,
+              majorMaterial,
+              new Vector3(x, 0, 0)
+            );
             gridContainer.add(line);
           } else if (this.gridMajor <= 0) {
             // No major lines, draw as minor
-            const points = [
-              new Vector3(x, floorY, startZ),
-              new Vector3(x, floorY, endZ),
-            ];
-            const geometry = new BufferGeometry().setFromPoints(points);
-            const line = new Line(geometry, minorMaterial);
-            line.userData.noHit = true;
-            line.frustumCulled = false;
+            const line = createLine(
+              verticalTemplateGeometry,
+              minorMaterial,
+              new Vector3(x, 0, 0)
+            );
             gridContainer.add(line);
           }
         }
@@ -500,14 +517,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           x <= endX;
           x += majorSpacing
         ) {
-          const points = [
-            new Vector3(x, floorY, startZ),
-            new Vector3(x, floorY, endZ),
-          ];
-          const geometry = new BufferGeometry().setFromPoints(points);
-          const line = new Line(geometry, majorMaterial);
-          line.userData.noHit = true;
-          line.frustumCulled = false;
+          const line = createLine(
+            verticalTemplateGeometry,
+            majorMaterial,
+            new Vector3(x, 0, 0)
+          );
           gridContainer.add(line);
         }
       }
@@ -522,39 +536,29 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           const isMajor =
             this.gridMajor > 0 && Math.abs(z % majorSpacing) < 0.001;
 
-          // Skip minor lines if only drawing major
           if (!isMajor && this.gridMajor > 0) {
             // Draw as minor line
-            const points = [
-              new Vector3(startX, floorY, z),
-              new Vector3(endX, floorY, z),
-            ];
-            const geometry = new BufferGeometry().setFromPoints(points);
-            const line = new Line(geometry, minorMaterial);
-            line.userData.noHit = true;
-            line.frustumCulled = false;
+            const line = createLine(
+              horizontalTemplateGeometry,
+              minorMaterial,
+              new Vector3(0, 0, z)
+            );
             gridContainer.add(line);
           } else if (isMajor) {
             // Draw as major line
-            const points = [
-              new Vector3(startX, floorY, z),
-              new Vector3(endX, floorY, z),
-            ];
-            const geometry = new BufferGeometry().setFromPoints(points);
-            const line = new Line(geometry, majorMaterial);
-            line.userData.noHit = true;
-            line.frustumCulled = false;
+            const line = createLine(
+              horizontalTemplateGeometry,
+              majorMaterial,
+              new Vector3(0, 0, z)
+            );
             gridContainer.add(line);
           } else if (this.gridMajor <= 0) {
             // No major lines, draw as minor
-            const points = [
-              new Vector3(startX, floorY, z),
-              new Vector3(endX, floorY, z),
-            ];
-            const geometry = new BufferGeometry().setFromPoints(points);
-            const line = new Line(geometry, minorMaterial);
-            line.userData.noHit = true;
-            line.frustumCulled = false;
+            const line = createLine(
+              horizontalTemplateGeometry,
+              minorMaterial,
+              new Vector3(0, 0, z)
+            );
             gridContainer.add(line);
           }
         }
@@ -565,17 +569,18 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           z <= endZ;
           z += majorSpacing
         ) {
-          const points = [
-            new Vector3(startX, floorY, z),
-            new Vector3(endX, floorY, z),
-          ];
-          const geometry = new BufferGeometry().setFromPoints(points);
-          const line = new Line(geometry, majorMaterial);
-          line.userData.noHit = true;
-          line.frustumCulled = false;
+          const line = createLine(
+            horizontalTemplateGeometry,
+            majorMaterial,
+            new Vector3(0, 0, z)
+          );
           gridContainer.add(line);
         }
       }
+
+      // Dispose template geometries as they're no longer needed
+      verticalTemplateGeometry.dispose();
+      horizontalTemplateGeometry.dispose();
 
       // Add grid to Target object
       target.add(gridContainer);
