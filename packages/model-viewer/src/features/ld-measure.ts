@@ -411,6 +411,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Create grid container
       const gridContainer = new Object3D();
       gridContainer.name = 'ld-grid';
+
+      gridContainer.castShadow = false;
+      gridContainer.receiveShadow = false;
+
       this[$gridContainer] = gridContainer;
 
       // Convert grid spacing from display units to meters
@@ -458,6 +462,24 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const endZ = halfSize;
       const gridLength = this.gridSize;
 
+      // Create shared geometries - reuse across all lines to reduce memory
+      const minorVerticalGeometry = new PlaneGeometry(
+        minorLineWidth,
+        gridLength
+      );
+      const majorVerticalGeometry = new PlaneGeometry(
+        majorLineWidth,
+        gridLength
+      );
+      const minorHorizontalGeometry = new PlaneGeometry(
+        gridLength,
+        minorLineWidth
+      );
+      const majorHorizontalGeometry = new PlaneGeometry(
+        gridLength,
+        majorLineWidth
+      );
+
       // Create vertical lines (parallel to Z axis) using thin rectangles
       if (this.gridMinor > 0) {
         for (
@@ -469,10 +491,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
             this.gridMajor > 0 && Math.abs(x % majorSpacing) < 0.001;
 
           const material = isMajor ? majorMaterial : minorMaterial;
-          const lineWidth = isMajor ? majorLineWidth : minorLineWidth;
+          const geometry = isMajor
+            ? majorVerticalGeometry
+            : minorVerticalGeometry;
 
-          // Create a thin horizontal rectangle (width x length, rotated to lie flat)
-          const geometry = new PlaneGeometry(lineWidth, gridLength);
+          // Reuse shared geometry and material
           const mesh = new Mesh(geometry, material);
 
           // Position at x, gridY, center of Z range
@@ -483,6 +506,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           mesh.userData.noHit = true;
           mesh.frustumCulled = false;
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
+
           gridContainer.add(mesh);
         }
       } else if (this.gridMajor > 0) {
@@ -491,12 +517,15 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           x <= endX;
           x += majorSpacing
         ) {
-          const geometry = new PlaneGeometry(majorLineWidth, gridLength);
-          const mesh = new Mesh(geometry, majorMaterial);
+          const mesh = new Mesh(majorVerticalGeometry, majorMaterial);
           mesh.position.set(x, gridY, 0);
           mesh.rotation.x = -Math.PI / 2;
+
           mesh.userData.noHit = true;
           mesh.frustumCulled = false;
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
+
           gridContainer.add(mesh);
         }
       }
@@ -512,10 +541,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
             this.gridMajor > 0 && Math.abs(z % majorSpacing) < 0.001;
 
           const material = isMajor ? majorMaterial : minorMaterial;
-          const lineWidth = isMajor ? majorLineWidth : minorLineWidth;
+          const geometry = isMajor
+            ? majorHorizontalGeometry
+            : minorHorizontalGeometry;
 
-          // Create a thin horizontal rectangle (length x width, rotated to lie flat)
-          const geometry = new PlaneGeometry(gridLength, lineWidth);
+          // Reuse shared geometry and material
           const mesh = new Mesh(geometry, material);
 
           // Position at center of X range, gridY, z
@@ -526,6 +556,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           mesh.userData.noHit = true;
           mesh.frustumCulled = false;
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
+
           gridContainer.add(mesh);
         }
       } else if (this.gridMajor > 0) {
@@ -534,12 +567,15 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           z <= endZ;
           z += majorSpacing
         ) {
-          const geometry = new PlaneGeometry(gridLength, majorLineWidth);
-          const mesh = new Mesh(geometry, majorMaterial);
+          const mesh = new Mesh(majorHorizontalGeometry, majorMaterial);
           mesh.position.set(0, gridY, z);
           mesh.rotation.x = -Math.PI / 2;
+
           mesh.userData.noHit = true;
           mesh.frustumCulled = false;
+          mesh.castShadow = false;
+          mesh.receiveShadow = false;
+
           gridContainer.add(mesh);
         }
       }
