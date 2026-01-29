@@ -5,6 +5,9 @@ import {
   Line,
   LineBasicMaterial,
   Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
   Object3D,
   Object3DEventMap,
   Vector3,
@@ -403,7 +406,6 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      // Type assertion after null check
       const target = targetObject as Object3D;
 
       // Create grid container
@@ -421,60 +423,42 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.measurementUnit
       );
 
-      // Materials for major and minor grid lines (shared across all lines)
-      const minorMaterial = new LineBasicMaterial({
+      // Get the floor Y position (bottom of bounding box)
+      const floorY = scene.boundingBox.min.y;
+      const gridY = floorY + 0.001;
+
+      // Calculate grid bounds using gridSize attribute (centered at origin)
+      const halfSize = this.gridSize / 2;
+
+      // Calculate line widths in world units based on screen pixels
+      // Approximate: 1 pixel ≈ 0.001 meters at typical viewing distances
+      const minorLineWidth = 0.01;
+      const majorLineWidth = 0.02;
+
+      // Use thin rectangular meshes instead of lines for precise width control
+      const minorMaterial = new MeshBasicMaterial({
         color: 0x888888,
         transparent: true,
         opacity: 0.2,
         depthTest: true,
+        depthWrite: false,
       });
 
-      const majorMaterial = new LineBasicMaterial({
+      const majorMaterial = new MeshBasicMaterial({
         color: 0x888888,
         transparent: true,
         opacity: 0.5,
         depthTest: true,
-        linewidth: 2,
+        depthWrite: false,
       });
 
-      // Get the floor Y position (bottom of bounding box)
-      const floorY = scene.boundingBox.min.y;
-
-      // Calculate grid bounds using gridSize attribute (centered at origin)
-      const halfSize = this.gridSize / 2;
       const startX = -halfSize;
       const endX = halfSize;
       const startZ = -halfSize;
       const endZ = halfSize;
+      const gridLength = this.gridSize;
 
-      // Create template geometries (one for vertical, one for horizontal)
-      const verticalTemplateGeometry = new BufferGeometry().setFromPoints([
-        new Vector3(0, floorY, startZ),
-        new Vector3(0, floorY, endZ),
-      ]);
-
-      const horizontalTemplateGeometry = new BufferGeometry().setFromPoints([
-        new Vector3(startX, floorY, 0),
-        new Vector3(endX, floorY, 0),
-      ]);
-
-      // Helper function to create and position a line
-      const createLine = (
-        templateGeometry: BufferGeometry,
-        material: LineBasicMaterial,
-        position: Vector3
-      ): Line => {
-        const geometry = templateGeometry.clone();
-        const line = new Line(geometry, material);
-        line.position.copy(position);
-        line.userData.noHit = true;
-        line.frustumCulled = false;
-        line.castShadow = false;
-        line.receiveShadow = false;
-        return line;
-      };
-
-      // Create vertical lines (parallel to Z axis)
+      // Create vertical lines (parallel to Z axis) using thin rectangles
       if (this.gridMinor > 0) {
         for (
           let x = Math.floor(startX / minorSpacing) * minorSpacing;
@@ -484,49 +468,40 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           const isMajor =
             this.gridMajor > 0 && Math.abs(x % majorSpacing) < 0.001;
 
-          if (!isMajor && this.gridMajor > 0) {
-            // Draw as minor line
-            const line = createLine(
-              verticalTemplateGeometry,
-              minorMaterial,
-              new Vector3(x, 0, 0)
-            );
-            gridContainer.add(line);
-          } else if (isMajor) {
-            // Draw as major line
-            const line = createLine(
-              verticalTemplateGeometry,
-              majorMaterial,
-              new Vector3(x, 0, 0)
-            );
-            gridContainer.add(line);
-          } else if (this.gridMajor <= 0) {
-            // No major lines, draw as minor
-            const line = createLine(
-              verticalTemplateGeometry,
-              minorMaterial,
-              new Vector3(x, 0, 0)
-            );
-            gridContainer.add(line);
-          }
+          const material = isMajor ? majorMaterial : minorMaterial;
+          const lineWidth = isMajor ? majorLineWidth : minorLineWidth;
+
+          // Create a thin horizontal rectangle (width x length, rotated to lie flat)
+          const geometry = new PlaneGeometry(lineWidth, gridLength);
+          const mesh = new Mesh(geometry, material);
+
+          // Position at x, gridY, center of Z range
+          mesh.position.set(x, gridY, 0);
+
+          // Rotate to lie flat on XZ plane (facing up)
+          mesh.rotation.x = -Math.PI / 2;
+
+          mesh.userData.noHit = true;
+          mesh.frustumCulled = false;
+          gridContainer.add(mesh);
         }
       } else if (this.gridMajor > 0) {
-        // Only draw major lines when minor is 0
         for (
           let x = Math.floor(startX / majorSpacing) * majorSpacing;
           x <= endX;
           x += majorSpacing
         ) {
-          const line = createLine(
-            verticalTemplateGeometry,
-            majorMaterial,
-            new Vector3(x, 0, 0)
-          );
-          gridContainer.add(line);
+          const geometry = new PlaneGeometry(majorLineWidth, gridLength);
+          const mesh = new Mesh(geometry, majorMaterial);
+          mesh.position.set(x, gridY, 0);
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.userData.noHit = true;
+          mesh.frustumCulled = false;
+          gridContainer.add(mesh);
         }
       }
 
-      // Create horizontal lines (parallel to X axis)
+      // Create horizontal lines (parallel to X axis) using thin rectangles
       if (this.gridMinor > 0) {
         for (
           let z = Math.floor(startZ / minorSpacing) * minorSpacing;
@@ -536,53 +511,39 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           const isMajor =
             this.gridMajor > 0 && Math.abs(z % majorSpacing) < 0.001;
 
-          if (!isMajor && this.gridMajor > 0) {
-            // Draw as minor line
-            const line = createLine(
-              horizontalTemplateGeometry,
-              minorMaterial,
-              new Vector3(0, 0, z)
-            );
-            gridContainer.add(line);
-          } else if (isMajor) {
-            // Draw as major line
-            const line = createLine(
-              horizontalTemplateGeometry,
-              majorMaterial,
-              new Vector3(0, 0, z)
-            );
-            gridContainer.add(line);
-          } else if (this.gridMajor <= 0) {
-            // No major lines, draw as minor
-            const line = createLine(
-              horizontalTemplateGeometry,
-              minorMaterial,
-              new Vector3(0, 0, z)
-            );
-            gridContainer.add(line);
-          }
+          const material = isMajor ? majorMaterial : minorMaterial;
+          const lineWidth = isMajor ? majorLineWidth : minorLineWidth;
+
+          // Create a thin horizontal rectangle (length x width, rotated to lie flat)
+          const geometry = new PlaneGeometry(gridLength, lineWidth);
+          const mesh = new Mesh(geometry, material);
+
+          // Position at center of X range, gridY, z
+          mesh.position.set(0, gridY, z);
+
+          // Rotate to lie flat on XZ plane (facing up)
+          mesh.rotation.x = -Math.PI / 2;
+
+          mesh.userData.noHit = true;
+          mesh.frustumCulled = false;
+          gridContainer.add(mesh);
         }
       } else if (this.gridMajor > 0) {
-        // Only draw major lines when minor is 0
         for (
           let z = Math.floor(startZ / majorSpacing) * majorSpacing;
           z <= endZ;
           z += majorSpacing
         ) {
-          const line = createLine(
-            horizontalTemplateGeometry,
-            majorMaterial,
-            new Vector3(0, 0, z)
-          );
-          gridContainer.add(line);
+          const geometry = new PlaneGeometry(gridLength, majorLineWidth);
+          const mesh = new Mesh(geometry, majorMaterial);
+          mesh.position.set(0, gridY, z);
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.userData.noHit = true;
+          mesh.frustumCulled = false;
+          gridContainer.add(mesh);
         }
       }
 
-      // Dispose template geometries as they're no longer needed
-      verticalTemplateGeometry.dispose();
-      horizontalTemplateGeometry.dispose();
-
-      // Add grid to Target object
       target.add(gridContainer);
       this[$needsRender]();
     }
@@ -599,7 +560,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Dispose geometries and materials
       this[$gridContainer].traverse((child) => {
-        if (child instanceof Line) {
+        if (child instanceof Mesh) {
           child.geometry.dispose();
           if (Array.isArray(child.material)) {
             child.material.forEach((mat) => mat.dispose());
