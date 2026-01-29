@@ -113,6 +113,7 @@ export declare interface LDPuzzlerInterface {
   attachObject: AttachFunction;
   attachMaterial: AttachMaterialFunction;
   clear: ClearSceneFunction;
+  disableBaseModelShadows: boolean;
 
   setPosition(objectName: string, value: [number, number, number]): void;
   setRotation(
@@ -203,7 +204,9 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({ type: Boolean, attribute: 'snapping-points-visible' })
     snappingPointsVisible: boolean = false;
-    // (snapping-debug removed)
+
+    @property({ type: Boolean, attribute: 'disable-base-model-shadows' })
+    disableBaseModelShadows: boolean = false;
 
     // Store bound event handler reference
     private _boundSelectionChangeHandler: ((event: Event) => void) | null =

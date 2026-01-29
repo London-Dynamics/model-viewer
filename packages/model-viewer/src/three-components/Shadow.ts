@@ -277,6 +277,16 @@ export class Shadow extends Object3D {
   render(renderer: WebGLRenderer, scene: Scene) {
     // this.cameraHelper.visible = false;
 
+    // HACK: Hide base model during shadow rendering
+    const modelScene = scene as any;
+    const baseModel = modelScene._model;
+    const baseModelWasVisible = baseModel?.visible;
+    const shouldHideBaseModel = baseModel?.userData?.isBaseModel && 
+                                 modelScene.element?.disableBaseModelShadows;
+    if (shouldHideBaseModel) {
+      baseModel.visible = false;
+    }
+
     // force the depthMaterial to everything
     scene.overrideMaterial = this.depthMaterial;
 
@@ -297,6 +307,11 @@ export class Shadow extends Object3D {
     // and reset the override material
     scene.overrideMaterial = null;
     this.floor.visible = true;
+
+    // HACK: Restore base model visibility
+    if (shouldHideBaseModel && baseModel) {
+      baseModel.visible = baseModelWasVisible;
+    }
 
     this.blurShadow(renderer);
 
