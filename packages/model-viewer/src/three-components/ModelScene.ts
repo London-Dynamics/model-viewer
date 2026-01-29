@@ -308,21 +308,21 @@ export class ModelScene extends Scene {
     this.url = url;
     this._currentGLTF = gltf;
 
-    if (gltf != null) {
+    if (gltf != null && gltf.scene) {
       // HACK
-      if (gltf.scene && this.element.disableBaseModelSelection) {
+      if (this.element.disableBaseModelSelection) {
         gltf.scene.userData.selectable = false;
         // Optionally mark all children too
         gltf.scene.traverse((child) => {
           child.userData.selectable = false;
         });
       }
-
       // HACK
+      gltf.scene.userData.isBaseModel = true;
       gltf.scene.userData['filepath'] = url;
       gltf.scene.userData['filename'] = url.split('/').pop() || '';
-      this._model = gltf.scene;
 
+      this._model = gltf.scene;
       this.target.add(gltf.scene);
     }
 
@@ -350,6 +350,22 @@ export class ModelScene extends Scene {
 
     this.updateShadow();
     this.setShadowIntensity(this.shadowIntensity);
+
+    // HACK: Disable shadows on base model after GLTF instance setup and shadow initialization
+    if (
+      this.element.disableBaseModelShadows &&
+      this._model &&
+      this._model.userData.isBaseModel
+    ) {
+      this._model.traverse((child) => {
+        if ('castShadow' in child) {
+          (child as any).castShadow = false;
+        }
+        if ('receiveShadow' in child) {
+          (child as any).receiveShadow = true;
+        }
+      });
+    }
 
     this.setGroundedSkybox();
   }

@@ -54,7 +54,7 @@ export const LDAnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this[$scene].traverse((object) => {
           if (
-            (objectId == 'src' && object?.userData?.filename) ||
+            (objectId == 'src' && object?.userData?.isBaseModel) ||
             object.name === objectId
           ) {
             foundObject = object;
