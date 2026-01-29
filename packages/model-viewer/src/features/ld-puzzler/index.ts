@@ -4205,6 +4205,7 @@ class PlacementSession extends EventTarget {
       if (this.placeholder) {
         // Copy all transforms from placeholder (already in correct local space)
         gltf.scene.position.copy(this.placeholder.position);
+        gltf.scene.position.y += 0.001; // slight offset to avoid z-fighting
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
