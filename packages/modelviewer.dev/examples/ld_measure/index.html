@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <title>&lt;model-viewer&gt; LD Measure Examples</title>
@@ -53,22 +53,42 @@
               <div class="heading">
                 <h2 class="demo-title">Display measurements</h2>
                 <p>
-                  <b>How measurement works:</b> By default, the measurement overlay shows the total bounding box of the entire scene. To enable interactive measurement of individual objects, use the <span class="attribute">measure-objects</span> attribute.
+                  <b>How measurement works:</b> By default, the measurement
+                  overlay shows the total bounding box of the entire scene. To
+                  enable interactive measurement of individual objects, use the
+                  <span class="attribute">measure-objects</span> attribute.
                 </p>
                 <p>
-                  <b>measure-objects</b> can be set to <code>*</code> to allow clicking any selectable object, or to a comma-separated list of object names (e.g. <code>name1,name2</code>) to restrict measurement to those objects. If left empty, only the scene bounding box is measured.
+                  <b>measure-objects</b> can be set to <code>*</code> to allow
+                  clicking any selectable object, or to a comma-separated list
+                  of object names (e.g. <code>name1,name2</code>) to restrict
+                  measurement to those objects. If left empty, only the scene
+                  bounding box is measured.
                 </p>
                 <p>
-                  <b>Selection scope:</b> The <span class="attribute">selection-scope</span> attribute controls what can be selected for measurement:
-                  <ul>
-                    <li><b>scene</b>: Only the whole scene can be measured.</li>
-                    <li><b>group</b>: Groups or the whole scene can be measured.</li>
-                    <li><b>part</b>: Individual parts, groups, or the scene can be measured.</li>
-                  </ul>
-                  The selection logic now supports both placed objects (from modular scenes) and regular model nodes.
+                  <b>Selection scope:</b> The
+                  <span class="attribute">selection-scope</span> attribute
+                  controls what can be selected for measurement:
+                </p>
+                <ul>
+                  <li><b>scene</b>: Only the whole scene can be measured.</li>
+                  <li>
+                    <b>group</b>: Groups or the whole scene can be measured.
+                  </li>
+                  <li>
+                    <b>part</b>: Individual parts, groups, or the scene can be
+                    measured.
+                  </li>
+                </ul>
+                <p>
+                  The selection logic now supports both placed objects (from
+                  modular scenes) and regular model nodes.
                 </p>
                 <p>
-                  <b>Tip:</b> If your model uses modular/placed objects (e.g. with the Puzzler feature), measurement and selection will work for those objects. Otherwise, it will work for any named node in the model.
+                  <b>Tip:</b> If your model uses modular/placed objects (e.g.
+                  with the Puzzler feature), measurement and selection will work
+                  for those objects. Otherwise, it will work for any named node
+                  in the model.
                 </p>
               </div>
               <example-snippet stamp-to="measure" highlight-as="html">
@@ -99,7 +119,7 @@
                             class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
                           >
                             <div
-                              class="text-sm text-gray-500 flex gap-4 items-center"
+                              class="text-sm text-gray-500 grid grid-cols-2 gap-4"
                             >
                               <div class="flex items-center">
                                 <button
@@ -121,6 +141,26 @@
                                 >
                                   <span class="font-medium text-gray-900"
                                     >Enable</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="toggle-base-model"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="show-base-model"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span class="ml-3 text-sm" id="show-base-model">
+                                  <span class="font-medium text-gray-900"
+                                    >Show Model</span
                                   >
                                 </span>
                               </div>
@@ -388,6 +428,22 @@
                             modelViewer.setAttribute('grid', '');
                           }
                         });
+
+                      document
+                        .getElementById('toggle-base-model')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.toggleBaseModelVisibility(false);
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.toggleBaseModelVisibility(true);
+                          }
+                        });
+
                       document
                         .getElementById('toggle-lines')
                         .addEventListener('click', (e) => {

@@ -115,6 +115,8 @@ export declare interface LDPuzzlerInterface {
   clear: ClearSceneFunction;
   disableBaseModelShadows: boolean;
 
+  toggleBaseModelVisibility(state?: boolean): void;
+
   setPosition(objectName: string, value: [number, number, number]): void;
   setRotation(
     objectName: string,
@@ -338,6 +340,48 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {
         console.error(e);
       }
+    }
+
+    toggleBaseModelVisibility(state?: boolean): void {
+      const scene = this[$scene];
+
+      // Find base model
+      let baseModel: Object3D | undefined;
+      scene.traverse((object) => {
+        if (object?.userData?.isBaseModel) {
+          baseModel = object;
+        }
+      });
+
+      if (!baseModel) return;
+
+      const newVisibility =
+        typeof state === 'boolean' ? state : !baseModel.visible;
+
+      // Toggle visibility and shadow casting on base model
+      baseModel.traverse((child) => {
+        // Store original castShadow state if not already stored
+        if (child.userData.originalCastShadow === undefined) {
+          child.userData.originalCastShadow =
+            (child as any).castShadow ?? false;
+        }
+
+        child.visible = newVisibility;
+
+        // Disable shadow casting when hidden, restore when visible
+        if (newVisibility) {
+          (child as any).castShadow = child.userData.originalCastShadow;
+        } else {
+          (child as any).castShadow = false;
+        }
+      });
+
+      // Queue shadow re-render with updated visibility
+      if (scene.shadow) {
+        scene.shadow.needsUpdate = true;
+      }
+
+      (this as any)[$needsRender]();
     }
 
     private _puzzleRegistry: Map<string, GLTF> = new Map();
