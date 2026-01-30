@@ -342,7 +342,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    toggleBaseModelVisibility(state?: boolean): void {
+    toggleBaseModelVisibility(visible?: boolean): void {
       const scene = this[$scene];
 
       // Find base model
@@ -356,7 +356,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!baseModel) return;
 
       const newVisibility =
-        typeof state === 'boolean' ? state : !baseModel.visible;
+        typeof visible === 'boolean' ? visible : !baseModel.visible;
 
       // Toggle visibility and shadow casting on base model
       baseModel.traverse((child) => {
@@ -4218,9 +4218,6 @@ class PlacementSession extends EventTarget {
       })
     );
 
-    // Allow new interactive sessions now; capture element ref so we can
-    // continue the final load in the background and still clean up the
-    // placeholder even after we drop the interactive reference.
     const element = this._element;
     this._endInteractive();
 
@@ -4231,7 +4228,6 @@ class PlacementSession extends EventTarget {
 
     try {
       const gltf = await loader.load(srcToLoad, element, (p: number) => {
-        // Progress for final load (0..1)
         try {
           (this as any).dispatchEvent(
             new CustomEvent('progress', {
