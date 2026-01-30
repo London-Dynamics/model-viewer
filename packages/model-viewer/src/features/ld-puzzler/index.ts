@@ -4249,10 +4249,26 @@ class PlacementSession extends EventTarget {
       if (this.placeholder) {
         // Copy all transforms from placeholder (already in correct local space)
         gltf.scene.position.copy(this.placeholder.position);
-        gltf.scene.position.y += 0.001; // slight offset to avoid z-fighting
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
+
+        const placeholderBBox = new Box3().setFromObject(this.placeholder);
+        const finalBBox = new Box3().setFromObject(gltf.scene);
+
+        const placeholderHeight = placeholderBBox.max.y - placeholderBBox.min.y;
+        const finalHeight = finalBBox.max.y - finalBBox.min.y;
+
+        // If the final model is taller or shorter than the placeholder,
+        // adjust the Y position to keep the bottom aligned with the placeholder's bottom.
+        const heightDiff = finalHeight - placeholderHeight;
+        if (Math.abs(heightDiff) > 0.01) {
+          gltf.scene.position.y -= heightDiff;
+          this.log(
+            '[puzzler] commit: adjusted final model Y position by',
+            heightDiff
+          );
+        }
       } else {
         // No placeholder - calculate position with bbox adjustment
         if (this._targetBottomCenter) {
