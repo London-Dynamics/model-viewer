@@ -427,31 +427,28 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.measurementUnit
       );
 
-      // Get the floor Y position (bottom of bounding box)
       const floorY = scene.boundingBox.min.y;
+
       const gridY = floorY + 0.001;
 
-      // Calculate grid bounds using gridSize attribute (centered at origin)
       const halfSize = this.gridSize / 2;
 
       // Calculate line widths in world units based on screen pixels
       // Approximate: 1 pixel ≈ 0.001 meters at typical viewing distances
       const minorLineWidth = 0.01;
-      const majorLineWidth = 0.02;
+      const majorLineWidth = 0.015;
 
       // Use thin rectangular meshes instead of lines for precise width control
       const minorMaterial = new MeshBasicMaterial({
-        color: 0x888888,
-        transparent: true,
-        opacity: 0.2,
+        color: 0xd6d3d1,
+
         depthTest: true,
         depthWrite: false,
       });
 
       const majorMaterial = new MeshBasicMaterial({
-        color: 0x888888,
-        transparent: true,
-        opacity: 0.5,
+        color: 0xa8a29e,
+
         depthTest: true,
         depthWrite: false,
       });
@@ -488,7 +485,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           x += minorSpacing
         ) {
           const isMajor =
-            this.gridMajor > 0 && Math.abs(x % majorSpacing) < 0.001;
+            this.gridMajor > 0 &&
+            Math.abs(x / majorSpacing - Math.round(x / majorSpacing)) < 1e-6;
 
           const material = isMajor ? majorMaterial : minorMaterial;
           const geometry = isMajor
@@ -538,7 +536,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           z += minorSpacing
         ) {
           const isMajor =
-            this.gridMajor > 0 && Math.abs(z % majorSpacing) < 0.001;
+            this.gridMajor > 0 &&
+            Math.abs(z / majorSpacing - Math.round(z / majorSpacing)) < 1e-6;
 
           const material = isMajor ? majorMaterial : minorMaterial;
           const geometry = isMajor
