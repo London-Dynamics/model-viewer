@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <title>&lt;model-viewer&gt; LD Camera</title>
@@ -32,90 +32,81 @@
       href="../../assets/favicon.png"
     />
 
-    <style>
-      .controls {
-        position: absolute;
-        bottom: 16px;
-        left: 16px;
-        right: 16px;
-        max-width: unset;
-        transform: unset;
-        pointer-events: auto;
-        border-radius: 4px;
-        background-color: #fff;
-        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
-        padding: 0.5rem 1rem;
-        color: #999;
+    <!-- Import Three.js using an import-map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
       }
+    </script>
 
-      .flex-col {
-        display: flex;
-        flex-direction: column;
-      }
-      .flex-row {
-        display: flex;
-        flex-direction: row;
-      }
-      .controls h5 {
-        margin: 0 0 0.25em 0;
-      }
-      .controls label {
-        color: gray;
-        font-size: 0.6rem;
-        text-transform: uppercase;
-        line-height: 1em;
-      }
-      .controls input {
-        width: 100%;
-      }
-      .controls button {
-        border: 1px solid #ccc;
-        padding: 0.25em 0.5em;
-        border-radius: 4px;
-        background: white;
-        color: #111;
-        cursor: pointer;
-      }
-      .controls button:hover {
-        background: #eee;
-      }
-      .controls button:active {
-        background: cornflowerblue;
-        color: white;
-      }
-      .gap-3 {
-        gap: 1rem;
-      }
-      .p-3 {
-        padding: 1rem;
-      }
-      .px-3 {
-        padding-left: 1rem;
-        padding-right: 1rem;
-      }
-      .py-3 {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-      }
-    </style>
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <!-- Import the <model-viewer> component without three bundled -->
+
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
+    ></script>
+
+    <!-- Tailwind CSS via CDN: -->
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
-  <body>
+  <body class="ld">
     <div class="examples-page">
       <div class="sidebar" id="sidenav"></div>
       <div id="toggle"></div>
 
       <div class="examples-container">
         <div class="sample">
+          <div id="camera-angles" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h4 id="intro">
+                  <span class="font-medium">LD Camera </span>by
+                  <a href="https://londondynamics.com" target="_blank"
+                    >London Dynamics</a
+                  >. This page demonstrates programmatic camera manipulation and
+                  data extraction via public methods, including setting camera
+                  parameters and retrieving camera state.
+                </h4>
+
+                <div class="heading">
+                  <h2 class="demo-title">Camera Angles</h2>
+                  <h4>
+                    <span class="attribute">doSomething()</span> does something.
+                  </h4>
+                </div>
+              </div>
+              <example-snippet stamp-to="camera-angles" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    id="angles-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  ></model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#angles-demo');
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div id="get-camera-json" class="demo"></div>
           <div class="content">
             <div class="wrapper">
-              <h4 id="intro">
-                <span class="font-medium">LD Camera </span>by
-                <a href="https://londondynamics.com" target="_blank"
-                  >London Dynamics</a
-                >. This page showcases how you can modify the central camera in
-                model-viewer.
-              </h4>
               <div class="heading">
                 <h2 class="demo-title">Camera JSON interactions</h2>
                 <h4></h4>
@@ -133,13 +124,25 @@
                     src="../../shared-assets/models/cubes.gltf"
                     alt="An animated 3D model two cubes"
                   >
-                    <div class="controls flex-row gap-3">
-                      <button type="button" id="getCameraButton">
-                        Get camera meta
-                      </button>
-                      <button type="button" id="setCameraButton">
-                        Set camera from JSON
-                      </button>
+                    <div
+                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md"
+                    >
+                      <div class="flex items-center gap-2">
+                        <button
+                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          id="getCameraButton"
+                        >
+                          Get camera meta
+                        </button>
+                        <button
+                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          id="setCameraButton"
+                        >
+                          Set camera from JSON
+                        </button>
+                      </div>
                     </div>
                   </model-viewer>
 
@@ -222,11 +225,5 @@
 
     <!-- Documentation-specific dependencies: -->
     <script type="module" src="../built/dependencies.js"></script>
-
-    <!-- Loads <model-viewer> on modern browsers: -->
-    <script
-      type="module"
-      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
-    ></script>
   </body>
 </html>
