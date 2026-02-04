@@ -35,6 +35,10 @@ export declare interface LDCameraInterface {
 
   setCameraFromJSON(json: CameraMeta['object']): void;
   getCameraMeta(): CameraMeta | null;
+
+  setCameraType(type: 'perspective' | 'orthographic'): void;
+  getCameraType(): 'perspective' | 'orthographic';
+  toggleCameraType(): void;
 }
 
 export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -181,6 +185,63 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (camera) return camera?.toJSON() || null;
 
       return null;
+    }
+
+    /**
+     * Set the camera type to either perspective or orthographic
+     */
+    setCameraType(type: 'perspective' | 'orthographic') {
+      const scene = this[$scene];
+
+      // Early return if camera type is already set
+      if (scene.getCameraType() === type) {
+        return;
+      }
+
+      const controls = (this as any)[$controls];
+
+      // Switch camera type (this preserves position and rotation)
+      scene.setCameraType(type);
+
+      // Update controls to use the new camera without changing its state
+      if (controls) {
+        // For third-party controls adapter (camera-controls)
+        if (controls.thirdPartyControls && controls.thirdPartyControls.camera) {
+          // Update camera reference
+          controls.thirdPartyControls.camera = scene.camera;
+          // Just sync the controls internal state without moving the camera
+          controls.thirdPartyControls.updateCameraUp();
+          controls.thirdPartyControls.update(0);
+        }
+        // For SmoothControls
+        else if (controls.camera) {
+          // Update the readonly camera property
+          Object.defineProperty(controls, 'camera', {
+            value: scene.camera,
+            writable: false,
+            configurable: true,
+          });
+        }
+      }
+
+      this[$needsRender]();
+    }
+
+    /**
+     * Get the current camera type
+     */
+    getCameraType(): 'perspective' | 'orthographic' {
+      return this[$scene].getCameraType();
+    }
+
+    /**
+     * Toggle between perspective and orthographic camera
+     */
+    toggleCameraType() {
+      const currentType = this.getCameraType();
+      const newType =
+        currentType === 'perspective' ? 'orthographic' : 'perspective';
+      this.setCameraType(newType);
     }
 
     [$onModelLoad]() {

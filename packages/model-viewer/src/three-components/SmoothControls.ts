@@ -175,7 +175,7 @@ export class SmoothControls extends EventDispatcher<{
   private touchDecided = false;
 
   constructor(
-    readonly camera: PerspectiveCamera,
+    readonly camera: PerspectiveCamera | import('three').OrthographicCamera,
     readonly element: HTMLElement,
     readonly scene: ModelScene
   ) {
@@ -284,9 +284,14 @@ export class SmoothControls extends EventDispatcher<{
 
   /**
    * Returns the camera's current vertical field of view in degrees.
+   * For orthographic cameras, returns an approximation based on zoom.
    */
   getFieldOfView(): number {
-    return this.camera.fov;
+    if ('fov' in this.camera) {
+      return this.camera.fov;
+    }
+    // For orthographic camera, return approximation based on zoom
+    return 100 / (this.camera as import('three').OrthographicCamera).zoom;
   }
 
   /**
@@ -322,7 +327,9 @@ export class SmoothControls extends EventDispatcher<{
    * Sets the aspect ratio of the camera
    */
   updateAspect(aspect: number) {
-    this.camera.aspect = aspect;
+    if ('aspect' in this.camera) {
+      this.camera.aspect = aspect;
+    }
     this.camera.updateProjectionMatrix();
   }
 
@@ -391,7 +398,8 @@ export class SmoothControls extends EventDispatcher<{
   }
 
   /**
-   * Sets the goal field of view for the camera
+   * Sets the goal field of view for the camera.
+   * For orthographic cameras, this adjusts the zoom level.
    */
   setFieldOfView(fov: number) {
     const { minimumFieldOfView, maximumFieldOfView } = this._options;
@@ -546,9 +554,21 @@ export class SmoothControls extends EventDispatcher<{
       )
     );
 
-    if (this.camera.fov !== Math.exp(this.logFov)) {
-      this.camera.fov = Math.exp(this.logFov);
-      this.camera.updateProjectionMatrix();
+    // Update FOV or zoom based on camera type
+    const targetFov = Math.exp(this.logFov);
+    if ('fov' in this.camera) {
+      if (this.camera.fov !== targetFov) {
+        this.camera.fov = targetFov;
+        this.camera.updateProjectionMatrix();
+      }
+    } else {
+      // For orthographic camera, adjust zoom instead
+      const orthoCamera = this.camera as import('three').OrthographicCamera;
+      const targetZoom = 100 / targetFov;
+      if (orthoCamera.zoom !== targetZoom) {
+        orthoCamera.zoom = targetZoom;
+        this.camera.updateProjectionMatrix();
+      }
     }
   }
 

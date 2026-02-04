@@ -13,15 +13,15 @@
  * limitations under the License.
  */
 
-import {expect} from 'chai';
-import {PerspectiveCamera, Vector3} from 'three';
+import { expect } from 'chai';
+import { PerspectiveCamera, Vector3 } from 'three';
 
-import {$controls} from '../../features/controls.js';
-import {$userInputElement} from '../../model-viewer-base.js';
-import {ModelViewerElement} from '../../model-viewer.js';
-import {SmoothControls} from '../../three-components/SmoothControls.js';
-import {waitForEvent} from '../../utilities.js';
-import {assetPath, dispatchSyntheticEvent} from '../helpers.js';
+import { $controls } from '../../features/controls.js';
+import { $userInputElement } from '../../model-viewer-base.js';
+import { ModelViewerElement } from '../../model-viewer.js';
+import { SmoothControls } from '../../three-components/SmoothControls.js';
+import { waitForEvent } from '../../utilities.js';
+import { assetPath, dispatchSyntheticEvent } from '../helpers.js';
 
 const ONE_FRAME_DELTA = 1000.0 / 60.0;
 const FIFTY_FRAME_DELTA = 50.0 * ONE_FRAME_DELTA;
@@ -34,11 +34,11 @@ const THREE_QUARTERS_PI = HALF_PI + QUARTER_PI;
  * Settle controls by performing 50 frames worth of updates
  */
 export const settleControls = (controls: SmoothControls) =>
-    controls.update(performance.now(), FIFTY_FRAME_DELTA);
+  controls.update(performance.now(), FIFTY_FRAME_DELTA);
 
 suite('SmoothControls', () => {
   let controls: SmoothControls;
-  let camera: PerspectiveCamera;
+  let camera: PerspectiveCamera | import('three').OrthographicCamera;
   let modelViewer: ModelViewerElement;
   let element: HTMLDivElement;
 
@@ -69,8 +69,9 @@ suite('SmoothControls', () => {
       const radius = camera.position.length();
 
       expect(radius).to.be.within(
-          controls.options.minimumRadius as number,
-          controls.options.maximumRadius as number);
+        controls.options.minimumRadius as number,
+        controls.options.maximumRadius as number
+      );
     });
 
     suite('when orbit is changed', () => {
@@ -91,45 +92,53 @@ suite('SmoothControls', () => {
           expect(controls.getCameraSpherical().theta).to.be.equal(QUARTER_PI);
 
           controls.setOrbit(4 * Math.PI - HALF_PI);
-          expect(controls.getCameraSpherical().theta)
-              .to.be.closeTo(4 * Math.PI + QUARTER_PI, 0.0001);
+          expect(controls.getCameraSpherical().theta).to.be.closeTo(
+            4 * Math.PI + QUARTER_PI,
+            0.0001
+          );
 
           controls.update(performance.now(), ONE_FRAME_DELTA);
-          expect(Math.abs(controls.getCameraSpherical().theta))
-              .to.be.lessThan(4 * Math.PI + QUARTER_PI);
+          expect(Math.abs(controls.getCameraSpherical().theta)).to.be.lessThan(
+            4 * Math.PI + QUARTER_PI
+          );
 
           settleControls(controls);
-          expect(controls.getCameraSpherical().theta)
-              .to.be.closeTo(4 * Math.PI - HALF_PI, 0.0001);
+          expect(controls.getCameraSpherical().theta).to.be.closeTo(
+            4 * Math.PI - HALF_PI,
+            0.0001
+          );
 
           controls.setOrbit(THREE_QUARTERS_PI);
-          expect(controls.getCameraSpherical().theta)
-              .to.be.closeTo(Math.PI + HALF_PI, 0.0001);
+          expect(controls.getCameraSpherical().theta).to.be.closeTo(
+            Math.PI + HALF_PI,
+            0.0001
+          );
 
           controls.update(performance.now(), ONE_FRAME_DELTA);
-          expect(Math.abs(controls.getCameraSpherical().theta))
-              .to.be.lessThan(Math.PI + HALF_PI);
+          expect(Math.abs(controls.getCameraSpherical().theta)).to.be.lessThan(
+            Math.PI + HALF_PI
+          );
 
           settleControls(controls);
-          expect(controls.getCameraSpherical().theta)
-              .to.be.closeTo(THREE_QUARTERS_PI, 0.0001);
+          expect(controls.getCameraSpherical().theta).to.be.closeTo(
+            THREE_QUARTERS_PI,
+            0.0001
+          );
         });
 
-        test(
-            'adjustOrbit does not move the goal theta more than pi past the current theta',
-            () => {
-              controls.adjustOrbit(-Math.PI * 3 / 2, 0, 0);
+        test('adjustOrbit does not move the goal theta more than pi past the current theta', () => {
+          controls.adjustOrbit((-Math.PI * 3) / 2, 0, 0);
 
-              controls.update(performance.now(), ONE_FRAME_DELTA);
-              const startingTheta = controls.getCameraSpherical().theta;
-              expect(startingTheta).to.be.greaterThan(0);
+          controls.update(performance.now(), ONE_FRAME_DELTA);
+          const startingTheta = controls.getCameraSpherical().theta;
+          expect(startingTheta).to.be.greaterThan(0);
 
-              controls.adjustOrbit(-Math.PI * 3 / 2, 0, 0);
-              settleControls(controls);
-              const goalTheta = controls.getCameraSpherical().theta;
-              expect(goalTheta).to.be.greaterThan(Math.PI);
-              expect(goalTheta).to.be.lessThan(startingTheta + Math.PI);
-            });
+          controls.adjustOrbit((-Math.PI * 3) / 2, 0, 0);
+          settleControls(controls);
+          const goalTheta = controls.getCameraSpherical().theta;
+          expect(goalTheta).to.be.greaterThan(Math.PI);
+          expect(goalTheta).to.be.lessThan(startingTheta + Math.PI);
+        });
       });
     });
 
@@ -143,7 +152,7 @@ suite('SmoothControls', () => {
 
       suite('global keyboard input', () => {
         test('does not change orbital position of camera', () => {
-          dispatchSyntheticEvent(window, 'keydown', {key: 'ArrowUp'});
+          dispatchSyntheticEvent(window, 'keydown', { key: 'ArrowUp' });
 
           settleControls(controls);
 
@@ -154,7 +163,7 @@ suite('SmoothControls', () => {
       suite('local keyboard input', () => {
         test('changes orbital position of camera', () => {
           element.focus();
-          dispatchSyntheticEvent(element, 'keydown', {key: 'ArrowUp'});
+          dispatchSyntheticEvent(element, 'keydown', { key: 'ArrowUp' });
 
           settleControls(controls);
 
@@ -164,8 +173,10 @@ suite('SmoothControls', () => {
         test('changes pan position of camera', () => {
           element.focus();
           const initialCameraTarget = controls.scene.getTarget();
-          dispatchSyntheticEvent(
-              element, 'keydown', {key: 'ArrowLeft', shiftKey: true});
+          dispatchSyntheticEvent(element, 'keydown', {
+            key: 'ArrowLeft',
+            shiftKey: true,
+          });
 
           settleControls(controls);
 
@@ -180,24 +191,27 @@ suite('SmoothControls', () => {
         setup(() => {
           controls.applyOptions({
             minimumAzimuthalAngle: -1 * THREE_QUARTERS_PI,
-            maximumAzimuthalAngle: THREE_QUARTERS_PI
+            maximumAzimuthalAngle: THREE_QUARTERS_PI,
           });
         });
 
         test('prevents camera azimuth from exceeding options', () => {
           controls.setOrbit(-Math.PI, 0, 0);
           settleControls(controls);
-          expect(controls.getCameraSpherical().theta)
-              .to.be.equal(-1 * THREE_QUARTERS_PI);
+          expect(controls.getCameraSpherical().theta).to.be.equal(
+            -1 * THREE_QUARTERS_PI
+          );
 
           controls.setOrbit(Math.PI, 0, 0);
           controls.update(performance.now(), ONE_FRAME_DELTA);
-          expect(Math.abs(controls.getCameraSpherical().theta))
-              .to.be.lessThan(THREE_QUARTERS_PI);
+          expect(Math.abs(controls.getCameraSpherical().theta)).to.be.lessThan(
+            THREE_QUARTERS_PI
+          );
 
           settleControls(controls);
-          expect(controls.getCameraSpherical().theta)
-              .to.be.equal(THREE_QUARTERS_PI);
+          expect(controls.getCameraSpherical().theta).to.be.equal(
+            THREE_QUARTERS_PI
+          );
         });
       });
 
@@ -205,7 +219,7 @@ suite('SmoothControls', () => {
         setup(() => {
           controls.applyOptions({
             minimumPolarAngle: QUARTER_PI,
-            maximumPolarAngle: THREE_QUARTERS_PI
+            maximumPolarAngle: THREE_QUARTERS_PI,
           });
         });
 
@@ -218,14 +232,15 @@ suite('SmoothControls', () => {
           controls.setOrbit(0, Math.PI, 0);
           settleControls(controls);
 
-          expect(controls.getCameraSpherical().phi)
-              .to.be.equal(THREE_QUARTERS_PI);
+          expect(controls.getCameraSpherical().phi).to.be.equal(
+            THREE_QUARTERS_PI
+          );
         });
       });
 
       suite('radius', () => {
         setup(() => {
-          controls.applyOptions({minimumRadius: 10, maximumRadius: 20});
+          controls.applyOptions({ minimumRadius: 10, maximumRadius: 20 });
         });
 
         test('prevents camera distance from exceeding options', () => {
@@ -243,8 +258,10 @@ suite('SmoothControls', () => {
 
       suite('field of view', () => {
         setup(() => {
-          controls.applyOptions(
-              {minimumFieldOfView: 15, maximumFieldOfView: 20});
+          controls.applyOptions({
+            minimumFieldOfView: 15,
+            maximumFieldOfView: 20,
+          });
         });
 
         test('prevents field of view from exceeding options', () => {
@@ -264,21 +281,32 @@ suite('SmoothControls', () => {
         test('orbits when pointing, even while blurred', () => {
           const originalPhi = controls.getCameraSpherical().phi;
 
-          element.dispatchEvent(new PointerEvent(
-              'pointerdown', {pointerId: 8, clientX: 0, clientY: 10}));
-          element.dispatchEvent(new PointerEvent(
-              'pointermove', {pointerId: 8, clientX: 0, clientY: 0}));
+          element.dispatchEvent(
+            new PointerEvent('pointerdown', {
+              pointerId: 8,
+              clientX: 0,
+              clientY: 10,
+            })
+          );
+          element.dispatchEvent(
+            new PointerEvent('pointermove', {
+              pointerId: 8,
+              clientX: 0,
+              clientY: 0,
+            })
+          );
 
           settleControls(controls);
 
-          expect(controls.getCameraSpherical().phi)
-              .to.be.greaterThan(originalPhi);
+          expect(controls.getCameraSpherical().phi).to.be.greaterThan(
+            originalPhi
+          );
         });
 
         test('zooms when scrolling, even while blurred', () => {
           const fov = controls.getFieldOfView();
 
-          dispatchSyntheticEvent(element, 'wheel', {deltaY: -1});
+          dispatchSyntheticEvent(element, 'wheel', { deltaY: -1 });
 
           settleControls(controls);
 

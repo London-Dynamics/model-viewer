@@ -312,7 +312,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   constructor(
-    camera: THREE.PerspectiveCamera,
+    camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
     element: HTMLElement,
     scene: any
   ) {
@@ -347,6 +347,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       }
       if (!camera.aspect || !isFinite(camera.aspect) || camera.aspect <= 0) {
         camera.aspect = 1; // Default aspect ratio
+      }
+    } else if (camera instanceof THREE.OrthographicCamera) {
+      if (!camera.zoom || !isFinite(camera.zoom) || camera.zoom <= 0) {
+        camera.zoom = 1; // Default zoom
       }
     }
     if (!camera.near || !isFinite(camera.near) || camera.near <= 0) {
@@ -394,8 +398,12 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     if (!matrixValid || !projMatrixValid) {
       camera.position.set(0, 0, 5);
       camera.up.set(0, 1, 0);
-      camera.fov = 45;
-      camera.aspect = 1;
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = 45;
+        camera.aspect = 1;
+      } else if (camera instanceof THREE.OrthographicCamera) {
+        camera.zoom = 1;
+      }
       camera.near = 0.1;
       camera.far = 1000;
       camera.updateProjectionMatrix();

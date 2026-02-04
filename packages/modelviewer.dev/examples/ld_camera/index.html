@@ -100,7 +100,8 @@
                     <div
                       class="bg-white px-4 *:py-2 -my-2 divide-y divide-stone-100 absolute bottom-4 left-4 rounded-md shadow-md"
                     >
-                      <div class="flex items-center gap-2">
+                      <fieldset class="flex items-center gap-2">
+                        <label class="text-stone-400">States</label>
                         <button
                           class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
                           type="button"
@@ -115,8 +116,9 @@
                         >
                           Reset to State
                         </button>
-                      </div>
-                      <div class="flex items-center gap-2">
+                      </fieldset>
+                      <fieldset class="flex items-center gap-2">
+                        <label class="text-stone-400">Rotation</label>
                         <button
                           class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
                           type="button"
@@ -165,7 +167,24 @@
                         >
                           Bk
                         </button>
-                      </div>
+                      </fieldset>
+                      <fieldset>
+                        <label class="text-stone-400">Mode</label>
+                        <button
+                          class="camera-mode rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-type="perspective"
+                        >
+                          Perspective
+                        </button>
+                        <button
+                          class="camera-mode rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-type="orthographic"
+                        >
+                          Orthographic
+                        </button>
+                      </fieldset>
                     </div></model-viewer
                   >
                   <script type="module">
@@ -197,6 +216,15 @@
                             );
 
                             modelViewer.rotateCamera(azimuth, polar, true);
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('.camera-mode')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const type = button.getAttribute('data-type');
+                            modelViewer.setCameraType(type);
                           });
                         });
                     })();

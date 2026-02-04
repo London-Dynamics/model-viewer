@@ -31,6 +31,7 @@ import {
   Mesh,
   NeutralToneMapping,
   Object3D,
+  OrthographicCamera,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -128,8 +129,15 @@ export class ModelScene extends Scene {
 
   // These default camera values are never used, as they are reset once the
   // model is loaded and framing is computed.
-  public camera = new PerspectiveCamera(45, 1, 0.1, 100);
+  public camera: PerspectiveCamera | OrthographicCamera = new PerspectiveCamera(
+    45,
+    1,
+    0.1,
+    100
+  );
   public xrCamera: Camera | null = null;
+  private cameraType: 'perspective' | 'orthographic' = 'perspective';
+  private savedPerspectiveFov: number = 45; // Store original FOV for restoration
 
   public url: string | null = null;
   public pivot = new Object3D();
@@ -431,6 +439,14 @@ export class ModelScene extends Scene {
     if (this.externalRenderer != null) {
       const dpr = window.devicePixelRatio;
       this.externalRenderer.resize(width * dpr, height * dpr);
+    }
+
+    // Update camera aspect ratio
+    if (this.camera instanceof PerspectiveCamera) {
+      this.camera.aspect = this.aspect;
+      this.camera.updateProjectionMatrix();
+    } else if (this.camera instanceof OrthographicCamera) {
+      this.updateOrthographicFrustum();
     }
 
     this.queueRender();
@@ -1459,6 +1475,96 @@ export class ModelScene extends Scene {
     this.forHotspots((hotspot) => {
       hotspot.visible = visible;
     });
+  }
+
+  /**
+   * Get the current camera type
+   */
+  getCameraType(): 'perspective' | 'orthographic' {
+    return this.cameraType;
+  }
+
+  /**
+   * Switch between perspective and orthographic camera while preserving position and target
+   */
+  setCameraType(type: 'perspective' | 'orthographic') {
+    if (this.cameraType === type) {
+      return;
+    }
+
+    const oldCamera = this.camera;
+    const position = oldCamera.position.clone();
+    const rotation = oldCamera.rotation.clone();
+    const up = oldCamera.up.clone();
+
+    if (type === 'orthographic') {
+      // Save the current FOV before switching
+      if (oldCamera instanceof PerspectiveCamera) {
+        this.savedPerspectiveFov = oldCamera.fov;
+      }
+
+      // Calculate frustum size to match the perspective view at this distance
+      const distance = position.length();
+      const vFOV =
+        oldCamera instanceof PerspectiveCamera
+          ? (oldCamera.fov * Math.PI) / 180
+          : 0.8;
+      const height = 2 * Math.tan(vFOV / 2) * distance;
+      const width = height * this.aspect;
+
+      const newCamera = new OrthographicCamera(
+        -width / 2,
+        width / 2,
+        height / 2,
+        -height / 2,
+        0.01,
+        oldCamera.far * 2
+      );
+
+      newCamera.position.copy(position);
+      newCamera.rotation.copy(rotation);
+      newCamera.up.copy(up);
+      newCamera.zoom = 1.0; // Always use zoom = 1.0, frustum is already sized correctly
+      newCamera.updateProjectionMatrix();
+
+      this.camera = newCamera;
+      this.cameraType = 'orthographic';
+    } else {
+      // Restore the saved FOV when switching back to perspective
+      const newCamera = new PerspectiveCamera(
+        this.savedPerspectiveFov,
+        this.aspect,
+        0.01,
+        oldCamera.far
+      );
+
+      newCamera.position.copy(position);
+      newCamera.rotation.copy(rotation);
+      newCamera.up.copy(up);
+      newCamera.updateProjectionMatrix();
+
+      this.camera = newCamera;
+      this.cameraType = 'perspective';
+    }
+
+    this.camera.name = 'MainCamera';
+    this.queueRender();
+  }
+
+  /**
+   * Update orthographic camera frustum based on current size and zoom
+   */
+  private updateOrthographicFrustum() {
+    if (this.camera instanceof OrthographicCamera) {
+      const halfWidth = this.width / 2;
+      const halfHeight = this.height / 2;
+
+      this.camera.left = -halfWidth;
+      this.camera.right = halfWidth;
+      this.camera.top = halfHeight;
+      this.camera.bottom = -halfHeight;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   updateSchema(src: string | null) {

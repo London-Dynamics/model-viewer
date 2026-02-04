@@ -739,6 +739,21 @@
         "description": "Applies the default zoom behavior (a combination of radius and field of view change), mimicking keyboard or mouse wheel inputs. If keyPresses = 1.0, it will zoom in as much as a single keystroke; negative values zoom out."
       },
       {
+        "name": "setCameraType(type)",
+        "htmlName": "setCameraType",
+        "description": "Sets the camera type to either 'perspective' or 'orthographic'. When switching camera types, the camera position, rotation, and zoom level are preserved to ensure a smooth transition. The type parameter must be either 'perspective' or 'orthographic'."
+      },
+      {
+        "name": "getCameraType()",
+        "htmlName": "getCameraType",
+        "description": "Returns the current camera type as a string, either 'perspective' or 'orthographic'. By default, the camera type is 'perspective'."
+      },
+      {
+        "name": "toggleCameraType()",
+        "htmlName": "toggleCameraType",
+        "description": "Toggles between perspective and orthographic camera types. This is a convenience method that switches to orthographic if the current type is perspective, and vice versa. The camera position and orientation are preserved during the transition."
+      },
+      {
         "name": "interact(duration, finger0, finger1)",
         "htmlName": "interact",
         "description": "Creates a synthetic touch interaction, ideal for creating custom interaction prompts. The duration (ms) and finger0 are required, while finger1 is optional and will create zoom/pan interactions instead of rotation if specified. Any other camera change will automatically cancel this motion and interact() cannot be called while a current synthetic interaction is playing. Each finger input is an object with x and y members, each of which has initialValue and keyframes members. The keyframes are an array of objects with frames and value members. The values are between 0 and 1, spanning the width/height of the element. The frames are a relative unit of time, where their sum is normalized to the duration. Each frame eases in and out between values. Visualize the touch points using the <a href=\"./#entrydocs-stagingandcameras-slots-finger\">finger0/finger1</a> slots.",
