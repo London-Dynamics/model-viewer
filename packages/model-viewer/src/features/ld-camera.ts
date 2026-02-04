@@ -6,12 +6,13 @@ import ModelViewerElementBase, {
   $scene,
   // $userInputElement,
   $onModelLoad,
+  $needsRender,
 } from '../model-viewer-base.js';
 
 import { $controls } from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
-import { Mesh } from 'three';
+import { MathUtils, Mesh } from 'three';
 
 export interface ClickDetails {
   geometry?: string;
@@ -27,6 +28,11 @@ type CameraMeta = {
 };
 
 export declare interface LDCameraInterface {
+  resetCamera(): void;
+  rotateCamera(azimuth: number, polar: number, animate?: boolean): void;
+
+  setCurrentAsDefaultCamera(): void;
+
   setCameraFromJSON(json: CameraMeta['object']): void;
   getCameraMeta(): CameraMeta | null;
 }
@@ -76,6 +82,31 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           );
         }
       }
+    }
+
+    resetCamera() {
+      const controls = (this as any)[$controls];
+      controls.reset();
+      this[$needsRender]();
+    }
+
+    /**
+     *
+     * @param azimuth number horisontal angle in degrees;
+     * @param polar number vertical angle in degrees;
+     */
+    rotateCamera(azimuth: number, polar: number, animate: boolean = false) {
+      const controls = (this as any)[$controls];
+      controls.rotateTo(
+        azimuth * MathUtils.DEG2RAD,
+        polar * MathUtils.DEG2RAD,
+        animate
+      );
+    }
+
+    setCurrentAsDefaultCamera() {
+      const controls = (this as any)[$controls];
+      controls.saveState();
     }
 
     async setCameraFromJSON(json: CameraMeta['object']) {

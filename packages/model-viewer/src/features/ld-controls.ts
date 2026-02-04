@@ -122,13 +122,15 @@ export {
 
 CameraControls.install({ THREE: THREE });
 
-// Functions to auto-forward methods from CameraControls to the adapter
+// Functions to auto-forward from CameraControls to the adapter
 const CAMERA_CONTROLS_METHODS_TO_EXPOSE = [
   'fitToBox',
   'fitToSphere',
   'setLookAt',
   'saveState',
   'reset',
+  'rotate',
+  'rotateTo',
 ] as const;
 
 type ExposedMethodNames = (typeof CAMERA_CONTROLS_METHODS_TO_EXPOSE)[number];
@@ -672,6 +674,30 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     if (deltaRadius !== 0) {
       this.thirdPartyControls.dolly(deltaRadius, false);
     }
+  }
+
+  rotate(
+    azimuthAngle: number,
+    polarAngle: number,
+    enableTransition?: boolean
+  ): Promise<void> {
+    return this.thirdPartyControls.rotateTo(
+      azimuthAngle,
+      polarAngle,
+      enableTransition
+    );
+  }
+
+  rotateTo(
+    azimuthAngle: number,
+    polarAngle: number,
+    enableTransition?: boolean
+  ): Promise<void> {
+    return this.thirdPartyControls.rotateTo(
+      azimuthAngle,
+      polarAngle,
+      enableTransition
+    );
   }
 
   updateNearFar(near: number, far: number): void {
@@ -1517,9 +1543,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           const deltaTheta =
             ((offset - this[$lastPromptOffset]) * Math.PI) / 16;
 
-          this[
-            $promptAnimatedContainer
-          ].style.transform = `translateX(${xOffset}px)`;
+          this[$promptAnimatedContainer].style.transform =
+            `translateX(${xOffset}px)`;
 
           controls.changeSource = ChangeSource.AUTOMATIC;
           controls.adjustOrbit(deltaTheta, 0, 0);

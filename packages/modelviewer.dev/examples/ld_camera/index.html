@@ -67,9 +67,15 @@
                   <span class="font-medium">LD Camera </span>by
                   <a href="https://londondynamics.com" target="_blank"
                     >London Dynamics</a
-                  >. This page demonstrates programmatic camera manipulation and
-                  data extraction via public methods, including setting camera
-                  parameters and retrieving camera state.
+                  >. The default camera controls have been replaced with
+                  <a
+                    href="https://yomotsu.github.io/camera-controls/"
+                    target="_blank"
+                    >@yomotsu/camera-controls</a
+                  >
+                  to provide advanced features such as smooth animated
+                  transitions, precise orbit and dolly, panning, fit-to-object,
+                  collision detection, and programmable camera movements.
                 </h4>
 
                 <div class="heading">
@@ -90,11 +96,109 @@
                     ar
                     ar-modes="webxr scene-viewer"
                     shadow-intensity="1"
-                  ></model-viewer>
+                  >
+                    <div
+                      class="bg-white px-4 *:py-2 -my-2 divide-y divide-stone-100 absolute bottom-4 left-4 rounded-md shadow-md"
+                    >
+                      <div class="flex items-center gap-2">
+                        <button
+                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          id="saveState"
+                        >
+                          Save State
+                        </button>
+                        <button
+                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          id="resetCamera"
+                        >
+                          Reset to State
+                        </button>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button
+                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-azimuth="0"
+                          data-polar="0"
+                        >
+                          T
+                        </button>
+                        <button
+                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-azimuth="0"
+                          data-polar="180"
+                        >
+                          Btm
+                        </button>
+                        <button
+                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-azimuth="-90"
+                          data-polar="90"
+                        >
+                          L
+                        </button>
+                        <button
+                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-azimuth="90"
+                          data-polar="90"
+                        >
+                          R
+                        </button>
+                        <button
+                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-azimuth="0"
+                          data-polar="90"
+                        >
+                          F
+                        </button>
+                        <button
+                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
+                          type="button"
+                          data-azimuth="180"
+                          data-polar="90"
+                        >
+                          Bk
+                        </button>
+                      </div>
+                    </div></model-viewer
+                  >
                   <script type="module">
                     (() => {
                       const modelViewer =
                         document.querySelector('#angles-demo');
+
+                      document
+                        .getElementById('resetCamera')
+                        .addEventListener('click', () => {
+                          modelViewer.resetCamera();
+                        });
+
+                      document
+                        .getElementById('saveState')
+                        .addEventListener('click', () => {
+                          modelViewer.setCurrentAsDefaultCamera();
+                        });
+
+                      document
+                        .querySelectorAll('.rotate-camera')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const azimuth = parseFloat(
+                              button.getAttribute('data-azimuth')
+                            );
+                            const polar = parseFloat(
+                              button.getAttribute('data-polar')
+                            );
+
+                            modelViewer.rotateCamera(azimuth, polar, true);
+                          });
+                        });
                     })();
                   </script>
                 </template>
@@ -109,7 +213,7 @@
             <div class="wrapper">
               <div class="heading">
                 <h2 class="demo-title">Camera JSON interactions</h2>
-                <h4></h4>
+                <h4>Set and retrieve camera parameters and state.</h4>
               </div>
               <example-snippet stamp-to="get-camera-json" highlight-as="html">
                 <template>
