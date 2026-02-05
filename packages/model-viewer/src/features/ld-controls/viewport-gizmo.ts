@@ -103,7 +103,72 @@ export function ensureViewportGizmo(
     | THREE.PerspectiveCamera
     | THREE.OrthographicCamera;
 
-  const gizmo = new ViewportGizmo(camera, renderer);
+  const gizmo = new ViewportGizmo(camera, renderer, {
+    type: 'cube',
+    size: 96,
+    background: {
+      color: 0xf5f5f4,
+    },
+    corners: {
+      hover: {
+        color: 0x6495ed,
+      },
+    },
+    edges: {
+      enabled: true,
+      hover: {
+        color: 0x6495ed,
+      },
+    },
+    x: {
+      labelColor: 0x44403c,
+      hover: {
+        color: 0x6495ed,
+        labelColor: 0xffffff,
+      },
+      label: 'RIGHT',
+    },
+    y: {
+      labelColor: 0x44403c,
+      hover: {
+        color: 0x6495ed,
+        labelColor: 0xffffff,
+      },
+      label: 'TOP',
+    },
+    z: {
+      labelColor: 0x44403c,
+      hover: {
+        color: 0x6495ed,
+        labelColor: 0xffffff,
+      },
+      label: 'FRONT',
+    },
+    nx: {
+      labelColor: 0x44403c,
+      hover: {
+        color: 0x6495ed,
+        labelColor: 0xffffff,
+      },
+      label: 'LEFT',
+    },
+    ny: {
+      labelColor: 0x44403c,
+      hover: {
+        color: 0x6495ed,
+        labelColor: 0xffffff,
+      },
+      label: 'BOTTOM',
+    },
+    nz: {
+      labelColor: 0x44403c,
+      hover: {
+        color: 0x6495ed,
+        labelColor: 0xffffff,
+      },
+      label: 'BACK',
+    },
+  });
 
   // Try to get at the underlying CameraControls instance if present.
   const cameraControls: ControlsLike | undefined =
@@ -187,4 +252,3 @@ export function ensureViewportGizmo(
 
   return handle;
 }
-
