@@ -14,6 +14,8 @@ import { $controls } from './controls.js';
 import { Constructor } from '../utilities.js';
 import { MathUtils, Mesh } from 'three';
 
+import type { ViewportGizmoHandle } from './ld-controls/viewport-gizmo.js';
+
 export interface ClickDetails {
   geometry?: string;
   material?: string;
@@ -222,6 +224,12 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
             configurable: true,
           });
         }
+      }
+
+      const gizmoHandle = (this as any)
+        .viewportGizmoHandle as ViewportGizmoHandle | null;
+      if (gizmoHandle) {
+        gizmoHandle.updateCamera(scene.camera);
       }
 
       this[$needsRender]();

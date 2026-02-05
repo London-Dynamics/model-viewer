@@ -22,7 +22,7 @@ import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 
 import { LDAnimationMixin } from './features/ld-animation.js';
-import { LDControlsMixin } from './features/ld-controls.js';
+import { LDControlsMixin } from './features/ld-controls/index.js';
 import { LDDebugMixin } from './features/ld-debug.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
 import { LDCameraMixin } from './features/ld-camera.js';

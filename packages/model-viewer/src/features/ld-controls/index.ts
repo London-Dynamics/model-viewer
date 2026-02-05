@@ -30,14 +30,14 @@
  * import { ControlsMixin } from './features/controls.js';
  *
  * // Use:
- * import { LDControlsMixin as ControlsMixin } from './features/ld-controls.js';
+ * import { LDControlsMixin as ControlsMixin } from './index.js';
  * ```
  */
 
 import { property } from 'lit/decorators.js';
 import * as THREE from 'three';
 
-import { style } from '../decorators.js';
+import { style } from '../../decorators.js';
 import ModelViewerElementBase, {
   $ariaLabel,
   $container,
@@ -53,24 +53,29 @@ import ModelViewerElementBase, {
   $userInputElement,
   toVector3D,
   Vector3D,
-} from '../model-viewer-base.js';
+} from '../../model-viewer-base.js';
 
 import {
   EvaluatedStyle,
   Intrinsics,
   SphericalIntrinsics,
   Vector3Intrinsics,
-} from '../styles/evaluators.js';
+} from '../../styles/evaluators.js';
 
-import { DECAY_MILLISECONDS } from '../three-components/Damper.js';
+import { DECAY_MILLISECONDS } from '../../three-components/Damper.js';
 import {
   ChangeSource,
   PointerChangeEvent,
-} from '../three-components/SmoothControls.js';
-import { Constructor } from '../utilities.js';
-import { timeline, TimingFunction } from '../utilities/animation.js';
+} from '../../three-components/SmoothControls.js';
+import { Constructor } from '../../utilities.js';
+import { timeline, TimingFunction } from '../../utilities/animation.js';
 
 import CameraControls from 'camera-controls';
+
+import {
+  ensureViewportGizmo,
+  type ViewportGizmoHandle,
+} from './viewport-gizmo.js';
 
 import {
   $controls,
@@ -92,7 +97,7 @@ import {
   TouchAction,
   type CameraChangeDetails,
   type ControlsInterface,
-} from './controls.js';
+} from '../controls.js';
 
 import {
   DEFAULT_FOV_DEG,
@@ -105,7 +110,7 @@ import {
   POLAR_TRIENT_LABELS,
   DEFAULT_INTERACTION_PROMPT_THRESHOLD,
   INTERACTION_PROMPT,
-} from './controls.js';
+} from '../controls.js';
 
 export {
   DEFAULT_FOV_DEG,
@@ -982,6 +987,11 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'camera-controls' })
     cameraControls: boolean = false;
 
+    @property({ type: Boolean, attribute: 'show-viewport-gizmo' })
+    showViewportGizmo: boolean = false;
+
+    viewportGizmoHandle: ViewportGizmoHandle | null = null;
+
     @style({
       intrinsics: cameraOrbitIntrinsics,
       observeEffects: true,
@@ -1211,6 +1221,15 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         'pointer-change-end',
         this[$onPointerChange] as (event: THREE.Event) => void
       );
+
+      this.viewportGizmoHandle = ensureViewportGizmo({
+        host: this,
+        scene: this[$scene],
+        container: this[$container],
+        controls: this[$controls],
+        show: this.showViewportGizmo,
+        existing: this.viewportGizmoHandle,
+      });
     }
 
     disconnectedCallback() {
@@ -1228,6 +1247,11 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         'pointer-change-end',
         this[$onPointerChange] as (event: THREE.Event) => void
       );
+
+      if (this.viewportGizmoHandle) {
+        this.viewportGizmoHandle.dispose();
+        this.viewportGizmoHandle = null;
+      }
     }
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
@@ -1317,6 +1341,17 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           scene.jumpToGoal();
           this[$onChange]();
           this[$jumpCamera] = false;
+        });
+      }
+
+      if (changedProperties.has('showViewportGizmo')) {
+        this.viewportGizmoHandle = ensureViewportGizmo({
+          host: this,
+          scene: this[$scene],
+          container: this[$container],
+          controls: this[$controls],
+          show: this.showViewportGizmo,
+          existing: this.viewportGizmoHandle,
         });
       }
     }
@@ -1567,6 +1602,14 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (cameraMoved || targetMoved) {
         this[$onChange]();
       }
+
+      if (this.viewportGizmoHandle) {
+        // Keep gizmo orientation in sync with the current camera.
+        this.viewportGizmoHandle.gizmo.cameraUpdate();
+        if (this.showViewportGizmo) {
+          this.viewportGizmoHandle.render();
+        }
+      }
     }
 
     [$deferInteractionPrompt]() {
@@ -1645,6 +1688,13 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$controls].setFieldOfView(fov);
 
       this.jumpCameraToGoal();
+
+      if (this.viewportGizmoHandle) {
+        this.viewportGizmoHandle.updateOnResize(
+          this[$scene].width,
+          this[$scene].height
+        );
+      }
     }
 
     [$onModelLoad]() {
@@ -1662,6 +1712,17 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.requestUpdate('cameraOrbit', this.cameraOrbit);
       this.requestUpdate('cameraTarget', this.cameraTarget);
       this.jumpCameraToGoal();
+
+      if (this.showViewportGizmo) {
+        this.viewportGizmoHandle = ensureViewportGizmo({
+          host: this,
+          scene: this[$scene],
+          container: this[$container],
+          controls: this[$controls],
+          show: this.showViewportGizmo,
+          existing: this.viewportGizmoHandle,
+        });
+      }
     }
 
     [$cancelPrompts] = () => {

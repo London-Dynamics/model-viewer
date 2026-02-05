@@ -88,7 +88,9 @@
     "@monogrid/gainmap-js": "^3.1.0",
     "camera-controls": "^3.1.0",
     "lit": "^3.2.1",
-    "postprocessing": "^6.37.1"
+    "postprocessing": "^6.37.1",
+    "three-viewport-gizmo": "2.2.0",
+    "utility-types": "3.11.0"
   },
   "peerDependencies": {
     "three": "^0.172.0"
