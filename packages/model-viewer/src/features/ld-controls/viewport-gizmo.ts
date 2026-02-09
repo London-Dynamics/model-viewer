@@ -87,6 +87,7 @@ export function ensureViewportGizmo(
   renderer.setSize(scene.width, scene.height);
 
   const canvas = renderer.domElement;
+  canvas.classList.add('ld-viewport-gizmo');
   canvas.style.position = 'absolute';
   canvas.style.top = '0';
   canvas.style.left = '0';
@@ -94,7 +95,6 @@ export function ensureViewportGizmo(
   // so let events pass through this canvas to the underlying
   // model-viewer controls.
   canvas.style.pointerEvents = 'none';
-  // Ensure gizmo renders above the main canvas
   canvas.style.zIndex = '1';
 
   container.appendChild(canvas);
@@ -104,8 +104,10 @@ export function ensureViewportGizmo(
     | THREE.OrthographicCamera;
 
   const gizmo = new ViewportGizmo(camera, renderer, {
+    container,
     type: 'cube',
     size: 96,
+    offset: { top: 0, right: 0, bottom: 0, left: 0 },
     background: {
       color: 0xf5f5f4,
     },

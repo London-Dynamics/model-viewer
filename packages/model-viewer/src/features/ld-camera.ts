@@ -29,6 +29,8 @@ type CameraMeta = {
   };
 };
 
+export type CameraType = 'perspective' | 'orthographic';
+
 export declare interface LDCameraInterface {
   resetCamera(): void;
   rotateCamera(azimuth: number, polar: number, animate?: boolean): void;
@@ -38,8 +40,8 @@ export declare interface LDCameraInterface {
   setCameraFromJSON(json: CameraMeta['object']): void;
   getCameraMeta(): CameraMeta | null;
 
-  setCameraType(type: 'perspective' | 'orthographic'): void;
-  getCameraType(): 'perspective' | 'orthographic';
+  setCameraType(type: CameraType): void;
+  getCameraType(): CameraType;
   toggleCameraType(): void;
 }
 
@@ -192,10 +194,9 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Set the camera type to either perspective or orthographic
      */
-    setCameraType(type: 'perspective' | 'orthographic') {
+    setCameraType(type: CameraType) {
       const scene = this[$scene];
-
-      // Early return if camera type is already set
+      console.log('setCameraType called', type);
       if (scene.getCameraType() === type) {
         return;
       }

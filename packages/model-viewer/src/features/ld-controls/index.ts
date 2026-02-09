@@ -987,7 +987,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'camera-controls' })
     cameraControls: boolean = false;
 
-    @property({ type: Boolean, attribute: 'show-viewport-gizmo' })
+    @property({ type: Boolean, attribute: 'viewport-gizmo' })
     showViewportGizmo: boolean = false;
 
     viewportGizmoHandle: ViewportGizmoHandle | null = null;
