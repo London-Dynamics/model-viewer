@@ -12,7 +12,7 @@ import ModelViewerElementBase, {
 import { $controls } from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
-import { MathUtils, Mesh } from 'three';
+import { MathUtils, Mesh, Vector3 } from 'three';
 
 import type { ViewportGizmoHandle } from './ld-controls/viewport-gizmo.js';
 
@@ -203,18 +203,44 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const controls = (this as any)[$controls];
 
+      // Store current camera state before switching
+      let currentPosition: Vector3 | null = null;
+      let currentTarget: Vector3 | null = null;
+
+      if (controls && controls.thirdPartyControls) {
+        // Save current camera position and target
+        currentPosition = scene.camera.position.clone();
+        currentTarget = new Vector3();
+        controls.thirdPartyControls.getTarget(currentTarget);
+      }
+
       // Switch camera type (this preserves position and rotation)
       scene.setCameraType(type);
 
-      // Update controls to use the new camera without changing its state
+      // Update controls to use the new camera
       if (controls) {
         // For third-party controls adapter (camera-controls)
-        if (controls.thirdPartyControls && controls.thirdPartyControls.camera) {
-          // Update camera reference
-          controls.thirdPartyControls.camera = scene.camera;
-          // Just sync the controls internal state without moving the camera
-          controls.thirdPartyControls.updateCameraUp();
-          controls.thirdPartyControls.update(0);
+        if (controls.thirdPartyControls) {
+          // Use the updateCamera method if available (proper reinitialization)
+          if (typeof controls.updateCamera === 'function') {
+            controls.updateCamera(scene.camera);
+          } else {
+            // Fallback: Update camera reference and restore position
+            controls.thirdPartyControls.camera = scene.camera;
+            
+            if (currentPosition && currentTarget) {
+              controls.thirdPartyControls.setLookAt(
+                currentPosition.x,
+                currentPosition.y,
+                currentPosition.z,
+                currentTarget.x,
+                currentTarget.y,
+                currentTarget.z,
+                false
+              );
+            }
+            controls.thirdPartyControls.update(0);
+          }
         }
         // For SmoothControls
         else if (controls.camera) {
@@ -227,6 +253,12 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
+      // Update effect renderer if present
+      if (scene.effectRenderer && typeof scene.effectRenderer.setMainCamera === 'function') {
+        scene.effectRenderer.setMainCamera(scene.camera);
+      }
+
+      // Update viewport gizmo with new camera
       const gizmoHandle = (this as any)
         .viewportGizmoHandle as ViewportGizmoHandle | null;
       if (gizmoHandle) {

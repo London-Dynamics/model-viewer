@@ -896,6 +896,82 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     return true;
   }
 
+  /**
+   * Update the camera reference and reinitialize CameraControls state.
+   * This should be called when the camera type changes (e.g., perspective <-> orthographic).
+   */
+  updateCamera(
+    newCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera
+  ): void {
+    // Save current position and target
+    const oldPosition = this.thirdPartyControls.camera.position.clone();
+    const oldTarget = new THREE.Vector3();
+    this.thirdPartyControls.getTarget(oldTarget);
+
+    // Save current enabled state
+    const wasEnabled = this.thirdPartyControls.enabled;
+
+    // Dispose the old CameraControls instance (removes event listeners)
+    this.thirdPartyControls.dispose();
+
+    // Create new CameraControls with the new camera
+    this.thirdPartyControls = new CameraControls(newCamera, this.domElement);
+
+    // Restore settings
+    this.thirdPartyControls.smoothTime = 0.25;
+    this.thirdPartyControls.draggingSmoothTime = 0.125;
+    this.thirdPartyControls.enabled = wasEnabled;
+
+    // Restore sensitivity settings
+    this.updateSensitivity();
+
+    // Restore constraints from options
+    if (this.options.minimumAzimuthalAngle !== undefined) {
+      this.thirdPartyControls.minAzimuthAngle =
+        this.options.minimumAzimuthalAngle;
+    }
+    if (this.options.maximumAzimuthalAngle !== undefined) {
+      this.thirdPartyControls.maxAzimuthAngle =
+        this.options.maximumAzimuthalAngle;
+    }
+    if (this.options.minimumPolarAngle !== undefined) {
+      this.thirdPartyControls.minPolarAngle = this.options.minimumPolarAngle;
+    }
+    if (this.options.maximumPolarAngle !== undefined) {
+      this.thirdPartyControls.maxPolarAngle = this.options.maximumPolarAngle;
+    }
+    if (this.options.minimumRadius !== undefined) {
+      this.thirdPartyControls.minDistance = this.options.minimumRadius;
+    }
+    if (this.options.maximumRadius !== undefined) {
+      this.thirdPartyControls.maxDistance = this.options.maximumRadius;
+    }
+
+    // Restore zoom settings
+    if (this._disableZoom) {
+      this.thirdPartyControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
+    }
+
+    // Restore pan settings
+    if (!this._enablePan) {
+      this.thirdPartyControls.mouseButtons.right = CameraControls.ACTION.NONE;
+    }
+
+    // Restore the camera position and target
+    this.thirdPartyControls.setLookAt(
+      oldPosition.x,
+      oldPosition.y,
+      oldPosition.z,
+      oldTarget.x,
+      oldTarget.y,
+      oldTarget.z,
+      false
+    );
+
+    // Force update
+    this.thirdPartyControls.update(0);
+  }
+
   private mapEventType(smoothControlsEventType: string): string | null {
     // Map SmoothControls event types to CameraControls event types
     switch (smoothControlsEventType) {

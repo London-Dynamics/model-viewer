@@ -172,11 +172,14 @@ export function ensureViewportGizmo(
     },
   });
 
-  // Try to get at the underlying CameraControls instance if present.
-  const cameraControls: ControlsLike | undefined =
-    controls && (controls.thirdPartyControls || controls);
+  // Get controls dynamically to handle camera type switches
+  // where CameraControls might be recreated
+  const getCameraControls = (): ControlsLike | undefined => {
+    return controls && (controls.thirdPartyControls || controls);
+  };
 
   const onGizmoStart = () => {
+    const cameraControls = getCameraControls();
     if (
       cameraControls &&
       Object.prototype.hasOwnProperty.call(cameraControls, 'enabled')
@@ -186,6 +189,7 @@ export function ensureViewportGizmo(
   };
 
   const onGizmoEnd = () => {
+    const cameraControls = getCameraControls();
     if (
       cameraControls &&
       Object.prototype.hasOwnProperty.call(cameraControls, 'enabled')
@@ -197,6 +201,7 @@ export function ensureViewportGizmo(
   const onGizmoChange = () => {
     // Keep CameraControls' internal state in sync with the camera that
     // the gizmo is animating, so it doesn't snap back on the next update.
+    const cameraControls = getCameraControls();
     if (cameraControls && typeof cameraControls.setLookAt === 'function') {
       const cam = scene.camera as
         | THREE.PerspectiveCamera
