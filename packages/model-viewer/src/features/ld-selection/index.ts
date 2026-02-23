@@ -202,6 +202,12 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     connectedCallback() {
       super.connectedCallback();
+      // Select on pointer down (capture) so click-and-drag can select and move in one gesture.
+      (this as any).addEventListener(
+        'pointerdown',
+        this._onPointerDownForSelection as EventListener,
+        true
+      );
       // Use pointerup in the capture phase to reliably detect clicks on the
       // canvas even if inner handlers stop propagation. Keep click as a
       // fallback for browsers that may not trigger pointer events.
@@ -226,6 +232,11 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     disconnectedCallback() {
       super.disconnectedCallback();
+      (this as any).removeEventListener(
+        'pointerdown',
+        this._onPointerDownForSelection as EventListener,
+        true
+      );
       (this as any).removeEventListener(
         'mousedown',
         this._onMouseDown as EventListener
@@ -270,6 +281,21 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       return false;
     }
+
+    /**
+     * Select on pointer down (capture phase) so that click-and-drag selects and moves in one gesture.
+     * Runs before other handlers so the object is selected before modular's mousedown considers drag.
+     */
+    protected _onPointerDownForSelection = (e: PointerEvent | MouseEvent) => {
+      const btn = (e as any).button;
+      if (btn !== 0) return;
+      if (this._isUIElement(e.target)) return;
+      try {
+        this._performSelectionRaycast(e, { clearWhenNoHit: false });
+      } catch (error) {
+        console.error('[selection]: raycast error on pointerdown', error);
+      }
+    };
 
     protected _onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
@@ -341,7 +367,16 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     };
 
-    protected _performSelectionRaycast(e: PointerEvent | MouseEvent) {
+    /**
+     * @param e - pointer/mouse event for raycast position
+     * @param options.clearWhenNoHit - if true (default), clear selection when raycast hits nothing.
+     *   Pass false for pointer-down so we only deselect on click (pointer up on empty), not when starting a camera drag.
+     */
+    protected _performSelectionRaycast(
+      e: PointerEvent | MouseEvent,
+      options?: { clearWhenNoHit?: boolean }
+    ) {
+      const clearWhenNoHit = options?.clearWhenNoHit !== false;
       const rect = (this as unknown as HTMLElement).getBoundingClientRect();
       const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
@@ -394,7 +429,9 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       if (intersects.length === 0) {
-        this.clearSelection();
+        if (clearWhenNoHit) {
+          this.clearSelection();
+        }
         return;
       }
 
