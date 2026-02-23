@@ -16,7 +16,6 @@ import type { Part } from '@london-dynamics/types/product';
 import { Constructor } from '../../utilities.js';
 import { SelectionChangeDetail } from '../ld-selection/index.js';
 import ModelViewerElementBase, {
-  $canvas,
   $needsRender,
   $scene,
   $renderer,
@@ -3577,12 +3576,46 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch (e) {}
       }
 
+      // Track where the pointer was when placement started and max distance moved
+      // (for distance-based fallback). Demo: drag starts on a button inside model-viewer.
+      // Consuming app: drag starts outside. We use fallback only when the user barely
+      // moved (click without drag); otherwise use current position.
+      const DRAG_THRESHOLD_PX = 10;
+      let placementStartClientX: number | null = initialMouse
+        ? initialMouse.clientX
+        : null;
+      let placementStartClientY: number | null = initialMouse
+        ? initialMouse.clientY
+        : null;
+      let maxDistanceSq = 0;
+      let pointerCaptured = false;
+
       // Wire default pointer capture (window-level) so consumers don't need to
       // manage global listeners. Pointer moves update the placeholder; pointer
       // up commits the placement. ESC cancels.
       const onPointerMove = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
+            if (placementStartClientX === null || placementStartClientY === null) {
+              placementStartClientX = e.clientX;
+              placementStartClientY = e.clientY;
+            }
+            // Steal pointer capture on first move so we keep receiving events even
+            // when drag started on a button (which may have captured the pointer).
+            if (!pointerCaptured) {
+              pointerCaptured = true;
+              try {
+                (this as any).setPointerCapture(e.pointerId);
+              } catch (_) {}
+            }
+            if (
+              placementStartClientX !== null &&
+              placementStartClientY !== null
+            ) {
+              const dx = e.clientX - placementStartClientX;
+              const dy = e.clientY - placementStartClientY;
+              maxDistanceSq = Math.max(maxDistanceSq, dx * dx + dy * dy);
+            }
             session.updatePosition(e.clientX, e.clientY);
           }
         } catch (err) {
@@ -3593,28 +3626,22 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const onPointerUp = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
-            // Use canvas (3D viewport) for hit test: buttons etc. can be DOM children
-            // of model-viewer, so we only treat release as "on viewer" if target is the canvas.
-            const canvas = (this as any)[$canvas];
-            const isTargetCanvas = e.target === canvas;
-            const isTargetInsideCanvas =
-              canvas && canvas.contains(e.target as Node);
-            const releasedOnViewport = isTargetCanvas || isTargetInsideCanvas;
-            const useFallback = !releasedOnViewport;
-            console.log('[ld-modular] pointerup', {
-              target: e.target,
-              targetTag: (e.target as Element)?.tagName,
-              targetId: (e.target as Element)?.id,
-              canvas,
-              isTargetCanvas,
-              isTargetInsideCanvas,
-              releasedOnViewport,
-              useFallback,
-            });
+            const releaseDistance =
+              placementStartClientX !== null &&
+              placementStartClientY !== null
+                ? Math.hypot(
+                    e.clientX - placementStartClientX,
+                    e.clientY - placementStartClientY
+                  )
+                : 0;
+            // Use fallback only if they never moved more than threshold (use max
+            // distance so we don't rely on release point alone; and if release is
+            // far from start, treat as drag).
+            const movedEnough =
+              maxDistanceSq > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX ||
+              releaseDistance > DRAG_THRESHOLD_PX;
+            const useFallback = !movedEnough;
             if (useFallback) {
-              console.log(
-                '[ld-modular] applying fallback commit position (released outside viewer)'
-              );
               session.applyFallbackCommitPosition();
             }
             session.commit().catch(() => {});
@@ -4397,31 +4424,17 @@ class PlacementSession extends EventTarget {
    */
   applyFallbackCommitPosition() {
     try {
-      console.log('[ld-modular] applyFallbackCommitPosition', {
-        hasPlaceholder: !!this.placeholder,
-        placeholderPos: this.placeholder
-          ? this.placeholder.position.toArray()
-          : null,
-        hasTargetBottomCenter: !!this._targetBottomCenter,
-        hasLastCursorPosition: !!this._lastCursorPosition,
-      });
       if (this.placeholder) {
         const y = this.placeholder.position.y;
         this.placeholder.position.set(0, y, 0);
         this._targetBottomCenter = null;
         this._lastCursorPosition = null;
-        console.log('[ld-modular] fallback: set placeholder to (0,', y, ', 0)');
         return;
       }
       const element = this._element as any;
       const scene = element?.[$scene];
       const target = scene?.target;
-      if (!target || !this._lastCursorPosition) {
-        console.log(
-          '[ld-modular] fallback: no placeholder and (no target or no _lastCursorPosition), skipping'
-        );
-        return;
-      }
+      if (!target || !this._lastCursorPosition) return;
       const cursorWorld = new Vector3(
         this._lastCursorPosition.x,
         this._lastCursorPosition.y,
@@ -4442,15 +4455,7 @@ class PlacementSession extends EventTarget {
         y: fallbackWorld.y,
         z: fallbackWorld.z,
       };
-      console.log(
-        '[ld-modular] fallback: set _targetBottomCenter/_lastCursorPosition from local (0,',
-        cursorLocal.y,
-        ', 0) -> world',
-        fallbackWorld.toArray()
-      );
-    } catch (e) {
-      console.warn('[ld-modular] applyFallbackCommitPosition error', e);
-    }
+    } catch (_) {}
   }
 
   // Commit placement: start loading the final high-res GLB. Session is
@@ -4479,10 +4484,6 @@ class PlacementSession extends EventTarget {
           y: this.placeholder.position.y,
           z: this.placeholder.position.z,
         };
-        console.log(
-          '[ld-modular] commit: centerDetail from placeholder',
-          centerDetail
-        );
         this.log(
           '[puzzler] commit: centerDetail from placeholder:',
           centerDetail
@@ -4504,10 +4505,6 @@ class PlacementSession extends EventTarget {
         }
 
         centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
-        console.log(
-          '[ld-modular] commit: centerDetail from _targetBottomCenter',
-          centerDetail
-        );
       } else if (this._lastCursorPosition) {
         // Fallback: convert last cursor position from world to local space
         const scene = (this._element as any)[$scene];
@@ -4524,18 +4521,9 @@ class PlacementSession extends EventTarget {
         }
 
         centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
-        console.log(
-          '[ld-modular] commit: centerDetail from _lastCursorPosition',
-          centerDetail
-        );
-      } else {
-        console.log(
-          '[ld-modular] commit: no position source (placeholder/_targetBottomCenter/_lastCursorPosition), centerDetail remains null'
-        );
       }
-    } catch (e) {
+    } catch (_) {
       centerDetail = null;
-      console.warn('[ld-modular] commit: centerDetail exception', e);
     }
 
     // Resolve high-res URL: use callback if no direct URL provided
