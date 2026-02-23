@@ -21,6 +21,7 @@ import ModelViewerElementBase, {
   $scene,
   $renderer,
   $tick,
+  $userInputElement,
 } from '../../model-viewer-base.js';
 import { $getMouseWorldPoint } from '../ld-cursor/index.js';
 
@@ -193,7 +194,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
   // LDSelectionMixin is now applied in the main mixin composition chain,
   // so we inherit selection functionality without reapplying it
   class LDModularModelViewerElement extends ModelViewerElement {
-    @property({ type: Boolean, attribute: 'edit-mode' })
+    @property({ type: Boolean, attribute: 'edit' })
     editMode: boolean = false;
 
     @property({ type: Number, attribute: 'snap-distance' })
@@ -1155,6 +1156,20 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     // When dragging, prefer to move the enclosing group (if any).
     private _currentDragTarget: Object3D | null = null;
 
+    /** Set when we disabled camera on pointer down over a selectable; re-enable on pointer up. */
+    private _cameraDisabledForPointer: boolean = false;
+
+    /** True = pointer went down on selectable, false = on empty (camera drag). Don't disable on move during camera drag. */
+    private _pointerDownOnSelectable: boolean | null = null;
+
+    private _onPointerDownCaptureBound!: (e: PointerEvent) => void;
+    private _onPointerUpCaptureBound!: (e: PointerEvent) => void;
+    private _onPointerMoveCaptureBound!: (e: PointerEvent) => void;
+
+    /** Throttle pointermove raycast to one per frame for large scenes. */
+    private _pointerMoveOverSelectableRaf: number = 0;
+    private _pendingPointerMove: { clientX: number; clientY: number } | null = null;
+
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
     // (snapping-debug related debug slots removed)
@@ -2114,6 +2129,108 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    /**
+     * Returns true if the given client position is over a selectable object.
+     * Used to disable camera on pointer down when in editMode so the camera does not orbit.
+     * Uses the same input element as camera controls for rect so coordinates match.
+     */
+    private _isPointerOverSelectableObject(
+      clientX: number,
+      clientY: number
+    ): boolean {
+      const inputEl = (this as any)[$userInputElement];
+      if (!inputEl) return false;
+      const rect = inputEl.getBoundingClientRect();
+      const mouseX = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      (this as any).currentMousePosition.set(mouseX, mouseY);
+
+      const scene = (this as any)[$scene];
+      if (!scene) return false;
+      const camera = scene.getCamera ? scene.getCamera() : scene.camera;
+      if (!camera) return false;
+
+      (this as any).raycaster.setFromCamera(
+        (this as any).currentMousePosition,
+        camera
+      );
+      const targetObject = (this as any)._findTargetObject();
+      if (!targetObject) return false;
+
+      const allPlacedObjects: Object3D[] = [];
+      targetObject.traverse((child: any) => {
+        if (child.userData?.isPlacedObject === true)
+          allPlacedObjects.push(child);
+      });
+      const objectsToRaycast =
+        allPlacedObjects.length > 0 ? allPlacedObjects : [targetObject];
+
+      const allIntersects = (this as any).raycaster.intersectObjects(
+        objectsToRaycast,
+        true
+      );
+      const intersects = allIntersects.filter(
+        (hit: any) =>
+          hit.object.visible &&
+          !hit.object.userData?.noHit &&
+          hit.object.userData?.selectable !== false
+      );
+      if (intersects.length === 0) return false;
+
+      let intersectedObject = intersects[0].object;
+      const hasPlacedObjects = allPlacedObjects.length > 0;
+      if (hasPlacedObjects) {
+        while (
+          intersectedObject &&
+          intersectedObject.parent &&
+          intersectedObject.userData?.isPlacedObject !== true
+        ) {
+          intersectedObject = intersectedObject.parent as Object3D;
+        }
+      } else {
+        while (
+          intersectedObject &&
+          intersectedObject.parent &&
+          !intersectedObject.name &&
+          intersectedObject.type === 'Object3D'
+        ) {
+          intersectedObject = intersectedObject.parent as Object3D;
+        }
+      }
+
+      let objectToSelect: Object3D | null = null;
+      const scope = (this as any).selectionScope;
+      if (scope === 'part') {
+        if (
+          hasPlacedObjects &&
+          intersectedObject?.userData?.isPlacedObject === true
+        ) {
+          objectToSelect = intersectedObject;
+        } else {
+          objectToSelect = intersectedObject;
+        }
+      } else if (scope === 'group') {
+        if (
+          hasPlacedObjects &&
+          intersectedObject?.userData?.isPlacedObject === true
+        ) {
+          objectToSelect =
+            (this as any)._findEnclosingGroup(intersectedObject) ||
+            intersectedObject;
+        } else {
+          objectToSelect = intersectedObject?.parent?.name
+            ? intersectedObject.parent
+            : intersectedObject;
+        }
+      } else {
+        objectToSelect = intersectedObject;
+      }
+      return (
+        objectToSelect != null &&
+        (this as any)._isNodeSelectable(objectToSelect)
+      );
+    }
+
     // Drag / touch handlers and utilities (ported/adapted)
     private setupDragHandlers() {
       (this as any).addEventListener('mousedown', this.onMouseDown.bind(this));
@@ -2126,6 +2243,36 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       (this as any).addEventListener('touchmove', this.onTouchMove.bind(this));
       (this as any).addEventListener('touchend', this.onTouchEnd.bind(this));
+
+      // When editMode is on, keep camera disabled while pointer is over a selectable object
+      // so click/drag doesn't orbit. We disable on pointermove (over selectable) so we're
+      // already disabled before pointerdown, since CameraControls registers before us.
+      const inputEl = (this as any)[$userInputElement];
+      this._onPointerDownCaptureBound = this._onPointerDownCapture.bind(this);
+      this._onPointerUpCaptureBound = this._onPointerUpCapture.bind(this);
+      this._onPointerMoveCaptureBound = this._onPointerMoveCapture.bind(this);
+      if (inputEl) {
+        inputEl.addEventListener(
+          'pointerdown',
+          this._onPointerDownCaptureBound,
+          true
+        );
+        inputEl.addEventListener(
+          'pointerup',
+          this._onPointerUpCaptureBound,
+          true
+        );
+        inputEl.addEventListener(
+          'pointercancel',
+          this._onPointerUpCaptureBound,
+          true
+        );
+        inputEl.addEventListener(
+          'pointermove',
+          this._onPointerMoveCaptureBound,
+          true
+        );
+      }
 
       // Prevent context menu during drag
       (this as any).addEventListener('contextmenu', (e: Event) =>
@@ -2156,7 +2303,106 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           'touchend',
           this.onTouchEnd.bind(this)
         );
+        const inputEl = (this as any)[$userInputElement];
+        if (inputEl) {
+          if (this._onPointerDownCaptureBound) {
+            inputEl.removeEventListener(
+              'pointerdown',
+              this._onPointerDownCaptureBound,
+              true
+            );
+          }
+          if (this._onPointerUpCaptureBound) {
+            inputEl.removeEventListener(
+              'pointerup',
+              this._onPointerUpCaptureBound,
+              true
+            );
+            inputEl.removeEventListener(
+              'pointercancel',
+              this._onPointerUpCaptureBound,
+              true
+            );
+          }
+          if (this._onPointerMoveCaptureBound) {
+            inputEl.removeEventListener(
+              'pointermove',
+              this._onPointerMoveCaptureBound,
+              true
+            );
+          }
+        }
+        if (this._pointerMoveOverSelectableRaf !== 0) {
+          cancelAnimationFrame(this._pointerMoveOverSelectableRaf);
+          this._pointerMoveOverSelectableRaf = 0;
+        }
+        this._pendingPointerMove = null;
       } catch (e) {}
+    }
+
+    /**
+     * Disable camera when pointer moves over a selectable (so we're disabled before pointerdown).
+     * Re-enable when pointer leaves selectable and we're not dragging.
+     * Do not disable when user is dragging the camera (pointer went down on empty space).
+     * Throttled to one raycast per frame for performance in large scenes.
+     */
+    private _onPointerMoveCapture(e: PointerEvent) {
+      if (!this.editMode || !(this as any)[$controls]) return;
+      if ((this as any).isDragging) return;
+      if (this._pointerDownOnSelectable === false) return;
+
+      this._pendingPointerMove = { clientX: e.clientX, clientY: e.clientY };
+      if (this._pointerMoveOverSelectableRaf !== 0) return;
+
+      this._pointerMoveOverSelectableRaf = requestAnimationFrame(() => {
+        this._pointerMoveOverSelectableRaf = 0;
+        const p = this._pendingPointerMove;
+        this._pendingPointerMove = null;
+        if (!p || !this.editMode || !(this as any)[$controls]) return;
+        if ((this as any).isDragging) return;
+        if (this._pointerDownOnSelectable === false) return;
+
+        const overSelectable = this._isPointerOverSelectableObject(
+          p.clientX,
+          p.clientY
+        );
+        try {
+          if (overSelectable) {
+            (this as any)[$controls].disableInteraction?.();
+            this._cameraDisabledForPointer = true;
+          } else if (this._cameraDisabledForPointer) {
+            (this as any)[$controls].enableInteraction?.();
+            this._cameraDisabledForPointer = false;
+          }
+        } catch (_) {}
+      });
+    }
+
+    private _onPointerDownCapture(e: PointerEvent) {
+      if (!this.editMode || e.button !== 0) return;
+      if ((this as any)._isUIElement(e.target)) return;
+      if (!(this as any)[$controls]) return;
+      const overSelectable = this._isPointerOverSelectableObject(
+        e.clientX,
+        e.clientY
+      );
+      this._pointerDownOnSelectable = overSelectable;
+      if (!overSelectable) return;
+      try {
+        (this as any)[$controls].disableInteraction?.();
+        this._cameraDisabledForPointer = true;
+      } catch (_) {}
+    }
+
+    private _onPointerUpCapture(_e: PointerEvent) {
+      this._pointerDownOnSelectable = null;
+      if (!this._cameraDisabledForPointer) return;
+      this._cameraDisabledForPointer = false;
+      try {
+        if ((this as any)[$controls]) {
+          (this as any)[$controls].enableInteraction?.();
+        }
+      } catch (_) {}
     }
 
     private onMouseDown(event: MouseEvent) {
@@ -3336,7 +3582,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               useFallback,
             });
             if (useFallback) {
-              console.log('[ld-modular] applying fallback commit position (released outside viewer)');
+              console.log(
+                '[ld-modular] applying fallback commit position (released outside viewer)'
+              );
               session.applyFallbackCommitPosition();
             }
             session.commit().catch(() => {});
@@ -4139,7 +4387,9 @@ class PlacementSession extends EventTarget {
       const scene = element?.[$scene];
       const target = scene?.target;
       if (!target || !this._lastCursorPosition) {
-        console.log('[ld-modular] fallback: no placeholder and (no target or no _lastCursorPosition), skipping');
+        console.log(
+          '[ld-modular] fallback: no placeholder and (no target or no _lastCursorPosition), skipping'
+        );
         return;
       }
       const cursorWorld = new Vector3(
@@ -4162,7 +4412,12 @@ class PlacementSession extends EventTarget {
         y: fallbackWorld.y,
         z: fallbackWorld.z,
       };
-      console.log('[ld-modular] fallback: set _targetBottomCenter/_lastCursorPosition from local (0,', cursorLocal.y, ', 0) -> world', fallbackWorld.toArray());
+      console.log(
+        '[ld-modular] fallback: set _targetBottomCenter/_lastCursorPosition from local (0,',
+        cursorLocal.y,
+        ', 0) -> world',
+        fallbackWorld.toArray()
+      );
     } catch (e) {
       console.warn('[ld-modular] applyFallbackCommitPosition error', e);
     }
@@ -4194,7 +4449,10 @@ class PlacementSession extends EventTarget {
           y: this.placeholder.position.y,
           z: this.placeholder.position.z,
         };
-        console.log('[ld-modular] commit: centerDetail from placeholder', centerDetail);
+        console.log(
+          '[ld-modular] commit: centerDetail from placeholder',
+          centerDetail
+        );
         this.log(
           '[puzzler] commit: centerDetail from placeholder:',
           centerDetail
@@ -4216,7 +4474,10 @@ class PlacementSession extends EventTarget {
         }
 
         centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
-        console.log('[ld-modular] commit: centerDetail from _targetBottomCenter', centerDetail);
+        console.log(
+          '[ld-modular] commit: centerDetail from _targetBottomCenter',
+          centerDetail
+        );
       } else if (this._lastCursorPosition) {
         // Fallback: convert last cursor position from world to local space
         const scene = (this._element as any)[$scene];
@@ -4233,9 +4494,14 @@ class PlacementSession extends EventTarget {
         }
 
         centerDetail = { x: cursorWorld.x, y: cursorWorld.y, z: cursorWorld.z };
-        console.log('[ld-modular] commit: centerDetail from _lastCursorPosition', centerDetail);
+        console.log(
+          '[ld-modular] commit: centerDetail from _lastCursorPosition',
+          centerDetail
+        );
       } else {
-        console.log('[ld-modular] commit: no position source (placeholder/_targetBottomCenter/_lastCursorPosition), centerDetail remains null');
+        console.log(
+          '[ld-modular] commit: no position source (placeholder/_targetBottomCenter/_lastCursorPosition), centerDetail remains null'
+        );
       }
     } catch (e) {
       centerDetail = null;
