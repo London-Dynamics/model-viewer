@@ -85,8 +85,9 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (typeof material !== 'undefined' && !Array.isArray(material)) {
             detail.material = material.name;
           }
+          // Use 'object-click' (not 'click') to avoid re-triggering the click listener and stack overflow
           this.dispatchEvent(
-            new CustomEvent<ClickDetails>('click', { detail })
+            new CustomEvent<ClickDetails>('object-click', { detail })
           );
         }
       }

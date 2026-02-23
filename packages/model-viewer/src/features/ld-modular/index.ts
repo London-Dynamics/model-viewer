@@ -1170,6 +1170,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _pointerMoveOverSelectableRaf: number = 0;
     private _pendingPointerMove: { clientX: number; clientY: number } | null = null;
 
+    /** Window listener for pointerup during drag so release is always received (e.g. over floating strip). */
+    private _windowPointerUpForDragBound?: (e: PointerEvent) => void;
+
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
     // (snapping-debug related debug slots removed)
@@ -2337,6 +2340,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._pointerMoveOverSelectableRaf = 0;
         }
         this._pendingPointerMove = null;
+        this._removeWindowDragListeners();
       } catch (e) {}
     }
 
@@ -2591,6 +2595,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       (this as any).style.cursor = 'grabbing';
 
+      // Listen for pointerup/cancel on window so we always get release (e.g. when cursor is over floating strip)
+      this._windowPointerUpForDragBound = this._onWindowPointerUpForDrag.bind(this);
+      window.addEventListener('pointerup', this._windowPointerUpForDragBound, true);
+      window.addEventListener('pointercancel', this._windowPointerUpForDragBound, true);
+
       // Snapping points will be shown automatically during drag via updateSnappingPointSlots
       // (isDragging && snappingEnabled condition)
       try {
@@ -2598,6 +2607,26 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
 
       this.requestShadowUpdate();
+    }
+
+    /**
+     * Handles pointerup/pointercancel on window during drag so we always end drag
+     * even when the cursor is over the floating control strip or another overlay.
+     * Prevents the event so a button under the cursor doesn't also receive a click.
+     */
+    private _onWindowPointerUpForDrag(e: PointerEvent) {
+      if (!(this as any).isDragging) return;
+      if (e.button !== 0) return;
+      this._removeWindowDragListeners();
+      this.stopDragging();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    private _removeWindowDragListeners() {
+      if (!this._windowPointerUpForDragBound) return;
+      window.removeEventListener('pointerup', this._windowPointerUpForDragBound, true);
+      window.removeEventListener('pointercancel', this._windowPointerUpForDragBound, true);
     }
 
     private updateDragPosition() {
@@ -2673,6 +2702,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
+      this._removeWindowDragListeners();
       (this as any).isDragging = false;
 
       // Ensure dragged individual parts maintain their placement status
