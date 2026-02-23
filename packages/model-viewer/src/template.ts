@@ -284,37 +284,37 @@ const templateResult = html` <style>
          white-space: nowrap;
        }
 
-       /* Hide the ld-puzzler slot template content by default */
-       .slot.ld-puzzler > slot {
+       /* Hide the ld-modular slot template content by default */
+       .slot.ld-modular > slot {
          display: none;
        }
 
-       /* LD Puzzler Styles */
-       .ld-puzzler .ld-snapping-point {
+       /* LD Modular Styles */
+       .ld-modular .ld-snapping-point {
          pointer-events: none;
        }
 
-       .ld-puzzler .back-facing .ld-snapping-point {
+       .ld-modular .back-facing .ld-snapping-point {
           opacity: 0.4;
        }
 
-       .ld-puzzler .ld-floating-control-strip {
+       .ld-modular .ld-floating-control-strip {
          pointer-events: auto;
          position: absolute;
          z-index: 100;
        }
 
-       .ld-puzzler .ld-rotation-control {
+       .ld-modular .ld-rotation-control {
 
        }
 
-       .ld-puzzler .ld-break-link {
+       .ld-modular .ld-break-link {
 
         pointer-events: auto;
 
        }
 
-       .ld-puzzler .default-icon {
+       .ld-modular .default-icon {
          font-size: 16px;
          line-height: 1;
          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
@@ -392,7 +392,7 @@ const templateResult = html` <style>
       </slot>
     </div>
 
-    <div class="slot ld-puzzler">
+    <div class="slot ld-modular">
       <slot name="snapping-point">
         <div
           class="ld-snapping-point"

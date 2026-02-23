@@ -107,7 +107,7 @@ type RotationOptions = {
   animate?: boolean;
 };
 
-export declare interface LDPuzzlerInterface {
+export declare interface LDModularInterface {
   load: LoadFunction;
   loadMany: LoadManyFunction;
   attachObject: AttachFunction;
@@ -186,12 +186,12 @@ export declare interface LDPuzzlerInterface {
   breakLink?: (connectionId: string) => boolean;
 }
 
-export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
+export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
-): Constructor<LDPuzzlerInterface> & T => {
+): Constructor<LDModularInterface> & T => {
   // LDSelectionMixin is now applied in the main mixin composition chain,
   // so we inherit selection functionality without reapplying it
-  class LDPuzzlerModelViewerElement extends ModelViewerElement {
+  class LDModularModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'edit-mode' })
     editMode: boolean = false;
 
@@ -1942,7 +1942,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         owner: this as any,
         container:
           ((this as any).shadowRoot?.querySelector(
-            '.slot.ld-puzzler'
+            '.slot.ld-modular'
           ) as HTMLElement) || null,
         scene: (this as any)[$scene],
         camera,
@@ -2068,7 +2068,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
         owner: this as any,
         container:
           ((this as any).shadowRoot?.querySelector(
-            '.slot.ld-puzzler'
+            '.slot.ld-modular'
           ) as HTMLElement) || null,
         scene,
         camera,
@@ -3650,7 +3650,7 @@ export const LDPuzzlerMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
   }
 
-  return LDPuzzlerModelViewerElement as Constructor<LDPuzzlerInterface> & T;
+  return LDModularModelViewerElement as Constructor<LDModularInterface> & T;
 };
 
 /**
@@ -3662,7 +3662,7 @@ class PlacementSession extends EventTarget {
   state: 'placing' | 'loading' | 'ended' | 'cancelled' = 'placing';
   placeholder: Object3D | null = null;
   private log: LogFunction;
-  private _element: InstanceType<ReturnType<typeof LDPuzzlerMixin>> | null;
+  private _element: InstanceType<ReturnType<typeof LDModularMixin>> | null;
   private _lowResSrc: string | undefined;
   private _highResSrc: string | undefined;
   private _options?: PlacementOptions;
@@ -4365,7 +4365,7 @@ class PlacementSession extends EventTarget {
         if (!pending) {
           try {
             this.log(
-              'ld-puzzler: PlacementSession.commit running fallback snap search for new node',
+              'ld-modular: PlacementSession.commit running fallback snap search for new node',
               { node: gltf.scene.name }
             );
           } catch (e) {}
@@ -4406,7 +4406,7 @@ class PlacementSession extends EventTarget {
                       const closest = connections[0];
                       try {
                         this.log(
-                          'ld-puzzler: PlacementSession.commit fallback found connection',
+                          'ld-modular: PlacementSession.commit fallback found connection',
                           { dragged: snappableObj.name, target: child.name }
                         );
                       } catch (e) {}

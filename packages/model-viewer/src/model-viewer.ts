@@ -31,7 +31,7 @@ import { LDLightsMixin } from './features/ld-lights.js';
 import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
 import { LDMeasureMixin } from './features/ld-measure.js';
 import { LDCursorMixin } from './features/ld-cursor/index.js';
-import { LDPuzzlerMixin } from './features/ld-puzzler/index.js';
+import { LDModularMixin } from './features/ld-modular/index.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
 
 // Import custom effects to register them
@@ -47,7 +47,7 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
   LDFloatingControlStripMixin(
     LDCursorMixin(
       LDMeasureMixin(
-        LDPuzzlerMixin(
+        LDModularMixin(
           LDSelectionMixin(
             LDLightsMixin(
               LDCameraMixin(

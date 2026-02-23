@@ -48,7 +48,7 @@ const $gridContainer = Symbol('gridContainer');
 export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDMeasureInterface> & T => {
-  // LDPuzzlerMixin (which this wraps) already applies LDSelectionMixin,
+  // LDModularMixin (which this wraps) already applies LDSelectionMixin,
   // so we inherit selection functionality without reapplying it
   class LDMeasureModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'measure' })

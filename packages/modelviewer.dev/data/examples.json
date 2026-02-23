@@ -384,8 +384,8 @@
     ]
   },
   {
-    "name": "LD Puzzler",
-    "htmlName": "ld_puzzler",
+    "name": "LD Modular",
+    "htmlName": "ld_modular",
     "examples": [
       {
         "htmlId": "modular",

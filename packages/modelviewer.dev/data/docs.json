@@ -1474,7 +1474,7 @@
         "htmlName": "selectionScope",
         "description": "Selection granularity: 'part' selects individual placed parts, 'group' selects snapped groups (default), 'all' allows selecting any scene node.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "scene", "options": "scene, part, group, all" }
       },
@@ -1483,7 +1483,7 @@
         "htmlName": "highlightSelected",
         "description": "When enabled, visually highlights the currently selected object. The highlight method can be overridden in subclasses for custom highlight behavior.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "false", "options": "true, false" }
       }
@@ -1498,15 +1498,15 @@
   },
 
   {
-    "Title": "LD Puzzler",
-    "htmlName": "ld_puzzler",
+    "Title": "LD Modular",
+    "htmlName": "ld_modular",
     "Attributes": [
       {
         "name": "edit-mode",
         "htmlName": "editMode",
         "description": "Enable edit mode to allow placing, selecting and manipulating models in the scene.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "false", "options": "true, false" }
       },
@@ -1515,7 +1515,7 @@
         "htmlName": "snapDistance",
         "description": "Maximum distance (in metres) within which snapping may occur between snapping points.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "0.2", "options": "number (meters)" }
       },
@@ -1524,7 +1524,7 @@
         "htmlName": "snapHysteresis",
         "description": "Multiplier applied to snap-distance for recently disconnected pairs to prevent immediate re-snapping.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "1.5", "options": "number (>= 1)" }
       },
@@ -1533,7 +1533,7 @@
         "htmlName": "snappingEnabled",
         "description": "Toggle to enable or disable snapping behaviour during dragging and placement.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "false", "options": "true, false" }
       },
@@ -1542,7 +1542,7 @@
         "htmlName": "snappingPointsVisible",
         "description": "Show snapping-point UI slots. Also shown automatically while dragging, when selection exists, or during placement sessions.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": { "default": "false", "options": "true, false" }
       },
@@ -1551,7 +1551,7 @@
         "htmlName": "cursorVisible",
         "description": "Toggle visibility of the placement cursor used during interactive placement.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": {
           "default": "false",
@@ -1563,7 +1563,7 @@
         "htmlName": "cursorSize",
         "description": "Diameter of the placement cursor in meters.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": {
           "default": "0.5",
@@ -1575,7 +1575,7 @@
         "htmlName": "cursorColour",
         "description": "CSS color used for the placement cursor.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": {
           "default": "#165dfc",
@@ -1589,7 +1589,7 @@
         "htmlName": "load",
         "description": "Load a GLTF/GLB at the provided URL and register it under the given id. Resolves with the loaded GLTF object and updates internal load progress events.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#load\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#load\">Related examples</a>"
         ]
       },
       {
@@ -1597,7 +1597,7 @@
         "htmlName": "loadMany",
         "description": "Load multiple GLTF/GLB files in parallel. Returns a Promise that resolves with an array of loaded GLTFs.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#load-many\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#load-many\">Related examples</a>"
         ]
       },
       {
@@ -1605,14 +1605,14 @@
         "htmlName": "setSrcFromBuffer",
         "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#set-src-from-buffer\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#set-src-from-buffer\">Related examples</a>"
         ]
       },
       {
         "name": "deDraco(inputBuffer: ArrayBuffer)",
         "htmlName": "deDraco",
         "description": "Removes DRACO compression from a GLB file provided as an ArrayBuffer. Returns a Promise that resolves to an uncompressed GLB ArrayBuffer. This is useful for compatibility with systems that don't support DRACO compression.",
-        "links": ["<a href=\"../examples/ld_puzzler\">Related examples</a>"]
+        "links": ["<a href=\"../examples/ld_modular\">Related examples</a>"]
       },
 
       {
@@ -1620,7 +1620,7 @@
         "htmlName": "attachObject",
         "description": "Instantiate or attach a previously-loaded model (by id) into the scene. Optional position/rotation/scale anchor may be provided.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#attach\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#attach\">Related examples</a>"
         ]
       },
       {
@@ -1643,7 +1643,7 @@
         "htmlName": "beginPlacement",
         "description": "Start an interactive placement session. Returns a PlacementSession (EventTarget) that emits events (start, update, placeholder-loaded, loading-start, progress, loaded, error, cancel). Use session.commit() to finish placement and obtain the placed node.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
       },
 
@@ -1652,7 +1652,7 @@
         "htmlName": "setPosition",
         "description": "Set absolute local position (in meters) for the named object. The value is an array [x, y, z].",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1660,7 +1660,7 @@
         "htmlName": "setPositionX",
         "description": "Set a single local position axis (X, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1668,7 +1668,7 @@
         "htmlName": "setPositionY",
         "description": "Set a single local position axis (Y, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1676,7 +1676,7 @@
         "htmlName": "setPositionZ",
         "description": "Set a single local position axis (Z, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1684,7 +1684,7 @@
         "htmlName": "setRotation",
         "description": "Set absolute local rotation for the named object. Angles are provided as [xDeg, yDeg, zDeg] in degrees and applied in the default Euler order (XYZ) unless otherwise specified.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1692,7 +1692,7 @@
         "htmlName": "setRotationX",
         "description": "Set a single local rotation axis (X) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1700,7 +1700,7 @@
         "htmlName": "setRotationY",
         "description": "Set a single local rotation axis (Y) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1708,7 +1708,7 @@
         "htmlName": "setRotationZ",
         "description": "Set a single local rotation axis (Z) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1716,7 +1716,7 @@
         "htmlName": "setScale",
         "description": "Set absolute local scale for the named object. The value is an array [sx, sy, sz].",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1724,7 +1724,7 @@
         "htmlName": "setScaleX",
         "description": "Set a single local scale axis (X) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1732,7 +1732,7 @@
         "htmlName": "setScaleY",
         "description": "Set a single local scale axis (Y) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1740,7 +1740,7 @@
         "htmlName": "setScaleZ",
         "description": "Set a single local scale axis (Z) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
 
@@ -1749,7 +1749,7 @@
         "htmlName": "getPosition",
         "description": "Return the current local position [x, y, z] (in meters) for the named object. Throws if the object is not found.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1757,7 +1757,7 @@
         "htmlName": "getRotation",
         "description": "Return the current local rotation as degrees [xDeg, yDeg, zDeg] for the named object. Throws if the object is not found.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
@@ -1765,7 +1765,7 @@
         "htmlName": "getScale",
         "description": "Return the current local scale [sx, sy, sz] for the named object. Throws if the object is not found.",
         "links": [
-          "<a href=\"../examples/ld_puzzler/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
         ]
       },
       {
