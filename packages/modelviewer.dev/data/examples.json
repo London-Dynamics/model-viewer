@@ -396,6 +396,10 @@
         "name": "Dynamic transforms"
       },
       {
+        "htmlId": "rotation-mode",
+        "name": "Rotation Mode"
+      },
+      {
         "htmlId": "set-src-from-buffer",
         "name": "Set SRC from Buffer"
       }

@@ -1226,6 +1226,200 @@
         </div>
 
         <div class="sample">
+          <div id="rotation-mode" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Rotation Mode</h2>
+                <h4>
+                  Call <span class="attribute">rotate()</span>, with an object's
+                  name to manipulate its rotation. The name "scene" can be used
+                  to manipulate the entire model. The rotation mode can be set
+                  to "relative" or "snapToClosest".
+                </h4>
+              </div>
+              <example-snippet stamp-to="rotation-mode" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    id="rotation-mode-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  >
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Control Panel
+                          </h3>
+
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div class="flex gap-4">
+                              <label
+                                class="text-sm font-medium text-gray-400 dark:text-white"
+                                >Exact</label
+                              >
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="-90"
+                              >
+                                -90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="0"
+                              >
+                                0°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="90"
+                              >
+                                90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="180"
+                              >
+                                180°
+                              </button>
+                            </div>
+                            <div class="flex gap-4">
+                              <label
+                                class="text-sm font-medium text-gray-400 dark:text-white"
+                                >Relative</label
+                              >
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="-=90"
+                              >
+                                -90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="-=45"
+                              >
+                                -45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="-=10"
+                              >
+                                -10°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="+=10"
+                              >
+                                +10°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="+=45"
+                              >
+                                +45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="+=90"
+                              >
+                                +90°
+                              </button>
+                            </div>
+                            <div class="flex gap-4">
+                              <label
+                                class="text-sm font-medium text-gray-400 dark:text-white"
+                                >Relative (Snap to Closest)</label
+                              >
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="-=90"
+                                data-mode="snapToClosest"
+                              >
+                                -90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="-=45"
+                                data-mode="snapToClosest"
+                              >
+                                -45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="+=45"
+                                data-mode="snapToClosest"
+                              >
+                                +45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                                data-value="+=90"
+                                data-mode="snapToClosest"
+                              >
+                                +90°
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#rotation-mode-demo'
+                      );
+
+                      document.querySelectorAll('.rotate').forEach((el) => {
+                        el.addEventListener('click', (e) => {
+                          const { value, mode } = e.target.dataset;
+
+                          const objectName = 'Scene';
+
+                          if (mode === 'snapToClosest') {
+                            modelViewer.setRotationY(objectName, value, {
+                              mode: 'snapToClosest',
+                              animate: true,
+                            });
+                          } else {
+                            modelViewer.setRotationY(objectName, value, {
+                              animate: true,
+                            });
+                          }
+                        });
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div id="set-src-from-buffer" class="demo"></div>
           <div class="content">
             <div class="wrapper">

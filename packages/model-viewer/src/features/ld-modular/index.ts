@@ -106,6 +106,13 @@ type ClearSceneFunction = () => void;
 type RotationOptions = {
   order?: EulerOrder;
   animate?: boolean;
+  /**
+   * How to interpret relative rotation values (e.g. "+90", "-=45"):
+   * - undefined / 'relative': add or subtract the value from the current rotation (default).
+   * - 'snapToClosest': snap to the nearest multiple: add → next multiple, subtract → previous multiple.
+   *    E.g. current 80, "+90" → 90; current 80, "-90" → 0.
+   */
+  mode?: 'relative' | 'snapToClosest';
 };
 
 export declare interface LDModularInterface {
@@ -543,11 +550,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       value: [number | string, number | string, number | string],
       options?: RotationOptions
     ) {
-      const { order = 'XYZ', animate = false } = options || {};
+      const { order = 'XYZ', animate = false, mode } = options || {};
 
-      // Accept either absolute numeric degrees or relative strings like
-      // "+90", "-45", "+=90" (relatively add/subtract). Validation
-      // is intentionally permissive for numeric strings as well.
+      // Accept absolute numeric degrees (e.g. 45, -90) or relative strings
+      // with "=": "+=90" (add 90), "-=45" (subtract 45). Plain "-90" sets to -90.
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         !Array.isArray(value) ||
@@ -561,7 +567,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         )
       ) {
         throw new Error(
-          'Invalid value array. Expected an array of three numbers (absolute degrees) or strings like "+90" / "-45" for relative changes.'
+          'Invalid value array. Expected an array of three numbers (absolute degrees) or strings like "+=90" / "-=45" for relative changes.'
         );
       }
 
@@ -627,8 +633,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           return { isRelative: false, absolute: input };
         }
         const s = String(input).trim();
-        // Relative syntax: "+90", "-45", "+=90", "-=45"
-        const relMatch = s.match(/^([+-])=?\s*([+-]?\d+(?:\.\d+)?)$/);
+        // Relative syntax: "+=90", "-=45" (requires =). Plain "-90" or "90" are absolute.
+        const relMatch = s.match(/^([+-])=\s*([+-]?\d+(?:\.\d+)?)$/);
         if (relMatch) {
           const sign = relMatch[1] === '-' ? -1 : 1;
           const val = parseFloat(relMatch[2]);
@@ -655,7 +661,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       let endQuat: Quaternion;
       let rotation: Euler | null = null;
 
-      if (animate && hasRelative && allAbsoluteMatchCurrent) {
+      if (
+        animate &&
+        hasRelative &&
+        allAbsoluteMatchCurrent &&
+        mode !== 'snapToClosest'
+      ) {
         // Build a delta Euler from the relative deltas and convert to a
         // quaternion. We'll apply this delta to the current quaternion so
         // the rotation direction matches the sign of the delta.
@@ -676,12 +687,28 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         // rotation left null because we're animating quaternions directly
       } else {
         // Compute final absolute degrees for each axis (current + delta for
-        // relative inputs, absolute for absolute inputs).
-        const finalDegs: [number, number, number] = [0, 1, 2].map((i) =>
-          parsed[i].isRelative
-            ? current[i] + parsed[i].delta!
-            : (parsed[i].absolute ?? current[i])
-        ) as [number, number, number];
+        // relative inputs, absolute for absolute inputs; or snap-to-closest when mode is set).
+        const finalDegs: [number, number, number] = [0, 1, 2].map((i) => {
+          if (!parsed[i].isRelative) return parsed[i].absolute ?? current[i];
+          const delta = parsed[i].delta!;
+          if (mode === 'snapToClosest') {
+            const step = Math.abs(delta);
+            if (step === 0) return current[i];
+            const ratio = current[i] / step;
+            const nearestInt = Math.round(ratio);
+            const eps = 1e-6;
+            // If we're already (within epsilon) at an exact multiple, move one step
+            // in the direction of the delta; otherwise snap toward the next/previous
+            // multiple in the sign direction.
+            if (Math.abs(ratio - nearestInt) < eps) {
+              return current[i] + (delta > 0 ? step : -step);
+            }
+            return delta > 0
+              ? Math.ceil(ratio) * step
+              : Math.floor(ratio) * step;
+          }
+          return current[i] + delta;
+        }) as [number, number, number];
 
         rotation = new Euler(
           finalDegs[0] * (Math.PI / 180),
@@ -1168,7 +1195,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     /** Throttle pointermove raycast to one per frame for large scenes. */
     private _pointerMoveOverSelectableRaf: number = 0;
-    private _pendingPointerMove: { clientX: number; clientY: number } | null = null;
+    private _pendingPointerMove: { clientX: number; clientY: number } | null =
+      null;
 
     /** Window listener for pointerup during drag so release is always received (e.g. over floating strip). */
     private _windowPointerUpForDragBound?: (e: PointerEvent) => void;
@@ -2596,9 +2624,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       (this as any).style.cursor = 'grabbing';
 
       // Listen for pointerup/cancel on window so we always get release (e.g. when cursor is over floating strip)
-      this._windowPointerUpForDragBound = this._onWindowPointerUpForDrag.bind(this);
-      window.addEventListener('pointerup', this._windowPointerUpForDragBound, true);
-      window.addEventListener('pointercancel', this._windowPointerUpForDragBound, true);
+      this._windowPointerUpForDragBound =
+        this._onWindowPointerUpForDrag.bind(this);
+      window.addEventListener(
+        'pointerup',
+        this._windowPointerUpForDragBound,
+        true
+      );
+      window.addEventListener(
+        'pointercancel',
+        this._windowPointerUpForDragBound,
+        true
+      );
 
       // Snapping points will be shown automatically during drag via updateSnappingPointSlots
       // (isDragging && snappingEnabled condition)
@@ -2625,8 +2662,16 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _removeWindowDragListeners() {
       if (!this._windowPointerUpForDragBound) return;
-      window.removeEventListener('pointerup', this._windowPointerUpForDragBound, true);
-      window.removeEventListener('pointercancel', this._windowPointerUpForDragBound, true);
+      window.removeEventListener(
+        'pointerup',
+        this._windowPointerUpForDragBound,
+        true
+      );
+      window.removeEventListener(
+        'pointercancel',
+        this._windowPointerUpForDragBound,
+        true
+      );
     }
 
     private updateDragPosition() {
@@ -3597,7 +3642,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const onPointerMove = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
-            if (placementStartClientX === null || placementStartClientY === null) {
+            if (
+              placementStartClientX === null ||
+              placementStartClientY === null
+            ) {
               placementStartClientX = e.clientX;
               placementStartClientY = e.clientY;
             }
@@ -3628,8 +3676,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         try {
           if (session.state === 'placing') {
             const releaseDistance =
-              placementStartClientX !== null &&
-              placementStartClientY !== null
+              placementStartClientX !== null && placementStartClientY !== null
                 ? Math.hypot(
                     e.clientX - placementStartClientX,
                     e.clientY - placementStartClientY

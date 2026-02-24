@@ -1652,7 +1652,7 @@
         "htmlName": "setPosition",
         "description": "Set absolute local position (in meters) for the named object. The value is an array [x, y, z].",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1660,7 +1660,7 @@
         "htmlName": "setPositionX",
         "description": "Set a single local position axis (X, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1668,7 +1668,7 @@
         "htmlName": "setPositionY",
         "description": "Set a single local position axis (Y, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1676,7 +1676,7 @@
         "htmlName": "setPositionZ",
         "description": "Set a single local position axis (Z, in meters) for the named object without clobbering other axes. Seeds the current position via getPosition if available.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1684,7 +1684,7 @@
         "htmlName": "setRotation",
         "description": "Set absolute local rotation for the named object. Angles are provided as [xDeg, yDeg, zDeg] in degrees and applied in the default Euler order (XYZ) unless otherwise specified.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1692,7 +1692,7 @@
         "htmlName": "setRotationX",
         "description": "Set a single local rotation axis (X) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1700,7 +1700,7 @@
         "htmlName": "setRotationY",
         "description": "Set a single local rotation axis (Y) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1708,7 +1708,7 @@
         "htmlName": "setRotationZ",
         "description": "Set a single local rotation axis (Z) in degrees for the named object without clobbering other axes. Seeds the current rotation via getRotation if available. An optional Euler order may be provided (default 'XYZ').",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1716,7 +1716,7 @@
         "htmlName": "setScale",
         "description": "Set absolute local scale for the named object. The value is an array [sx, sy, sz].",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1724,7 +1724,7 @@
         "htmlName": "setScaleX",
         "description": "Set a single local scale axis (X) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1732,7 +1732,7 @@
         "htmlName": "setScaleY",
         "description": "Set a single local scale axis (Y) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1740,7 +1740,7 @@
         "htmlName": "setScaleZ",
         "description": "Set a single local scale axis (Z) for the named object without clobbering other axes. Seeds the current scale via getScale if available.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
 
@@ -1749,7 +1749,7 @@
         "htmlName": "getPosition",
         "description": "Return the current local position [x, y, z] (in meters) for the named object. Throws if the object is not found.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1757,7 +1757,7 @@
         "htmlName": "getRotation",
         "description": "Return the current local rotation as degrees [xDeg, yDeg, zDeg] for the named object. Throws if the object is not found.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
@@ -1765,7 +1765,7 @@
         "htmlName": "getScale",
         "description": "Return the current local scale [sx, sy, sz] for the named object. Throws if the object is not found.",
         "links": [
-          "<a href=\"../examples/ld_modular/#manipulation\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
         ]
       },
       {
