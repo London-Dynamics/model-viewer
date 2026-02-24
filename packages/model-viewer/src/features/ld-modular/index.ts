@@ -326,8 +326,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         if (this._shadowUpdatePending) {
           this._shadowUpdatePending = false;
-          // Ensure a render is requested so shadow maps (or other per-frame
-          // updates) can be updated by the render loop.
+          const scene = (this as any)[$scene];
+          if (scene?.shadow) scene.shadow.needsUpdate = true;
+          // Ensure a render is requested so shadow maps get re-rendered.
           (this as any)[$needsRender]();
         }
       } catch (e) {}
