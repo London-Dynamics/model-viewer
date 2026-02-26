@@ -368,6 +368,28 @@
     ]
   },
   {
+    "name": "LD Image Capture",
+    "htmlName": "ld_image_capture",
+    "examples": [
+      {
+        "htmlId": "capture-image",
+        "name": "Capture Image"
+      },
+      {
+        "htmlId": "capture-with-camera",
+        "name": "Capture with camera pose"
+      },
+      {
+        "htmlId": "capture-with-crop",
+        "name": "Capture with crop"
+      },
+      {
+        "htmlId": "capture-background-color",
+        "name": "Background color (cornflowerblue)"
+      }
+    ]
+  },
+  {
     "name": "LD Material Manager",
     "htmlName": "ld_materialmanager",
     "examples": [

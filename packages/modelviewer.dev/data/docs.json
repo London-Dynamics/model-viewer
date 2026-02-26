@@ -1412,6 +1412,23 @@
     ]
   },
   {
+    "Title": "LD Image Capture",
+    "htmlName": "ld_image_capture",
+    "Methods": [
+      {
+        "name": "captureImage(options?)",
+        "htmlName": "captureImage",
+        "description": "Captures the current view (or the view from an optional camera state) as a data URL string. When both <b>width</b> and <b>height</b> are set, a second canvas is created at that size and the scene is rendered to it once; the main canvas is not resized or altered. When width/height are not set, the current display canvas is used (with optional <b>crop</b>). If <b>camera</b> is provided, it is applied only for the capture and the previous camera is restored afterward. <b>backgroundColor</b> (default 'white') is used for transparent areas when capturing to formats like JPEG. Returns a Promise that resolves to the data URL.<br/><br/>Options (all optional): <b>width</b> and <b>height</b> set the capture dimensions in pixels (scene is rendered at that size; no cropping or scaling of the result); <b>fileType</b> is the MIME type (default 'image/png'); <b>encoderOptions</b> is the quality 0–1 for lossy formats; <b>camera</b> is a camera state object compatible with <code>setCameraFromJSON</code>, used only for this capture; <b>crop</b> is an object <code>{ x, y, width, height }</code> in source canvas pixels, ignored when width and height are set; <b>backgroundColor</b> is a CSS color name or hex (e.g. 'white', 'cornflowerblue'), default 'white'.",
+        "links": [
+          "<a href=\"../examples/ld_image_capture/#capture-image\">Capture Image example</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-with-camera\">Capture with camera pose</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-with-crop\">Capture with crop</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-background-color\">Background color (cornflowerblue)</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Material Manager",
     "htmlName": "ld_materialmanager",
     "Methods": [
