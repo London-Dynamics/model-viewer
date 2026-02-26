@@ -51,6 +51,97 @@ interface EnsureOptions {
   existing?: ViewportGizmoHandle | null;
 }
 
+function lengthVarToPixels(
+  styles: CSSStyleDeclaration,
+  varName: string,
+  referenceElement: HTMLElement
+): number | undefined {
+  const raw = styles.getPropertyValue(varName).trim();
+  if (!raw) {
+    return undefined;
+  }
+
+  // Fast path for pixel values (e.g. "12px")
+  const pxMatch = raw.match(/^(-?\d+(\.\d+)?)px$/);
+  if (pxMatch) {
+    const value = Number(pxMatch[1]);
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  // Fallback: let the browser resolve arbitrary CSS lengths (em, rem, etc)
+  const doc = referenceElement.ownerDocument;
+  const win = doc.defaultView;
+  if (!doc || !win) {
+    return undefined;
+  }
+
+  const probe = doc.createElement('div');
+  probe.style.position = 'absolute';
+  probe.style.visibility = 'hidden';
+  probe.style.height = raw;
+
+  referenceElement.appendChild(probe);
+  const result = parseFloat(win.getComputedStyle(probe).height || '');
+  referenceElement.removeChild(probe);
+
+  return Number.isFinite(result) ? result : undefined;
+}
+
+function getViewportGizmoCssConfig(host: ModelViewerElementBase): {
+  placement?: string;
+  offset: { top?: number; right?: number; bottom?: number; left?: number };
+} {
+  const win = host.ownerDocument.defaultView;
+  if (!win) {
+    return { offset: {} };
+  }
+
+  const computed = win.getComputedStyle(host);
+
+  const placementRaw = computed
+    .getPropertyValue('--ld-viewport-gizmo-placement')
+    .trim();
+  const placement = placementRaw || undefined;
+
+  const top = lengthVarToPixels(
+    computed,
+    '--ld-viewport-gizmo-offset-top',
+    host
+  );
+  const right = lengthVarToPixels(
+    computed,
+    '--ld-viewport-gizmo-offset-right',
+    host
+  );
+  const bottom = lengthVarToPixels(
+    computed,
+    '--ld-viewport-gizmo-offset-bottom',
+    host
+  );
+  const left = lengthVarToPixels(
+    computed,
+    '--ld-viewport-gizmo-offset-left',
+    host
+  );
+
+  const offset: { top?: number; right?: number; bottom?: number; left?: number } =
+    {};
+  if (top !== undefined) {
+    offset.top = top;
+  }
+  if (right !== undefined) {
+    offset.right = right;
+  }
+  if (bottom !== undefined) {
+    offset.bottom = bottom;
+  }
+  if (left !== undefined) {
+    offset.left = left;
+  }
+
+  return { placement, offset };
+}
+
 /**
  * Create or update a ViewportGizmo for a given <model-viewer> instance.
  *
@@ -103,11 +194,13 @@ export function ensureViewportGizmo(
     | THREE.PerspectiveCamera
     | THREE.OrthographicCamera;
 
-  const gizmo = new ViewportGizmo(camera, renderer, {
+  const { placement, offset } = getViewportGizmoCssConfig(host);
+
+  const gizmoOptions: any = {
     container,
     type: 'cube',
     size: 96,
-    offset: { top: 0, right: 0, bottom: 0, left: 0 },
+    offset: { top: 0, right: 0, bottom: 0, left: 0, ...offset },
     background: {
       color: 0xf5f5f4,
     },
@@ -170,7 +263,13 @@ export function ensureViewportGizmo(
       },
       label: 'BACK',
     },
-  });
+  };
+
+  if (placement) {
+    gizmoOptions.placement = placement;
+  }
+
+  const gizmo = new ViewportGizmo(camera, renderer, gizmoOptions);
 
   // Get controls dynamically to handle camera type switches
   // where CameraControls might be recreated
