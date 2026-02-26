@@ -659,6 +659,81 @@
         "links": [
           "<a href=\"../examples/stagingandcameras/#interpolation\"><span class='attribute'>Interpolation</span> example</a>"
         ]
+      },
+      {
+        "name": "viewport-gizmo",
+        "htmlName": "showViewportGizmo",
+        "description": "When present, shows an interactive 3D viewport orientation gizmo (cube) in the corner of the viewer. Users can click the gizmo faces to snap the camera to front, back, top, bottom, left, or right. The gizmo is rendered inside the element's shadow DOM. Position and offset can be controlled from outside the element using the CSS custom properties under <strong>Viewport Gizmo CSS variables</strong> below.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#camera-angles\">LD Camera example</a>",
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-position\">Viewport gizmo positioning</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "CSS": [
+      {
+        "name": "--ld-viewport-gizmo-placement",
+        "htmlName": "ldViewportGizmoPlacement",
+        "description": "Controls which corner or edge the viewport gizmo is anchored to. Set this on the <span class=\"attribute\">&lt;model-viewer&gt;</span> element (e.g. in your own stylesheet or inline style). Supported values: <code>top-right</code>, <code>top-left</code>, <code>bottom-right</code>, <code>bottom-left</code>, <code>top</code>, <code>bottom</code>, <code>left</code>, <code>right</code>, <code>center</code>. Default is <code>top-right</code>.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-position\">Viewport gizmo positioning</a>"
+        ],
+        "default": {
+          "default": "top-right",
+          "options": "top-right, top-left, bottom-right, bottom-left, top, bottom, left, right, center"
+        }
+      },
+      {
+        "name": "--ld-viewport-gizmo-offset-top",
+        "htmlName": "ldViewportGizmoOffsetTop",
+        "description": "Offset of the viewport gizmo from the top edge. Set on the <span class=\"attribute\">&lt;model-viewer&gt;</span> element. Accepts any CSS length (e.g. <code>0</code>, <code>8px</code>, <code>1rem</code>, <code>0.5em</code>). Useful for spacing the gizmo from the edge when using <span class=\"attribute\">--ld-viewport-gizmo-placement</span>.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-position\">Viewport gizmo positioning</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "any CSS length (px, em, rem, etc.)"
+        }
+      },
+      {
+        "name": "--ld-viewport-gizmo-offset-right",
+        "htmlName": "ldViewportGizmoOffsetRight",
+        "description": "Offset of the viewport gizmo from the right edge. Accepts any CSS length including <code>em</code> and <code>rem</code>.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-position\">Viewport gizmo positioning</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "any CSS length (px, em, rem, etc.)"
+        }
+      },
+      {
+        "name": "--ld-viewport-gizmo-offset-bottom",
+        "htmlName": "ldViewportGizmoOffsetBottom",
+        "description": "Offset of the viewport gizmo from the bottom edge. Accepts any CSS length including <code>em</code> and <code>rem</code>.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-position\">Viewport gizmo positioning</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "any CSS length (px, em, rem, etc.)"
+        }
+      },
+      {
+        "name": "--ld-viewport-gizmo-offset-left",
+        "htmlName": "ldViewportGizmoOffsetLeft",
+        "description": "Offset of the viewport gizmo from the left edge. Accepts any CSS length including <code>em</code> and <code>rem</code>.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-position\">Viewport gizmo positioning</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "any CSS length (px, em, rem, etc.)"
+        }
       }
     ],
     "Properties": [
@@ -1330,8 +1405,8 @@
         ]
       },
       {
-        "name": "getCameraMeta()",
-        "htmlName": "getCameraMeta",
+        "name": "getCameraJSON()",
+        "htmlName": "getCameraJSON",
         "description": "TODO"
       }
     ]

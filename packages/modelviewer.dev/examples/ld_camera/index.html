@@ -237,7 +237,43 @@
         </div>
 
         <div class="sample">
-          <div id="get-camera-json" class="demo"></div>
+          <div id="viewport-gizmo-position" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Viewport gizmo positioning</h2>
+                <h4>
+                  Control the viewport gizmo position from outside
+                  <span class="attribute">&lt;model-viewer&gt;</span> using CSS
+                  custom properties on the element. You can use
+                  <code>em</code>, <code>rem</code>, or any CSS length for
+                  offsets.
+                </h4>
+              </div>
+              <example-snippet stamp-to="viewport-gizmo-position" highlight-as="html">
+                <template>
+                  <style>
+                    #gizmo-position-demo {
+                      --ld-viewport-gizmo-placement: bottom-left;
+                      --ld-viewport-gizmo-offset-bottom: 1.5rem;
+                      --ld-viewport-gizmo-offset-left: 2rem;
+                    }
+                  </style>
+                  <model-viewer
+                    id="gizmo-position-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    viewport-gizmo
+                  ></model-viewer>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div class="content">
             <div class="wrapper">
               <div class="heading">
@@ -266,14 +302,14 @@
                           type="button"
                           id="getCameraButton"
                         >
-                          Get camera meta
+                          Get Camera JSON
                         </button>
                         <button
                           class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 dark:bg-white/10 dark:text-white dark:shadow-none dark:ring-white/5 dark:hover:bg-white/20"
                           type="button"
                           id="setCameraButton"
                         >
-                          Set camera from JSON
+                          Set Camera from JSON
                         </button>
                       </div>
                     </div>
@@ -296,12 +332,9 @@
                       document
                         .getElementById('getCameraButton')
                         .addEventListener('click', () => {
-                          const object = modelViewer.getCameraMeta();
+                          const object = modelViewer.getCameraJSON();
 
-                          console.info(
-                            'Camera JSON',
-                            JSON.stringify(object, null, 2)
-                          );
+                          console.info('Camera JSON', object);
                         });
 
                       document

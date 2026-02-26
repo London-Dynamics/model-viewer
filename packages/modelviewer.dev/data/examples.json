@@ -354,6 +354,14 @@
     "htmlName": "ld_camera",
     "examples": [
       {
+        "htmlId": "camera-angles",
+        "name": "Camera Angles"
+      },
+      {
+        "htmlId": "viewport-gizmo-position",
+        "name": "Viewport Gizmo Positioning"
+      },
+      {
         "htmlId": "get-camera-json",
         "name": "Get Camera JSON"
       }
