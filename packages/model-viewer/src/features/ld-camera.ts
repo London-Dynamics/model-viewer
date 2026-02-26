@@ -12,7 +12,7 @@ import ModelViewerElementBase, {
 import { $controls } from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
-import { MathUtils, Mesh, Vector3 } from 'three';
+import { MathUtils, Mesh, Matrix4, Vector3 } from 'three';
 
 import type { ViewportGizmoHandle } from './ld-controls/viewport-gizmo.js';
 
@@ -38,7 +38,7 @@ export declare interface LDCameraInterface {
   setCurrentAsDefaultCamera(): void;
 
   setCameraFromJSON(json: CameraMeta['object']): void;
-  getCameraMeta(): CameraMeta | null;
+  getCameraJSON(): CameraMeta | null;
 
   setCameraType(type: CameraType): void;
   getCameraType(): CameraType;
@@ -118,78 +118,266 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       controls.saveState();
     }
 
+    /**
+     * Apply a three.js-style camera JSON object (or CameraMeta.object) to the
+     * current scene camera, while keeping CameraControls in sync.
+     */
     async setCameraFromJSON(json: CameraMeta['object']) {
-      // @ts-ignore
-      const controls = this[$controls];
-      const { camera } = controls;
+      // Support being passed either the raw object or a full CameraMeta.
+      const data: any = (json as any)?.object ?? json;
 
-      console.log('scene', this[$scene]);
-      console.log('camera', camera);
-      console.log('controls', controls);
+      const scene = this[$scene];
+      const controls = (this as any)[$controls] as any;
 
-      Object.keys(json).forEach((key) => {
-        const value = json[key];
+      if (!scene || !scene.camera || !data || typeof data !== 'object') {
+        return;
+      }
 
-        if (camera.hasOwnProperty(key) && camera[key] !== value) {
-          switch (key) {
-            case 'matrix':
-              //console.log("setting camera property", key, value);
+      // 1. Ensure the underlying three.js camera matches the requested type
+      let desiredType: CameraType | null = null;
+      const typeValue = data.cameraType ?? data.type;
 
-              //camera.applyMatrix4(new Matrix4().fromArray(value));
-              //camera.updateMatrixWorld( true );
-
-              break;
-            case 'up':
-              // @ts-ignore
-              //camera.up = new Vector3().fromArray(value);
-              break;
-            default:
-              console.log('setting camera property', key, value);
-
-            //camera[key] = value;
-          }
-          //controls.update(77);
-
-          //const setFunction = camera[`set${key[0].toUpperCase()}${key.slice(1)}`];
-          //console.log("function", `set${key[0].toUpperCase()}${key.slice(1)}`);
+      if (typeof typeValue === 'string') {
+        if (typeValue === 'perspective' || typeValue === 'orthographic') {
+          desiredType = typeValue;
+        } else if (typeValue === 'PerspectiveCamera') {
+          desiredType = 'perspective';
+        } else if (typeValue === 'OrthographicCamera') {
+          desiredType = 'orthographic';
         }
-      });
+      }
 
-      //camera.updateProjectionMatrix();
-      //const spherical = controls.getCameraSpherical();
-      //console.log("spherical",spherical)
+      if (
+        desiredType &&
+        typeof scene.getCameraType === 'function' &&
+        scene.getCameraType() !== desiredType
+      ) {
+        this.setCameraType(desiredType);
+      }
 
-      //const vector = new Vector3();
-      //camera.getWorldDirection(vector);
-      //const spherical = new Spherical().setFromVector3(vector);
-      //console.log("vector", vector);
-      //console.log("spherical", spherical);
-      //controls.goalSpherical = spherical;
-      //controls.update(77);
-      //this[$scene].updateBoundingBox();
+      const camera: any = scene.camera;
+      if (!camera) {
+        return;
+      }
 
-      //this.dispatchEvent({type: 'user-interaction'});
-      //controls.update();
+      // 2. Apply transform from three.js-style camera JSON
+      if (Array.isArray(data.matrix) && data.matrix.length === 16) {
+        const m = new Matrix4().fromArray(data.matrix);
+        camera.matrixAutoUpdate = false;
+        camera.matrix.copy(m);
+        camera.matrix.decompose(camera.position, camera.quaternion, camera.scale);
+      } else {
+        if (Array.isArray(data.position) && data.position.length === 3) {
+          camera.position.fromArray(data.position);
+        }
+        if (Array.isArray(data.quaternion) && data.quaternion.length === 4) {
+          camera.quaternion.fromArray(data.quaternion);
+        }
+        camera.updateMatrix();
+      }
 
-      //      controls.enabled = true;
+      if (Array.isArray(data.up) && data.up.length === 3) {
+        camera.up.fromArray(data.up);
+      }
 
-      //controls.update();
-      // @ts-ignore
+      // 3. Apply projection parameters (Perspective & Orthographic)
+      if (typeof data.near === 'number' && Number.isFinite(data.near)) {
+        camera.near = data.near;
+      }
+      if (typeof data.far === 'number' && Number.isFinite(data.far)) {
+        camera.far = data.far;
+      }
+      if (typeof data.zoom === 'number' && Number.isFinite(data.zoom)) {
+        camera.zoom = data.zoom;
+      }
 
-      //console.log("controls.getFieldOfView()",controls.getFieldOfView());
+      if (camera.isPerspectiveCamera) {
+        if (typeof data.fov === 'number' && Number.isFinite(data.fov)) {
+          camera.fov = data.fov;
+        }
+        if (typeof data.aspect === 'number' && Number.isFinite(data.aspect)) {
+          camera.aspect = data.aspect;
+        }
+        if (typeof data.focus === 'number' && Number.isFinite(data.focus)) {
+          camera.focus = data.focus;
+        }
+        if (
+          typeof data.filmGauge === 'number' &&
+          Number.isFinite(data.filmGauge)
+        ) {
+          camera.filmGauge = data.filmGauge;
+        }
+        if (
+          typeof data.filmOffset === 'number' &&
+          Number.isFinite(data.filmOffset)
+        ) {
+          camera.filmOffset = data.filmOffset;
+        }
+      }
 
-      //await this[$scene].updateFraming();
+      if (camera.isOrthographicCamera) {
+        if (typeof data.left === 'number' && Number.isFinite(data.left)) {
+          camera.left = data.left;
+        }
+        if (typeof data.right === 'number' && Number.isFinite(data.right)) {
+          camera.right = data.right;
+        }
+        if (typeof data.top === 'number' && Number.isFinite(data.top)) {
+          camera.top = data.top;
+        }
+        if (typeof data.bottom === 'number' && Number.isFinite(data.bottom)) {
+          camera.bottom = data.bottom;
+        }
+      }
 
-      //this[$scene].updateWorldMatrix();
-      //this[$needsRender]();
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld(true);
+
+      // 4. Sync CameraControls target so interaction remains smooth
+      const target = new Vector3();
+
+      if (Array.isArray(data.target) && data.target.length === 3) {
+        target.fromArray(data.target);
+      } else if (
+        controls &&
+        controls.thirdPartyControls &&
+        typeof controls.thirdPartyControls.getTarget === 'function'
+      ) {
+        // Derive a new target based on the new camera orientation but keep
+        // the previous orbit radius for a natural feel.
+        const oldTarget = new Vector3();
+        controls.thirdPartyControls.getTarget(oldTarget);
+        let radius = camera.position.distanceTo(oldTarget);
+        if (!Number.isFinite(radius) || radius <= 0) {
+          radius = 1;
+        }
+
+        const forward = new Vector3(0, 0, -1)
+          .applyQuaternion(camera.quaternion)
+          .normalize();
+
+        target.copy(camera.position).add(forward.multiplyScalar(radius));
+      }
+
+      if (
+        Number.isFinite(target.x) &&
+        Number.isFinite(target.y) &&
+        Number.isFinite(target.z)
+      ) {
+        if (typeof scene.setTarget === 'function') {
+          scene.setTarget(target.x, target.y, target.z);
+        }
+
+        if (
+          controls &&
+          controls.thirdPartyControls &&
+          typeof controls.thirdPartyControls.setLookAt === 'function'
+        ) {
+          controls.thirdPartyControls.setLookAt(
+            camera.position.x,
+            camera.position.y,
+            camera.position.z,
+            target.x,
+            target.y,
+            target.z,
+            false
+          );
+        }
+      }
+
+      this[$needsRender]();
     }
 
-    getCameraMeta() {
-      const { camera } = this[$scene];
+    /**
+     * Export the current camera as a three.js-style JSON structure that can be
+     * used both by Blender scripts and to restore camera state later.
+     */
+    getCameraJSON(): CameraMeta | null {
+      const scene = this[$scene];
+      const camera: any = scene?.camera;
 
-      if (camera) return camera?.toJSON() || null;
+      if (!camera) {
+        return null;
+      }
 
-      return null;
+      // Ensure we are serializing the latest transform.
+      camera.updateMatrixWorld(true);
+      camera.updateMatrix();
+
+      const controls = (this as any)[$controls] as any;
+
+      const isPerspective = !!camera.isPerspectiveCamera;
+      const isOrthographic = !!camera.isOrthographicCamera;
+      const cameraType: CameraType =
+        isPerspective || !isOrthographic ? 'perspective' : 'orthographic';
+
+      const object: any = {
+        // three.js compatible identifiers
+        type: isPerspective
+          ? 'PerspectiveCamera'
+          : isOrthographic
+            ? 'OrthographicCamera'
+            : 'Camera',
+        cameraType,
+        matrix: camera.matrix.toArray(),
+        position: camera.position.toArray(),
+        quaternion: camera.quaternion.toArray(),
+        up: camera.up.toArray(),
+        zoom: camera.zoom,
+        near: camera.near,
+        far: camera.far,
+      };
+
+      if (isPerspective) {
+        object.fov = camera.fov;
+        object.aspect = camera.aspect;
+        object.focus = camera.focus;
+        object.filmGauge = camera.filmGauge;
+        object.filmOffset = camera.filmOffset;
+      } else if (isOrthographic) {
+        object.left = camera.left;
+        object.right = camera.right;
+        object.top = camera.top;
+        object.bottom = camera.bottom;
+      }
+
+      // Include the current orbit target when available so we can
+      // faithfully restore the CameraControls state later.
+      const target = new Vector3();
+      if (
+        controls &&
+        controls.thirdPartyControls &&
+        typeof controls.thirdPartyControls.getTarget === 'function'
+      ) {
+        controls.thirdPartyControls.getTarget(target);
+        object.target = target.toArray();
+      } else if (scene && typeof scene.getDynamicTarget === 'function') {
+        const dynTarget = scene.getDynamicTarget();
+        if (dynTarget) {
+          object.target = [dynTarget.x, dynTarget.y, dynTarget.z];
+        }
+      }
+
+      let controlsState: any = undefined;
+      if (controls && typeof controls.toJSON === 'function') {
+        try {
+          controlsState = controls.toJSON();
+        } catch {
+          // If CameraControls serialization fails, continue without it.
+        }
+      }
+
+      const meta: CameraMeta = {
+        metadata: {
+          version: 1,
+          generator: '@london-dynamics/model-viewer LDCamera',
+          cameraType,
+          controlsState,
+        },
+        object,
+      };
+
+      return meta;
     }
 
     /**
@@ -228,7 +416,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           } else {
             // Fallback: Update camera reference and restore position
             controls.thirdPartyControls.camera = scene.camera;
-            
+
             if (currentPosition && currentTarget) {
               controls.thirdPartyControls.setLookAt(
                 currentPosition.x,
@@ -255,7 +443,10 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Update effect renderer if present
-      if (scene.effectRenderer && typeof scene.effectRenderer.setMainCamera === 'function') {
+      if (
+        scene.effectRenderer &&
+        typeof scene.effectRenderer.setMainCamera === 'function'
+      ) {
         scene.effectRenderer.setMainCamera(scene.camera);
       }
 

@@ -136,6 +136,8 @@ const CAMERA_CONTROLS_METHODS_TO_EXPOSE = [
   'reset',
   'rotate',
   'rotateTo',
+  'toJSON',
+  'fromJSON',
 ] as const;
 
 type ExposedMethodNames = (typeof CAMERA_CONTROLS_METHODS_TO_EXPOSE)[number];
@@ -778,6 +780,14 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   saveState(): void {
     return this.thirdPartyControls.saveState();
+  }
+
+  toJSON(): any {
+    return this.thirdPartyControls.toJSON();
+  }
+
+  fromJSON(json: any): void {
+    return this.thirdPartyControls.fromJSON(json);
   }
 
   reset(): Promise<void[]> {
