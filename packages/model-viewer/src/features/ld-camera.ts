@@ -133,6 +133,49 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
+      // If this JSON came from our own getCameraJSON, prefer restoring the
+      // CameraControls state directly for a perfect round-trip (no flips or
+      // drift), and let CameraControls drive the three.js camera.
+      const embeddedControlsState =
+        (data as any).controlsState ??
+        (json as any).controlsState ??
+        (json as any)?.metadata?.controlsState;
+
+      if (
+        embeddedControlsState &&
+        controls &&
+        typeof controls.fromJSON === 'function'
+      ) {
+        const cc = controls.thirdPartyControls;
+        if (cc && typeof cc.stop === 'function') {
+          cc.stop();
+        }
+
+        try {
+          controls.fromJSON(embeddedControlsState, false);
+        } catch {
+          // If this fails, fall back to manual application below.
+        }
+
+        // Ensure camera and scene are up to date with the restored controls.
+        const camera: any = scene.camera;
+        if (cc && typeof cc.update === 'function') {
+          cc.update(1);
+        }
+        if (camera) {
+          camera.matrixAutoUpdate = true;
+          camera.updateProjectionMatrix();
+          camera.updateMatrixWorld(true);
+        }
+
+        if (typeof scene.jumpToGoal === 'function') {
+          scene.jumpToGoal();
+        }
+
+        this[$needsRender]();
+        return;
+      }
+
       // 1. Ensure the underlying three.js camera matches the requested type
       let desiredType: CameraType | null = null;
       const typeValue = data.cameraType ?? data.type;
@@ -233,41 +276,60 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld(true);
 
-      // 4. Sync CameraControls target so interaction remains smooth
-      const target = new Vector3();
+      // 4. Sync orbit target and CameraControls so there is no residual interpolation (wobble).
+      // Stop any ongoing transition first, then set position/target, then re-enable camera updates.
+      const cc = controls?.thirdPartyControls;
+      if (cc && typeof cc.stop === 'function') {
+        cc.stop();
+      }
 
+      // Stored target is in model (pivot) space so round-trip preserves the same center.
+      // When JSON has no target (e.g. Blender export), keep the scene's current orbit
+      // center so any GLB works and we don't assume origin or bbox center.
+      const modelTarget = new Vector3();
       if (Array.isArray(data.target) && data.target.length === 3) {
-        target.fromArray(data.target);
+        modelTarget.fromArray(data.target);
+      } else if (scene && typeof scene.getTarget === 'function') {
+        modelTarget.copy(scene.getTarget());
       } else if (
         controls &&
         controls.thirdPartyControls &&
         typeof controls.thirdPartyControls.getTarget === 'function'
       ) {
-        // Derive a new target based on the new camera orientation but keep
-        // the previous orbit radius for a natural feel.
-        const oldTarget = new Vector3();
-        controls.thirdPartyControls.getTarget(oldTarget);
-        let radius = camera.position.distanceTo(oldTarget);
-        if (!Number.isFinite(radius) || radius <= 0) {
-          radius = 1;
+        const oldWorld = new Vector3();
+        controls.thirdPartyControls.getTarget(oldWorld);
+        if (scene.pivot && typeof scene.pivot.worldToLocal === 'function') {
+          scene.updateMatrixWorld(true);
+          modelTarget.copy(oldWorld);
+          scene.pivot.worldToLocal(modelTarget);
+        } else {
+          modelTarget.copy(oldWorld);
         }
-
-        const forward = new Vector3(0, 0, -1)
-          .applyQuaternion(camera.quaternion)
-          .normalize();
-
-        target.copy(camera.position).add(forward.multiplyScalar(radius));
       }
 
       if (
-        Number.isFinite(target.x) &&
-        Number.isFinite(target.y) &&
-        Number.isFinite(target.z)
+        Number.isFinite(modelTarget.x) &&
+        Number.isFinite(modelTarget.y) &&
+        Number.isFinite(modelTarget.z)
       ) {
         if (typeof scene.setTarget === 'function') {
-          scene.setTarget(target.x, target.y, target.z);
+          scene.setTarget(modelTarget.x, modelTarget.y, modelTarget.z);
+          if (typeof scene.jumpToGoal === 'function') {
+            scene.jumpToGoal();
+          }
         }
 
+        // Read back target from scene (model space) and convert to world for controls
+        scene.updateMatrixWorld(true);
+        const worldTarget = new Vector3();
+        if (scene && typeof scene.getDynamicTarget === 'function') {
+          worldTarget.copy(scene.getDynamicTarget());
+        } else {
+          worldTarget.copy(modelTarget);
+        }
+        if (scene.pivot && typeof scene.pivot.localToWorld === 'function') {
+          scene.pivot.localToWorld(worldTarget);
+        }
         if (
           controls &&
           controls.thirdPartyControls &&
@@ -277,13 +339,18 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
             camera.position.x,
             camera.position.y,
             camera.position.z,
-            target.x,
-            target.y,
-            target.z,
+            worldTarget.x,
+            worldTarget.y,
+            worldTarget.z,
             false
           );
+          // Force controls to apply state immediately (delta in seconds).
+          controls.thirdPartyControls.update(1);
         }
       }
+
+      // Let CameraControls drive the camera again on subsequent frames.
+      camera.matrixAutoUpdate = true;
 
       this[$needsRender]();
     }
@@ -341,21 +408,34 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         object.bottom = camera.bottom;
       }
 
-      // Include the current orbit target when available so we can
-      // faithfully restore the CameraControls state later.
-      const target = new Vector3();
+      // Include the current orbit target in model (pivot) space so that
+      // round-trip restore keeps the same orbit center. Use the scene's target
+      // as the source of truth (model-viewer sets this on load for any GLB).
+      // Only fall back to bbox center when the scene does not provide a target.
+      if (scene && typeof scene.getTarget === 'function') {
+        const modelTarget = scene.getTarget();
+        object.target = [modelTarget.x, modelTarget.y, modelTarget.z];
+      }
       if (
+        object.target == null &&
         controls &&
         controls.thirdPartyControls &&
         typeof controls.thirdPartyControls.getTarget === 'function'
       ) {
-        controls.thirdPartyControls.getTarget(target);
-        object.target = target.toArray();
-      } else if (scene && typeof scene.getDynamicTarget === 'function') {
-        const dynTarget = scene.getDynamicTarget();
-        if (dynTarget) {
-          object.target = [dynTarget.x, dynTarget.y, dynTarget.z];
+        const worldTarget = new Vector3();
+        controls.thirdPartyControls.getTarget(worldTarget);
+        if (scene.pivot && typeof scene.pivot.worldToLocal === 'function') {
+          scene.updateMatrixWorld(true);
+          const modelTarget = worldTarget.clone();
+          scene.pivot.worldToLocal(modelTarget);
+          object.target = modelTarget.toArray();
+        } else {
+          object.target = worldTarget.toArray();
         }
+      }
+      if (object.target == null && scene?.boundingBox && !scene.boundingBox.isEmpty()) {
+        const center = scene.boundingBox.getCenter(new Vector3());
+        object.target = [center.x, center.y, center.z];
       }
 
       let controlsState: any = undefined;
@@ -365,6 +445,13 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch {
           // If CameraControls serialization fails, continue without it.
         }
+      }
+
+      // For internal round-trips (UI presets, captureImage, etc), also embed
+      // the CameraControls state directly on the object so that consumers that
+      // only persist meta.object still get a perfect restore path.
+      if (controlsState != null) {
+        object.controlsState = controlsState;
       }
 
       const meta: CameraMeta = {

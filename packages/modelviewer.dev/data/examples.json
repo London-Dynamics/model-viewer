@@ -386,6 +386,10 @@
       {
         "htmlId": "capture-background-color",
         "name": "Background color (cornflowerblue)"
+      },
+      {
+        "htmlId": "capture-orthographic-views",
+        "name": "Orthographic views (above, front, side)"
       }
     ]
   },
