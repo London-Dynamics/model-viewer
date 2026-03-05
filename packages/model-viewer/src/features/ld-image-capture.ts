@@ -10,8 +10,10 @@
 
 import {
   Color,
+  Matrix4,
   OrthographicCamera,
   PerspectiveCamera,
+  Vector3,
   Vector4,
   WebGLRenderer,
   WebGLRenderTarget,
@@ -23,15 +25,40 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { Constructor } from '../utilities.js';
 
-/**
- * Crop region in source canvas pixels. All values in pixels from the
- * display canvas. Only used when width/height are not set.
- */
-export interface CaptureImageCrop {
+/** High-level fit mode for cropping, similar to CSS object-fit. */
+export type CaptureImageFit = 'cover' | 'contain' | 'fill';
+
+/** Normalized focal point used when cropping (0–1 in each dimension). */
+export interface CaptureImageFocalPoint {
   x: number;
   y: number;
-  width: number;
-  height: number;
+}
+
+/**
+ * Crop options for captureImage().
+ *
+ * - Legacy usage: provide pixel-based rect (x, y, width, height) in source
+ *   canvas pixels. This behaves like the original API when frame is not set.
+ * - High-level usage (recommended): provide fit / focalPoint together with
+ *   frame/width/height so captureImage computes the crop and scaling for you.
+ */
+export interface CaptureImageCrop {
+  /** Optional pixel-based crop rect in source canvas pixels. */
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  /**
+   * Fit mode when using frame-based cropping. 'cover' (default) fills the
+   * frame and crops overflow, 'contain' fits the whole image inside the frame
+   * (can leave empty space), and 'fill' stretches the image to the frame.
+   */
+  fit?: CaptureImageFit;
+  /**
+   * Normalized focal point (0–1) used when cropping with fit='cover' to keep
+   * a subject in view (e.g. { x: 0.5, y: 0.3 } is slightly toward the top).
+   */
+  focalPoint?: CaptureImageFocalPoint;
 }
 
 /**
@@ -39,16 +66,32 @@ export interface CaptureImageCrop {
  */
 export interface CaptureImageOptions {
   /**
-   * Output width in pixels. When used with height, a second canvas is sized to
-   * width×height and the scene is rendered to it (main canvas unchanged).
-   * No cropping or scaling of the result.
+   * Output width in pixels.
+   *
+   * - When frame is not set: together with height, this sizes an offscreen
+   *   render target to width×height (main canvas unchanged), matching the
+   *   original behavior (no additional cropping/scaling of the result).
+   * - When frame is set: width is treated as the maximum width (bounding box)
+   *   for the final image; the actual output will be the largest size that
+   *   matches the frame aspect and fits within width×height.
    */
   width?: number;
   /**
-   * Output height in pixels. When used with width, capture is at exactly
-   * width×height from an offscreen render.
+   * Output height in pixels.
+   *
+   * - When frame is not set: together with width, capture is at exactly
+   *   width×height from an offscreen render.
+   * - When frame is set: height is treated as the maximum height (bounding
+   *   box) for the final image (see width).
    */
   height?: number;
+  /**
+   * Final frame aspect ratio for the output image, expressed as \"w:h\"
+   * (e.g. \"1:1\", \"16:9\", \"9:16\"). When provided, the image will be
+   * cropped and/or scaled so that the output matches this aspect ratio while
+   * fitting inside width×height.
+   */
+  frame?: string;
   /** MIME type for the image (e.g. 'image/png', 'image/jpeg'). Defaults to 'image/png'. */
   fileType?: string;
   /** Quality for lossy formats (0–1). Used as encoderOptions for toDataURL. */
@@ -58,7 +101,12 @@ export interface CaptureImageOptions {
    * capture; the visible canvas is not updated.
    */
   camera?: object;
-  /** Crop region in source canvas pixels. Ignored when width and height are set. */
+  /**
+   * Crop options. When frame is not set and a pixel rect is provided
+   * (x/y/width/height), behaves like the original API using source canvas
+   * pixels. When frame is set, prefer using fit / focalPoint and let the
+   * API compute the crop region for you.
+   */
   crop?: CaptureImageCrop;
   /**
    * Background color for the capture. Used when the scene has transparency (e.g.
@@ -127,6 +175,179 @@ function renderTargetToDataURL(
   return captureCanvas2D.toDataURL(fileType, encoderOptions);
 }
 
+function parseFrameAspect(frame?: string): number | null {
+  if (!frame) return null;
+  const parts = frame.split(':');
+  if (parts.length !== 2) return null;
+  const w = parseFloat(parts[0]);
+  const h = parseFloat(parts[1]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return null;
+  }
+  return w / h;
+}
+
+function clamp01(v: number): number {
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
+}
+
+/**
+ * Frame-based crop and scale: given a source image and capture options with a
+ * frame (w:h), compute the final output dimensions and crop using fit /
+ * focalPoint, then draw to captureCanvas2D and return the data URL.
+ */
+function drawFramedImageToCanvas(
+  source: CanvasImageSource,
+  srcWidth: number,
+  srcHeight: number,
+  options: CaptureImageOptions,
+  bgColor: Color,
+  fileType: string,
+  encoderOptions?: number
+): string {
+  const aspect = parseFrameAspect(options.frame);
+  if (aspect == null) {
+    // Fallback: just return the full source at its native size.
+    captureCanvas2D.width = srcWidth;
+    captureCanvas2D.height = srcHeight;
+    const ctx = captureCanvas2D.getContext('2d');
+    if (!ctx) {
+      return 'data:image/png;base64,';
+    }
+    ctx.fillStyle = bgColor.getStyle();
+    ctx.fillRect(0, 0, srcWidth, srcHeight);
+    ctx.drawImage(source, 0, 0, srcWidth, srcHeight, 0, 0, srcWidth, srcHeight);
+    return captureCanvas2D.toDataURL(fileType, encoderOptions);
+  }
+
+  const maxW =
+    options.width != null && options.width > 0
+      ? Math.floor(options.width)
+      : srcWidth;
+  const maxH =
+    options.height != null && options.height > 0
+      ? Math.floor(options.height)
+      : srcHeight;
+
+  // Largest size with the requested aspect that fits within maxW×maxH.
+  let outWidth = maxW;
+  let outHeight = Math.round(outWidth / aspect);
+  if (outHeight > maxH) {
+    outHeight = maxH;
+    outWidth = Math.round(outHeight * aspect);
+  }
+  outWidth = Math.max(1, outWidth);
+  outHeight = Math.max(1, outHeight);
+
+  captureCanvas2D.width = outWidth;
+  captureCanvas2D.height = outHeight;
+  const ctx = captureCanvas2D.getContext('2d');
+  if (!ctx) {
+    return 'data:image/png;base64,';
+  }
+
+  ctx.fillStyle = bgColor.getStyle();
+  ctx.fillRect(0, 0, outWidth, outHeight);
+
+  const crop = options.crop ?? {};
+  const fit: CaptureImageFit = crop.fit ?? 'cover';
+  const fp = crop.focalPoint ?? { x: 0.5, y: 0.5 };
+  const fx = clamp01(fp.x);
+  const fy = clamp01(fp.y);
+
+  let sx = 0;
+  let sy = 0;
+  let sw = srcWidth;
+  let sh = srcHeight;
+  let dx = 0;
+  let dy = 0;
+  let dw = outWidth;
+  let dh = outHeight;
+
+  if (fit === 'fill') {
+    // Use full source, stretched to frame.
+    // (sx/sy/sw/sh and dx/dy/dw/dh already set appropriately.)
+  } else if (fit === 'contain') {
+    // Fit whole image inside frame, potentially letterboxing.
+    const s = Math.min(outWidth / srcWidth, outHeight / srcHeight);
+    dw = Math.round(srcWidth * s);
+    dh = Math.round(srcHeight * s);
+    dx = Math.round((outWidth - dw) / 2);
+    dy = Math.round((outHeight - dh) / 2);
+  } else {
+    // cover (default): fill frame and crop overflow, honoring focalPoint.
+    const s = Math.max(outWidth / srcWidth, outHeight / srcHeight);
+    const drawWidth = outWidth / s;
+    const drawHeight = outHeight / s;
+    sw = drawWidth;
+    sh = drawHeight;
+
+    const centerX = fx * srcWidth;
+    const centerY = fy * srcHeight;
+
+    sx = centerX - drawWidth / 2;
+    sy = centerY - drawHeight / 2;
+
+    if (sx < 0) sx = 0;
+    if (sy < 0) sy = 0;
+    if (sx + sw > srcWidth) sx = srcWidth - sw;
+    if (sy + sh > srcHeight) sy = srcHeight - sh;
+  }
+
+  ctx.drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh);
+  return captureCanvas2D.toDataURL(fileType, encoderOptions);
+}
+
+/**
+ * Apply a camera JSON object (setCameraFromJSON-style) directly to a Three.js
+ * camera without touching the controls. Used so the capture uses the requested
+ * view and the main canvas/controls are never updated.
+ * Returns a debug string when debugCaptureCamera is true (for console logging).
+ */
+function applyCameraJSONToCamera(camera: any, data: any, debug = false): string {
+  if (!data || typeof data !== 'object') return '';
+  if (Array.isArray(data.matrix) && data.matrix.length === 16) {
+    const m = new Matrix4().fromArray(data.matrix);
+    camera.matrixAutoUpdate = false;
+    camera.matrix.copy(m);
+    camera.matrix.decompose(camera.position, camera.quaternion, camera.scale);
+  } else {
+    if (Array.isArray(data.position) && data.position.length === 3) {
+      camera.position.fromArray(data.position);
+    }
+    if (Array.isArray(data.quaternion) && data.quaternion.length === 4) {
+      camera.quaternion.fromArray(data.quaternion);
+    }
+    camera.updateMatrix();
+  }
+  if (Array.isArray(data.up) && data.up.length === 3) {
+    camera.up.fromArray(data.up);
+  }
+  if (typeof data.near === 'number' && Number.isFinite(data.near)) camera.near = data.near;
+  if (typeof data.far === 'number' && Number.isFinite(data.far)) camera.far = data.far;
+  if (typeof data.zoom === 'number' && Number.isFinite(data.zoom)) camera.zoom = data.zoom;
+  if (camera.isPerspectiveCamera) {
+    if (typeof data.fov === 'number' && Number.isFinite(data.fov)) camera.fov = data.fov;
+    if (typeof data.aspect === 'number' && Number.isFinite(data.aspect)) camera.aspect = data.aspect;
+  }
+  if (camera.isOrthographicCamera) {
+    if (typeof data.left === 'number' && Number.isFinite(data.left)) camera.left = data.left;
+    if (typeof data.right === 'number' && Number.isFinite(data.right)) camera.right = data.right;
+    if (typeof data.top === 'number' && Number.isFinite(data.top)) camera.top = data.top;
+    if (typeof data.bottom === 'number' && Number.isFinite(data.bottom)) camera.bottom = data.bottom;
+  }
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+
+  if (!debug) return '';
+  const forward = new Vector3();
+  camera.getWorldDirection(forward);
+  return `[captureImage camera] position=(${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}) forward=(${forward.x.toFixed(2)},${forward.y.toFixed(2)},${forward.z.toFixed(2)}) near=${camera.near} far=${camera.far}` +
+    (camera.isOrthographicCamera ? ` ortho L/R/T/B=(${camera.left.toFixed(1)},${camera.right.toFixed(1)},${camera.top.toFixed(1)},${camera.bottom.toFixed(1)})` : '');
+}
+
 export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDImageCaptureInterface> & T => {
@@ -150,21 +371,47 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
       const threeRenderer = renderer.threeRenderer;
 
       const useOffscreenRender =
-        outWidth != null &&
-        outWidth > 0 &&
-        outHeight != null &&
-        outHeight > 0;
+        (outWidth != null &&
+          outWidth > 0 &&
+          outHeight != null &&
+          outHeight > 0) ||
+        camera != null;
 
       let savedCameraJSON: any = null;
-      if (camera != null && typeof element.setCameraFromJSON === 'function') {
-        savedCameraJSON = element.getCameraJSON?.() ?? null;
-        await element.setCameraFromJSON(camera);
+      if (camera != null && typeof element.getCameraJSON === 'function') {
+        savedCameraJSON = element.getCameraJSON();
       }
 
       try {
         if (useOffscreenRender) {
-          const captureWidth = Math.floor(outWidth);
-          const captureHeight = Math.floor(outHeight);
+          if (camera != null) {
+            const data: any = (camera as any)?.object ?? camera;
+            const typeValue = data.cameraType ?? data.type;
+            let desiredType: 'perspective' | 'orthographic' | null = null;
+            if (typeValue === 'orthographic' || typeValue === 'OrthographicCamera') desiredType = 'orthographic';
+            else if (typeValue === 'perspective' || typeValue === 'PerspectiveCamera') desiredType = 'perspective';
+            if (desiredType != null && typeof scene.getCameraType === 'function' && scene.getCameraType() !== desiredType) {
+              element.setCameraType(desiredType);
+            }
+            const debugMsg = applyCameraJSONToCamera(scene.camera, data, true);
+            if (debugMsg && typeof console !== 'undefined' && console.log) {
+              console.log(debugMsg);
+            }
+          }
+
+          const sourceCanvas = renderer.displayCanvas(scene);
+          const captureWidth = Math.max(
+            1,
+            outWidth != null && outWidth > 0
+              ? Math.floor(outWidth)
+              : sourceCanvas.width
+          );
+          const captureHeight = Math.max(
+            1,
+            outHeight != null && outHeight > 0
+              ? Math.floor(outHeight)
+              : sourceCanvas.height
+          );
 
           const sceneCamera = scene.camera;
           let prevAspect = scene.aspect;
@@ -182,12 +429,32 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
             prevRight = sceneCamera.right;
             prevTop = sceneCamera.top;
             prevBottom = sceneCamera.bottom;
-            const halfW = captureWidth / 2;
-            const halfH = captureHeight / 2;
-            sceneCamera.left = -halfW;
-            sceneCamera.right = halfW;
-            sceneCamera.top = halfH;
-            sceneCamera.bottom = -halfH;
+            if (camera == null) {
+              const halfW = captureWidth / 2;
+              const halfH = captureHeight / 2;
+              sceneCamera.left = -halfW;
+              sceneCamera.right = halfW;
+              sceneCamera.top = halfH;
+              sceneCamera.bottom = -halfH;
+            } else {
+              const captureAspect = captureWidth / captureHeight;
+              const currentAspect = (prevRight - prevLeft) / (prevTop - prevBottom);
+              if (Math.abs(currentAspect - captureAspect) > 1e-6) {
+                const cx = (prevLeft + prevRight) / 2;
+                const cy = (prevTop + prevBottom) / 2;
+                const w = prevRight - prevLeft;
+                const h = prevTop - prevBottom;
+                if (captureAspect > currentAspect) {
+                  const newW = h * captureAspect;
+                  sceneCamera.left = cx - newW / 2;
+                  sceneCamera.right = cx + newW / 2;
+                } else {
+                  const newH = w / captureAspect;
+                  sceneCamera.top = cy + newH / 2;
+                  sceneCamera.bottom = cy - newH / 2;
+                }
+              }
+            }
             sceneCamera.updateProjectionMatrix();
           }
 
@@ -211,7 +478,7 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
               threeRenderer.render(scene, scene.camera);
             }
 
-            const dataUrl = renderTargetToDataURL(
+            const baseDataUrl = renderTargetToDataURL(
               threeRenderer,
               renderTarget,
               captureWidth,
@@ -219,7 +486,29 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
               fileType,
               encoderOptions
             );
-            return dataUrl;
+            // If no frame is specified, return the raw offscreen capture (legacy behavior).
+            if (!options.frame) {
+              return baseDataUrl;
+            }
+
+            // Otherwise, apply frame-based crop/fit in 2D, similar to an image CDN pipeline.
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const i = new Image();
+              i.onload = () => resolve(i);
+              i.onerror = (e) => reject(e);
+              i.src = baseDataUrl;
+            });
+
+            const framedUrl = drawFramedImageToCanvas(
+              img,
+              captureWidth,
+              captureHeight,
+              options,
+              bgColor,
+              fileType,
+              encoderOptions
+            );
+            return framedUrl;
           } finally {
             threeRenderer.setRenderTarget(prevRenderTarget);
             threeRenderer.setViewport(prevViewport);
@@ -243,16 +532,30 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
         const srcWidth = sourceCanvas.width;
         const srcHeight = sourceCanvas.height;
 
+        // When a frame is specified, apply frame-based crop/fit in 2D.
+        if (options.frame) {
+          return drawFramedImageToCanvas(
+            sourceCanvas,
+            srcWidth,
+            srcHeight,
+            options,
+            bgColor,
+            fileType,
+            encoderOptions
+          );
+        }
+
+        // Legacy behavior: pixel-based crop rect in source canvas pixels only.
         let sx = 0;
         let sy = 0;
         let sw = srcWidth;
         let sh = srcHeight;
 
         if (crop != null) {
-          sx = Math.max(0, Math.floor(crop.x));
-          sy = Math.max(0, Math.floor(crop.y));
-          sw = Math.max(1, Math.floor(crop.width));
-          sh = Math.max(1, Math.floor(crop.height));
+          sx = Math.max(0, Math.floor(crop.x ?? 0));
+          sy = Math.max(0, Math.floor(crop.y ?? 0));
+          sw = Math.max(1, Math.floor(crop.width ?? srcWidth - sx));
+          sh = Math.max(1, Math.floor(crop.height ?? srcHeight - sy));
           sw = Math.min(sw, srcWidth - sx);
           sh = Math.min(sh, srcHeight - sy);
         }

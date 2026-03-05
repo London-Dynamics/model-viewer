@@ -385,11 +385,11 @@
       },
       {
         "htmlId": "capture-background-color",
-        "name": "Background color (cornflowerblue)"
+        "name": "Background color"
       },
       {
         "htmlId": "capture-orthographic-views",
-        "name": "Orthographic views (above, front, side)"
+        "name": "Orthographic views"
       }
     ]
   },
