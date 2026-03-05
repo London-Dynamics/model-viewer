@@ -23,6 +23,7 @@ import ModelViewerElementBase, {
   $renderer,
   $scene,
 } from '../model-viewer-base.js';
+import { $controls } from './controls.js';
 import { Constructor } from '../utilities.js';
 
 /** High-level fit mode for cropping, similar to CSS object-fit. */
@@ -59,6 +60,13 @@ export interface CaptureImageCrop {
    * a subject in view (e.g. { x: 0.5, y: 0.3 } is slightly toward the top).
    */
   focalPoint?: CaptureImageFocalPoint;
+  /**
+   * Normalized safe area (0–1) controlling how large the crop region should be
+   * relative to the frame when using frame-based cropping. 1.0 means the crop
+   * region exactly matches the frame (default behavior); lower values shrink
+   * the crop around the focal point so the subject appears larger.
+   */
+  safeArea?: number;
 }
 
 /**
@@ -108,6 +116,14 @@ export interface CaptureImageOptions {
    * API compute the crop region for you.
    */
   crop?: CaptureImageCrop;
+  /**
+   * When true and capturing to an offscreen render target (width/height or
+   * camera provided), ask the camera controls to fit the view to the scene's
+   * bounding box via <code>fitToBox</code> for the capture so the model fills
+   * the frame for the requested aspect ratio. The visible camera is restored
+   * afterward.
+   */
+  fitToBox?: boolean;
   /**
    * Background color for the capture. Used when the scene has transparency (e.g.
    * JPEG does not support alpha). Any CSS color string or hex number accepted by
@@ -256,6 +272,11 @@ function drawFramedImageToCanvas(
   const fp = crop.focalPoint ?? { x: 0.5, y: 0.5 };
   const fx = clamp01(fp.x);
   const fy = clamp01(fp.y);
+  const safeAreaRaw =
+    typeof crop.safeArea === 'number' && Number.isFinite(crop.safeArea)
+      ? crop.safeArea
+      : 1;
+  const safeArea = Math.max(0.01, Math.min(1, safeAreaRaw));
 
   let sx = 0;
   let sy = 0;
@@ -279,16 +300,19 @@ function drawFramedImageToCanvas(
   } else {
     // cover (default): fill frame and crop overflow, honoring focalPoint.
     const s = Math.max(outWidth / srcWidth, outHeight / srcHeight);
-    const drawWidth = outWidth / s;
-    const drawHeight = outHeight / s;
-    sw = drawWidth;
-    sh = drawHeight;
+    const baseWidth = outWidth / s;
+    const baseHeight = outHeight / s;
+    // Apply safeArea: shrink crop region around the focal point so the subject
+    // appears larger in the final frame. 1.0 uses the base crop; lower values
+    // use a smaller region.
+    sw = baseWidth * safeArea;
+    sh = baseHeight * safeArea;
 
     const centerX = fx * srcWidth;
     const centerY = fy * srcHeight;
 
-    sx = centerX - drawWidth / 2;
-    sy = centerY - drawHeight / 2;
+    sx = centerX - sw / 2;
+    sy = centerY - sh / 2;
 
     if (sx < 0) sx = 0;
     if (sy < 0) sy = 0;
@@ -306,7 +330,11 @@ function drawFramedImageToCanvas(
  * view and the main canvas/controls are never updated.
  * Returns a debug string when debugCaptureCamera is true (for console logging).
  */
-function applyCameraJSONToCamera(camera: any, data: any, debug = false): string {
+function applyCameraJSONToCamera(
+  camera: any,
+  data: any,
+  debug = false
+): string {
   if (!data || typeof data !== 'object') return '';
   if (Array.isArray(data.matrix) && data.matrix.length === 16) {
     const m = new Matrix4().fromArray(data.matrix);
@@ -325,18 +353,27 @@ function applyCameraJSONToCamera(camera: any, data: any, debug = false): string 
   if (Array.isArray(data.up) && data.up.length === 3) {
     camera.up.fromArray(data.up);
   }
-  if (typeof data.near === 'number' && Number.isFinite(data.near)) camera.near = data.near;
-  if (typeof data.far === 'number' && Number.isFinite(data.far)) camera.far = data.far;
-  if (typeof data.zoom === 'number' && Number.isFinite(data.zoom)) camera.zoom = data.zoom;
+  if (typeof data.near === 'number' && Number.isFinite(data.near))
+    camera.near = data.near;
+  if (typeof data.far === 'number' && Number.isFinite(data.far))
+    camera.far = data.far;
+  if (typeof data.zoom === 'number' && Number.isFinite(data.zoom))
+    camera.zoom = data.zoom;
   if (camera.isPerspectiveCamera) {
-    if (typeof data.fov === 'number' && Number.isFinite(data.fov)) camera.fov = data.fov;
-    if (typeof data.aspect === 'number' && Number.isFinite(data.aspect)) camera.aspect = data.aspect;
+    if (typeof data.fov === 'number' && Number.isFinite(data.fov))
+      camera.fov = data.fov;
+    if (typeof data.aspect === 'number' && Number.isFinite(data.aspect))
+      camera.aspect = data.aspect;
   }
   if (camera.isOrthographicCamera) {
-    if (typeof data.left === 'number' && Number.isFinite(data.left)) camera.left = data.left;
-    if (typeof data.right === 'number' && Number.isFinite(data.right)) camera.right = data.right;
-    if (typeof data.top === 'number' && Number.isFinite(data.top)) camera.top = data.top;
-    if (typeof data.bottom === 'number' && Number.isFinite(data.bottom)) camera.bottom = data.bottom;
+    if (typeof data.left === 'number' && Number.isFinite(data.left))
+      camera.left = data.left;
+    if (typeof data.right === 'number' && Number.isFinite(data.right))
+      camera.right = data.right;
+    if (typeof data.top === 'number' && Number.isFinite(data.top))
+      camera.top = data.top;
+    if (typeof data.bottom === 'number' && Number.isFinite(data.bottom))
+      camera.bottom = data.bottom;
   }
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld(true);
@@ -344,11 +381,17 @@ function applyCameraJSONToCamera(camera: any, data: any, debug = false): string 
   if (!debug) return '';
   const forward = new Vector3();
   camera.getWorldDirection(forward);
-  return `[captureImage camera] position=(${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}) forward=(${forward.x.toFixed(2)},${forward.y.toFixed(2)},${forward.z.toFixed(2)}) near=${camera.near} far=${camera.far}` +
-    (camera.isOrthographicCamera ? ` ortho L/R/T/B=(${camera.left.toFixed(1)},${camera.right.toFixed(1)},${camera.top.toFixed(1)},${camera.bottom.toFixed(1)})` : '');
+  return (
+    `[captureImage camera] position=(${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}) forward=(${forward.x.toFixed(2)},${forward.y.toFixed(2)},${forward.z.toFixed(2)}) near=${camera.near} far=${camera.far}` +
+    (camera.isOrthographicCamera
+      ? ` ortho L/R/T/B=(${camera.left.toFixed(1)},${camera.right.toFixed(1)},${camera.top.toFixed(1)},${camera.bottom.toFixed(1)})`
+      : '')
+  );
 }
 
-export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase>>(
+export const LDImageCaptureMixin = <
+  T extends Constructor<ModelViewerElementBase>,
+>(
   ModelViewerElement: T
 ): Constructor<LDImageCaptureInterface> & T => {
   class LDImageCaptureModelViewerElement extends ModelViewerElement {
@@ -388,9 +431,21 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
             const data: any = (camera as any)?.object ?? camera;
             const typeValue = data.cameraType ?? data.type;
             let desiredType: 'perspective' | 'orthographic' | null = null;
-            if (typeValue === 'orthographic' || typeValue === 'OrthographicCamera') desiredType = 'orthographic';
-            else if (typeValue === 'perspective' || typeValue === 'PerspectiveCamera') desiredType = 'perspective';
-            if (desiredType != null && typeof scene.getCameraType === 'function' && scene.getCameraType() !== desiredType) {
+            if (
+              typeValue === 'orthographic' ||
+              typeValue === 'OrthographicCamera'
+            )
+              desiredType = 'orthographic';
+            else if (
+              typeValue === 'perspective' ||
+              typeValue === 'PerspectiveCamera'
+            )
+              desiredType = 'perspective';
+            if (
+              desiredType != null &&
+              typeof scene.getCameraType === 'function' &&
+              scene.getCameraType() !== desiredType
+            ) {
               element.setCameraType(desiredType);
             }
             const debugMsg = applyCameraJSONToCamera(scene.camera, data, true);
@@ -438,7 +493,8 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
               sceneCamera.bottom = -halfH;
             } else {
               const captureAspect = captureWidth / captureHeight;
-              const currentAspect = (prevRight - prevLeft) / (prevTop - prevBottom);
+              const currentAspect =
+                (prevRight - prevLeft) / (prevTop - prevBottom);
               if (Math.abs(currentAspect - captureAspect) > 1e-6) {
                 const cx = (prevLeft + prevRight) / 2;
                 const cy = (prevTop + prevBottom) / 2;
@@ -458,7 +514,33 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
             sceneCamera.updateProjectionMatrix();
           }
 
-          const renderTarget = new WebGLRenderTarget(captureWidth, captureHeight);
+          // Optionally refit the camera to the scene's bounding box for the
+          // requested aspect ratio using CameraControls.fitToBox. This only
+          // affects the offscreen capture; the visible camera is restored
+          // afterward.
+          if (options.fitToBox) {
+            const controls = (this as any)[$controls];
+            if (controls && scene) {
+              try {
+                if (
+                  typeof controls.fitToBox === 'function' &&
+                  scene.boundingBox &&
+                  !scene.boundingBox.isEmpty()
+                ) {
+                  await controls.fitToBox(scene.boundingBox, false, {
+                    cover: true,
+                  } as any);
+                }
+              } catch {
+                // Ignore fitToBox errors and continue with the existing view.
+              }
+            }
+          }
+
+          const renderTarget = new WebGLRenderTarget(
+            captureWidth,
+            captureHeight
+          );
 
           const prevRenderTarget = threeRenderer.getRenderTarget();
           const prevViewport = threeRenderer.getViewport(new Vector4());
@@ -492,12 +574,14 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
             }
 
             // Otherwise, apply frame-based crop/fit in 2D, similar to an image CDN pipeline.
-            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-              const i = new Image();
-              i.onload = () => resolve(i);
-              i.onerror = (e) => reject(e);
-              i.src = baseDataUrl;
-            });
+            const img = await new Promise<HTMLImageElement>(
+              (resolve, reject) => {
+                const i = new Image();
+                i.onload = () => resolve(i);
+                i.onerror = (e) => reject(e);
+                i.src = baseDataUrl;
+              }
+            );
 
             const framedUrl = drawFramedImageToCanvas(
               img,
@@ -518,7 +602,10 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
             if (sceneCamera instanceof PerspectiveCamera) {
               sceneCamera.aspect = prevAspect;
               sceneCamera.updateProjectionMatrix();
-            } else if (sceneCamera instanceof OrthographicCamera && prevLeft != null) {
+            } else if (
+              sceneCamera instanceof OrthographicCamera &&
+              prevLeft != null
+            ) {
               sceneCamera.left = prevLeft;
               sceneCamera.right = prevRight!;
               sceneCamera.top = prevTop!;
@@ -571,7 +658,10 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
         ctx.drawImage(sourceCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
         return captureCanvas2D.toDataURL(fileType, encoderOptions);
       } finally {
-        if (savedCameraJSON != null && typeof element.setCameraFromJSON === 'function') {
+        if (
+          savedCameraJSON != null &&
+          typeof element.setCameraFromJSON === 'function'
+        ) {
           const data = savedCameraJSON.object ?? savedCameraJSON;
           element.setCameraFromJSON(data);
         }
@@ -579,5 +669,6 @@ export const LDImageCaptureMixin = <T extends Constructor<ModelViewerElementBase
     }
   }
 
-  return LDImageCaptureModelViewerElement as Constructor<LDImageCaptureInterface> & T;
+  return LDImageCaptureModelViewerElement as Constructor<LDImageCaptureInterface> &
+    T;
 };

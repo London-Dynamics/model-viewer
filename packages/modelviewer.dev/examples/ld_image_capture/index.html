@@ -294,9 +294,11 @@
                             width: baseWidth,
                             height: baseHeight,
                             fileType: 'image/png',
+                            fitToBox: true,
                             crop: {
                               fit: 'cover',
                               focalPoint: { x: 0.5, y: 0.5 },
+                              safeArea: 0.75,
                             },
                           });
 
