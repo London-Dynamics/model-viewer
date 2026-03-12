@@ -82,6 +82,12 @@ export type PlacementGraphNode = {
   children?: PlacementGraphNode[];
 };
 
+type ImmediatePlacementTransform = {
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+  scale?: [number, number, number];
+};
+
 type PositionOptions = {
   position?: Vector3;
   rotation?: Euler;
@@ -170,6 +176,11 @@ export declare interface LDModularInterface {
     options?: PlacementOptions,
     initialMouse?: { clientX: number; clientY: number }
   ) => PlacementSession;
+
+  placeGlb: (
+    highResSrc?: string,
+    options?: PlacementOptions & ImmediatePlacementTransform
+  ) => Promise<{ id: string; node: Object3D }>;
 
   replacePart: (
     objectUuid: string,
@@ -282,6 +293,78 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         clearExplosionFragments(this[$scene]);
       } catch (e) {}
+    }
+
+    async placeGlb(
+      highResSrc?: string,
+      options?: PlacementOptions & ImmediatePlacementTransform
+    ): Promise<{ id: string; node: Object3D }> {
+      const element: any = this;
+      const session = new PlacementSession(
+        this,
+        (this as any).log,
+        undefined,
+        highResSrc,
+        options
+      );
+
+      // If explicit transforms are provided, create a bounds-based placeholder
+      // immediately (if possible) and apply the transforms.
+      if (options?.part) {
+        const scene = (element as any)[$scene];
+        if (scene) {
+          const placeholder = (session as any)._createPlaceholderFromBounds(
+            scene,
+            element
+          ) as Object3D | null;
+          if (placeholder) {
+            session.placeholder = placeholder;
+            if (options.position) {
+              placeholder.position.set(
+                options.position[0],
+                options.position[1],
+                options.position[2]
+              );
+            }
+            if (options.rotation) {
+              placeholder.rotation.set(
+                (options.rotation[0] * Math.PI) / 180,
+                (options.rotation[1] * Math.PI) / 180,
+                (options.rotation[2] * Math.PI) / 180
+              );
+            }
+            if (options.scale) {
+              placeholder.scale.set(
+                options.scale[0],
+                options.scale[1],
+                options.scale[2]
+              );
+            }
+          }
+        }
+      }
+
+      // Compute center detail from explicit position (if provided)
+      let centerDetail: { x: number; y: number; z: number } | null = null;
+      if (options?.position) {
+        centerDetail = {
+          x: options.position[0],
+          y: options.position[1],
+          z: options.position[2],
+        };
+      }
+
+      (this as any).dispatchEvent(
+        new CustomEvent('loading-start', {
+          detail: {
+            sessionId: session.id,
+            src: highResSrc,
+            center: centerDetail,
+          },
+        })
+      );
+
+      return (session as any)._placeFinalGlb(this, highResSrc || '');
     }
 
     [$tick](time: number, delta: number) {
@@ -4066,6 +4149,83 @@ class PlacementSession extends EventTarget {
     );
   }
 
+  private _createPlaceholderFromBounds(
+    scene: any,
+    element: any
+  ): Object3D | null {
+    const part = this._options?.part as any;
+    const hasBounds =
+      part &&
+      part.type === 'scene' &&
+      part.bounds &&
+      part.bounds.min &&
+      part.bounds.max;
+
+    if (!hasBounds) return null;
+
+    const bounds = part.bounds;
+
+    const width = bounds.max[0] - bounds.min[0];
+    const height = bounds.max[1] - bounds.min[1];
+    const depth = bounds.max[2] - bounds.min[2];
+
+    const geometry = new BoxGeometry(width, height, depth);
+    const material = new MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.5,
+    });
+    const boxMesh = new Mesh(geometry, material);
+
+    boxMesh.castShadow = false;
+    boxMesh.receiveShadow = false;
+
+    boxMesh.position.set(
+      (bounds.max[0] + bounds.min[0]) / 2,
+      (bounds.max[1] + bounds.min[1]) / 2,
+      (bounds.max[2] + bounds.min[2]) / 2
+    );
+
+    const placeholder = new Object3D();
+    placeholder.add(boxMesh);
+
+    placeholder.name = this._options?.name
+      ? this._options.name + `_${+new Date()}`
+      : this.id;
+
+    placeholder.userData = {
+      selectable: true,
+      ...(placeholder.userData || {}),
+    };
+    placeholder.userData.isPlacementPlaceholder = true;
+
+    if (this._options?.snappingPoints) {
+      try {
+        placeholder.userData.snappingPoints = this._options.snappingPoints;
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (typeof this._options?.selectable !== 'undefined')
+      placeholder.userData.selectable = this._options.selectable;
+
+    try {
+      scene.target.add(placeholder);
+    } catch (e) {
+      scene.add(placeholder);
+    }
+
+    try {
+      placeholder.visible = false;
+    } catch (e) {}
+
+    try {
+      element[$needsRender]();
+    } catch (e) {}
+
+    return placeholder;
+  }
+
   // Internal: load low-res placeholder and insert into scene
   async _loadPlaceholder() {
     if (!this._element) return;
@@ -4073,101 +4233,23 @@ class PlacementSession extends EventTarget {
     if (!scene) return;
 
     try {
-      // Check if we have part.bounds to create a simple box placeholder
-      const part = this._options?.part as any;
-      const hasBounds =
-        part &&
-        part.type === 'scene' &&
-        part.bounds &&
-        part.bounds.min &&
-        part.bounds.max;
+      const element = this._element as any;
 
       // Resolve low-res URL: use callback if no direct URL provided
-      // Skip getLowResUrl if we have bounds (box placeholder will be used instead)
       let lowResUrl = this._lowResSrc;
-      if (!lowResUrl && !hasBounds && this._options?.getLowResUrl) {
+      if (!lowResUrl && this._options?.getLowResUrl) {
         lowResUrl = await this._options.getLowResUrl();
       }
 
-      // If no low-res URL is available, check if we should create a box placeholder
       if (!lowResUrl) {
-        if (hasBounds) {
-          const bounds = part.bounds;
-
-          // Calculate box dimensions from bounds
-          const width = bounds.max[0] - bounds.min[0];
-          const height = bounds.max[1] - bounds.min[1];
-          const depth = bounds.max[2] - bounds.min[2];
-
-          // Create a simple white box mesh with 50% transparency
-          const geometry = new BoxGeometry(width, height, depth);
-          const material = new MeshBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.5,
-          });
-          const boxMesh = new Mesh(geometry, material);
-
-          // Disable shadows for the box placeholder
-          boxMesh.castShadow = false;
-          boxMesh.receiveShadow = false;
-
-          // Position the box so its bounds match the provided bounds
-          // The box geometry is centered at origin, so we need to offset it
-          boxMesh.position.set(
-            (bounds.max[0] + bounds.min[0]) / 2,
-            (bounds.max[1] + bounds.min[1]) / 2,
-            (bounds.max[2] + bounds.min[2]) / 2
-          );
-
-          // Create a container object to hold the mesh
-          const placeholder = new Object3D();
-          placeholder.add(boxMesh);
-
+        const placeholder = this._createPlaceholderFromBounds(scene, element);
+        if (placeholder) {
           this.placeholder = placeholder;
-          placeholder.name = this._options?.name
-            ? this._options.name + `_${+new Date()}`
-            : this.id;
-
-          placeholder.userData = {
-            selectable: true,
-            ...(placeholder.userData || {}),
-          };
-          placeholder.userData.isPlacementPlaceholder = true;
-
-          if (this._options?.snappingPoints) {
-            try {
-              placeholder.userData.snappingPoints =
-                this._options.snappingPoints;
-            } catch (e) {
-              // ignore
-            }
-          }
-          if (typeof this._options?.selectable !== 'undefined')
-            placeholder.userData.selectable = this._options.selectable;
-
-          // Insert into scene target
-          try {
-            scene.target.add(placeholder);
-          } catch (e) {
-            scene.add(placeholder);
-          }
-
-          // Keep the placeholder hidden until first pointer update
-          try {
-            placeholder.visible = false;
-          } catch (e) {
-            // ignore if property not present
-          }
-
           (this as any).dispatchEvent(
             new CustomEvent('placeholder-loaded', {
               detail: { sessionId: this.id, placeholder },
             })
           );
-
-          if (!this._element) return;
-          (this._element as any)[$needsRender]();
           return;
         }
 
@@ -4639,6 +4721,10 @@ class PlacementSession extends EventTarget {
 
     if (!element) return Promise.reject(new Error('No element'));
 
+    return this._placeFinalGlb(element, srcToLoad);
+  }
+
+  private async _placeFinalGlb(element: any, srcToLoad: string) {
     const loader = (element as any)[$renderer].loader;
     const scene = (element as any)[$scene];
 
@@ -4657,9 +4743,7 @@ class PlacementSession extends EventTarget {
         throw new Error('Loaded GLTF missing scene');
       }
 
-      // Place final model at placeholder transform (if present)
       if (this.placeholder) {
-        // Copy all transforms from placeholder (already in correct local space)
         gltf.scene.position.copy(this.placeholder.position);
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
@@ -4671,8 +4755,6 @@ class PlacementSession extends EventTarget {
         const placeholderHeight = placeholderBBox.max.y - placeholderBBox.min.y;
         const finalHeight = finalBBox.max.y - finalBBox.min.y;
 
-        // If the final model is taller or shorter than the placeholder,
-        // adjust the Y position to keep the bottom aligned with the placeholder's bottom.
         const heightDiff = finalHeight - placeholderHeight;
         if (Math.abs(heightDiff) > 0.01) {
           gltf.scene.position.y -= heightDiff;
@@ -4682,21 +4764,17 @@ class PlacementSession extends EventTarget {
           );
         }
       } else {
-        // No placeholder - calculate position with bbox adjustment
         if (this._targetBottomCenter) {
-          // Calculate bbox in local space first (object at origin)
           gltf.scene.position.set(0, 0, 0);
           gltf.scene.updateMatrixWorld(true);
           const bboxLocal = new Box3().setFromObject(gltf.scene);
 
-          // Bottom-center in object's local coordinate system
           const bottomCenterLocal = new Vector3(
             (bboxLocal.min.x + bboxLocal.max.x) / 2,
             bboxLocal.min.y,
             (bboxLocal.min.z + bboxLocal.max.z) / 2
           );
 
-          // Get scene.target's world position
           const target = (scene as any).target;
           if (target) {
             target.updateMatrixWorld(true);
@@ -4706,15 +4784,12 @@ class PlacementSession extends EventTarget {
             target.getWorldPosition(targetWorldPos);
           }
 
-          // Cursor is in world space
           const cursorWorld = new Vector3(
             this._targetBottomCenter.x,
             this._targetBottomCenter.y,
             this._targetBottomCenter.z
           );
 
-          // Calculate local position: (cursorWorld - targetWorldPos) - bottomCenterOffset
-          // This ensures: targetWorldPos + objectLocalPos + bottomCenterOffset = cursorWorld
           const objectLocalPos = new Vector3()
             .subVectors(cursorWorld, targetWorldPos)
             .sub(bottomCenterLocal);
@@ -4742,7 +4817,6 @@ class PlacementSession extends EventTarget {
           : this.id;
       }
 
-      // Mark as placed so selection logic recognizes it
       gltf.scene.userData = {
         selectable: true,
         ...gltf.scene.userData,
@@ -4750,8 +4824,6 @@ class PlacementSession extends EventTarget {
         name: this._options?.name || this.id,
         part: this._options?.part,
       };
-      // Preserve any snappingPoints provided during placement so the final
-      // placed model participates in snapping discovery.
       if (this._options?.snappingPoints) {
         try {
           gltf.scene.userData.snappingPoints = this._options.snappingPoints;
@@ -4761,19 +4833,14 @@ class PlacementSession extends EventTarget {
       if (typeof this._options?.selectable !== 'undefined')
         gltf.scene.userData.selectable = this._options.selectable;
 
-      // Add object to scene.target (required for camera controls)
       try {
         scene.target.add(gltf.scene);
       } catch (e) {
         scene.add(gltf.scene);
       }
 
-      // Request render update
       (element as any)[$needsRender]();
 
-      // Fallback: if no pending connection was recorded (or it was lost),
-      // do an immediate check between the newly placed model and existing
-      // placed objects to find a snapping connection and complete it now.
       try {
         const el = element as any;
         const pending =
@@ -4835,7 +4902,6 @@ class PlacementSession extends EventTarget {
                             targetPoint: closest.targetPoint,
                           });
                         completed = true;
-                        // Clear any recorded pending connection as we've applied it
                         el._setPendingSnapConnection &&
                           el._setPendingSnapConnection(null);
                       } catch (e) {}
@@ -4850,21 +4916,11 @@ class PlacementSession extends EventTarget {
         }
       } catch (e) {}
 
-      // If a pending snap connection was recorded during interactive
-      // placement, translate any placeholder reference to the newly
-      // created final model node and complete the connection now that
-      // the final model exists in the scene graph.
       try {
-        // Use the captured element reference (element) — this._element was
-        // nulled by _endInteractive() earlier, so referencing it here would
-        // miss the recorded pending connection.
         const el = element as any;
         const pending =
           el && el.pendingSnapConnection ? el.pendingSnapConnection : null;
         if (pending) {
-          // If the pending draggedObject is the placeholder (or a child
-          // of it), replace it with the final placed node so grouping
-          // operations target the actual placed model.
           let dragged = pending.draggedObject;
           try {
             let node = dragged;
@@ -4878,42 +4934,31 @@ class PlacementSession extends EventTarget {
           } catch (e) {}
 
           try {
-            // Complete the connection now that final node is added
             el.completeSnapConnection && el.completeSnapConnection(pending);
           } catch (e) {}
 
           try {
-            // Clear the recorded pending connection
             el._setPendingSnapConnection && el._setPendingSnapConnection(null);
           } catch (e) {}
         }
       } catch (e) {}
 
-      // Clean up placeholder (we can still remove it even though the
-      // interactive session has been ended)
       this._cleanupPlaceholder(element);
 
-      // Request a render so the newly added final model is visible
-      // immediately (camera movement shouldn't be required).
       try {
-        if (!element) return;
+        if (!element) return Promise.reject(new Error('No element'));
         (element as any)[$needsRender]();
-        // Also refresh snapping-point slots so UI updates immediately
         try {
           (element as any).updateSnappingPointSlots &&
             (element as any).updateSnappingPointSlots();
         } catch (e) {}
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
 
       this.state = 'ended';
       const detail = { sessionId: this.id, placedNode: gltf.scene };
       (this as any).dispatchEvent(new CustomEvent('loaded', { detail }));
       return { id: this.id, node: gltf.scene };
     } catch (error) {
-      // On failure, remove placeholder and emit error
-
       this._cleanupPlaceholder(element);
       this.state = 'cancelled';
       (this as any).dispatchEvent(

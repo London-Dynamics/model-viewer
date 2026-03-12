@@ -1744,6 +1744,15 @@
       },
 
       {
+        "name": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; }): Promise<{ id: string; node: Object3D }>",
+        "htmlName": "placeGlb",
+        "description": "Immediately place a GLB into the scene at a known transform. Shares behavior with beginPlacement/PlacementSession.commit for loading events, bounds-based placeholders, snapping, and userData. Returns a Promise that resolves with the created node.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ]
+      },
+
+      {
         "name": "setPosition(objectName: string, value: [number, number, number]): void",
         "htmlName": "setPosition",
         "description": "Set absolute local position (in meters) for the named object. The value is an array [x, y, z].",
