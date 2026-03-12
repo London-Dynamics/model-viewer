@@ -1525,6 +1525,287 @@
             </div>
           </div>
         </div>
+        <div class="sample">
+          <div id="bulk-placement" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Bulk Placement</h2>
+                <h4>
+                  <span class="attribute">placeManyGlb()</span> – place multiple
+                  GLBs at once using known transforms.
+                </h4>
+              </div>
+              <example-snippet stamp-to="bulk-placement" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="bulk-placement-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    snapping-enabled
+                    highlight-selected
+                    selection-scope="group"
+                    measure
+                    edit
+                    debug
+                    disable-base-model-selection
+                    disable-base-model-shadows
+                    viewport-gizmo
+                  >
+                    <div
+                      class="absolute bottom-0 inset-x-0 p-2"
+                      id="bulk-control-panel"
+                    >
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Bulk Placement
+                          </h3>
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div
+                              class="flex items-center justify-between gap-4"
+                            >
+                              <button
+                                type="button"
+                                id="run-bulk-placement"
+                                class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              >
+                                Place cardio layout
+                              </button>
+                              <span
+                                id="bulk-progress-label"
+                                class="text-xs text-gray-500"
+                              >
+                                Idle
+                              </span>
+                            </div>
+                            <div
+                              class="flex items-center justify-between gap-4"
+                            >
+                              <button
+                                type="button"
+                                id="log-bulk-placement-tree"
+                                class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                              >
+                                Log placement tree
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#bulk-placement-demo'
+                      );
+                      const button =
+                        document.getElementById('run-bulk-placement');
+                      const logTreeButton = document.getElementById(
+                        'log-bulk-placement-tree'
+                      );
+                      const progressLabel = document.getElementById(
+                        'bulk-progress-label'
+                      );
+
+                      /** Example bulk placement data based on real-world parts. */
+                      const bulkItems = [
+                        {
+                          id: 'be0fd2f7-6827-488d-bfdb-26b6a1b33f37',
+                          part: {
+                            type: 'scene',
+                            productId: '4b72831d-2930-4133-8790-46334d051d9d',
+                            id: 'aspt-se4',
+                            name: 'Aspire Treadmill',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              -4.069798681219307, 0.00001140888999910911,
+                              -3.288539294758341,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: '45de85d3-c076-432a-b2e1-3e52a7aa3af3',
+                          part: {
+                            type: 'scene',
+                            productId: '4b72831d-2930-4133-8790-46334d051d9d',
+                            id: 'aspt-se4',
+                            name: 'Aspire Treadmill',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              -2.711704599973312, 0.00001140888999910911,
+                              -3.545503974423621,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: 'a387b38c-6e01-4ebe-923f-25ec15d717ab',
+                          part: {
+                            type: 'scene',
+                            productId: '4b72831d-2930-4133-8790-46334d051d9d',
+                            id: 'aspt-se4',
+                            name: 'Aspire Treadmill',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              -1.388032350207621, 0.00001140888999910911,
+                              -3.627649398436148,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: '2851849c-dbbc-4177-befa-dabb3f3630a4',
+                          part: {
+                            type: 'scene',
+                            productId: '011fa601-16eb-4058-831b-f5830b8ab8a9',
+                            id: 'aspx-se416',
+                            name: 'ASPX-SE416_Aspire-Elliptical',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              3.63316398338498, 0, -0.5882094464445888,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: 'c08f2de5-60fd-4931-bfe0-ae6f95895048',
+                          part: {
+                            type: 'scene',
+                            productId: '011fa601-16eb-4058-831b-f5830b8ab8a9',
+                            id: 'aspx-se416',
+                            name: 'ASPX-SE416_Aspire-Elliptical',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [3.609296036695866, 0, 1.772037822345647],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: 'ff69d111-3d28-4202-9007-d167bf8bf0c5',
+                          part: {
+                            type: 'scene',
+                            productId: '011fa601-16eb-4058-831b-f5830b8ab8a9',
+                            id: 'aspx-se416',
+                            name: 'ASPX-SE416_Aspire-Elliptical',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [-3.454572417897237, 0, 3.98017226650312],
+                            rotation: [
+                              -3.141592653589793, 4.440892098500626e-16,
+                              -3.141592653589793,
+                            ],
+                          },
+                        },
+                      ];
+
+                      /** Map part ids to example GLB URLs in shared-assets. */
+                      const partToUrl = {
+                        'aspt-se4':
+                          '../../shared-assets/models/sofa_middle.glb',
+                        'aspx-se416':
+                          '../../shared-assets/models/sofa_chaise.glb',
+                      };
+
+                      async function getHighResUrl(item) {
+                        const partId = item.part && item.part.id;
+                        if (partId && partToUrl[partId]) {
+                          return partToUrl[partId];
+                        }
+                        return '../../shared-assets/models/sofa_middle.glb';
+                      }
+
+                      let running = false;
+
+                      button?.addEventListener('click', async () => {
+                        if (running) return;
+                        running = true;
+                        if (button) button.disabled = true;
+                        if (progressLabel)
+                          progressLabel.textContent = 'Starting…';
+
+                        try {
+                          const results = await modelViewer.placeManyGlb(
+                            bulkItems,
+                            {
+                              concurrency: 4,
+                              getHighResUrl,
+                            }
+                          );
+                          console.log('Bulk placement complete', results);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Completed';
+                        } catch (e) {
+                          console.error('Bulk placement error', e);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Error';
+                        } finally {
+                          running = false;
+                          if (button) button.disabled = false;
+                        }
+                      });
+
+                      modelViewer.addEventListener(
+                        'bulk-placement-progress',
+                        (e) => {
+                          const { totalProgress, completed, total } = e.detail;
+                          const pct = Math.round(totalProgress * 100);
+                          if (progressLabel) {
+                            progressLabel.textContent = `${completed}/${total} (${pct}%)`;
+                          }
+                        }
+                      );
+
+                      logTreeButton?.addEventListener('click', () => {
+                        try {
+                          const tree = modelViewer.getPlacementTree();
+                          console.log('Bulk placement tree:', tree);
+                        } catch (e) {
+                          console.error('Failed to read placement tree', e);
+                        }
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
 
         <div class="footer">
           <ul></ul>

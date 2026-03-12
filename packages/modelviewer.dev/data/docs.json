@@ -1697,6 +1697,14 @@
         ]
       },
       {
+        "name": "placeManyGlb(items: BulkPlacementItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined> }): Promise<{ id: string; node: Object3D }[]>",
+        "htmlName": "placeManyGlb",
+        "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Supports a configurable maximum concurrency (default 4) and emits bulk-placement-progress events with aggregated total progress.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#bulk-placement\">Related examples</a>"
+        ]
+      },
+      {
         "name": "setSrcFromBuffer(buffer: ArrayBuffer)",
         "htmlName": "setSrcFromBuffer",
         "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",

@@ -52,7 +52,7 @@ import {
   stepExplosionFragments,
   stepQuatAnimations,
 } from '../../utilities/animation.js';
-import { LogFunction } from '../ld-debug.js';
+import { LogFunction, WarnFunction, ErrorFunction } from '../ld-debug.js';
 
 // Re-export SnappingPoint type for external use
 export type { SnappingPoint };
@@ -80,6 +80,16 @@ export type PlacementGraphNode = {
   part: Partial<Part> | undefined;
   snappingPoints?: SnappingPoint[];
   children?: PlacementGraphNode[];
+};
+
+export type BulkPlacementItem = {
+  id: string;
+  part?: Partial<Part>;
+  transform: {
+    position: [number, number, number];
+    rotation: [number, number, number];
+    scale: [number, number, number];
+  };
 };
 
 type ImmediatePlacementTransform = {
@@ -181,6 +191,14 @@ export declare interface LDModularInterface {
     highResSrc?: string,
     options?: PlacementOptions & ImmediatePlacementTransform
   ) => Promise<{ id: string; node: Object3D }>;
+
+  placeManyGlb: (
+    items: BulkPlacementItem[],
+    options?: {
+      concurrency?: number;
+      getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined>;
+    }
+  ) => Promise<Array<{ id: string; node: Object3D }>>;
 
   replacePart: (
     objectUuid: string,
@@ -303,20 +321,46 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const session = new PlacementSession(
         this,
         (this as any).log,
+        (this as any).warn,
+        (this as any).error,
         undefined,
         highResSrc,
         options
       );
 
-      // If explicit transforms are provided, create a bounds-based placeholder
-      // immediately (if possible) and apply the transforms.
-      if (options?.part) {
+      // If explicit transforms are provided, prefer using a placeholder so the
+      // final model can simply copy its local transform from it. First try a
+      // bounds-based placeholder from part.bounds; if that is not available,
+      // fall back to an empty Object3D that just carries the desired transform.
+      if (options) {
         const scene = (element as any)[$scene];
         if (scene) {
-          const placeholder = (session as any)._createPlaceholderFromBounds(
-            scene,
-            element
-          ) as Object3D | null;
+          let placeholder: Object3D | null = null;
+
+          if (options.part) {
+            placeholder = (session as any)._createPlaceholderFromBounds(
+              scene,
+              element
+            ) as Object3D | null;
+          }
+
+          if (!placeholder && (options.position || options.rotation || options.scale)) {
+            placeholder = new Object3D();
+            placeholder.name = options.name
+              ? options.name + `_${+new Date()}`
+              : session.id;
+            placeholder.userData = {
+              selectable: true,
+              ...(placeholder.userData || {}),
+              isPlacementPlaceholder: true,
+            };
+            try {
+              scene.target.add(placeholder);
+            } catch (e) {
+              scene.add(placeholder);
+            }
+          }
+
           if (placeholder) {
             session.placeholder = placeholder;
             if (options.position) {
@@ -365,6 +409,83 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       return (session as any)._placeFinalGlb(this, highResSrc || '');
+    }
+
+    async placeManyGlb(
+      items: BulkPlacementItem[],
+      options?: {
+        concurrency?: number;
+        getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined>;
+      }
+    ): Promise<Array<{ id: string; node: Object3D }>> {
+      const total = items.length;
+      if (total === 0) return [];
+
+      const results: Array<{ id: string; node: Object3D }> = new Array(total);
+      const concurrency = Math.max(1, options?.concurrency ?? 4);
+
+      let nextIndex = 0;
+      let completed = 0;
+
+      const runNext = async (): Promise<void> => {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= total) {
+          return;
+        }
+
+        const item = items[currentIndex];
+
+        try {
+          let highResSrc: string | undefined;
+          if (options?.getHighResUrl) {
+            highResSrc = await options.getHighResUrl(item);
+          }
+
+          const transform = item.transform || {
+            position: [0, 0, 0] as [number, number, number],
+            rotation: [0, 0, 0] as [number, number, number],
+            scale: [1, 1, 1] as [number, number, number],
+          };
+
+          const placementOptions: PlacementOptions & ImmediatePlacementTransform =
+            {
+              ...(item.part ? { part: item.part } : {}),
+              id: item.id,
+              name: item.part?.name || item.id,
+              position: transform.position,
+              rotation: transform.rotation,
+              scale: transform.scale,
+            };
+
+          const placed = await this.placeGlb(highResSrc, placementOptions);
+          results[currentIndex] = { id: item.id, node: placed.node };
+        } finally {
+          completed++;
+          const totalProgress = total ? completed / total : 1;
+          try {
+            (this as any).dispatchEvent(
+              new CustomEvent('bulk-placement-progress', {
+                detail: {
+                  totalProgress,
+                  completed,
+                  total,
+                },
+              })
+            );
+          } catch (e) {}
+
+          await runNext();
+        }
+      };
+
+      const workers: Promise<void>[] = [];
+      const workerCount = Math.min(concurrency, total);
+      for (let i = 0; i < workerCount; i++) {
+        workers.push(runNext());
+      }
+
+      await Promise.all(workers);
+      return results;
     }
 
     [$tick](time: number, delta: number) {
@@ -3660,6 +3781,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const session = new PlacementSession(
         this,
         (this as any).log,
+        (this as any).warn,
+        (this as any).error,
         lowResSrc,
         highResSrc,
         options || {}
@@ -4120,6 +4243,8 @@ class PlacementSession extends EventTarget {
   state: 'placing' | 'loading' | 'ended' | 'cancelled' = 'placing';
   placeholder: Object3D | null = null;
   private log: LogFunction;
+  private warn?: WarnFunction;
+  private error?: ErrorFunction;
   private _element: InstanceType<ReturnType<typeof LDModularMixin>> | null;
   private _lowResSrc: string | undefined;
   private _highResSrc: string | undefined;
@@ -4133,6 +4258,8 @@ class PlacementSession extends EventTarget {
   constructor(
     element: any,
     log: LogFunction,
+    warn?: WarnFunction,
+    error?: ErrorFunction,
     lowResSrc?: string,
     highResSrc?: string,
     options?: PlacementOptions
@@ -4144,6 +4271,8 @@ class PlacementSession extends EventTarget {
     this._highResSrc = highResSrc;
     this._options = options;
     this.log = log;
+    this.warn = warn;
+    this.error = error;
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
@@ -4665,10 +4794,12 @@ class PlacementSession extends EventTarget {
       try {
         srcToLoad = await this._options.getHighResUrl();
       } catch (e) {
-        (this as any).error(
-          '[puzzler] PlacementSession.commit: getHighResUrl callback failed',
-          e
-        );
+        if (this.error) {
+          this.error(
+            '[puzzler] PlacementSession.commit: getHighResUrl callback failed',
+            e
+          );
+        }
         (this as any).dispatchEvent(
           new CustomEvent('error', {
             detail: {
@@ -4687,12 +4818,11 @@ class PlacementSession extends EventTarget {
       const error = new Error(
         'No high-res URL provided and no getHighResUrl callback'
       );
-      (this as any).error(
-        '[puzzler] PlacementSession.commit: no high-res URL',
-        {
+      if (this.error) {
+        this.error('[puzzler] PlacementSession.commit: no high-res URL', {
           sessionId: this.id,
-        }
-      );
+        });
+      }
       (this as any).dispatchEvent(
         new CustomEvent('error', {
           detail: {
@@ -4756,12 +4886,13 @@ class PlacementSession extends EventTarget {
         const finalHeight = finalBBox.max.y - finalBBox.min.y;
 
         const heightDiff = finalHeight - placeholderHeight;
-        if (Math.abs(heightDiff) > 0.01) {
+        if (
+          Number.isFinite(placeholderHeight) &&
+          Number.isFinite(finalHeight) &&
+          Number.isFinite(heightDiff) &&
+          Math.abs(heightDiff) > 0.01
+        ) {
           gltf.scene.position.y -= heightDiff;
-          this.log(
-            '[puzzler] commit: adjusted final model Y position by',
-            heightDiff
-          );
         }
       } else {
         if (this._targetBottomCenter) {
@@ -4808,9 +4939,11 @@ class PlacementSession extends EventTarget {
             this._lastCursorPosition
           );
         } else {
-          (this as any).warn(
-            '[puzzler] No placeholder or cursor position - object placed at origin'
-          );
+          const message =
+            '[puzzler] No placeholder or cursor position - object placed at origin';
+          if (this.warn) {
+            this.warn(message);
+          }
         }
         gltf.scene.name = this._options?.name
           ? this._options.name + `_${+new Date()}`
@@ -4838,6 +4971,20 @@ class PlacementSession extends EventTarget {
       } catch (e) {
         scene.add(gltf.scene);
       }
+
+      try {
+        const el = element as any;
+        if (scene && typeof scene.updateBoundingBox === 'function') {
+          try {
+            scene.updateBoundingBox();
+          } catch (e) {
+            el.error?.(
+              '[puzzler] PlacementSession._placeFinalGlb: updateBoundingBox failed',
+              e
+            );
+          }
+        }
+      } catch (e) {}
 
       (element as any)[$needsRender]();
 

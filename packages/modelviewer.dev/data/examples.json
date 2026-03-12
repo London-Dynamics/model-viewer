@@ -426,6 +426,10 @@
         "name": "Modular scenes"
       },
       {
+        "htmlId": "bulk-placement",
+        "name": "Bulk placement"
+      },
+      {
         "htmlId": "transforms",
         "name": "Dynamic transforms"
       },
