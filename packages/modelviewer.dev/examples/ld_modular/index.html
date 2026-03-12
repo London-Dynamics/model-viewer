@@ -1780,16 +1780,15 @@
                         }
                       });
 
-                      modelViewer.addEventListener(
-                        'bulk-placement-progress',
-                        (e) => {
-                          const { totalProgress, completed, total } = e.detail;
-                          const pct = Math.round(totalProgress * 100);
-                          if (progressLabel) {
-                            progressLabel.textContent = `${completed}/${total} (${pct}%)`;
-                          }
+                      modelViewer.addEventListener('progress', (e) => {
+                        const detail = e.detail || {};
+                        if (detail.reason !== 'bulk-placement') return;
+                        const { totalProgress, completed, total } = detail;
+                        const pct = Math.round((totalProgress || 0) * 100);
+                        if (progressLabel) {
+                          progressLabel.textContent = `${completed}/${total} (${pct}%)`;
                         }
-                      );
+                      });
 
                       logTreeButton?.addEventListener('click', () => {
                         try {

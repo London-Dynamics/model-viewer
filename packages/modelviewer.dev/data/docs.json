@@ -1699,7 +1699,7 @@
       {
         "name": "placeManyGlb(items: BulkPlacementItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined> }): Promise<{ id: string; node: Object3D }[]>",
         "htmlName": "placeManyGlb",
-        "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Supports a configurable maximum concurrency (default 4) and emits bulk-placement-progress events with aggregated total progress.",
+        "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Supports a configurable maximum concurrency (default 4) and emits standard progress events with reason: 'bulk-placement' and aggregated total progress, plus a bulk-placement-complete event when finished.",
         "links": [
           "<a href=\"../examples/ld_modular/#bulk-placement\">Related examples</a>"
         ]

@@ -464,9 +464,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           const totalProgress = total ? completed / total : 1;
           try {
             (this as any).dispatchEvent(
-              new CustomEvent('bulk-placement-progress', {
+              new CustomEvent('progress', {
                 detail: {
                   totalProgress,
+                  reason: 'bulk-placement',
                   completed,
                   total,
                 },
@@ -485,6 +486,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       await Promise.all(workers);
+
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent('bulk-placement-complete', {
+            detail: {
+              total,
+              completed,
+              results,
+            },
+          })
+        );
+      } catch (e) {}
+
       return results;
     }
 
