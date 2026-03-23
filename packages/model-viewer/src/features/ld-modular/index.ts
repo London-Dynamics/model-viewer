@@ -216,6 +216,7 @@ export declare interface LDModularInterface {
   clearSelection?: () => void;
 
   removeObject: (objectName: string, options?: { animate?: boolean }) => void;
+  removeSelectedObjects: (options?: { animate?: boolean }) => void;
 
   deleteNode?: (node: Object3D) => boolean;
   groupSelectedObjects?: () => Object3D | null;
@@ -250,14 +251,48 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     // Store bound event handler reference
     private _boundSelectionChangeHandler: ((event: Event) => void) | null =
       null;
+    private _boundDeleteKeyHandler: ((event: KeyboardEvent) => void) | null =
+      null;
 
     connectedCallback() {
       super.connectedCallback();
 
-      // Use inline arrow function wrapper for event listener
-      this.addEventListener('selection-change', (event: Event) => {
+      // Keep stable references so listeners are properly removed.
+      this._boundSelectionChangeHandler = (event: Event) => {
         this._onSelectionChangeForPuzzler(event);
-      });
+      };
+      this.addEventListener(
+        'selection-change',
+        this._boundSelectionChangeHandler
+      );
+
+      this._boundDeleteKeyHandler = (event: KeyboardEvent) => {
+        const target = event.target as EventTarget | null;
+        const targetEl =
+          target && (target as Node).nodeType === Node.ELEMENT_NODE
+            ? (target as Element)
+            : null;
+        const tagName = targetEl?.tagName?.toLowerCase();
+        const isEditableTarget =
+          tagName === 'input' ||
+          tagName === 'textarea' ||
+          !!targetEl?.closest('[contenteditable=""], [contenteditable="true"]');
+
+        if (isEditableTarget) {
+          return;
+        }
+
+        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+
+        const selectedObjects = ((this as any).selectedObjects ||
+          []) as Object3D[];
+        console.log('selectedObjects', selectedObjects);
+        if (selectedObjects.length === 0) return;
+
+        event.preventDefault();
+        this.removeSelectedObjects();
+      };
+      this.addEventListener('keydown', this._boundDeleteKeyHandler);
 
       // Setup drag handlers for puzzler
       try {
@@ -276,6 +311,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._boundSelectionChangeHandler as EventListener
         );
         this._boundSelectionChangeHandler = null;
+      }
+      if (this._boundDeleteKeyHandler) {
+        this.removeEventListener('keydown', this._boundDeleteKeyHandler);
+        this._boundDeleteKeyHandler = null;
       }
 
       this.teardownDragHandlers();
@@ -344,7 +383,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             ) as Object3D | null;
           }
 
-          if (!placeholder && (options.position || options.rotation || options.scale)) {
+          if (
+            !placeholder &&
+            (options.position || options.rotation || options.scale)
+          ) {
             placeholder = new Object3D();
             placeholder.name = options.name
               ? options.name + `_${+new Date()}`
@@ -415,7 +457,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       items: BulkPlacementItem[],
       options?: {
         concurrency?: number;
-        getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined>;
+        getHighResUrl?: (
+          item: BulkPlacementItem
+        ) => Promise<string | undefined>;
       }
     ): Promise<Array<{ id: string; node: Object3D }>> {
       const total = items.length;
@@ -447,15 +491,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             scale: [1, 1, 1] as [number, number, number],
           };
 
-          const placementOptions: PlacementOptions & ImmediatePlacementTransform =
-            {
-              ...(item.part ? { part: item.part } : {}),
-              id: item.id,
-              name: item.part?.name || item.id,
-              position: transform.position,
-              rotation: transform.rotation,
-              scale: transform.scale,
-            };
+          const placementOptions: PlacementOptions &
+            ImmediatePlacementTransform = {
+            ...(item.part ? { part: item.part } : {}),
+            id: item.id,
+            name: item.part?.name || item.id,
+            position: transform.position,
+            rotation: transform.rotation,
+            scale: transform.scale,
+          };
 
           const placed = await this.placeGlb(highResSrc, placementOptions);
           results[currentIndex] = { id: item.id, node: placed.node };
@@ -3642,6 +3686,47 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         // Immediate removal
         doRemoveNow();
+      } catch (e) {
+        // swallow
+      }
+    }
+
+    /**
+     * Remove currently selected objects/groups.
+     * Handles single and multi-selection and avoids duplicate removals when
+     * both a parent group and its child are selected.
+     */
+    removeSelectedObjects(options?: { animate?: boolean }) {
+      try {
+        const selected = (
+          ((this as any).selectedObjects || []) as Object3D[]
+        ).filter(Boolean);
+        if (selected.length === 0) return;
+
+        const selectedSet = new Set<Object3D>(selected);
+        const roots = selected.filter((node) => {
+          let parent: Object3D | null = node.parent as Object3D | null;
+          while (parent) {
+            if (selectedSet.has(parent)) return false;
+            parent = parent.parent as Object3D | null;
+          }
+          return true;
+        });
+
+        // Clear selection first so controls/UI do not hold stale references.
+        (this as any).clearSelection();
+
+        const scene = (this as any)[$scene];
+        for (const node of roots) {
+          if (!node) continue;
+          // removeObject resolves by name; only use it when the name maps back
+          // to this exact node to avoid deleting a same-named sibling.
+          if (node.name && scene?.getObjectByName(node.name) === node) {
+            this.removeObject(node.name, options);
+          } else {
+            this.deleteNode(node);
+          }
+        }
       } catch (e) {
         // swallow
       }
