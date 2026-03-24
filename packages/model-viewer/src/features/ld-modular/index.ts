@@ -142,39 +142,57 @@ export declare interface LDModularInterface {
   toggleBaseModelVisibility(state?: boolean): void;
 
   setPosition(objectName: string, value: [number, number, number]): void;
+  setPosition(value: [number, number, number]): void;
   setRotation(
     objectName: string,
     anglesDegrees: [number, number, number],
     options?: RotationOptions
   ): void;
+  setRotation(
+    anglesDegrees: [number, number, number],
+    options?: RotationOptions
+  ): void;
   setScale(objectName: string, value: [number, number, number]): void;
+  setScale(value: [number, number, number]): void;
 
   setRotationX(
     objectName: string,
     x: number | string,
     options?: RotationOptions
   ): void;
+  setRotationX(x: number | string, options?: RotationOptions): void;
   setRotationY(
     objectName: string,
     y: number | string,
     options?: RotationOptions
   ): void;
+  setRotationY(y: number | string, options?: RotationOptions): void;
   setRotationZ(
     objectName: string,
     z: number | string,
     options?: RotationOptions
   ): void;
+  setRotationZ(z: number | string, options?: RotationOptions): void;
   setPositionX(objectName: string, x: number): void;
+  setPositionX(x: number): void;
   setPositionY(objectName: string, y: number): void;
+  setPositionY(y: number): void;
   setPositionZ(objectName: string, z: number): void;
+  setPositionZ(z: number): void;
 
   setScaleX(objectName: string, sx: number): void;
+  setScaleX(sx: number): void;
   setScaleY(objectName: string, sy: number): void;
+  setScaleY(sy: number): void;
   setScaleZ(objectName: string, sz: number): void;
+  setScaleZ(sz: number): void;
 
   getPosition(objectName: string): [number, number, number];
+  getPosition(): [number, number, number][];
   getRotation(objectName: string): [number, number, number];
+  getRotation(): [number, number, number][];
   getScale(objectName: string): [number, number, number];
+  getScale(): [number, number, number][];
 
   setSrcFromBuffer(buffer: ArrayBuffer): void;
 
@@ -802,13 +820,57 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     clear() {}
 
-    // private [$updateFramingThrottled] = throttle(async () => {
-    //   await (this as any)[$scene].updateFraming();
-    //   (this as any)[$needsRender]();
-    // }, 400);
+    private _getSelectedRootObjects(): Object3D[] {
+      const selected = (((this as any).selectedObjects || []) as Object3D[])
+        .filter(Boolean);
+      if (selected.length === 0) return [];
+      const selectedSet = new Set<Object3D>(selected);
+      return selected.filter((node) => {
+        let parent: Object3D | null = node.parent as Object3D | null;
+        while (parent) {
+          if (selectedSet.has(parent)) return false;
+          parent = parent.parent as Object3D | null;
+        }
+        return true;
+      });
+    }
 
-    setRotation(
-      name: string,
+    private _resolveObjectByName(name: string): Object3D | null {
+      if (name !== this._currentObject?.name) {
+        this._currentObject = undefined;
+      }
+      if (!this._currentObject) {
+        this._currentObject = (this as any)[$scene].getObjectByName(name);
+      }
+      return (this._currentObject as Object3D) || null;
+    }
+
+    private _getTargetObjects(name?: string): Object3D[] {
+      if (name) {
+        const obj = this._resolveObjectByName(name);
+        return obj ? [obj] : [];
+      }
+      return this._getSelectedRootObjects();
+    }
+
+    private _getRotationFromObject(obj: Object3D): [number, number, number] {
+      return [
+        obj.rotation.x * (180 / Math.PI),
+        obj.rotation.y * (180 / Math.PI),
+        obj.rotation.z * (180 / Math.PI),
+      ];
+    }
+
+    private _getPositionFromObject(obj: Object3D): [number, number, number] {
+      return [obj.position.x, obj.position.y, obj.position.z];
+    }
+
+    private _getScaleFromObject(obj: Object3D): [number, number, number] {
+      return [obj.scale.x, obj.scale.y, obj.scale.z];
+    }
+
+    private _setRotationOnObject(
+      obj: Object3D,
       value: [number | string, number | string, number | string],
       options?: RotationOptions
     ) {
@@ -833,18 +895,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
       }
 
-      if (name !== this._currentObject?.name) {
-        this._currentObject = undefined;
-      }
-
-      if (!this._currentObject) {
-        this._currentObject = (this as any)[$scene].getObjectByName(name);
-      }
-
-      if (!this._currentObject) return;
-
-      const obj = this._currentObject as Object3D;
-
       // If this object is currently animating, ignore any new instructions
       // (prevents competing instructions causing small overshoots when callers
       // spam "+=..." while an animation is running).
@@ -855,14 +905,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Seed current rotation in degrees (fallback to zeros on error).
       // When animating, derive the current rotation from the object's
       // quaternion to avoid races with in-flight animations; otherwise
-      // use getRotation which reads the Euler directly.
+      // use local Euler directly.
       let current: [number, number, number] = [0, 0, 0];
       if (animate) {
         try {
-          const startEuler = new Euler().setFromQuaternion(
-            obj.quaternion,
-            order
-          );
+          const startEuler = new Euler().setFromQuaternion(obj.quaternion, order);
           current = [
             startEuler.x * (180 / Math.PI),
             startEuler.y * (180 / Math.PI),
@@ -873,49 +920,37 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       } else {
         try {
-          current = this.getRotation(name);
+          current = this._getRotationFromObject(obj);
         } catch (e) {
           // keep zeros
         }
       }
 
-      // Parse inputs: detect relative vs absolute for each axis and extract
-      // numeric deltas/values. We'll prefer an incremental-quaternion path when
-      // all non-relative axes match the current rotation (typical for
-      // setRotationX/Y/Z helpers), so repeated "+=90" calls always rotate
-      // in the intended direction.
-
       const parsed: {
         isRelative: boolean;
-        delta?: number; // degrees for relative
-        absolute?: number; // degrees for absolute
+        delta?: number;
+        absolute?: number;
       }[] = [0, 1, 2].map((i) => {
         const input = value[i];
         if (typeof input === 'number') {
           return { isRelative: false, absolute: input };
         }
         const s = String(input).trim();
-        // Relative syntax: "+=90", "-=45" (requires =). Plain "-90" or "90" are absolute.
         const relMatch = s.match(/^([+-])=\s*([+-]?\d+(?:\.\d+)?)$/);
         if (relMatch) {
           const sign = relMatch[1] === '-' ? -1 : 1;
           const val = parseFloat(relMatch[2]);
           return { isRelative: true, delta: sign * val };
         }
-        // Fallback: parse absolute numeric string
         const parsedNum = parseFloat(s);
         if (!Number.isNaN(parsedNum))
           return { isRelative: false, absolute: parsedNum };
         throw new Error(`Invalid rotation input: "${input}"`);
       });
 
-      // Determine if delta-quaternion approach is safe: any relative inputs
-      // AND all absolute inputs match the current rotation (so callers used
-      // helpers that seeded the non-modified axes with current values).
       const hasRelative = parsed.some((p) => p.isRelative);
       const allAbsoluteMatchCurrent = parsed.every((p, i) => {
         if (p.isRelative) return true;
-        // small epsilon to allow floating point differences
         const eps = 1e-6;
         return Math.abs((p.absolute ?? 0) - current[i]) < eps;
       });
@@ -929,9 +964,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         allAbsoluteMatchCurrent &&
         mode !== 'snapToClosest'
       ) {
-        // Build a delta Euler from the relative deltas and convert to a
-        // quaternion. We'll apply this delta to the current quaternion so
-        // the rotation direction matches the sign of the delta.
         const deltaDegs: [number, number, number] = [
           parsed[0].isRelative ? parsed[0].delta! : 0,
           parsed[1].isRelative ? parsed[1].delta! : 0,
@@ -946,10 +978,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         const deltaQuat = new Quaternion().setFromEuler(deltaEuler);
         const startQuat = obj.quaternion.clone();
         endQuat = startQuat.clone().multiply(deltaQuat);
-        // rotation left null because we're animating quaternions directly
       } else {
-        // Compute final absolute degrees for each axis (current + delta for
-        // relative inputs, absolute for absolute inputs; or snap-to-closest when mode is set).
         const finalDegs: [number, number, number] = [0, 1, 2].map((i) => {
           if (!parsed[i].isRelative) return parsed[i].absolute ?? current[i];
           const delta = parsed[i].delta!;
@@ -959,9 +988,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             const ratio = current[i] / step;
             const nearestInt = Math.round(ratio);
             const eps = 1e-6;
-            // If we're already (within epsilon) at an exact multiple, move one step
-            // in the direction of the delta; otherwise snap toward the next/previous
-            // multiple in the sign direction.
             if (Math.abs(ratio - nearestInt) < eps) {
               return current[i] + (delta > 0 ? step : -step);
             }
@@ -982,35 +1008,22 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (!animate) {
-        // Immediate set (existing behavior)
         obj.rotation.copy(rotation!);
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return;
       }
 
-      // Animated path: slerp between current quaternion and target quaternion
       try {
-        // Do not cancel any existing animation here — we already prevented
-        // new instructions from starting while an animation is active. Use
-        // the current quaternion as the start and register an animation
-        // state that will be stepped from [$tick](time, delta). This makes
-        // the animation framerate independent.
         const startQuat = obj.quaternion.clone();
-
         this._rotationAnimationMap.set(
           obj,
           createQuatAnimation(startQuat, endQuat)
         );
-
-        // Ensure we render so [$tick] will be entered and the animation
-        // state will begin progressing on the next frame.
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return;
       } catch (e) {
-        // Fallback to immediate set on error: prefer quaternion end if
-        // available, otherwise use rotation Euler.
         try {
           if (typeof endQuat !== 'undefined') {
             obj.quaternion.copy(endQuat);
@@ -1025,12 +1038,56 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    // private [$updateFramingThrottled] = throttle(async () => {
+    //   await (this as any)[$scene].updateFraming();
+    //   (this as any)[$needsRender]();
+    // }, 400);
+
+    setRotation(
+      name: string,
+      value: [number | string, number | string, number | string],
+      options?: RotationOptions
+    ): void;
+    setRotation(
+      value: [number | string, number | string, number | string],
+      options?: RotationOptions
+    ): void;
+    setRotation(
+      nameOrValue: string | [number | string, number | string, number | string],
+      valueOrOptions?:
+        | [number | string, number | string, number | string]
+        | RotationOptions,
+      options?: RotationOptions
+    ) {
+      const hasName = typeof nameOrValue === 'string';
+      const targetValue = hasName
+        ? (valueOrOptions as [number | string, number | string, number | string])
+        : (nameOrValue as [number | string, number | string, number | string]);
+      const targetOptions = hasName ? options : (valueOrOptions as RotationOptions);
+      const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        this._setRotationOnObject(target, targetValue, targetOptions);
+      }
+    }
+
     /**
      * Convenience: set single rotation axis (degrees) without clobbering others.
      * These call through to `setRotation` after seeding the existing rotation
      * (via `getRotation`) so callers can update one axis at a time.
      */
-    setRotationX(name: string, x: number | string, options?: RotationOptions) {
+    setRotationX(name: string, x: number | string, options?: RotationOptions): void;
+    setRotationX(x: number | string, options?: RotationOptions): void;
+    setRotationX(
+      nameOrX: string | number,
+      xOrOptions?: number | string | RotationOptions,
+      options?: RotationOptions
+    ) {
+      const hasName =
+        typeof nameOrX === 'string' &&
+        (typeof xOrOptions === 'number' || typeof xOrOptions === 'string');
+      const x = (hasName ? xOrOptions : nameOrX) as number | string;
+      const callOptions = (hasName ? options : xOrOptions) as RotationOptions | undefined;
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof x !== 'number' &&
@@ -1038,17 +1095,31 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         throw new Error('Invalid x value for setRotationX');
       }
-      let rot: [number | string, number | string, number | string] = [0, 0, 0];
-      try {
-        rot = this.getRotation(name);
-      } catch (e) {
-        // ignore; fallback to zeros
+      const targets = this._getTargetObjects(hasName ? (nameOrX as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const rot = this._getRotationFromObject(target) as [
+          number | string,
+          number | string,
+          number | string,
+        ];
+        rot[0] = x;
+        this._setRotationOnObject(target, rot, callOptions);
       }
-      rot[0] = x;
-      this.setRotation(name, rot as any, options);
     }
 
-    setRotationY(name: string, y: number | string, options?: RotationOptions) {
+    setRotationY(name: string, y: number | string, options?: RotationOptions): void;
+    setRotationY(y: number | string, options?: RotationOptions): void;
+    setRotationY(
+      nameOrY: string | number,
+      yOrOptions?: number | string | RotationOptions,
+      options?: RotationOptions
+    ) {
+      const hasName =
+        typeof nameOrY === 'string' &&
+        (typeof yOrOptions === 'number' || typeof yOrOptions === 'string');
+      const y = (hasName ? yOrOptions : nameOrY) as number | string;
+      const callOptions = (hasName ? options : yOrOptions) as RotationOptions | undefined;
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof y !== 'number' &&
@@ -1056,17 +1127,31 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         throw new Error('Invalid y value for setRotationY');
       }
-      let rot: [number | string, number | string, number | string] = [0, 0, 0];
-      try {
-        rot = this.getRotation(name);
-      } catch (e) {
-        // ignore; fallback to zeros
+      const targets = this._getTargetObjects(hasName ? (nameOrY as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const rot = this._getRotationFromObject(target) as [
+          number | string,
+          number | string,
+          number | string,
+        ];
+        rot[1] = y;
+        this._setRotationOnObject(target, rot, callOptions);
       }
-      rot[1] = y;
-      this.setRotation(name, rot as any, options);
     }
 
-    setRotationZ(name: string, z: number | string, options?: RotationOptions) {
+    setRotationZ(name: string, z: number | string, options?: RotationOptions): void;
+    setRotationZ(z: number | string, options?: RotationOptions): void;
+    setRotationZ(
+      nameOrZ: string | number,
+      zOrOptions?: number | string | RotationOptions,
+      options?: RotationOptions
+    ) {
+      const hasName =
+        typeof nameOrZ === 'string' &&
+        (typeof zOrOptions === 'number' || typeof zOrOptions === 'string');
+      const z = (hasName ? zOrOptions : nameOrZ) as number | string;
+      const callOptions = (hasName ? options : zOrOptions) as RotationOptions | undefined;
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof z !== 'number' &&
@@ -1074,48 +1159,51 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         throw new Error('Invalid z value for setRotationZ');
       }
-      let rot: [number | string, number | string, number | string] = [0, 0, 0];
-      try {
-        rot = this.getRotation(name);
-      } catch (e) {
-        // ignore; fallback to zeros
+      const targets = this._getTargetObjects(hasName ? (nameOrZ as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const rot = this._getRotationFromObject(target) as [
+          number | string,
+          number | string,
+          number | string,
+        ];
+        rot[2] = z;
+        this._setRotationOnObject(target, rot, callOptions);
       }
-      rot[2] = z;
-      this.setRotation(name, rot as any, options);
     }
 
     /**
      * Set absolute local position (meters) for the named object.
      * value: [x, y, z]
      */
-    setPosition(name: string, value: [number, number, number]) {
+    setPosition(name: string, value: [number, number, number]): void;
+    setPosition(value: [number, number, number]): void;
+    setPosition(
+      nameOrValue: string | [number, number, number],
+      value?: [number, number, number]
+    ) {
+      const hasName = typeof nameOrValue === 'string';
+      const targetValue = hasName
+        ? (value as [number, number, number])
+        : (nameOrValue as [number, number, number]);
       if (
-        !Array.isArray(value) ||
-        value.length !== 3 ||
-        value.some((v) => typeof v !== 'number')
+        !Array.isArray(targetValue) ||
+        targetValue.length !== 3 ||
+        targetValue.some((v) => typeof v !== 'number')
       ) {
         throw new Error(
           'Invalid value array. Expected an array of three numbers representing position [x,y,z].'
         );
       }
-
-      if (name !== this._currentObject?.name) {
-        this._currentObject = undefined;
+      const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        try {
+          target.position.set(targetValue[0], targetValue[1], targetValue[2]);
+        } catch (e) {
+          // ignore invalid sets
+        }
       }
-
-      if (!this._currentObject) {
-        this._currentObject = (this as any)[$scene].getObjectByName(name);
-      }
-
-      if (!this._currentObject) return;
-
-      const obj = this._currentObject as Object3D;
-      try {
-        obj.position.set(value[0], value[1], value[2]);
-      } catch (e) {
-        // ignore invalid sets
-      }
-
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
     }
@@ -1125,80 +1213,95 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setPosition` after seeding the existing
      * position (via `getPosition`) so callers can update one axis at a time.
      */
-    setPositionX(name: string, x: number) {
-      if (typeof x !== 'number' || Number.isNaN(x)) {
+    setPositionX(name: string, x: number): void;
+    setPositionX(x: number): void;
+    setPositionX(nameOrX: string | number, x?: number) {
+      const hasName = typeof nameOrX === 'string' && arguments.length >= 2;
+      const targetX = (hasName ? x : nameOrX) as number;
+      const targets = this._getTargetObjects(hasName ? (nameOrX as string) : undefined);
+      if (typeof targetX !== 'number' || Number.isNaN(targetX)) {
         throw new Error('Invalid x value for setPositionX');
       }
-      let pos: [number, number, number] = [0, 0, 0];
-      try {
-        pos = this.getPosition(name);
-      } catch (e) {
-        // ignore; fallback to zeros
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const pos = this._getPositionFromObject(target);
+        pos[0] = targetX;
+        target.position.set(pos[0], pos[1], pos[2]);
       }
-      pos[0] = x;
-      this.setPosition(name, pos);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
-    setPositionY(name: string, y: number) {
-      if (typeof y !== 'number' || Number.isNaN(y)) {
+    setPositionY(name: string, y: number): void;
+    setPositionY(y: number): void;
+    setPositionY(nameOrY: string | number, y?: number) {
+      const hasName = typeof nameOrY === 'string' && arguments.length >= 2;
+      const targetY = (hasName ? y : nameOrY) as number;
+      if (typeof targetY !== 'number' || Number.isNaN(targetY)) {
         throw new Error('Invalid y value for setPositionY');
       }
-      let pos: [number, number, number] = [0, 0, 0];
-      try {
-        pos = this.getPosition(name);
-      } catch (e) {
-        // ignore; fallback to zeros
+      const targets = this._getTargetObjects(hasName ? (nameOrY as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const pos = this._getPositionFromObject(target);
+        pos[1] = targetY;
+        target.position.set(pos[0], pos[1], pos[2]);
       }
-      pos[1] = y;
-      this.setPosition(name, pos);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
-    setPositionZ(name: string, z: number) {
-      if (typeof z !== 'number' || Number.isNaN(z)) {
+    setPositionZ(name: string, z: number): void;
+    setPositionZ(z: number): void;
+    setPositionZ(nameOrZ: string | number, z?: number) {
+      const hasName = typeof nameOrZ === 'string' && arguments.length >= 2;
+      const targetZ = (hasName ? z : nameOrZ) as number;
+      if (typeof targetZ !== 'number' || Number.isNaN(targetZ)) {
         throw new Error('Invalid z value for setPositionZ');
       }
-      let pos: [number, number, number] = [0, 0, 0];
-      try {
-        pos = this.getPosition(name);
-      } catch (e) {
-        // ignore; fallback to zeros
+      const targets = this._getTargetObjects(hasName ? (nameOrZ as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const pos = this._getPositionFromObject(target);
+        pos[2] = targetZ;
+        target.position.set(pos[0], pos[1], pos[2]);
       }
-      pos[2] = z;
-      this.setPosition(name, pos);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
     /**
      * Set absolute local scale for the named object.
      * value: [sx, sy, sz]
      */
-    setScale(name: string, value: [number, number, number]) {
+    setScale(name: string, value: [number, number, number]): void;
+    setScale(value: [number, number, number]): void;
+    setScale(
+      nameOrValue: string | [number, number, number],
+      value?: [number, number, number]
+    ) {
+      const hasName = typeof nameOrValue === 'string';
+      const targetValue = hasName
+        ? (value as [number, number, number])
+        : (nameOrValue as [number, number, number]);
       if (
-        !Array.isArray(value) ||
-        value.length !== 3 ||
-        value.some((v) => typeof v !== 'number')
+        !Array.isArray(targetValue) ||
+        targetValue.length !== 3 ||
+        targetValue.some((v) => typeof v !== 'number')
       ) {
         throw new Error(
           'Invalid value array. Expected an array of three numbers representing scale [sx,sy,sz].'
         );
       }
-
-      if (name !== this._currentObject?.name) {
-        this._currentObject = undefined;
+      const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        try {
+          target.scale.set(targetValue[0], targetValue[1], targetValue[2]);
+        } catch (e) {
+          // ignore invalid sets (e.g., zero/NaN)
+        }
       }
-
-      if (!this._currentObject) {
-        this._currentObject = (this as any)[$scene].getObjectByName(name);
-      }
-
-      if (!this._currentObject) return;
-
-      const obj = this._currentObject as Object3D;
-      try {
-        obj.scale.set(value[0], value[1], value[2]);
-      } catch (e) {
-        // ignore invalid sets (e.g., zero/NaN)
-      }
-
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
     }
@@ -1208,100 +1311,106 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setScale` after seeding the existing
      * scale (via `getScale`) so callers can update one axis at a time.
      */
-    setScaleX(name: string, sx: number) {
-      if (typeof sx !== 'number' || Number.isNaN(sx)) {
+    setScaleX(name: string, sx: number): void;
+    setScaleX(sx: number): void;
+    setScaleX(nameOrSx: string | number, sx?: number) {
+      const hasName = typeof nameOrSx === 'string' && arguments.length >= 2;
+      const targetSx = (hasName ? sx : nameOrSx) as number;
+      if (typeof targetSx !== 'number' || Number.isNaN(targetSx)) {
         throw new Error('Invalid sx value for setScaleX');
       }
-      let s: [number, number, number] = [1, 1, 1];
-      try {
-        s = this.getScale(name);
-      } catch (e) {
-        // ignore; fallback to ones
+      const targets = this._getTargetObjects(hasName ? (nameOrSx as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const s = this._getScaleFromObject(target);
+        s[0] = targetSx;
+        target.scale.set(s[0], s[1], s[2]);
       }
-      s[0] = sx;
-      this.setScale(name, s);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
-    setScaleY(name: string, sy: number) {
-      if (typeof sy !== 'number' || Number.isNaN(sy)) {
+    setScaleY(name: string, sy: number): void;
+    setScaleY(sy: number): void;
+    setScaleY(nameOrSy: string | number, sy?: number) {
+      const hasName = typeof nameOrSy === 'string' && arguments.length >= 2;
+      const targetSy = (hasName ? sy : nameOrSy) as number;
+      if (typeof targetSy !== 'number' || Number.isNaN(targetSy)) {
         throw new Error('Invalid sy value for setScaleY');
       }
-      let s: [number, number, number] = [1, 1, 1];
-      try {
-        s = this.getScale(name);
-      } catch (e) {
-        // ignore; fallback to ones
+      const targets = this._getTargetObjects(hasName ? (nameOrSy as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const s = this._getScaleFromObject(target);
+        s[1] = targetSy;
+        target.scale.set(s[0], s[1], s[2]);
       }
-      s[1] = sy;
-      this.setScale(name, s);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
-    setScaleZ(name: string, sz: number) {
-      if (typeof sz !== 'number' || Number.isNaN(sz)) {
+    setScaleZ(name: string, sz: number): void;
+    setScaleZ(sz: number): void;
+    setScaleZ(nameOrSz: string | number, sz?: number) {
+      const hasName = typeof nameOrSz === 'string' && arguments.length >= 2;
+      const targetSz = (hasName ? sz : nameOrSz) as number;
+      if (typeof targetSz !== 'number' || Number.isNaN(targetSz)) {
         throw new Error('Invalid sz value for setScaleZ');
       }
-      let s: [number, number, number] = [1, 1, 1];
-      try {
-        s = this.getScale(name);
-      } catch (e) {
-        // ignore; fallback to ones
+      const targets = this._getTargetObjects(hasName ? (nameOrSz as string) : undefined);
+      if (targets.length === 0) return;
+      for (const target of targets) {
+        const s = this._getScaleFromObject(target);
+        s[2] = targetSz;
+        target.scale.set(s[0], s[1], s[2]);
       }
-      s[2] = sz;
-      this.setScale(name, s);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
-    getRotation(name: string): [number, number, number] {
-      if (name !== this._currentObject?.name) {
-        this._currentObject = undefined;
+    getRotation(name: string): [number, number, number];
+    getRotation(): [number, number, number][];
+    getRotation(name?: string): [number, number, number] | [number, number, number][] {
+      if (typeof name === 'string') {
+        const obj = this._resolveObjectByName(name);
+        if (!obj) {
+          throw new Error(`Object with name "${name}" not found.`);
+        }
+        return this._getRotationFromObject(obj);
       }
-      if (!this._currentObject) {
-        this._currentObject = (this as any)[$scene].getObjectByName(name);
-      }
-      if (!this._currentObject) {
-        throw new Error(`Object with name "${name}" not found.`);
-      }
-
-      return [
-        this._currentObject.rotation.x * (180 / Math.PI),
-        this._currentObject.rotation.y * (180 / Math.PI),
-        this._currentObject.rotation.z * (180 / Math.PI),
-      ];
+      return this._getSelectedRootObjects().map((obj) =>
+        this._getRotationFromObject(obj)
+      );
     }
 
-    getPosition(name: string): [number, number, number] {
-      if (name !== this._currentObject?.name) {
-        this._currentObject = undefined;
+    getPosition(name: string): [number, number, number];
+    getPosition(): [number, number, number][];
+    getPosition(name?: string): [number, number, number] | [number, number, number][] {
+      if (typeof name === 'string') {
+        const obj = this._resolveObjectByName(name);
+        if (!obj) {
+          throw new Error(`Object with name "${name}" not found.`);
+        }
+        return this._getPositionFromObject(obj);
       }
-      if (!this._currentObject) {
-        this._currentObject = (this as any)[$scene].getObjectByName(name);
-      }
-      if (!this._currentObject) {
-        throw new Error(`Object with name "${name}" not found.`);
-      }
-
-      return [
-        this._currentObject.position.x,
-        this._currentObject.position.y,
-        this._currentObject.position.z,
-      ];
+      return this._getSelectedRootObjects().map((obj) =>
+        this._getPositionFromObject(obj)
+      );
     }
 
-    getScale(name: string): [number, number, number] {
-      if (name !== this._currentObject?.name) {
-        this._currentObject = undefined;
+    getScale(name: string): [number, number, number];
+    getScale(): [number, number, number][];
+    getScale(name?: string): [number, number, number] | [number, number, number][] {
+      if (typeof name === 'string') {
+        const obj = this._resolveObjectByName(name);
+        if (!obj) {
+          throw new Error(`Object with name "${name}" not found.`);
+        }
+        return this._getScaleFromObject(obj);
       }
-      if (!this._currentObject) {
-        this._currentObject = (this as any)[$scene].getObjectByName(name);
-      }
-      if (!this._currentObject) {
-        throw new Error(`Object with name "${name}" not found.`);
-      }
-
-      return [
-        this._currentObject.scale.x,
-        this._currentObject.scale.y,
-        this._currentObject.scale.z,
-      ];
+      return this._getSelectedRootObjects().map((obj) =>
+        this._getScaleFromObject(obj)
+      );
     }
 
     /* Remove draco compression from a glb

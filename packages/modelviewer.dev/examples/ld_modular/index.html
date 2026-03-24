@@ -979,13 +979,9 @@
                         rotateLeftButton.addEventListener('click', (e) => {
                           e.stopPropagation();
 
-                          const { name } = getObjectFromControlStrip() || {};
-                          if (name) {
-                            modelViewer.setRotationY(name, `+=90`, {
-                              animate: true,
-                            });
-                            return;
-                          }
+                          modelViewer.setRotationY(`+=90`, {
+                            animate: true,
+                          });
                         });
                         rotateLeftButton.addEventListener('mouseup', (e) => {
                           e.stopPropagation();
@@ -998,13 +994,9 @@
                         rotateRightButton.addEventListener('click', (e) => {
                           e.stopPropagation();
 
-                          const { name } = getObjectFromControlStrip() || {};
-                          if (name) {
-                            modelViewer.setRotationY(name, `-=90`, {
-                              animate: true,
-                            });
-                            return;
-                          }
+                          modelViewer.setRotationY(`-=90`, {
+                            animate: true,
+                          });
                         });
                         rotateRightButton.addEventListener('mouseup', (e) => {
                           e.stopPropagation();
