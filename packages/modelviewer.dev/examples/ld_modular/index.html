@@ -530,10 +530,6 @@
 
                       const getActiveTransformProperty = (eventName, detail) => {
                         if (!detail) return activeTransformProperty;
-                        if (eventName === 'transformstart') {
-                          // Keep previous detected property for continuity until first delta arrives.
-                          return activeTransformProperty;
-                        }
                         const properties = ['position', 'rotation', 'scale'];
                         let bestProperty = activeTransformProperty;
                         let bestDelta = -1;
@@ -544,6 +540,33 @@
                             bestProperty = prop;
                           }
                         });
+                        // If no deltas are detectable and we already have prior state,
+                        // keep the active property to avoid flipping labels at zero crossings.
+                        if (bestDelta <= 1e-9) {
+                          if (previousTransformDetail) {
+                            return activeTransformProperty;
+                          }
+                          // First event fallback: infer from absolute distance to defaults.
+                          const defaults = {
+                            position: [0, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          };
+                          let bestAbs = -1;
+                          properties.forEach((prop) => {
+                            const arr = Array.isArray(detail[prop])
+                              ? detail[prop]
+                              : defaults[prop];
+                            const absDelta =
+                              Math.abs(Number(arr[0] ?? 0) - defaults[prop][0]) +
+                              Math.abs(Number(arr[1] ?? 0) - defaults[prop][1]) +
+                              Math.abs(Number(arr[2] ?? 0) - defaults[prop][2]);
+                            if (absDelta > bestAbs) {
+                              bestAbs = absDelta;
+                              bestProperty = prop;
+                            }
+                          });
+                        }
                         return bestProperty;
                       };
 

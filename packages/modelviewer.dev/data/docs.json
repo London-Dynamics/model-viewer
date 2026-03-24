@@ -1886,6 +1886,32 @@
         "htmlName": "getPlacementTree",
         "description": "Returns a structured representation of the current scene's placed objects and groups, formatted as a tree. This includes object names, UUIDs, transforms, and group hierarchy, reflecting the logical assembly as seen by the user."
       }
+    ],
+    "Events": [
+      {
+        "name": "transformstart",
+        "htmlName": "transformstart",
+        "description": "Dispatched when a transform operation begins (dragging or API-driven transforms such as setPosition/setRotation/setScale). event.detail includes the current transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "transform",
+        "htmlName": "transform",
+        "description": "Dispatched continuously while a transform is being applied. event.detail contains the current transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "transformend",
+        "htmlName": "transformend",
+        "description": "Dispatched when an in-progress transform operation ends. event.detail includes the final transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ]
+      }
     ]
   }
 ]

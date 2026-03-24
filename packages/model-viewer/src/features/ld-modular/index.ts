@@ -766,13 +766,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const scene = this[$scene];
       const results: PlacementGraphNode[] = [];
 
-      function extractData(obj: Object3D): PlacementGraphNode {
+      const extractData = (obj: Object3D): PlacementGraphNode => {
         const isGroup = !!obj.userData?.isSnappedGroup;
         return {
           name: obj.name,
           uuid: obj.uuid,
           position: obj.position.clone(),
-          rotation: obj.rotation.clone(),
+          rotation: this._getPlacementTreeRotationFromObject(obj),
           scale: obj.scale.clone(),
           part: obj.userData?.part,
           snappingPoints: obj.userData?.snappingPoints,
@@ -780,7 +780,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             children: obj.children.map((child) => extractData(child)),
           }),
         };
-      }
+      };
 
       const root = scene.target || scene;
       // First, collect all group objects and their children
@@ -864,11 +864,59 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _getRotationFromObject(obj: Object3D): [number, number, number] {
+      const logical = this._getLogicalRotationFromObject(obj);
+      if (logical) {
+        return logical;
+      }
       return [
         obj.rotation.x * (180 / Math.PI),
         obj.rotation.y * (180 / Math.PI),
         obj.rotation.z * (180 / Math.PI),
       ];
+    }
+
+    private _getLogicalRotationFromObject(
+      obj: Object3D
+    ): [number, number, number] | null {
+      const raw = obj.userData?.ldLogicalRotationDeg;
+      if (
+        Array.isArray(raw) &&
+        raw.length === 3 &&
+        raw.every((v) => typeof v === 'number' && Number.isFinite(v))
+      ) {
+        return [raw[0], raw[1], raw[2]];
+      }
+      return null;
+    }
+
+    private _setLogicalRotationOnObject(
+      obj: Object3D,
+      value: [number, number, number]
+    ) {
+      const normalizeAngleDeg = (deg: number) => {
+        // Keep output stable within [-180, 180) for API/event consumers.
+        const normalized = ((deg % 360) + 360) % 360;
+        return normalized >= 180 ? normalized - 360 : normalized;
+      };
+      obj.userData = obj.userData || {};
+      obj.userData.ldLogicalRotationDeg = [
+        normalizeAngleDeg(value[0]),
+        normalizeAngleDeg(value[1]),
+        normalizeAngleDeg(value[2]),
+      ];
+    }
+
+    private _getPlacementTreeRotationFromObject(obj: Object3D): Euler {
+      const logical = this._getLogicalRotationFromObject(obj);
+      if (!logical) {
+        return obj.rotation.clone();
+      }
+      return new Euler(
+        logical[0] * (Math.PI / 180),
+        logical[1] * (Math.PI / 180),
+        logical[2] * (Math.PI / 180),
+        obj.rotation.order
+      );
     }
 
     private _getPositionFromObject(obj: Object3D): [number, number, number] {
@@ -936,7 +984,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       // quaternion to avoid races with in-flight animations; otherwise
       // use local Euler directly.
       let current: [number, number, number] = [0, 0, 0];
-      if (animate) {
+      const logicalCurrent = this._getLogicalRotationFromObject(obj);
+      if (logicalCurrent) {
+        current = logicalCurrent;
+      } else if (animate) {
         try {
           const startEuler = new Euler().setFromQuaternion(obj.quaternion, order);
           current = [
@@ -984,6 +1035,23 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return Math.abs((p.absolute ?? 0) - current[i]) < eps;
       });
 
+      const finalDegs: [number, number, number] = [0, 1, 2].map((i) => {
+        if (!parsed[i].isRelative) return parsed[i].absolute ?? current[i];
+        const delta = parsed[i].delta!;
+        if (mode === 'snapToClosest') {
+          const step = Math.abs(delta);
+          if (step === 0) return current[i];
+          const ratio = current[i] / step;
+          const nearestInt = Math.round(ratio);
+          const eps = 1e-6;
+          if (Math.abs(ratio - nearestInt) < eps) {
+            return current[i] + (delta > 0 ? step : -step);
+          }
+          return delta > 0 ? Math.ceil(ratio) * step : Math.floor(ratio) * step;
+        }
+        return current[i] + delta;
+      }) as [number, number, number];
+
       let endQuat: Quaternion;
       let rotation: Euler | null = null;
 
@@ -1008,25 +1076,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         const startQuat = obj.quaternion.clone();
         endQuat = startQuat.clone().multiply(deltaQuat);
       } else {
-        const finalDegs: [number, number, number] = [0, 1, 2].map((i) => {
-          if (!parsed[i].isRelative) return parsed[i].absolute ?? current[i];
-          const delta = parsed[i].delta!;
-          if (mode === 'snapToClosest') {
-            const step = Math.abs(delta);
-            if (step === 0) return current[i];
-            const ratio = current[i] / step;
-            const nearestInt = Math.round(ratio);
-            const eps = 1e-6;
-            if (Math.abs(ratio - nearestInt) < eps) {
-              return current[i] + (delta > 0 ? step : -step);
-            }
-            return delta > 0
-              ? Math.ceil(ratio) * step
-              : Math.floor(ratio) * step;
-          }
-          return current[i] + delta;
-        }) as [number, number, number];
-
         rotation = new Euler(
           finalDegs[0] * (Math.PI / 180),
           finalDegs[1] * (Math.PI / 180),
@@ -1035,6 +1084,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
         endQuat = new Quaternion().setFromEuler(rotation);
       }
+
+      this._setLogicalRotationOnObject(obj, finalDegs);
 
       if (!animate) {
         this._dispatchTransformEvent('transformstart', obj);
