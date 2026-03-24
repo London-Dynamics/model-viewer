@@ -235,6 +235,12 @@
                       <color-grade-effect></color-grade-effect>
                     </effect-composer>
                     <div
+                      id="placeglb-transform-events"
+                      class="absolute left-2 top-2 z-30 pointer-events-none rounded-md bg-black/70 px-3 py-2 text-xs text-white whitespace-pre font-mono"
+                    >
+                      transform: idle
+                    </div>
+                    <div
                       class="absolute bottom-0 inset-x-0 p-2"
                       id="control-panel"
                     >
@@ -500,6 +506,102 @@
                     (() => {
                       const modelViewer =
                         document.querySelector('#modular-demo');
+                      const transformEventLabel = document.getElementById(
+                        'placeglb-transform-events'
+                      );
+                      let previousTransformDetail = null;
+                      let activeTransformProperty = 'position';
+
+                      const getPropertyDelta = (detail, prop) => {
+                        const current = Array.isArray(detail?.[prop])
+                          ? detail[prop]
+                          : [];
+                        const previous = Array.isArray(previousTransformDetail?.[prop])
+                          ? previousTransformDetail[prop]
+                          : [];
+                        let totalDelta = 0;
+                        for (let i = 0; i < 3; i++) {
+                          const currentValue = Number(current[i] ?? 0);
+                          const previousValue = Number(previous[i] ?? currentValue);
+                          totalDelta += Math.abs(currentValue - previousValue);
+                        }
+                        return totalDelta;
+                      };
+
+                      const getActiveTransformProperty = (eventName, detail) => {
+                        if (!detail) return activeTransformProperty;
+                        if (eventName === 'transformstart') {
+                          // Keep previous detected property for continuity until first delta arrives.
+                          return activeTransformProperty;
+                        }
+                        const properties = ['position', 'rotation', 'scale'];
+                        let bestProperty = activeTransformProperty;
+                        let bestDelta = -1;
+                        properties.forEach((prop) => {
+                          const delta = getPropertyDelta(detail, prop);
+                          if (delta > bestDelta) {
+                            bestDelta = delta;
+                            bestProperty = prop;
+                          }
+                        });
+                        return bestProperty;
+                      };
+
+                      const formatTransform = (eventName, detail, activeProperty) => {
+                        if (!detail) return `${eventName}\n(no payload)`;
+                        const toTriplet = (values, fallback) => {
+                          const arr = Array.isArray(values) ? values : fallback;
+                          return arr
+                            .slice(0, 3)
+                            .map((val) => Number(val).toFixed(3))
+                            .join(', ');
+                        };
+                        const fallback =
+                          activeProperty === 'scale' ? [1, 1, 1] : [0, 0, 0];
+                        return [
+                          eventName,
+                          `${activeProperty}: ${toTriplet(
+                            detail[activeProperty],
+                            fallback
+                          )}`,
+                        ].join('\n');
+                      };
+
+                      const updateTransformLabel = (eventName, detail) => {
+                        if (!transformEventLabel) return;
+                        activeTransformProperty = getActiveTransformProperty(
+                          eventName,
+                          detail
+                        );
+                        transformEventLabel.textContent = formatTransform(
+                          eventName,
+                          detail,
+                          activeTransformProperty
+                        );
+                        if (detail) {
+                          previousTransformDetail = {
+                            position: Array.isArray(detail.position)
+                              ? [...detail.position]
+                              : [0, 0, 0],
+                            rotation: Array.isArray(detail.rotation)
+                              ? [...detail.rotation]
+                              : [0, 0, 0],
+                            scale: Array.isArray(detail.scale)
+                              ? [...detail.scale]
+                              : [1, 1, 1],
+                          };
+                        }
+                      };
+
+                      modelViewer.addEventListener('transformstart', (event) => {
+                        updateTransformLabel('transformstart', event.detail);
+                      });
+                      modelViewer.addEventListener('transform', (event) => {
+                        updateTransformLabel('transform', event.detail);
+                      });
+                      modelViewer.addEventListener('transformend', (event) => {
+                        updateTransformLabel('transformend', event.detail);
+                      });
 
                       const relativeMouseCoordinates = (e) => {
                         const rect = modelViewer.getBoundingClientRect();

@@ -597,9 +597,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       // is used to advance animations by real time rather than frame count.
       try {
         // Step registered quaternion animations (delta is in ms)
-        const rotBefore = this._rotationAnimationMap.size;
+        const animatingBefore = new Set(this._rotationAnimationMap.keys());
+        const rotBefore = animatingBefore.size;
         stepQuatAnimations(this._rotationAnimationMap, delta);
-        const rotAfter = this._rotationAnimationMap.size;
+        const animatingAfter = new Set(this._rotationAnimationMap.keys());
+        const rotAfter = animatingAfter.size;
+        for (const obj of animatingAfter) {
+          this._dispatchTransformEvent('transform', obj);
+        }
+        for (const obj of animatingBefore) {
+          if (!animatingAfter.has(obj)) {
+            this._dispatchTransformEvent('transformend', obj);
+          }
+        }
 
         const explosionsUpdated = stepExplosionFragments((this as any)[$scene]);
 
@@ -869,6 +879,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return [obj.scale.x, obj.scale.y, obj.scale.z];
     }
 
+    private _dispatchTransformEvent(
+      type: 'transformstart' | 'transform' | 'transformend',
+      object: Object3D
+    ) {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent(type, {
+            detail: {
+              position: this._getPositionFromObject(object),
+              rotation: this._getRotationFromObject(object),
+              scale: this._getScaleFromObject(object),
+            },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      } catch (e) {}
+    }
+
     private _setRotationOnObject(
       obj: Object3D,
       value: [number | string, number | string, number | string],
@@ -1008,7 +1037,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (!animate) {
+        this._dispatchTransformEvent('transformstart', obj);
         obj.rotation.copy(rotation!);
+        this._dispatchTransformEvent('transform', obj);
+        this._dispatchTransformEvent('transformend', obj);
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return;
@@ -1020,6 +1052,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           obj,
           createQuatAnimation(startQuat, endQuat)
         );
+        this._dispatchTransformEvent('transformstart', obj);
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return;
@@ -1033,6 +1066,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch (err) {
           // ignore
         }
+        this._dispatchTransformEvent('transformstart', obj);
+        this._dispatchTransformEvent('transform', obj);
+        this._dispatchTransformEvent('transformend', obj);
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
       }
@@ -1198,10 +1234,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
+        let didMutate = false;
         try {
           target.position.set(targetValue[0], targetValue[1], targetValue[2]);
+          didMutate = true;
         } catch (e) {
           // ignore invalid sets
+        }
+        if (didMutate) {
+          this._dispatchTransformEvent('transform', target);
+          this._dispatchTransformEvent('transformend', target);
         }
       }
       this.requestShadowUpdate();
@@ -1224,9 +1267,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
         const pos = this._getPositionFromObject(target);
         pos[0] = targetX;
         target.position.set(pos[0], pos[1], pos[2]);
+        this._dispatchTransformEvent('transform', target);
+        this._dispatchTransformEvent('transformend', target);
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1243,9 +1289,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrY as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
         const pos = this._getPositionFromObject(target);
         pos[1] = targetY;
         target.position.set(pos[0], pos[1], pos[2]);
+        this._dispatchTransformEvent('transform', target);
+        this._dispatchTransformEvent('transformend', target);
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1262,9 +1311,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrZ as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
         const pos = this._getPositionFromObject(target);
         pos[2] = targetZ;
         target.position.set(pos[0], pos[1], pos[2]);
+        this._dispatchTransformEvent('transform', target);
+        this._dispatchTransformEvent('transformend', target);
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1296,10 +1348,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
+        let didMutate = false;
         try {
           target.scale.set(targetValue[0], targetValue[1], targetValue[2]);
+          didMutate = true;
         } catch (e) {
           // ignore invalid sets (e.g., zero/NaN)
+        }
+        if (didMutate) {
+          this._dispatchTransformEvent('transform', target);
+          this._dispatchTransformEvent('transformend', target);
         }
       }
       this.requestShadowUpdate();
@@ -1322,9 +1381,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrSx as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
         const s = this._getScaleFromObject(target);
         s[0] = targetSx;
         target.scale.set(s[0], s[1], s[2]);
+        this._dispatchTransformEvent('transform', target);
+        this._dispatchTransformEvent('transformend', target);
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1341,9 +1403,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrSy as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
         const s = this._getScaleFromObject(target);
         s[1] = targetSy;
         target.scale.set(s[0], s[1], s[2]);
+        this._dispatchTransformEvent('transform', target);
+        this._dispatchTransformEvent('transformend', target);
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1360,9 +1425,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const targets = this._getTargetObjects(hasName ? (nameOrSz as string) : undefined);
       if (targets.length === 0) return;
       for (const target of targets) {
+        this._dispatchTransformEvent('transformstart', target);
         const s = this._getScaleFromObject(target);
         s[2] = targetSz;
         target.scale.set(s[0], s[1], s[2]);
+        this._dispatchTransformEvent('transform', target);
+        this._dispatchTransformEvent('transformend', target);
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -2944,6 +3012,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       (this as any).isDragging = true;
+      if (this._currentDragTarget || (this as any).selectedObjects?.[0]) {
+        const transformTarget =
+          this._currentDragTarget || (this as any).selectedObjects[0];
+        this._dispatchTransformEvent('transformstart', transformTarget);
+      }
       this.dragStartMousePosition.copy(this.currentMousePosition);
       try {
         if (this._currentDragTarget) {
@@ -3099,6 +3172,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.updateSnappingPointSlots();
         } catch (e) {}
 
+        this._dispatchTransformEvent('transform', object);
+
         // Dispatch event so other mixins (like measure) can update
         (this as any).dispatchEvent(
           new CustomEvent('object-drag', {
@@ -3118,6 +3193,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
+      const dragTarget = this._currentDragTarget || (this as any).selectedObjects?.[0];
       this._removeWindowDragListeners();
       (this as any).isDragging = false;
 
@@ -3178,6 +3254,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.completeSnapConnection(this.pendingSnapConnection);
         } catch (e) {}
         this.pendingSnapConnection = null;
+      }
+
+      if (dragTarget) {
+        this._dispatchTransformEvent('transformend', dragTarget);
       }
 
       // update shadows/bbox after drag ends / reparenting done
