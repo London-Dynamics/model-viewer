@@ -22,6 +22,11 @@ export interface ClickDetails {
   mesh?: string;
 }
 
+export interface CameraTypeChangeDetails {
+  from: CameraType;
+  to: CameraType;
+}
+
 type CameraMeta = {
   metadata: object;
   object: {
@@ -133,6 +138,30 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
+      // Ensure the underlying camera class matches the incoming payload before
+      // any controls-state restore path, since switching camera type replaces
+      // camera/control instances.
+      let desiredType: CameraType | null = null;
+      const typeValue = data.cameraType ?? data.type;
+
+      if (typeof typeValue === 'string') {
+        if (typeValue === 'perspective' || typeValue === 'orthographic') {
+          desiredType = typeValue;
+        } else if (typeValue === 'PerspectiveCamera') {
+          desiredType = 'perspective';
+        } else if (typeValue === 'OrthographicCamera') {
+          desiredType = 'orthographic';
+        }
+      }
+
+      if (
+        desiredType &&
+        typeof scene.getCameraType === 'function' &&
+        scene.getCameraType() !== desiredType
+      ) {
+        this.setCameraType(desiredType);
+      }
+
       // If this JSON came from our own getCameraJSON, prefer restoring the
       // CameraControls state directly for a perfect round-trip (no flips or
       // drift), and let CameraControls drive the three.js camera.
@@ -176,28 +205,6 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      // 1. Ensure the underlying three.js camera matches the requested type
-      let desiredType: CameraType | null = null;
-      const typeValue = data.cameraType ?? data.type;
-
-      if (typeof typeValue === 'string') {
-        if (typeValue === 'perspective' || typeValue === 'orthographic') {
-          desiredType = typeValue;
-        } else if (typeValue === 'PerspectiveCamera') {
-          desiredType = 'perspective';
-        } else if (typeValue === 'OrthographicCamera') {
-          desiredType = 'orthographic';
-        }
-      }
-
-      if (
-        desiredType &&
-        typeof scene.getCameraType === 'function' &&
-        scene.getCameraType() !== desiredType
-      ) {
-        this.setCameraType(desiredType);
-      }
-
       const camera: any = scene.camera;
       if (!camera) {
         return;
@@ -208,7 +215,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         const m = new Matrix4().fromArray(data.matrix);
         camera.matrixAutoUpdate = false;
         camera.matrix.copy(m);
-        camera.matrix.decompose(camera.position, camera.quaternion, camera.scale);
+        camera.matrix.decompose(
+          camera.position,
+          camera.quaternion,
+          camera.scale
+        );
       } else {
         if (Array.isArray(data.position) && data.position.length === 3) {
           camera.position.fromArray(data.position);
@@ -433,7 +444,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           object.target = worldTarget.toArray();
         }
       }
-      if (object.target == null && scene?.boundingBox && !scene.boundingBox.isEmpty()) {
+      if (
+        object.target == null &&
+        scene?.boundingBox &&
+        !scene.boundingBox.isEmpty()
+      ) {
         const center = scene.boundingBox.getCenter(new Vector3());
         object.target = [center.x, center.y, center.z];
       }
@@ -472,8 +487,9 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     setCameraType(type: CameraType) {
       const scene = this[$scene];
-      console.log('setCameraType called', type);
-      if (scene.getCameraType() === type) {
+      const previousType = scene.getCameraType();
+
+      if (previousType === type) {
         return;
       }
 
@@ -543,6 +559,15 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (gizmoHandle) {
         gizmoHandle.updateCamera(scene.camera);
       }
+
+      this.dispatchEvent(
+        new CustomEvent<CameraTypeChangeDetails>('camera-type-change', {
+          detail: {
+            from: previousType,
+            to: type,
+          },
+        })
+      );
 
       this[$needsRender]();
     }
