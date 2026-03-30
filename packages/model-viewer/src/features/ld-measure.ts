@@ -436,19 +436,24 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Calculate line widths in world units based on screen pixels
       // Approximate: 1 pixel ≈ 0.001 meters at typical viewing distances
       const minorLineWidth = 0.01;
-      const majorLineWidth = 0.015;
+      const majorLineWidth = 0.01;
+      const originLineWidth = 0.015;
 
-      // Use thin rectangular meshes instead of lines for precise width control
       const minorMaterial = new MeshBasicMaterial({
-        color: 0xd6d3d1,
+        color: 'rgb(214, 211, 209)',
 
         depthTest: true,
         depthWrite: false,
       });
 
       const majorMaterial = new MeshBasicMaterial({
-        color: 0xa8a29e,
+        color: 'rgb(168, 162, 158)',
 
+        depthTest: true,
+        depthWrite: false,
+      });
+      const originMaterial = new MeshBasicMaterial({
+        color: 'rgb(120, 113, 108)',
         depthTest: true,
         depthWrite: false,
       });
@@ -468,6 +473,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         majorLineWidth,
         gridLength
       );
+      const originVerticalGeometry = new PlaneGeometry(
+        originLineWidth,
+        gridLength
+      );
       const minorHorizontalGeometry = new PlaneGeometry(
         gridLength,
         minorLineWidth
@@ -475,6 +484,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       const majorHorizontalGeometry = new PlaneGeometry(
         gridLength,
         majorLineWidth
+      );
+      const originHorizontalGeometry = new PlaneGeometry(
+        gridLength,
+        originLineWidth
       );
 
       // Create vertical lines (parallel to Z axis) using thin rectangles
@@ -487,11 +500,18 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           const isMajor =
             this.gridMajor > 0 &&
             Math.abs(x / majorSpacing - Math.round(x / majorSpacing)) < 1e-6;
+          const isOrigin = Math.abs(x) < 1e-6;
 
-          const material = isMajor ? majorMaterial : minorMaterial;
-          const geometry = isMajor
-            ? majorVerticalGeometry
-            : minorVerticalGeometry;
+          const material = isOrigin
+            ? originMaterial
+            : isMajor
+              ? majorMaterial
+              : minorMaterial;
+          const geometry = isOrigin
+            ? originVerticalGeometry
+            : isMajor
+              ? majorVerticalGeometry
+              : minorVerticalGeometry;
 
           // Reuse shared geometry and material
           const mesh = new Mesh(geometry, material);
@@ -515,7 +535,12 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           x <= endX;
           x += majorSpacing
         ) {
-          const mesh = new Mesh(majorVerticalGeometry, majorMaterial);
+          const isOrigin = Math.abs(x) < 1e-6;
+          const geometry = isOrigin
+            ? originVerticalGeometry
+            : majorVerticalGeometry;
+          const material = isOrigin ? originMaterial : majorMaterial;
+          const mesh = new Mesh(geometry, material);
           mesh.position.set(x, gridY, 0);
           mesh.rotation.x = -Math.PI / 2;
 
@@ -538,11 +563,18 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           const isMajor =
             this.gridMajor > 0 &&
             Math.abs(z / majorSpacing - Math.round(z / majorSpacing)) < 1e-6;
+          const isOrigin = Math.abs(z) < 1e-6;
 
-          const material = isMajor ? majorMaterial : minorMaterial;
-          const geometry = isMajor
-            ? majorHorizontalGeometry
-            : minorHorizontalGeometry;
+          const material = isOrigin
+            ? originMaterial
+            : isMajor
+              ? majorMaterial
+              : minorMaterial;
+          const geometry = isOrigin
+            ? originHorizontalGeometry
+            : isMajor
+              ? majorHorizontalGeometry
+              : minorHorizontalGeometry;
 
           // Reuse shared geometry and material
           const mesh = new Mesh(geometry, material);
@@ -566,7 +598,12 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           z <= endZ;
           z += majorSpacing
         ) {
-          const mesh = new Mesh(majorHorizontalGeometry, majorMaterial);
+          const isOrigin = Math.abs(z) < 1e-6;
+          const geometry = isOrigin
+            ? originHorizontalGeometry
+            : majorHorizontalGeometry;
+          const material = isOrigin ? originMaterial : majorMaterial;
+          const mesh = new Mesh(geometry, material);
           mesh.position.set(0, gridY, z);
           mesh.rotation.x = -Math.PI / 2;
 
