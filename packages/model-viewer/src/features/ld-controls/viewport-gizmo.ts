@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import ModelViewerElementBase, {
   $needsRender,
 } from '../../model-viewer-base.js';
-import { ViewportGizmo } from 'three-viewport-gizmo';
+import { ViewportGizmo } from '@london-dynamics/three-viewport-gizmo';
 
 export interface ViewportGizmoHandle {
   gizmo: ViewportGizmo;
@@ -124,8 +124,12 @@ function getViewportGizmoCssConfig(host: ModelViewerElementBase): {
     host
   );
 
-  const offset: { top?: number; right?: number; bottom?: number; left?: number } =
-    {};
+  const offset: {
+    top?: number;
+    right?: number;
+    bottom?: number;
+    left?: number;
+  } = {};
   if (top !== undefined) {
     offset.top = top;
   }
@@ -198,7 +202,7 @@ export function ensureViewportGizmo(
 
   const gizmoOptions: any = {
     container,
-    type: 'cube',
+    type: 'rounded-cube',
     size: 96,
     offset: { top: 0, right: 0, bottom: 0, left: 0, ...offset },
     background: {
@@ -349,6 +353,10 @@ export function ensureViewportGizmo(
       newCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera
     ) {
       gizmo.camera = newCamera;
+      const isOrthographic = newCamera instanceof THREE.OrthographicCamera;
+      gizmo.setCornersEnabled(!isOrthographic);
+      gizmo.setEdgesEnabled(!isOrthographic);
+      gizmo.toggleDragUpdatesCamera(!isOrthographic);
       gizmo.cameraUpdate();
     },
   };
