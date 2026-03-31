@@ -17,7 +17,10 @@ type GridShapeDeps = {
 
 const GRID_SHAPES_CONTAINER_NAME = 'ld-grid-shapes';
 
-function getOrCreateGridRootContainer(host: any, deps: GridShapeDeps): Object3D {
+function getOrCreateGridRootContainer(
+  host: any,
+  deps: GridShapeDeps
+): Object3D {
   if (host[deps.gridContainerSymbol]) {
     return host[deps.gridContainerSymbol];
   }
@@ -38,7 +41,10 @@ function getOrCreateGridRootContainer(host: any, deps: GridShapeDeps): Object3D 
   return host[deps.gridContainerSymbol];
 }
 
-function getOrCreateGridShapesContainer(host: any, deps: GridShapeDeps): Object3D {
+function getOrCreateGridShapesContainer(
+  host: any,
+  deps: GridShapeDeps
+): Object3D {
   const gridContainer = getOrCreateGridRootContainer(host, deps);
   let shapesContainer = gridContainer.children.find(
     (child: Object3D) => child.name === GRID_SHAPES_CONTAINER_NAME
@@ -73,6 +79,25 @@ export function setGridShapesVisible(
 
   shapesContainer.visible = visible;
   host[deps.needsRenderSymbol]();
+}
+
+export function syncGridShapesVisibility(
+  host: any,
+  deps: Pick<GridShapeDeps, 'gridContainerSymbol'>
+) {
+  const gridContainer = host[deps.gridContainerSymbol];
+  if (!gridContainer) {
+    return;
+  }
+
+  const shapesContainer = gridContainer.children.find(
+    (child: Object3D) => child.name === GRID_SHAPES_CONTAINER_NAME
+  );
+  if (!shapesContainer) {
+    return;
+  }
+
+  shapesContainer.visible = !!host.gridShapes;
 }
 
 export function createPlanarStrokeGeometry(
@@ -127,7 +152,9 @@ export function createPlanarStrokeGeometry(
     if (!closed && i === 0) {
       offset = segmentNormals[0].clone().multiplyScalar(halfThickness);
     } else if (!closed && i === pointCount - 1) {
-      offset = segmentNormals[segmentCount - 1].clone().multiplyScalar(halfThickness);
+      offset = segmentNormals[segmentCount - 1]
+        .clone()
+        .multiplyScalar(halfThickness);
     } else {
       const prevNormal = segmentNormals[(i - 1 + segmentCount) % segmentCount];
       const nextNormal = segmentNormals[i % segmentCount];
@@ -192,8 +219,27 @@ export function addGridShapeLines(
 
   const id = options.id ?? `ld-grid-shape-${Date.now()}-${Math.random()}`;
   const color = options.color ?? 'rgb(120, 113, 108)';
-  const lineWidth = options.thickness ?? 0.015;
-  const [offsetX, offsetZ] = options.coordinate ?? [0, 0];
+  const lineWidth = options.thickness ?? 0.025;
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  pathGroups.forEach((path) => {
+    path.forEach(([x, z]) => {
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    });
+  });
+  const sourceCenterX =
+    Number.isFinite(minX) && Number.isFinite(maxX) ? (minX + maxX) / 2 : 0;
+  const sourceCenterZ =
+    Number.isFinite(minZ) && Number.isFinite(maxZ) ? (minZ + maxZ) / 2 : 0;
+
+  const [targetCenterX, targetCenterZ] = options.coordinate ?? [0, 0];
+  const offsetX = targetCenterX - sourceCenterX;
+  const offsetZ = targetCenterZ - sourceCenterZ;
   const gridY = host[deps.sceneSymbol].boundingBox.min.y + 0.001;
 
   if (host._gridShapeGroupsById.has(id)) {

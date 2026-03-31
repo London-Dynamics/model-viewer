@@ -22,6 +22,7 @@ import {
   clearGridShapeLines as clearGridShapeLinesImpl,
   removeGridShapeLines as removeGridShapeLinesImpl,
   setGridShapesVisible as setGridShapesVisibleImpl,
+  syncGridShapesVisibility as syncGridShapesVisibilityImpl,
 } from './grid-shapes.js';
 import {
   clearMeasurements as clearMeasurementsImpl,
@@ -414,6 +415,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         gridContainerSymbol: $gridContainer,
         needsRenderSymbol: $needsRender,
         clearGrid: () => this._clearGrid(),
+      });
+      syncGridShapesVisibilityImpl(this, {
+        gridContainerSymbol: $gridContainer,
       });
     }
 
@@ -1009,6 +1013,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.handleNewAttributes();
       this._createGrid();
+      this._setGridShapesVisible(this.gridShapes);
     }
 
     private handleNewAttributes(resetEverything = false) {
