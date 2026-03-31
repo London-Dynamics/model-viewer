@@ -17,35 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Install Node (no registry override here). We'll configure a per-scope
-      # auth entry in ~/.npmrc so installs for @london-dynamics come from
-      # GitHub Packages while other packages continue to use the default
-      # registry (npmjs.org).
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 20.15.0
-
-      - name: Configure GitHub Packages auth for @london-dynamics
-        run: |
-          echo "@london-dynamics:registry=https://npm.pkg.github.com/" >> ~/.npmrc
-          echo "//npm.pkg.github.com/:_authToken=${LONDON_DYNAMICS_NPM_AUTH_TOKEN}" >> ~/.npmrc
-        env:
-          LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
-
-      - name: Install dependencies
-        run: npm ci
-        env:
-          LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
-
-      # Reconfigure setup-node so publishing uses GitHub Packages (if you
-      # publish there). Publishing still uses the GITHUB_TOKEN for auth.
       - uses: actions/setup-node@v3
         with:
           node-version: 20.15.0
           registry-url: https://npm.pkg.github.com/
           scope: '@london-dynamics'
 
+      - name: Install dependencies
+        run: npm ci
+        env:
+          LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
+
       - name: Publish package
-        run: npm publish
+        run: rm -f .npmrc ../../.npmrc && npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
