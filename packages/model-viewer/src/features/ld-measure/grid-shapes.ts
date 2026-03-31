@@ -15,6 +15,66 @@ type GridShapeDeps = {
   getGridTargetObject: () => Object3D | null;
 };
 
+const GRID_SHAPES_CONTAINER_NAME = 'ld-grid-shapes';
+
+function getOrCreateGridRootContainer(host: any, deps: GridShapeDeps): Object3D {
+  if (host[deps.gridContainerSymbol]) {
+    return host[deps.gridContainerSymbol];
+  }
+
+  deps.createGrid();
+  if (host[deps.gridContainerSymbol]) {
+    return host[deps.gridContainerSymbol];
+  }
+
+  const target = deps.getGridTargetObject();
+  if (!target) {
+    throw new Error('Target object not found for grid shape lines');
+  }
+
+  host[deps.gridContainerSymbol] = new Object3D();
+  host[deps.gridContainerSymbol].name = 'ld-grid';
+  target.add(host[deps.gridContainerSymbol]);
+  return host[deps.gridContainerSymbol];
+}
+
+function getOrCreateGridShapesContainer(host: any, deps: GridShapeDeps): Object3D {
+  const gridContainer = getOrCreateGridRootContainer(host, deps);
+  let shapesContainer = gridContainer.children.find(
+    (child: Object3D) => child.name === GRID_SHAPES_CONTAINER_NAME
+  );
+
+  if (!shapesContainer) {
+    shapesContainer = new Object3D();
+    shapesContainer.name = GRID_SHAPES_CONTAINER_NAME;
+    gridContainer.add(shapesContainer);
+  }
+
+  shapesContainer.visible = !!host.gridShapes;
+  return shapesContainer;
+}
+
+export function setGridShapesVisible(
+  host: any,
+  deps: Pick<GridShapeDeps, 'gridContainerSymbol' | 'needsRenderSymbol'>,
+  visible: boolean
+) {
+  const gridContainer = host[deps.gridContainerSymbol];
+  if (!gridContainer) {
+    return;
+  }
+
+  const shapesContainer = gridContainer.children.find(
+    (child: Object3D) => child.name === GRID_SHAPES_CONTAINER_NAME
+  );
+  if (!shapesContainer) {
+    return;
+  }
+
+  shapesContainer.visible = visible;
+  host[deps.needsRenderSymbol]();
+}
+
 export function createPlanarStrokeGeometry(
   path: Array<[number, number]>,
   thickness: number,
@@ -178,20 +238,8 @@ export function addGridShapeLines(
     shapeGroup.add(mesh);
   });
 
-  if (!host[deps.gridContainerSymbol]) {
-    deps.createGrid();
-  }
-  if (!host[deps.gridContainerSymbol]) {
-    const target = deps.getGridTargetObject();
-    if (!target) {
-      throw new Error('Target object not found for grid shape lines');
-    }
-    host[deps.gridContainerSymbol] = new Object3D();
-    host[deps.gridContainerSymbol].name = 'ld-grid';
-    target.add(host[deps.gridContainerSymbol]);
-  }
-
-  host[deps.gridContainerSymbol].add(shapeGroup);
+  const shapesContainer = getOrCreateGridShapesContainer(host, deps);
+  shapesContainer.add(shapeGroup);
   host._gridShapeGroupsById.set(id, shapeGroup);
   host[deps.needsRenderSymbol]();
 

@@ -21,6 +21,7 @@ import {
   createPlanarStrokeGeometry as createPlanarStrokeGeometryImpl,
   clearGridShapeLines as clearGridShapeLinesImpl,
   removeGridShapeLines as removeGridShapeLinesImpl,
+  setGridShapesVisible as setGridShapesVisibleImpl,
 } from './grid-shapes.js';
 import {
   clearMeasurements as clearMeasurementsImpl,
@@ -40,6 +41,7 @@ import { ModelScene } from '../../three-components/ModelScene.js';
 
 export declare interface LDMeasureInterface {
   measure: boolean;
+  gridShapes: boolean;
   addGridShapeLines(
     paths: Array<Array<[number, number]>> | Array<[number, number]>,
     options?: {
@@ -98,6 +100,9 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({ type: Number, attribute: 'grid-minor-step' })
     gridMinor: number = 0.5;
+
+    @property({ type: Boolean, attribute: 'grid-shapes' })
+    gridShapes: boolean = false;
 
     @property({ type: Boolean, attribute: 'disable-measurement-lines' })
     disableMeasurementLines: boolean = false;
@@ -481,6 +486,17 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _clearGridShapeLines() {
       clearGridShapeLinesImpl(this);
+    }
+
+    private _setGridShapesVisible(visible: boolean) {
+      setGridShapesVisibleImpl(
+        this,
+        {
+          gridContainerSymbol: $gridContainer,
+          needsRenderSymbol: $needsRender,
+        },
+        visible
+      );
     }
 
     private _clearGrid() {
@@ -1046,6 +1062,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
           (changedProperties.has('measurementUnit') && this.showGrid)
         ) {
           this._createGrid();
+        }
+
+        if (changedProperties.has('gridShapes')) {
+          this._setGridShapesVisible(this.gridShapes);
         }
       }
     }

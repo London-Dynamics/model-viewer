@@ -1471,6 +1471,18 @@
         }
       },
       {
+        "name": "grid-shapes",
+        "htmlName": "gridShapes",
+        "description": "Show or hide custom grid shape lines added via addGridShapeLines(). Shape data is retained while hidden and becomes visible when enabled again.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
         "name": "grid-size",
         "htmlName": "gridSize",
         "description": "The total width and depth of the grid, centered at the origin, in the selected measurement unit.",
