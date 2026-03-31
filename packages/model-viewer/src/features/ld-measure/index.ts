@@ -1,20 +1,12 @@
-export * from './ld-measure/index.js';
 import { property } from 'lit/decorators.js';
 import {
   Box3,
   BufferGeometry,
-  Float32BufferAttribute,
   Line,
-  LineBasicMaterial,
-  Matrix4,
   Mesh,
-  MeshBasicMaterial,
-  PlaneGeometry,
   Object3D,
   Object3DEventMap,
-  Vector2,
   Vector3,
-  NormalBlending,
 } from 'three';
 
 import ModelViewerElementBase, {
@@ -22,20 +14,29 @@ import ModelViewerElementBase, {
   $onModelLoad,
   $needsRender,
   $tick,
-} from '../model-viewer-base.js';
+} from '../../model-viewer-base.js';
+import { createGrid, clearGrid, getGridTargetObject } from './grid.js';
+import {
+  addGridShapeLines as addGridShapeLinesImpl,
+  createPlanarStrokeGeometry as createPlanarStrokeGeometryImpl,
+  clearGridShapeLines as clearGridShapeLinesImpl,
+  removeGridShapeLines as removeGridShapeLinesImpl,
+} from './grid-shapes.js';
+import {
+  clearMeasurements as clearMeasurementsImpl,
+  measureObject as measureObjectImpl,
+} from './measurement-lines.js';
 
-import { Constructor } from '../utilities.js';
-import { $controls } from './controls.js';
-import { SelectionChangeDetail, SelectionScope } from './ld-selection/index.js';
+import { Constructor } from '../../utilities.js';
+import { SelectionChangeDetail, SelectionScope } from '../ld-selection/index.js';
 import {
   AZIMUTHAL_OCTANT_LABELS,
   formatMetersWithUnit,
-  convertToMeters,
   HALF_PI,
   QUARTER_PI,
   TAU,
-} from '../utilities/ld-utils.js';
-import { ModelScene } from '../three-components/ModelScene.js';
+} from '../../utilities/ld-utils.js';
+import { ModelScene } from '../../three-components/ModelScene.js';
 
 export declare interface LDMeasureInterface {
   measure: boolean;
@@ -64,6 +65,16 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
   // LDModularMixin (which this wraps) already applies LDSelectionMixin,
   // so we inherit selection functionality without reapplying it
   class LDMeasureModelViewerElement extends ModelViewerElement {
+    private _touchExtractedMembers() {
+      void this._gridShapeGroupsById;
+      void this._extensionLineLength;
+      void this._updateMarkerText;
+      void this._getBoundingBox;
+      void this._disposeRenderableObject;
+      void this._createPlanarStrokeGeometry;
+      void this._getEdgeGroups;
+    }
+
     @property({ type: Boolean, attribute: 'measure' })
     measure: boolean = false;
 
@@ -393,258 +404,21 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _createGrid() {
-      const scene = this[$scene];
-
-      // Remove existing grid if any
-      this._clearGrid();
-
-      if (!this.showGrid) {
-        return;
-      }
-
-      // Don't draw grid if both spacings are 0
-      if (this.gridMajor <= 0 && this.gridMinor <= 0) {
-        return;
-      }
-
-      // Find the Target object to add the grid
-      let targetObject: Object3D | undefined;
-      scene.traverse((child) => {
-        if (child.name === 'Target') {
-          targetObject = child;
-        }
+      createGrid(this, {
+        sceneSymbol: $scene,
+        gridContainerSymbol: $gridContainer,
+        needsRenderSymbol: $needsRender,
+        clearGrid: () => this._clearGrid(),
       });
-
-      if (!targetObject) {
-        console.warn('Target object not found for grid');
-        return;
-      }
-
-      const target = targetObject as Object3D;
-
-      // Create grid container
-      const gridContainer = new Object3D();
-      gridContainer.name = 'ld-grid';
-
-      gridContainer.castShadow = false;
-      gridContainer.receiveShadow = false;
-
-      this[$gridContainer] = gridContainer;
-
-      // Convert grid spacing from display units to meters
-      const minorSpacing = convertToMeters(
-        this.gridMinor,
-        this.measurementUnit
-      );
-      const majorSpacing = convertToMeters(
-        this.gridMajor,
-        this.measurementUnit
-      );
-
-      const floorY = scene.boundingBox.min.y;
-
-      const gridY = floorY + 0.001;
-
-      const halfSize = this.gridSize / 2;
-
-      // Calculate line widths in world units based on screen pixels
-      // Approximate: 1 pixel ≈ 0.001 meters at typical viewing distances
-      const minorLineWidth = 0.01;
-      const majorLineWidth = 0.01;
-      const originLineWidth = 0.015;
-
-      const minorMaterial = new MeshBasicMaterial({
-        color: 'rgb(214, 211, 209)',
-
-        depthTest: true,
-        depthWrite: false,
-      });
-
-      const majorMaterial = new MeshBasicMaterial({
-        color: 'rgb(168, 162, 158)',
-
-        depthTest: true,
-        depthWrite: false,
-      });
-      const originMaterial = new MeshBasicMaterial({
-        color: 'rgb(120, 113, 108)',
-        depthTest: true,
-        depthWrite: false,
-      });
-
-      const startX = -halfSize;
-      const endX = halfSize;
-      const startZ = -halfSize;
-      const endZ = halfSize;
-      const gridLength = this.gridSize;
-
-      // Create shared geometries - reuse across all lines to reduce memory
-      const minorVerticalGeometry = new PlaneGeometry(
-        minorLineWidth,
-        gridLength
-      );
-      const majorVerticalGeometry = new PlaneGeometry(
-        majorLineWidth,
-        gridLength
-      );
-      const originVerticalGeometry = new PlaneGeometry(
-        originLineWidth,
-        gridLength
-      );
-      const minorHorizontalGeometry = new PlaneGeometry(
-        gridLength,
-        minorLineWidth
-      );
-      const majorHorizontalGeometry = new PlaneGeometry(
-        gridLength,
-        majorLineWidth
-      );
-      const originHorizontalGeometry = new PlaneGeometry(
-        gridLength,
-        originLineWidth
-      );
-
-      // Create vertical lines (parallel to Z axis) using thin rectangles
-      if (this.gridMinor > 0) {
-        for (
-          let x = Math.floor(startX / minorSpacing) * minorSpacing;
-          x <= endX;
-          x += minorSpacing
-        ) {
-          const isMajor =
-            this.gridMajor > 0 &&
-            Math.abs(x / majorSpacing - Math.round(x / majorSpacing)) < 1e-6;
-          const isOrigin = Math.abs(x) < 1e-6;
-
-          const material = isOrigin
-            ? originMaterial
-            : isMajor
-              ? majorMaterial
-              : minorMaterial;
-          const geometry = isOrigin
-            ? originVerticalGeometry
-            : isMajor
-              ? majorVerticalGeometry
-              : minorVerticalGeometry;
-
-          // Reuse shared geometry and material
-          const mesh = new Mesh(geometry, material);
-
-          // Position at x, gridY, center of Z range
-          mesh.position.set(x, gridY, 0);
-
-          // Rotate to lie flat on XZ plane (facing up)
-          mesh.rotation.x = -Math.PI / 2;
-
-          mesh.userData.noHit = true;
-          mesh.frustumCulled = false;
-          mesh.castShadow = false;
-          mesh.receiveShadow = false;
-
-          gridContainer.add(mesh);
-        }
-      } else if (this.gridMajor > 0) {
-        for (
-          let x = Math.floor(startX / majorSpacing) * majorSpacing;
-          x <= endX;
-          x += majorSpacing
-        ) {
-          const isOrigin = Math.abs(x) < 1e-6;
-          const geometry = isOrigin
-            ? originVerticalGeometry
-            : majorVerticalGeometry;
-          const material = isOrigin ? originMaterial : majorMaterial;
-          const mesh = new Mesh(geometry, material);
-          mesh.position.set(x, gridY, 0);
-          mesh.rotation.x = -Math.PI / 2;
-
-          mesh.userData.noHit = true;
-          mesh.frustumCulled = false;
-          mesh.castShadow = false;
-          mesh.receiveShadow = false;
-
-          gridContainer.add(mesh);
-        }
-      }
-
-      // Create horizontal lines (parallel to X axis) using thin rectangles
-      if (this.gridMinor > 0) {
-        for (
-          let z = Math.floor(startZ / minorSpacing) * minorSpacing;
-          z <= endZ;
-          z += minorSpacing
-        ) {
-          const isMajor =
-            this.gridMajor > 0 &&
-            Math.abs(z / majorSpacing - Math.round(z / majorSpacing)) < 1e-6;
-          const isOrigin = Math.abs(z) < 1e-6;
-
-          const material = isOrigin
-            ? originMaterial
-            : isMajor
-              ? majorMaterial
-              : minorMaterial;
-          const geometry = isOrigin
-            ? originHorizontalGeometry
-            : isMajor
-              ? majorHorizontalGeometry
-              : minorHorizontalGeometry;
-
-          // Reuse shared geometry and material
-          const mesh = new Mesh(geometry, material);
-
-          // Position at center of X range, gridY, z
-          mesh.position.set(0, gridY, z);
-
-          // Rotate to lie flat on XZ plane (facing up)
-          mesh.rotation.x = -Math.PI / 2;
-
-          mesh.userData.noHit = true;
-          mesh.frustumCulled = false;
-          mesh.castShadow = false;
-          mesh.receiveShadow = false;
-
-          gridContainer.add(mesh);
-        }
-      } else if (this.gridMajor > 0) {
-        for (
-          let z = Math.floor(startZ / majorSpacing) * majorSpacing;
-          z <= endZ;
-          z += majorSpacing
-        ) {
-          const isOrigin = Math.abs(z) < 1e-6;
-          const geometry = isOrigin
-            ? originHorizontalGeometry
-            : majorHorizontalGeometry;
-          const material = isOrigin ? originMaterial : majorMaterial;
-          const mesh = new Mesh(geometry, material);
-          mesh.position.set(0, gridY, z);
-          mesh.rotation.x = -Math.PI / 2;
-
-          mesh.userData.noHit = true;
-          mesh.frustumCulled = false;
-          mesh.castShadow = false;
-          mesh.receiveShadow = false;
-
-          gridContainer.add(mesh);
-        }
-      }
-
-      target.add(gridContainer);
-      this[$needsRender]();
     }
 
     private _getGridTargetObject(): Object3D | null {
-      const scene = this[$scene];
-      let targetObject: Object3D | null = null;
-
-      scene.traverse((child) => {
-        if (child.name === 'Target') {
-          targetObject = child;
-        }
+      return getGridTargetObject(this, {
+        sceneSymbol: $scene,
+        gridContainerSymbol: $gridContainer,
+        needsRenderSymbol: $needsRender,
+        clearGrid: () => this._clearGrid(),
       });
-
-      return targetObject;
     }
 
     private _disposeRenderableObject(object: Object3D) {
@@ -668,99 +442,14 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       offsetZ: number,
       closed: boolean
     ): BufferGeometry | null {
-      const epsilon = 1e-6;
-      const halfThickness = Math.max(thickness, epsilon) / 2;
-
-      const points: Vector2[] = [];
-      for (const [x, z] of path) {
-        const point = new Vector2(x + offsetX, z + offsetZ);
-        const previous = points[points.length - 1];
-        if (!previous || previous.distanceTo(point) > epsilon) {
-          points.push(point);
-        }
-      }
-
-      if (closed && points.length > 2) {
-        const first = points[0];
-        const last = points[points.length - 1];
-        if (first.distanceTo(last) <= epsilon) {
-          points.pop();
-        }
-      }
-
-      const pointCount = points.length;
-      if (pointCount < 2) {
-        return null;
-      }
-
-      const segmentCount = closed ? pointCount : pointCount - 1;
-      const segmentNormals: Vector2[] = [];
-      for (let i = 0; i < segmentCount; i++) {
-        const a = points[i];
-        const b = points[(i + 1) % pointCount];
-        const direction = b.clone().sub(a);
-        if (direction.lengthSq() <= epsilon) {
-          segmentNormals.push(new Vector2(0, 0));
-          continue;
-        }
-        direction.normalize();
-        segmentNormals.push(new Vector2(-direction.y, direction.x));
-      }
-
-      const leftRightOffsets: Vector2[] = [];
-      for (let i = 0; i < pointCount; i++) {
-        let offset = new Vector2(0, 0);
-
-        if (!closed && i === 0) {
-          offset = segmentNormals[0].clone().multiplyScalar(halfThickness);
-        } else if (!closed && i === pointCount - 1) {
-          offset = segmentNormals[segmentCount - 1]
-            .clone()
-            .multiplyScalar(halfThickness);
-        } else {
-          const prevNormal = segmentNormals[(i - 1 + segmentCount) % segmentCount];
-          const nextNormal = segmentNormals[i % segmentCount];
-          const miter = prevNormal.clone().add(nextNormal);
-
-          if (miter.lengthSq() <= epsilon) {
-            offset = nextNormal.clone().multiplyScalar(halfThickness);
-          } else {
-            miter.normalize();
-            const dot = Math.max(epsilon, Math.abs(miter.dot(nextNormal)));
-            const miterLength = Math.min(halfThickness / dot, halfThickness * 4);
-            offset = miter.multiplyScalar(miterLength);
-          }
-        }
-
-        leftRightOffsets.push(offset);
-      }
-
-      const positions: number[] = [];
-      for (let i = 0; i < pointCount; i++) {
-        const p = points[i];
-        const offset = leftRightOffsets[i];
-        positions.push(p.x + offset.x, y, p.y + offset.y);
-        positions.push(p.x - offset.x, y, p.y - offset.y);
-      }
-
-      const indices: number[] = [];
-      for (let i = 0; i < segmentCount; i++) {
-        const next = (i + 1) % pointCount;
-        const leftA = i * 2;
-        const rightA = leftA + 1;
-        const leftB = next * 2;
-        const rightB = leftB + 1;
-
-        indices.push(leftA, leftB, rightA);
-        indices.push(rightA, leftB, rightB);
-      }
-
-      const geometry = new BufferGeometry();
-      geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-      geometry.setIndex(indices);
-      geometry.computeBoundingSphere();
-
-      return geometry;
+      return createPlanarStrokeGeometryImpl(
+        path,
+        thickness,
+        y,
+        offsetX,
+        offsetZ,
+        closed
+      );
     }
 
     addGridShapeLines(
@@ -772,152 +461,39 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         coordinate?: [number, number];
       } = {}
     ): string {
-      const pathGroups =
-        paths.length > 0 && typeof paths[0][0] === 'number'
-          ? [paths as Array<[number, number]>]
-          : (paths as Array<Array<[number, number]>>);
-
-      if (!pathGroups.length) {
-        throw new Error('addGridShapeLines requires at least one path');
-      }
-
-      const id = options.id ?? `ld-grid-shape-${Date.now()}-${Math.random()}`;
-      const color = options.color ?? 'rgb(120, 113, 108)';
-      const lineWidth = options.thickness ?? 0.015;
-      const [offsetX, offsetZ] = options.coordinate ?? [0, 0];
-      const gridY = this[$scene].boundingBox.min.y + 0.001;
-
-      if (this._gridShapeGroupsById.has(id)) {
-        this.removeGridShapeLines(id);
-      }
-
-      const shapeGroup = new Object3D();
-      shapeGroup.name = `ld-grid-shape:${id}`;
-
-      pathGroups.forEach((path) => {
-        if (path.length < 2) {
-          return;
-        }
-
-        const isClosed =
-          path.length > 2 &&
-          path[0][0] === path[path.length - 1][0] &&
-          path[0][1] === path[path.length - 1][1];
-        const shouldClosePath = path.length > 2 || isClosed;
-        const geometry = this._createPlanarStrokeGeometry(
-          path,
-          lineWidth,
-          gridY,
-          offsetX,
-          offsetZ,
-          shouldClosePath
-        );
-        if (!geometry) {
-          return;
-        }
-
-        const material = new MeshBasicMaterial({
-          color,
-          depthTest: true,
-          depthWrite: false,
-        });
-        const mesh = new Mesh(geometry, material);
-        mesh.userData.noHit = true;
-        mesh.frustumCulled = false;
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
-
-        shapeGroup.add(mesh);
-      });
-
-      if (!this[$gridContainer]) {
-        this._createGrid();
-      }
-      if (!this[$gridContainer]) {
-        const target = this._getGridTargetObject();
-        if (!target) {
-          throw new Error('Target object not found for grid shape lines');
-        }
-        this[$gridContainer] = new Object3D();
-        this[$gridContainer]!.name = 'ld-grid';
-        target.add(this[$gridContainer]!);
-      }
-
-      this[$gridContainer].add(shapeGroup);
-      this._gridShapeGroupsById.set(id, shapeGroup);
-      this[$needsRender]();
-
-      return id;
+      return addGridShapeLinesImpl(
+        this,
+        {
+          sceneSymbol: $scene,
+          gridContainerSymbol: $gridContainer,
+          needsRenderSymbol: $needsRender,
+          createGrid: () => this._createGrid(),
+          getGridTargetObject: () => this._getGridTargetObject(),
+        },
+        paths,
+        options
+      );
     }
 
     removeGridShapeLines(id: string): boolean {
-      const shapeGroup = this._gridShapeGroupsById.get(id);
-      if (!shapeGroup) {
-        return false;
-      }
-
-      shapeGroup.parent?.remove(shapeGroup);
-      this._disposeRenderableObject(shapeGroup);
-      this._gridShapeGroupsById.delete(id);
-
-      this[$needsRender]();
-      return true;
+      return removeGridShapeLinesImpl(this, $needsRender, id);
     }
 
     private _clearGridShapeLines() {
-      this._gridShapeGroupsById.forEach((_group, id) => {
-        this.removeGridShapeLines(id);
-      });
-      this._gridShapeGroupsById.clear();
+      clearGridShapeLinesImpl(this);
     }
 
     private _clearGrid() {
-      this._gridShapeGroupsById.clear();
-      if (!this[$gridContainer]) {
-        return;
-      }
-
-      // Remove from parent
-      if (this[$gridContainer].parent) {
-        this[$gridContainer].parent.remove(this[$gridContainer]);
-      }
-
-      // Dispose geometries and materials
-      this._disposeRenderableObject(this[$gridContainer]);
-
-      this[$gridContainer] = null;
-      this[$needsRender]();
+      clearGrid(this, {
+        sceneSymbol: $scene,
+        gridContainerSymbol: $gridContainer,
+        needsRenderSymbol: $needsRender,
+        clearGrid: () => this._clearGrid(),
+      });
     }
 
     private _clearMeasurements(resetEverything = false) {
-      if (resetEverything) {
-        this._lastClickedObject = null;
-      }
-
-      const scene = this[$scene];
-
-      try {
-        scene.traverse((child) => {
-          if (child.name === 'ld-measurements') {
-            child.parent?.remove(child);
-            // Throw an exception to terminate the traversal
-            throw new Error('Line parent found and removed');
-          }
-        });
-      } catch (e) {
-        if ((e as Error).message !== 'Line parent found and removed') {
-          throw e; // Re-throw if it's not the expected error
-        }
-      }
-
-      this._lineGroups = [];
-      if (this._measureWidthElement)
-        this._measureWidthElement.style.display = 'none';
-      if (this._measureHeightElement)
-        this._measureHeightElement.style.display = 'none';
-      if (this._measureDepthElement)
-        this._measureDepthElement.style.display = 'none';
-
+      clearMeasurementsImpl(this, { sceneSymbol: $scene }, resetEverything);
       this[$needsRender]();
     }
 
@@ -1317,144 +893,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _measureObject(object: Object3D, skipLastClickCheck?: boolean) {
-      // @ts-ignore
-      const controls = this[$controls];
-      const scene = this[$scene];
-
-      if (!skipLastClickCheck && object === this._lastClickedObject) {
-        // Skip if the user clicked on the same object as before
-        return;
-      }
-
-      // Update the last clicked object
-      this._lastClickedObject = object;
-
-      this._clearMeasurements();
-
-      const boundingBox = this._getBoundingBox(scene, object);
-
-      if (
-        boundingBox.min.equals(new Vector3(Infinity, Infinity, Infinity)) ||
-        boundingBox.max.equals(new Vector3(-Infinity, -Infinity, -Infinity))
-      ) {
-        console.warn('Bounding box is empty.');
-        return;
-      }
-
-      // Get the corners of the bounding box in the global coordinate system
-      const min = boundingBox.min.clone();
-      const max = boundingBox.max.clone();
-      const boundingBoxCorners = [
-        new Vector3(min.x, min.y, min.z),
-        new Vector3(max.x, min.y, min.z),
-
-        new Vector3(max.x, max.y, min.z),
-        new Vector3(min.x, max.y, min.z),
-
-        new Vector3(min.x, min.y, max.z),
-        new Vector3(max.x, min.y, max.z),
-
-        new Vector3(max.x, max.y, max.z),
-        new Vector3(min.x, max.y, max.z),
-      ];
-
-      // Corners stay in world space - the bounding box is world-axis-aligned
-      const corners = boundingBoxCorners;
-
-      // Create a material for the lines
-      const lineMaterial = new LineBasicMaterial({ color: 0x000000 });
-      lineMaterial.transparent = true;
-
-      lineMaterial.opacity = 1;
-      lineMaterial.depthTest = false; // Disable depth test to make the lines render on top of the model
-      lineMaterial.blending = NormalBlending;
-
-      // Calculate extension line length based on the object's bounding box
-      // Use a proportion of the smallest dimension
-      const objectSize = boundingBox.getSize(new Vector3());
-      const minDimension = Math.min(objectSize.x, objectSize.y, objectSize.z);
-      const length =
-        minDimension > 0 ? minDimension / 10 : this._extensionLineLength;
-      const margin = length / 2; // Margin between dimensions and model.
-
-      const edgeGroups = this._getEdgeGroups(corners, length, margin, object);
-
-      // Create a parent object to hold the lines
-      const lineParent = new Object3D();
-      lineParent.name = 'ld-measurements';
-
-      // Determine the parent for the lines and get its inverse matrix
-      let linesParentObject: Object3D | null = null;
-      const inverseMatrix = new Matrix4();
-      let needsCoordinateTransform = false;
-
-      if (object === scene) {
-        // Find the Target object and add lines there
-        // scene.boundingBox is already in Target's local space, so no transform needed
-        scene.traverse((child) => {
-          if (child.name === 'Target') {
-            linesParentObject = child;
-          }
-        });
-        needsCoordinateTransform = false;
-      } else {
-        // Add to the selected object itself
-        // boundingBox.expandByObject returns world coordinates, so we need to transform
-        linesParentObject = object;
-        needsCoordinateTransform = true;
-      }
-
-      if (linesParentObject) {
-        if (needsCoordinateTransform) {
-          // Get the inverse of the parent's world matrix to convert world coords to local
-          linesParentObject.updateWorldMatrix(true, false);
-          inverseMatrix.copy(linesParentObject.matrixWorld).invert();
-        }
-        linesParentObject.add(lineParent);
-      }
-
-      // Helper function to convert world point to parent's local space
-      const toLocalSpace = (point: Vector3): Vector3 => {
-        if (needsCoordinateTransform) {
-          return point.clone().applyMatrix4(inverseMatrix);
-        }
-        return point.clone();
-      };
-
-      edgeGroups.forEach((group) => {
-        const lines: Line[] = [];
-
-        group.forEach((edge) => {
-          // Convert edge points from world space to parent's local space
-          const localEdge = edge.map((point) => toLocalSpace(point));
-
-          const geometry = new BufferGeometry().setFromPoints(localEdge);
-          const line = new Line(geometry, lineMaterial);
-
-          line.userData.noHit = true; // unique model-viewer attribute to prevent hit testing
-
-          line.renderOrder = 9999; // Render on top of the model
-
-          line.visible = false; // Hide the lines initially
-
-          // Prevent frustum culling which might hide the lines
-          line.frustumCulled = false;
-
-          lineParent.add(line);
-          lines.push(line);
-        });
-
-        this._lineGroups.push({ lines });
-      });
-
-      this._updateMarkerVisibility();
-      this._updateMarkerText(boundingBox, object);
+      measureObjectImpl(this, { sceneSymbol: $scene }, object, skipLastClickCheck);
     }
 
     private _measureScene() {
-      const scene = this[$scene];
-
-      this._measureObject(scene, true);
+      this._measureObject(this[$scene], true);
     }
 
     private _handleCameraChange() {
@@ -1544,6 +987,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _handleLoad() {
       this._modelLoaded = true;
+      this._touchExtractedMembers();
 
       this._setExtensionLineLength();
 

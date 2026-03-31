@@ -30,7 +30,7 @@ import { LDImageCaptureMixin } from './features/ld-image-capture.js';
 import { LDFloatingControlStripMixin } from './features/ld-floating-control-strip.js';
 import { LDLightsMixin } from './features/ld-lights.js';
 import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
-import { LDMeasureMixin } from './features/ld-measure.js';
+import { LDMeasureMixin } from './features/ld-measure/index.js';
 import { LDCursorMixin } from './features/ld-cursor/index.js';
 import { LDModularMixin } from './features/ld-modular/index.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
