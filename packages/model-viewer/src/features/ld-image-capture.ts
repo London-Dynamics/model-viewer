@@ -429,17 +429,11 @@ export const LDImageCaptureMixin = <
         if (useOffscreenRender) {
           if (camera != null) {
             const data: any = (camera as any)?.object ?? camera;
-            const typeValue = data.cameraType ?? data.type;
+            const typeValue = data.type;
             let desiredType: 'perspective' | 'orthographic' | null = null;
-            if (
-              typeValue === 'orthographic' ||
-              typeValue === 'OrthographicCamera'
-            )
+            if (typeValue === 'OrthographicCamera')
               desiredType = 'orthographic';
-            else if (
-              typeValue === 'perspective' ||
-              typeValue === 'PerspectiveCamera'
-            )
+            else if (typeValue === 'PerspectiveCamera')
               desiredType = 'perspective';
             if (
               desiredType != null &&

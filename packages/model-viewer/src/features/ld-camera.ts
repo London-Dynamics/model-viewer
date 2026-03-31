@@ -142,12 +142,10 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       // any controls-state restore path, since switching camera type replaces
       // camera/control instances.
       let desiredType: CameraType | null = null;
-      const typeValue = data.cameraType ?? data.type;
+      const typeValue = data.type;
 
       if (typeof typeValue === 'string') {
-        if (typeValue === 'perspective' || typeValue === 'orthographic') {
-          desiredType = typeValue;
-        } else if (typeValue === 'PerspectiveCamera') {
+        if (typeValue === 'PerspectiveCamera') {
           desiredType = 'perspective';
         } else if (typeValue === 'OrthographicCamera') {
           desiredType = 'orthographic';
@@ -386,9 +384,6 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const isPerspective = !!camera.isPerspectiveCamera;
       const isOrthographic = !!camera.isOrthographicCamera;
-      const cameraType: CameraType =
-        isPerspective || !isOrthographic ? 'perspective' : 'orthographic';
-
       const object: any = {
         // three.js compatible identifiers
         type: isPerspective
@@ -396,7 +391,6 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           : isOrthographic
             ? 'OrthographicCamera'
             : 'Camera',
-        cameraType,
         matrix: camera.matrix.toArray(),
         position: camera.position.toArray(),
         quaternion: camera.quaternion.toArray(),
@@ -473,7 +467,6 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         metadata: {
           version: 1,
           generator: '@london-dynamics/model-viewer LDCamera',
-          cameraType,
           controlsState,
         },
         object,

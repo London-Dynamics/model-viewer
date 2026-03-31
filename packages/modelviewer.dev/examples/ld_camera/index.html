@@ -366,7 +366,7 @@
 
                       function summarize(obj) {
                         if (!obj || typeof obj !== 'object') return String(obj);
-                        const type = obj.cameraType || obj.type || '?';
+                        const type = obj.type || '?';
                         const pos = Array.isArray(obj.position)
                           ? obj.position
                           : [];
