@@ -1551,7 +1551,24 @@
         ]
       }
     ],
-    "Methods": [],
+    "Methods": [
+      {
+        "name": "addGridShapeLines(paths, options?)",
+        "htmlName": "addGridShapeLines",
+        "description": "Adds one or more custom line paths on top of the measurement grid and returns an id that can be used to remove them later. The optional options object supports: id (string, custom identifier), color (CSS color string or number), thickness (number, world-space line thickness), and coordinate ([x, z] offset in the current measurement unit).",
+        "links": [
+          "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "removeGridShapeLines(id)",
+        "htmlName": "removeGridShapeLines",
+        "description": "Removes previously added custom grid shape lines by id and returns true when a matching shape was found and removed.",
+        "links": [
+          "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>"
+        ]
+      }
+    ],
     "Slots": [
       {
         "name": "Dimension Labels",
