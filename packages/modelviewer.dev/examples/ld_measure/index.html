@@ -576,6 +576,68 @@
             </div>
           </div>
         </div>
+        <div class="sample">
+          <div id="grid-shapes" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Grid shape lines</h2>
+                <p>
+                  Add custom line shapes on top of the LD Measure grid using the
+                  new grid-shape API.
+                </p>
+              </div>
+              <example-snippet stamp-to="grid-shapes" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo-grid-shapes"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/textureCubes.gltf"
+                    alt="A model with custom grid shape lines"
+                    grid
+                  >
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#three-demo-grid-shapes'
+                      );
+
+                      modelViewer.addEventListener('load', () => {
+                        const squarePath = [
+                          [-0.55, -0.55],
+                          [0.55, -0.55],
+                          [0.55, 0.55],
+                          [-0.55, 0.55],
+                        ];
+
+                        const octagonPath = Array.from(
+                          { length: 8 },
+                          (_, index) => {
+                            const angle = (Math.PI * 2 * index) / 8;
+                            return [Math.cos(angle), Math.sin(angle)];
+                          }
+                        );
+
+                        modelViewer.addGridShapeLines(squarePath, {
+                          id: 'square-1m',
+                        });
+
+                        modelViewer.addGridShapeLines(octagonPath, {
+                          id: 'octagon-2m',
+                          coordinate: [1.5, 1.5],
+                        });
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
         <div class="footer">
           <ul></ul>
           <div style="margin-top: 24px" class="copyright">

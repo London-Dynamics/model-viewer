@@ -36,6 +36,16 @@ import { ModelScene } from '../three-components/ModelScene.js';
 
 export declare interface LDMeasureInterface {
   measure: boolean;
+  addGridShapeLines(
+    paths: Array<Array<[number, number]>> | Array<[number, number]>,
+    options?: {
+      id?: string;
+      color?: string | number;
+      thickness?: number;
+      coordinate?: [number, number];
+    }
+  ): string;
+  removeGridShapeLines(id: string): boolean;
 }
 
 type LineGroup = {
@@ -93,6 +103,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _depthElementAnchorIndex: number = -1;
 
     private _lineGroups: LineGroup[] = [];
+    private _gridShapeGroupsById: Map<string, Object3D> = new Map();
     private _lastClickedObject: Object3D | null = null;
     private _lastCameraAngle: string = '';
     private _extensionLineLength: number = 0.2;
@@ -620,7 +631,138 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$needsRender]();
     }
 
+    private _getGridTargetObject(): Object3D | null {
+      const scene = this[$scene];
+      let targetObject: Object3D | null = null;
+
+      scene.traverse((child) => {
+        if (child.name === 'Target') {
+          targetObject = child;
+        }
+      });
+
+      return targetObject;
+    }
+
+    private _disposeRenderableObject(object: Object3D) {
+      object.traverse((child) => {
+        if (child instanceof Mesh || child instanceof Line) {
+          child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach((mat) => mat.dispose());
+          } else {
+            child.material.dispose();
+          }
+        }
+      });
+    }
+
+    addGridShapeLines(
+      paths: Array<Array<[number, number]>> | Array<[number, number]>,
+      options: {
+        id?: string;
+        color?: string | number;
+        thickness?: number;
+        coordinate?: [number, number];
+      } = {}
+    ): string {
+      const pathGroups =
+        paths.length > 0 && typeof paths[0][0] === 'number'
+          ? [paths as Array<[number, number]>]
+          : (paths as Array<Array<[number, number]>>);
+
+      if (!pathGroups.length) {
+        throw new Error('addGridShapeLines requires at least one path');
+      }
+
+      const id = options.id ?? `ld-grid-shape-${Date.now()}-${Math.random()}`;
+      const color = options.color ?? 'rgb(120, 113, 108)';
+      const lineWidth = options.thickness ?? 1;
+      const [offsetX, offsetZ] = options.coordinate ?? [0, 0];
+      const gridY = this[$scene].boundingBox.min.y + 0.001;
+
+      if (this._gridShapeGroupsById.has(id)) {
+        this.removeGridShapeLines(id);
+      }
+
+      const shapeGroup = new Object3D();
+      shapeGroup.name = `ld-grid-shape:${id}`;
+
+      pathGroups.forEach((path) => {
+        if (path.length < 2) {
+          return;
+        }
+
+        const points = path.map(
+          ([x, z]) => new Vector3(x + offsetX, gridY, z + offsetZ)
+        );
+        const isClosed =
+          path.length > 2 &&
+          path[0][0] === path[path.length - 1][0] &&
+          path[0][1] === path[path.length - 1][1];
+        if (!isClosed) {
+          points.push(points[0].clone());
+        }
+
+        const geometry = new BufferGeometry().setFromPoints(points);
+        const material = new LineBasicMaterial({
+          color,
+          linewidth: lineWidth,
+          depthTest: true,
+          depthWrite: false,
+        });
+        const line = new Line(geometry, material);
+        line.userData.noHit = true;
+        line.frustumCulled = false;
+        line.castShadow = false;
+        line.receiveShadow = false;
+
+        shapeGroup.add(line);
+      });
+
+      if (!this[$gridContainer]) {
+        this._createGrid();
+      }
+      if (!this[$gridContainer]) {
+        const target = this._getGridTargetObject();
+        if (!target) {
+          throw new Error('Target object not found for grid shape lines');
+        }
+        this[$gridContainer] = new Object3D();
+        this[$gridContainer]!.name = 'ld-grid';
+        target.add(this[$gridContainer]!);
+      }
+
+      this[$gridContainer].add(shapeGroup);
+      this._gridShapeGroupsById.set(id, shapeGroup);
+      this[$needsRender]();
+
+      return id;
+    }
+
+    removeGridShapeLines(id: string): boolean {
+      const shapeGroup = this._gridShapeGroupsById.get(id);
+      if (!shapeGroup) {
+        return false;
+      }
+
+      shapeGroup.parent?.remove(shapeGroup);
+      this._disposeRenderableObject(shapeGroup);
+      this._gridShapeGroupsById.delete(id);
+
+      this[$needsRender]();
+      return true;
+    }
+
+    private _clearGridShapeLines() {
+      this._gridShapeGroupsById.forEach((_group, id) => {
+        this.removeGridShapeLines(id);
+      });
+      this._gridShapeGroupsById.clear();
+    }
+
     private _clearGrid() {
+      this._gridShapeGroupsById.clear();
       if (!this[$gridContainer]) {
         return;
       }
@@ -631,16 +773,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Dispose geometries and materials
-      this[$gridContainer].traverse((child) => {
-        if (child instanceof Mesh) {
-          child.geometry.dispose();
-          if (Array.isArray(child.material)) {
-            child.material.forEach((mat) => mat.dispose());
-          } else {
-            child.material.dispose();
-          }
-        }
-      });
+      this._disposeRenderableObject(this[$gridContainer]);
 
       this[$gridContainer] = null;
       this[$needsRender]();
@@ -1443,6 +1576,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       this._clearGrid();
+      this._clearGridShapeLines();
       this._measureWidthElement = null;
       this._measureHeightElement = null;
       this._measureDepthElement = null;

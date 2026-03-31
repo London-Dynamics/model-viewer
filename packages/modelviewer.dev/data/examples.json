@@ -414,6 +414,10 @@
       {
         "htmlId": "slots",
         "name": "Slots"
+      },
+      {
+        "htmlId": "grid-shapes",
+        "name": "Grid shape lines"
       }
     ]
   },
