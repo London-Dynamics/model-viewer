@@ -14,8 +14,6 @@ jobs:
     permissions:
       packages: write
       contents: read
-    env:
-      LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v3
 
@@ -31,9 +29,13 @@ jobs:
         run: |
           echo "@london-dynamics:registry=https://npm.pkg.github.com/" >> ~/.npmrc
           echo "//npm.pkg.github.com/:_authToken=${LONDON_DYNAMICS_NPM_AUTH_TOKEN}" >> ~/.npmrc
+        env:
+          LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
 
       - name: Install dependencies
         run: npm ci
+        env:
+          LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
 
       # Reconfigure setup-node so publishing uses GitHub Packages (if you
       # publish there). Publishing still uses the GITHUB_TOKEN for auth.
