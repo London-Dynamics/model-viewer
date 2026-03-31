@@ -9,6 +9,44 @@ type GridDeps = {
   clearGrid: () => void;
 };
 
+const GRID_LINES_CONTAINER_NAME = 'ld-grid-lines';
+
+function getOrCreateGridContainer(host: any, deps: GridDeps): Object3D | null {
+  if (host[deps.gridContainerSymbol]) {
+    return host[deps.gridContainerSymbol];
+  }
+
+  const targetObject = getGridTargetObject(host, deps);
+  if (!targetObject) {
+    return null;
+  }
+
+  const gridContainer = new Object3D();
+  gridContainer.name = 'ld-grid';
+  gridContainer.castShadow = false;
+  gridContainer.receiveShadow = false;
+  host[deps.gridContainerSymbol] = gridContainer;
+  targetObject.add(gridContainer);
+  return gridContainer;
+}
+
+function clearGridLines(host: any, deps: GridDeps) {
+  const gridContainer = host[deps.gridContainerSymbol];
+  if (!gridContainer) {
+    return;
+  }
+
+  const gridLinesContainer = gridContainer.children.find(
+    (child: Object3D) => child.name === GRID_LINES_CONTAINER_NAME
+  );
+  if (!gridLinesContainer) {
+    return;
+  }
+
+  gridContainer.remove(gridLinesContainer);
+  host._disposeRenderableObject(gridLinesContainer);
+}
+
 export function getGridTargetObject(host: any, deps: GridDeps): Object3D | null {
   const scene = host[deps.sceneSymbol];
   let targetObject: Object3D | null = null;
@@ -25,9 +63,10 @@ export function getGridTargetObject(host: any, deps: GridDeps): Object3D | null 
 export function createGrid(host: any, deps: GridDeps) {
   const scene = host[deps.sceneSymbol];
 
-  deps.clearGrid();
+  clearGridLines(host, deps);
 
   if (!host.showGrid) {
+    host[deps.needsRenderSymbol]();
     return;
   }
 
@@ -35,17 +74,13 @@ export function createGrid(host: any, deps: GridDeps) {
     return;
   }
 
-  const targetObject = getGridTargetObject(host, deps);
-  if (!targetObject) {
+  const gridContainer = getOrCreateGridContainer(host, deps);
+  if (!gridContainer) {
     console.warn('Target object not found for grid');
     return;
   }
-
-  const gridContainer = new Object3D();
-  gridContainer.name = 'ld-grid';
-  gridContainer.castShadow = false;
-  gridContainer.receiveShadow = false;
-  host[deps.gridContainerSymbol] = gridContainer;
+  const gridLinesContainer = new Object3D();
+  gridLinesContainer.name = GRID_LINES_CONTAINER_NAME;
 
   const minorSpacing = convertToMeters(host.gridMinor, host.measurementUnit);
   const majorSpacing = convertToMeters(host.gridMajor, host.measurementUnit);
@@ -113,7 +148,7 @@ export function createGrid(host: any, deps: GridDeps) {
       mesh.frustumCulled = false;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      gridContainer.add(mesh);
+      gridLinesContainer.add(mesh);
     }
   } else if (host.gridMajor > 0) {
     for (
@@ -131,7 +166,7 @@ export function createGrid(host: any, deps: GridDeps) {
       mesh.frustumCulled = false;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      gridContainer.add(mesh);
+      gridLinesContainer.add(mesh);
     }
   }
 
@@ -162,7 +197,7 @@ export function createGrid(host: any, deps: GridDeps) {
       mesh.frustumCulled = false;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      gridContainer.add(mesh);
+      gridLinesContainer.add(mesh);
     }
   } else if (host.gridMajor > 0) {
     for (
@@ -180,11 +215,11 @@ export function createGrid(host: any, deps: GridDeps) {
       mesh.frustumCulled = false;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
-      gridContainer.add(mesh);
+      gridLinesContainer.add(mesh);
     }
   }
 
-  targetObject.add(gridContainer);
+  gridContainer.add(gridLinesContainer);
   host[deps.needsRenderSymbol]();
 }
 
