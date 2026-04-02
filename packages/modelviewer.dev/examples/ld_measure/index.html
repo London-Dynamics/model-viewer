@@ -656,20 +656,34 @@
                           [0, 1.1],
                         ];
 
-                        const octagonPath = Array.from(
-                          { length: 8 },
+                        const circleEdges = 32;
+
+                        const circlePath = Array.from(
+                          { length: circleEdges },
                           (_, index) => {
-                            const angle = (Math.PI * 2 * index) / 8;
+                            const angle = (Math.PI * 2 * index) / circleEdges;
                             return [Math.cos(angle), Math.sin(angle)];
                           }
                         );
+
+                        const circlePlusPaths = [
+                          circlePath,
+                          [
+                            [-0.4, 0],
+                            [0.4, 0],
+                          ],
+                          [
+                            [0, -0.4],
+                            [0, 0.4],
+                          ],
+                        ];
 
                         modelViewer.addGridShapeLines(squarePath, {
                           id: 'square-1m',
                         });
 
-                        modelViewer.addGridShapeLines(octagonPath, {
-                          id: 'octagon-2m',
+                        modelViewer.addGridShapeLines(circlePlusPaths, {
+                          id: 'circle-2m',
                           coordinate: [1.5, 1.5],
                         });
                       });
