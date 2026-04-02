@@ -831,8 +831,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     clear() {}
 
     private _getSelectedRootObjects(): Object3D[] {
-      const selected = (((this as any).selectedObjects || []) as Object3D[])
-        .filter(Boolean);
+      const selected = (
+        ((this as any).selectedObjects || []) as Object3D[]
+      ).filter(Boolean);
       if (selected.length === 0) return [];
       const selectedSet = new Set<Object3D>(selected);
       return selected.filter((node) => {
@@ -946,6 +947,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
     }
 
+    private _dispatchObjectRemoveEvent(object: Object3D) {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent('object-remove', {
+            detail: {
+              name: object.name,
+              uuid: object.uuid,
+            },
+            bubbles: true,
+            composed: true,
+          })
+        );
+      } catch (e) {}
+    }
+
     private _setRotationOnObject(
       obj: Object3D,
       value: [number | string, number | string, number | string],
@@ -989,7 +1005,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         current = logicalCurrent;
       } else if (animate) {
         try {
-          const startEuler = new Euler().setFromQuaternion(obj.quaternion, order);
+          const startEuler = new Euler().setFromQuaternion(
+            obj.quaternion,
+            order
+          );
           current = [
             startEuler.x * (180 / Math.PI),
             startEuler.y * (180 / Math.PI),
@@ -1148,10 +1167,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       const hasName = typeof nameOrValue === 'string';
       const targetValue = hasName
-        ? (valueOrOptions as [number | string, number | string, number | string])
+        ? (valueOrOptions as [
+            number | string,
+            number | string,
+            number | string,
+          ])
         : (nameOrValue as [number | string, number | string, number | string]);
-      const targetOptions = hasName ? options : (valueOrOptions as RotationOptions);
-      const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
+      const targetOptions = hasName
+        ? options
+        : (valueOrOptions as RotationOptions);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrValue as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._setRotationOnObject(target, targetValue, targetOptions);
@@ -1163,7 +1190,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
      * These call through to `setRotation` after seeding the existing rotation
      * (via `getRotation`) so callers can update one axis at a time.
      */
-    setRotationX(name: string, x: number | string, options?: RotationOptions): void;
+    setRotationX(
+      name: string,
+      x: number | string,
+      options?: RotationOptions
+    ): void;
     setRotationX(x: number | string, options?: RotationOptions): void;
     setRotationX(
       nameOrX: string | number,
@@ -1174,7 +1205,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         typeof nameOrX === 'string' &&
         (typeof xOrOptions === 'number' || typeof xOrOptions === 'string');
       const x = (hasName ? xOrOptions : nameOrX) as number | string;
-      const callOptions = (hasName ? options : xOrOptions) as RotationOptions | undefined;
+      const callOptions = (hasName ? options : xOrOptions) as
+        | RotationOptions
+        | undefined;
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof x !== 'number' &&
@@ -1182,7 +1215,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         throw new Error('Invalid x value for setRotationX');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrX as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrX as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         const rot = this._getRotationFromObject(target) as [
@@ -1195,7 +1230,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    setRotationY(name: string, y: number | string, options?: RotationOptions): void;
+    setRotationY(
+      name: string,
+      y: number | string,
+      options?: RotationOptions
+    ): void;
     setRotationY(y: number | string, options?: RotationOptions): void;
     setRotationY(
       nameOrY: string | number,
@@ -1206,7 +1245,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         typeof nameOrY === 'string' &&
         (typeof yOrOptions === 'number' || typeof yOrOptions === 'string');
       const y = (hasName ? yOrOptions : nameOrY) as number | string;
-      const callOptions = (hasName ? options : yOrOptions) as RotationOptions | undefined;
+      const callOptions = (hasName ? options : yOrOptions) as
+        | RotationOptions
+        | undefined;
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof y !== 'number' &&
@@ -1214,7 +1255,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         throw new Error('Invalid y value for setRotationY');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrY as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrY as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         const rot = this._getRotationFromObject(target) as [
@@ -1227,7 +1270,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    setRotationZ(name: string, z: number | string, options?: RotationOptions): void;
+    setRotationZ(
+      name: string,
+      z: number | string,
+      options?: RotationOptions
+    ): void;
     setRotationZ(z: number | string, options?: RotationOptions): void;
     setRotationZ(
       nameOrZ: string | number,
@@ -1238,7 +1285,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         typeof nameOrZ === 'string' &&
         (typeof zOrOptions === 'number' || typeof zOrOptions === 'string');
       const z = (hasName ? zOrOptions : nameOrZ) as number | string;
-      const callOptions = (hasName ? options : zOrOptions) as RotationOptions | undefined;
+      const callOptions = (hasName ? options : zOrOptions) as
+        | RotationOptions
+        | undefined;
       const relOrNumRE = /^([+-]=?)?\s*[+-]?\d+(\.\d+)?\s*$/;
       if (
         typeof z !== 'number' &&
@@ -1246,7 +1295,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         throw new Error('Invalid z value for setRotationZ');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrZ as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrZ as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         const rot = this._getRotationFromObject(target) as [
@@ -1282,7 +1333,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           'Invalid value array. Expected an array of three numbers representing position [x,y,z].'
         );
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrValue as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1312,7 +1365,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     setPositionX(nameOrX: string | number, x?: number) {
       const hasName = typeof nameOrX === 'string' && arguments.length >= 2;
       const targetX = (hasName ? x : nameOrX) as number;
-      const targets = this._getTargetObjects(hasName ? (nameOrX as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrX as string) : undefined
+      );
       if (typeof targetX !== 'number' || Number.isNaN(targetX)) {
         throw new Error('Invalid x value for setPositionX');
       }
@@ -1337,7 +1392,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (typeof targetY !== 'number' || Number.isNaN(targetY)) {
         throw new Error('Invalid y value for setPositionY');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrY as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrY as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1359,7 +1416,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (typeof targetZ !== 'number' || Number.isNaN(targetZ)) {
         throw new Error('Invalid z value for setPositionZ');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrZ as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrZ as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1396,7 +1455,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           'Invalid value array. Expected an array of three numbers representing scale [sx,sy,sz].'
         );
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrValue as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrValue as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1429,7 +1490,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (typeof targetSx !== 'number' || Number.isNaN(targetSx)) {
         throw new Error('Invalid sx value for setScaleX');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrSx as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrSx as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1451,7 +1514,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (typeof targetSy !== 'number' || Number.isNaN(targetSy)) {
         throw new Error('Invalid sy value for setScaleY');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrSy as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrSy as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1473,7 +1538,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (typeof targetSz !== 'number' || Number.isNaN(targetSz)) {
         throw new Error('Invalid sz value for setScaleZ');
       }
-      const targets = this._getTargetObjects(hasName ? (nameOrSz as string) : undefined);
+      const targets = this._getTargetObjects(
+        hasName ? (nameOrSz as string) : undefined
+      );
       if (targets.length === 0) return;
       for (const target of targets) {
         this._dispatchTransformEvent('transformstart', target);
@@ -1489,7 +1556,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getRotation(name: string): [number, number, number];
     getRotation(): [number, number, number][];
-    getRotation(name?: string): [number, number, number] | [number, number, number][] {
+    getRotation(
+      name?: string
+    ): [number, number, number] | [number, number, number][] {
       if (typeof name === 'string') {
         const obj = this._resolveObjectByName(name);
         if (!obj) {
@@ -1504,7 +1573,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getPosition(name: string): [number, number, number];
     getPosition(): [number, number, number][];
-    getPosition(name?: string): [number, number, number] | [number, number, number][] {
+    getPosition(
+      name?: string
+    ): [number, number, number] | [number, number, number][] {
       if (typeof name === 'string') {
         const obj = this._resolveObjectByName(name);
         if (!obj) {
@@ -1519,7 +1590,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getScale(name: string): [number, number, number];
     getScale(): [number, number, number][];
-    getScale(name?: string): [number, number, number] | [number, number, number][] {
+    getScale(
+      name?: string
+    ): [number, number, number] | [number, number, number][] {
       if (typeof name === 'string') {
         const obj = this._resolveObjectByName(name);
         if (!obj) {
@@ -3244,7 +3317,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      const dragTarget = this._currentDragTarget || (this as any).selectedObjects?.[0];
+      const dragTarget =
+        this._currentDragTarget || (this as any).selectedObjects?.[0];
       this._removeWindowDragListeners();
       (this as any).isDragging = false;
 
@@ -3813,6 +3887,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._firePartsStateEvents(node, 'delete', {});
 
         if (node.parent) {
+          this._dispatchObjectRemoveEvent(node);
           node.parent.remove(node);
         }
 
@@ -3900,7 +3975,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               }
             } catch (e) {}
 
-            if (obj.parent) obj.parent.remove(obj);
+            if (obj.parent) {
+              this._dispatchObjectRemoveEvent(obj);
+              obj.parent.remove(obj);
+            }
             (this as any)[$needsRender]();
           } catch (e) {}
         };
