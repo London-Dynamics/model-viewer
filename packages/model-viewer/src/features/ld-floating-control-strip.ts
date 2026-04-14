@@ -27,6 +27,9 @@ const $modularControlsContainer = Symbol('modularControlsContainer');
 const $selectedObject = Symbol('selectedObject');
 const $updateModularControls = Symbol('updateModularControls');
 const $worldToScreen = Symbol('worldToScreen');
+const $computeScreenRectFromBox = Symbol('computeScreenRectFromBox');
+const $getFloatingControlsSize = Symbol('getFloatingControlsSize');
+const $pickControlScreenPosition = Symbol('pickControlScreenPosition');
 
 export const $selectObjectForControls = Symbol('selectObjectForControls');
 export const $clearSelectedObject = Symbol('clearSelectedObject');
@@ -81,6 +84,173 @@ export const LDFloatingControlStripMixin = <
       };
     }
 
+    private [$computeScreenRectFromBox](boundingBox: Box3): {
+      minX: number;
+      maxX: number;
+      minY: number;
+      maxY: number;
+      centerX: number;
+      centerY: number;
+      isVisible: boolean;
+    } {
+      const corners = [
+        new Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.min.z),
+        new Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.max.z),
+        new Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.min.z),
+        new Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.max.z),
+        new Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.min.z),
+        new Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.max.z),
+        new Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.min.z),
+        new Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.max.z),
+      ];
+
+      let minX = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let hasVisibleCorner = false;
+
+      for (const corner of corners) {
+        const projected = corner.clone().project(this[$scene].camera);
+        if (projected.z < 1) {
+          hasVisibleCorner = true;
+        }
+
+        const screenPos = this[$worldToScreen](corner);
+        minX = Math.min(minX, screenPos.x);
+        maxX = Math.max(maxX, screenPos.x);
+        minY = Math.min(minY, screenPos.y);
+        maxY = Math.max(maxY, screenPos.y);
+      }
+
+      if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+        const fallbackCenter = this[$worldToScreen](
+          boundingBox.getCenter(new Vector3())
+        );
+        return {
+          minX: fallbackCenter.x,
+          maxX: fallbackCenter.x,
+          minY: fallbackCenter.y,
+          maxY: fallbackCenter.y,
+          centerX: fallbackCenter.x,
+          centerY: fallbackCenter.y,
+          isVisible: false,
+        };
+      }
+
+      return {
+        minX,
+        maxX,
+        minY,
+        maxY,
+        centerX: (minX + maxX) * 0.5,
+        centerY: (minY + maxY) * 0.5,
+        isVisible: hasVisibleCorner,
+      };
+    }
+
+    private [$getFloatingControlsSize](): { width: number; height: number } {
+      const slot = this[$modularControlsContainer] as HTMLSlotElement | null;
+      const fallback = { width: 160, height: 48 };
+
+      if (!slot) {
+        return fallback;
+      }
+
+      const assigned = slot.assignedElements({ flatten: true });
+      const target = assigned[0] as HTMLElement | undefined;
+      if (!target) {
+        return fallback;
+      }
+
+      const width = target.offsetWidth || target.clientWidth || fallback.width;
+      const height = target.offsetHeight || target.clientHeight || fallback.height;
+      return { width, height };
+    }
+
+    private [$pickControlScreenPosition](boundingBox: Box3): {
+      x: number;
+      y: number;
+      isVisible: boolean;
+    } {
+      const width = this[$scene].width;
+      const height = this[$scene].height;
+      const screenRect = this[$computeScreenRectFromBox](boundingBox);
+      const controlsSize = this[$getFloatingControlsSize]();
+      const viewportPadding = 8;
+      const objectPadding = 16;
+      const halfW = controlsSize.width * 0.5;
+      const halfH = controlsSize.height * 0.5;
+      const minAllowedX = viewportPadding + halfW;
+      const maxAllowedX = width - viewportPadding - halfW;
+      const minAllowedY = viewportPadding + halfH;
+      const maxAllowedY = height - viewportPadding - halfH;
+
+      const cameraDirection = this[$scene].camera
+        .getWorldDirection(new Vector3())
+        .normalize();
+      const isTopOrBottomView = Math.abs(cameraDirection.y) > 0.65;
+
+      const candidates = [
+        {
+          key: 'below',
+          x: screenRect.centerX,
+          y: screenRect.maxY + objectPadding + halfH,
+        },
+        {
+          key: 'above',
+          x: screenRect.centerX,
+          y: screenRect.minY - objectPadding - halfH,
+        },
+        {
+          key: 'right',
+          x: screenRect.maxX + objectPadding + halfW,
+          y: screenRect.centerY,
+        },
+        {
+          key: 'left',
+          x: screenRect.minX - objectPadding - halfW,
+          y: screenRect.centerY,
+        },
+      ];
+
+      const priority = isTopOrBottomView
+        ? ['right', 'left', 'above', 'below']
+        : ['below', 'above', 'right', 'left'];
+
+      for (const key of priority) {
+        const candidate = candidates.find((c) => c.key === key);
+        if (!candidate) {
+          continue;
+        }
+
+        const fitsViewport =
+          candidate.x >= minAllowedX &&
+          candidate.x <= maxAllowedX &&
+          candidate.y >= minAllowedY &&
+          candidate.y <= maxAllowedY;
+
+        if (fitsViewport) {
+          return {
+            x: candidate.x,
+            y: candidate.y,
+            isVisible: screenRect.isVisible,
+          };
+        }
+      }
+
+      // Fall back to clamped "below" position if no ideal candidate fits.
+      const below = candidates[0];
+      const clampedX = Math.min(maxAllowedX, Math.max(minAllowedX, below.x));
+      const clampedY = Math.min(maxAllowedY, Math.max(minAllowedY, below.y));
+
+      return {
+        x: clampedX,
+        y: clampedY,
+        isVisible: screenRect.isVisible,
+      };
+    }
+
     private [$updateModularControls](): void {
       if (!this[$modularControlsContainer] || this.disableFloatingControls) {
         if (this[$modularControlsContainer]) {
@@ -117,20 +287,10 @@ export const LDFloatingControlStripMixin = <
         }
       }
 
-      // Calculate bounding box center and bottom
+      // Calculate object bounds once and place controls in screen space.
       const boundingBox = new Box3().setFromObject(this[$selectedObject]);
-      const center = boundingBox.getCenter(new Vector3());
-
-      // Position controls slightly below and in the middle of bounding box
-      const controlsPosition = center.clone();
-      controlsPosition.y = boundingBox.min.y - 0.5; // 0.2 units below bottom
-
-      // Convert to screen coordinates
-      const screenPosition = this[$worldToScreen](controlsPosition);
-
-      // Check if position is visible (in front of camera)
-      const vector = controlsPosition.clone().project(this[$scene].camera);
-      const isVisible = vector.z < 1;
+      const screenPosition = this[$pickControlScreenPosition](boundingBox);
+      const isVisible = screenPosition.isVisible;
 
       if (isVisible) {
         this[$modularControlsContainer].style.display = 'block';
