@@ -87,6 +87,7 @@ export type BulkPlacementItem = {
   part?: Partial<Part>;
   transform: {
     position: [number, number, number];
+    // Rotation in radians (Three.js Euler order XYZ)
     rotation: [number, number, number];
     scale: [number, number, number];
   };
@@ -94,6 +95,7 @@ export type BulkPlacementItem = {
 
 type ImmediatePlacementTransform = {
   position?: [number, number, number];
+  // Rotation in radians (Three.js Euler order XYZ)
   rotation?: [number, number, number];
   scale?: [number, number, number];
 };
@@ -432,9 +434,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             }
             if (options.rotation) {
               placeholder.rotation.set(
-                (options.rotation[0] * Math.PI) / 180,
-                (options.rotation[1] * Math.PI) / 180,
-                (options.rotation[2] * Math.PI) / 180
+                options.rotation[0],
+                options.rotation[1],
+                options.rotation[2]
               );
             }
             if (options.scale) {

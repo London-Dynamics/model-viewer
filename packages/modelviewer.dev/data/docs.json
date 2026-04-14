@@ -1728,7 +1728,7 @@
       {
         "name": "placeManyGlb(items: BulkPlacementItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined> }): Promise<{ id: string; node: Object3D }[]>",
         "htmlName": "placeManyGlb",
-        "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Supports a configurable maximum concurrency (default 4) and emits standard progress events with reason: 'bulk-placement' and aggregated total progress, plus a bulk-placement-complete event when finished.",
+        "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Rotation values in each item transform are interpreted as radians (Three.js Euler XYZ). Supports a configurable maximum concurrency (default 4) and emits standard progress events with reason: 'bulk-placement' and aggregated total progress, plus a bulk-placement-complete event when finished.",
         "links": [
           "<a href=\"../examples/ld_modular/#bulk-placement\">Related examples</a>"
         ]
@@ -1783,7 +1783,7 @@
       {
         "name": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; }): Promise<{ id: string; node: Object3D }>",
         "htmlName": "placeGlb",
-        "description": "Immediately place a GLB into the scene at a known transform. Shares behavior with beginPlacement/PlacementSession.commit for loading events, bounds-based placeholders, snapping, and userData. Returns a Promise that resolves with the created node.",
+        "description": "Immediately place a GLB into the scene at a known transform. Rotation values are interpreted as radians (Three.js Euler XYZ). Shares behavior with beginPlacement/PlacementSession.commit for loading events, bounds-based placeholders, snapping, and userData. Returns a Promise that resolves with the created node.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
