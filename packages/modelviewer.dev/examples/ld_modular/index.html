@@ -719,18 +719,24 @@
                         //modelViewer.deleteObjectByFileName('empty.glb');
                       });
 
-                      const snappingPointsMap = {
+                      const snapPointsMap = {
                         'corner-l': [
                           {
-                            position: { x: 0, y: 0.5, z: 0.5 },
-                            rotation: { x: 0, y: 0, z: 0 },
+                            id: 'front',
+                            transform: {
+                              position: [0, 0.5, 0.5],
+                              rotation: [0, 0, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: ['chaise'],
                             provides: ['corner-left-front'],
                           },
                           {
-                            position: { x: 0.5, y: 0.5, z: 0 },
-                            rotation: { x: 0, y: 1.5707963267948966, z: 0 },
+                            id: 'right',
+                            transform: {
+                              position: [0.5, 0.5, 0],
+                              rotation: [0, 1.5707963267948966, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: ['seat-left'],
                             provides: ['seat-right'],
@@ -738,15 +744,21 @@
                         ],
                         'corner-r': [
                           {
-                            position: { x: 0, y: 0.5, z: 0.5 },
-                            rotation: { x: 0, y: 0, z: 0 },
+                            id: 'front',
+                            transform: {
+                              position: [0, 0.5, 0.5],
+                              rotation: [0, 0, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: ['chaise'],
                             provides: ['corner-right-front'],
                           },
                           {
-                            position: { x: -0.5, y: 0.5, z: 0 },
-                            rotation: { x: 0, y: -1.5707963267948966, z: 0 },
+                            id: 'left',
+                            transform: {
+                              position: [-0.5, 0.5, 0],
+                              rotation: [0, -1.5707963267948966, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: ['seat-right'],
                             provides: ['seat-left'],
@@ -754,25 +766,30 @@
                         ],
                         middle: [
                           {
-                            position: {
-                              x: -1.3877787807814457e-17,
-                              y: 0.5,
-                              z: 0.5,
+                            id: 'front',
+                            transform: {
+                              position: [-1.3877787807814457e-17, 0.5, 0.5],
+                              rotation: [0, 0, 0],
                             },
-                            rotation: { x: 0, y: 0, z: 0 },
                             snapRadius: 0.2,
                             accepts: ['chaise'],
                           },
                           {
-                            position: { x: 0.5, y: 0.5, z: 0 },
-                            rotation: { x: 0, y: 1.5707963267948966, z: 0 },
+                            id: 'right',
+                            transform: {
+                              position: [0.5, 0.5, 0],
+                              rotation: [0, 1.5707963267948966, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: ['seat-left'],
                             provides: ['seat-right', 'middle-right'],
                           },
                           {
-                            position: { x: -0.5, y: 0.5, z: 0 },
-                            rotation: { x: 0, y: -1.5707963267948966, z: 0 },
+                            id: 'left',
+                            transform: {
+                              position: [-0.5, 0.5, 0],
+                              rotation: [0, -1.5707963267948966, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: ['seat-right'],
                             provides: ['seat-left', 'middle-left'],
@@ -780,8 +797,11 @@
                         ],
                         chaise: [
                           {
-                            position: { x: 0, y: 0.25, z: -0.5 },
-                            rotation: { x: 0, y: 3.141592653589793, z: 0 },
+                            id: 'back',
+                            transform: {
+                              position: [0, 0.25, -0.5],
+                              rotation: [0, 3.141592653589793, 0],
+                            },
                             snapRadius: 0.2,
                             accepts: [],
                             provides: ['chaise'],
@@ -818,9 +838,7 @@
 
                           button.addEventListener('mousedown', (e) => {
                             const dataset = Object.assign({}, e.target.dataset);
-
-                            dataset.snappingPoints =
-                              snappingPointsMap[dataset.name] || [];
+                            const snapPoints = snapPointsMap[dataset.name] || [];
 
                             const { filename, ...placementOptions } = dataset;
 
@@ -839,6 +857,7 @@
 
                             placementOptions.part = {
                               type: 'scene',
+                              snapPoints,
                               bounds: {
                                 center: [
                                   2.384185791015625e-7, 0.4542551338672638,

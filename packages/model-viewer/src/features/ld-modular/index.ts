@@ -11,7 +11,7 @@ import {
   BoxGeometry,
   MeshBasicMaterial,
 } from 'three';
-import type { Part } from '@london-dynamics/types/product';
+import type { Part, SnapPoint } from '@london-dynamics/types/planner';
 
 import { Constructor } from '../../utilities.js';
 import { SelectionChangeDetail } from '../ld-selection/index.js';
@@ -25,7 +25,6 @@ import ModelViewerElementBase, {
 import { $getMouseWorldPoint } from '../ld-cursor/index.js';
 
 import {
-  SnappingPoint,
   getSnappingPointWorldPosition,
   createSnappedGroup,
   getSnappedGroup,
@@ -54,8 +53,8 @@ import {
 } from '../../utilities/animation.js';
 import { LogFunction, WarnFunction, ErrorFunction } from '../ld-debug.js';
 
-// Re-export SnappingPoint type for external use
-export type { SnappingPoint };
+// Re-export SnapPoint type for external use
+export type { SnapPoint };
 
 export type PlacementOptions = {
   mass?: number;
@@ -64,7 +63,7 @@ export type PlacementOptions = {
   part?: Partial<Part>;
   selectable?: boolean;
   editable?: boolean;
-  snappingPoints?: SnappingPoint[]; // Optional snap points with position and rotation relative to object center
+  snapPoints?: SnapPoint[]; // Optional planner snap points relative to object center
   // Callback to fetch the low-res URL
   getLowResUrl?: () => Promise<string | undefined>;
   // Callback to fetch the high-res URL
@@ -78,9 +77,15 @@ export type PlacementGraphNode = {
   rotation: Euler;
   scale: Vector3;
   part: Partial<Part> | undefined;
-  snappingPoints?: SnappingPoint[];
+  snapPoints?: SnapPoint[];
   children?: PlacementGraphNode[];
 };
+
+const DEFAULT_SNAP_POINT_ROTATION: [number, number, number] = [0, 0, 0];
+
+function getPlacementSnapPoints(options?: PlacementOptions): SnapPoint[] | undefined {
+  return options?.snapPoints ?? options?.part?.snapPoints;
+}
 
 export type BulkPlacementItem = {
   id: string;
@@ -578,7 +583,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       // follow camera movement and reflect toggles immediately.
       try {
         // Update snapping points when they should be visible
-        const shouldShowSnappingPoints =
+        const shouldShowSnapPoints =
           this.snappingPointsVisible ||
           ((this as any).selectedObjects &&
             (this as any).selectedObjects.length > 0) ||
@@ -586,7 +591,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             this._activePlacementSession.state === 'placing') ||
           ((this as any).isDragging && this.snappingEnabled);
 
-        if (shouldShowSnappingPoints) {
+        if (shouldShowSnapPoints) {
           this.updateSnappingPointSlots();
         }
       } catch (e) {}
@@ -777,7 +782,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           rotation: this._getPlacementTreeRotationFromObject(obj),
           scale: obj.scale.clone(),
           part: obj.userData?.part,
-          snappingPoints: obj.userData?.snappingPoints,
+          snapPoints: obj.userData?.snapPoints,
           ...(isGroup && {
             children: obj.children.map((child) => extractData(child)),
           }),
@@ -1778,8 +1783,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private pendingSnapConnection: {
       draggedObject: Object3D;
       targetObject: Object3D;
-      draggedPoint: SnappingPoint;
-      targetPoint: SnappingPoint;
+      draggedPoint: SnapPoint;
+      targetPoint: SnapPoint;
     } | null = null;
 
     // Track recently disconnected pairs for hysteresis (cleared on drag end)
@@ -1827,8 +1832,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       // user sees the object snapped while moving (no permanent graph mutation yet).
       if (v) {
         try {
-          const draggedPoint: SnappingPoint = v.draggedPoint;
-          const targetPoint: SnappingPoint = v.targetPoint;
+          const draggedPoint: SnapPoint = v.draggedPoint;
+          const targetPoint: SnapPoint = v.targetPoint;
           let draggedObj: Object3D = v.draggedObject;
 
           // If the dragged object is a child of a group being moved, snap the
@@ -1884,6 +1889,44 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           } catch (e) {}
         } catch (e) {}
       }
+    }
+
+    private isSnapPointUsed(object: Object3D, snapPoint: SnapPoint): boolean {
+      if (!snapPoint?.id) return false;
+      const group = getSnappedGroup(object);
+      const connections = group?.userData?.snapConnections;
+      if (!Array.isArray(connections)) return false;
+
+      const objectKey = object.name || object.uuid;
+      return connections.some((connection: any) => {
+        const object1Matches =
+          connection.object1 === object ||
+          connection.object1?.uuid === object.uuid ||
+          connection.object1?.name === object.name ||
+          connection.a === objectKey ||
+          connection.a === object.uuid;
+        const object2Matches =
+          connection.object2 === object ||
+          connection.object2?.uuid === object.uuid ||
+          connection.object2?.name === object.name ||
+          connection.b === objectKey ||
+          connection.b === object.uuid;
+
+        return (
+          (object1Matches &&
+            (connection.snapPoint1?.id === snapPoint.id ||
+              connection.aPoint?.id === snapPoint.id)) ||
+          (object2Matches &&
+            (connection.snapPoint2?.id === snapPoint.id ||
+              connection.bPoint?.id === snapPoint.id))
+        );
+      });
+    }
+
+    private getSnapPointRotationTuple(
+      snapPoint: SnapPoint
+    ): [number, number, number] {
+      return snapPoint.transform?.rotation ?? DEFAULT_SNAP_POINT_ROTATION;
     }
 
     // Re-declare protected inherited property for TypeScript visibility
@@ -2000,8 +2043,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private setupNewConnection(
       draggedObject: Object3D,
       targetObject: Object3D,
-      draggedPoint: SnappingPoint,
-      targetPoint: SnappingPoint
+      draggedPoint: SnapPoint,
+      targetPoint: SnapPoint
     ) {
       try {
         // If both objects are already in the same group, record connection only
@@ -2188,8 +2231,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private completeSnapConnection(connection: {
       draggedObject: Object3D;
       targetObject: Object3D;
-      draggedPoint: SnappingPoint;
-      targetPoint: SnappingPoint;
+      draggedPoint: SnapPoint;
+      targetPoint: SnapPoint;
     }) {
       try {
         // debug removed
@@ -2500,28 +2543,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Use HTML slots for all snapping points (both placed objects and placeholders)
-      const snappingPointsFound: any[] = [];
+      const snapPointsFound: any[] = [];
       if (targetObject) {
         targetObject.traverse((child: any) => {
           // Show slots for all objects with snapping points
-          if (child.userData?.snappingPoints) {
-            const snappingPoints = child.userData
-              .snappingPoints as SnappingPoint[];
-            snappingPoints.forEach((snapPoint, index) => {
-              if (snapPoint.isUsed) return;
+          if (child.userData?.snapPoints) {
+            const snapPoints = child.userData
+              .snapPoints as SnapPoint[];
+            snapPoints.forEach((snapPoint, index) => {
+              if (this.isSnapPointUsed(child, snapPoint)) return;
 
-              const localPos = new Vector3(
-                snapPoint.position.x,
-                snapPoint.position.y,
-                snapPoint.position.z
-              );
-              const worldPos = child.localToWorld(localPos.clone());
-
-              const rotation = new Euler(
-                snapPoint.rotation.x,
-                snapPoint.rotation.y,
-                snapPoint.rotation.z
-              );
+              const worldPos = getSnappingPointWorldPosition(child, snapPoint);
+              const [rx, ry, rz] = this.getSnapPointRotationTuple(snapPoint);
+              const rotation = new Euler(rx, ry, rz);
               const normal = new Vector3(0, 0, 1).applyEuler(rotation);
               const worldNormal = normal
                 .clone()
@@ -2533,7 +2567,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               const dotProduct = viewVector.dot(worldNormal);
               const facingCamera = dotProduct > 0;
 
-              snappingPointsFound.push({
+              snapPointsFound.push({
                 name: `${child.uuid}_${index}`,
                 ownerName: child.name || child.uuid,
                 worldPosition: worldPos,
@@ -2549,7 +2583,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         });
       }
 
-      updateSlots(snappingPointsFound, {
+      updateSlots(snapPointsFound, {
         slotMap: this._snappingPointSlots,
         owner: this as any,
         container:
@@ -3411,10 +3445,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const snappableObjects: Object3D[] = [];
       if (draggedObject.userData?.isSnappedGroup === true) {
         draggedObject.traverse((child: any) => {
-          if (child.userData.isPlacedObject && child.userData.snappingPoints)
+          if (child.userData.isPlacedObject && child.userData.snapPoints)
             snappableObjects.push(child);
         });
-      } else if (draggedObject.userData.snappingPoints) {
+      } else if (draggedObject.userData.snapPoints) {
         snappableObjects.push(draggedObject);
       }
 
@@ -3437,7 +3471,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             child.userData.isPlacedObject &&
             child !== snappableObj &&
             !this.areObjectsInSameGroup(snappableObj, child) &&
-            child.userData.snappingPoints
+            child.userData.snapPoints
           ) {
             // Check if this pair was recently disconnected (for hysteresis)
             const draggedId = snappableObj.name || snappableObj.uuid;
@@ -3462,7 +3496,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               });
             } catch (e) {}
 
-            const connections = findSnappingConnections(snappableObj, child);
+            const connections = findSnappingConnections(
+              snappableObj,
+              child,
+              (object, snapPoint) => this.isSnapPointUsed(object, snapPoint)
+            );
 
             try {
               (this as any).log('[puzzler] connections found', {
@@ -3559,25 +3597,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
 
         const connectionToBreak = connections[index];
-
-        // Support multiple possible shapes of connection objects depending on
-        // whether they were created via utilities.createSnappedGroup (object1/object2)
-        // or via the older a/b style (a/aPoint/b/bPoint). Try to mark underlying
-        // snapping point objects as no longer used if we can find them.
-        try {
-          const sp1 =
-            connectionToBreak.snapPoint1 ||
-            connectionToBreak.aPoint ||
-            connectionToBreak.aPoint;
-          const sp2 =
-            connectionToBreak.snapPoint2 ||
-            connectionToBreak.bPoint ||
-            connectionToBreak.bPoint;
-          if (sp1 && typeof sp1 === 'object') sp1.isUsed = false;
-          if (sp2 && typeof sp2 === 'object') sp2.isUsed = false;
-        } catch (e) {
-          // ignore
-        }
 
         // Track this specific disconnection for hysteresis logic
         try {
@@ -4361,7 +4380,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Refresh snapping-point slots when the placeholder is first loaded
       // or when its pointer-driven position updates. This ensures the
-      // slot renderer sees placeholder snappingPoints during interactive
+      // slot renderer sees placeholder snapPoints during interactive
       // placement. Also refresh on loading-start (commit) to clear slots.
       try {
         session.addEventListener('placeholder-loaded', () => {
@@ -4556,8 +4575,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (options?.editable !== undefined) {
         newObject.userData.editable = options.editable;
       }
-      if (options?.snappingPoints) {
-        newObject.userData.snappingPoints = options.snappingPoints;
+      const replacementSnapPoints = getPlacementSnapPoints(options);
+      if (replacementSnapPoints) {
+        newObject.userData.snapPoints = replacementSnapPoints;
       }
 
       // Check if the target object is part of a group
@@ -4747,9 +4767,10 @@ class PlacementSession extends EventTarget {
     };
     placeholder.userData.isPlacementPlaceholder = true;
 
-    if (this._options?.snappingPoints) {
+    const placeholderSnapPoints = getPlacementSnapPoints(this._options);
+    if (placeholderSnapPoints) {
       try {
-        placeholder.userData.snappingPoints = this._options.snappingPoints;
+        placeholder.userData.snapPoints = placeholderSnapPoints;
       } catch (e) {
         // ignore
       }
@@ -4838,12 +4859,13 @@ class PlacementSession extends EventTarget {
 
       placeholder.userData = placeholder.userData || {};
       placeholder.userData.isPlacementPlaceholder = true;
-      // If the placement was started with snappingPoints, attach them to
+      // If the placement was started with snapPoints, attach them to
       // the placeholder so the snapping-point slot renderer and snapping
       // logic can discover and use them during interactive placement.
-      if (this._options?.snappingPoints) {
+      const placeholderSnapPoints = getPlacementSnapPoints(this._options);
+      if (placeholderSnapPoints) {
         try {
-          placeholder.userData.snappingPoints = this._options.snappingPoints;
+          placeholder.userData.snapPoints = placeholderSnapPoints;
         } catch (e) {
           // ignore
         }
@@ -4997,7 +5019,7 @@ class PlacementSession extends EventTarget {
       if (
         (this._element as any).snappingEnabled &&
         this.placeholder &&
-        this.placeholder.userData.snappingPoints
+        this.placeholder.userData.snapPoints
       ) {
         try {
           const targetObject = (this._element as any).findTargetObject();
@@ -5008,11 +5030,13 @@ class PlacementSession extends EventTarget {
               if (
                 child.userData.isPlacedObject &&
                 child !== this.placeholder &&
-                child.userData.snappingPoints
+                child.userData.snapPoints
               ) {
                 const connections = findSnappingConnections(
                   this.placeholder!,
-                  child
+                  child,
+                  (object, snapPoint) =>
+                    (this._element as any).isSnapPointUsed(object, snapPoint)
                 );
                 if (connections && connections.length > 0) {
                   const connection = {
@@ -5376,9 +5400,10 @@ class PlacementSession extends EventTarget {
         name: this._options?.name || this.id,
         part: this._options?.part,
       };
-      if (this._options?.snappingPoints) {
+      const placedSnapPoints = getPlacementSnapPoints(this._options);
+      if (placedSnapPoints) {
         try {
-          gltf.scene.userData.snappingPoints = this._options.snappingPoints;
+          gltf.scene.userData.snapPoints = placedSnapPoints;
         } catch (e) {}
       }
       gltf.scene.userData.isPlacedObject = true;
@@ -5428,11 +5453,11 @@ class PlacementSession extends EventTarget {
               gltf.scene.traverse((child: any) => {
                 if (
                   child.userData?.isPlacedObject &&
-                  child.userData?.snappingPoints
+                  child.userData?.snapPoints
                 )
                   snappableObjects.push(child);
               });
-            } else if ((gltf.scene as any).userData?.snappingPoints) {
+            } else if ((gltf.scene as any).userData?.snapPoints) {
               snappableObjects.push(gltf.scene);
             }
 
@@ -5445,11 +5470,12 @@ class PlacementSession extends EventTarget {
                     child.userData?.isPlacedObject &&
                     child !== snappableObj &&
                     !el.areObjectsInSameGroup(snappableObj, child) &&
-                    child.userData?.snappingPoints
+                    child.userData?.snapPoints
                   ) {
                     const connections = findSnappingConnections(
                       snappableObj,
-                      child
+                      child,
+                      (object, snapPoint) => el.isSnapPointUsed(object, snapPoint)
                     );
                     if (connections && connections.length > 0) {
                       const closest = connections[0];

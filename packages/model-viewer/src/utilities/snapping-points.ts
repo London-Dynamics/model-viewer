@@ -11,18 +11,27 @@ import {
   Raycaster,
   Vector2,
 } from 'three';
+import type { SnapPoint } from '@london-dynamics/types/planner';
 
 export const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in meters
 export const DEFAULT_SNAP_RADIUS = SNAP_POINT_DIAMETER * 2;
 
-export type SnappingPoint = {
-  position: { x: number; y: number; z: number };
-  rotation: { x: number; y: number; z: number };
-  snapRadius?: number;
-  accepts?: string[];
-  provides?: string[];
-  isUsed?: boolean; // Track if this snap point is already connected
-};
+type SnapPointUsageChecker = (
+  object: Object3D,
+  snapPoint: SnapPoint
+) => boolean;
+
+const DEFAULT_LOCAL_POSITION: [number, number, number] = [0, 0, 0];
+const DEFAULT_LOCAL_ROTATION: [number, number, number] = [0, 0, 0];
+
+function getSnapPointLocalPosition(snapPoint: SnapPoint): Vector3 {
+  const [x, y, z] = snapPoint.transform?.position ?? DEFAULT_LOCAL_POSITION;
+  return new Vector3(x, y, z);
+}
+
+function getSnapPointLocalRotation(snapPoint: SnapPoint): [number, number, number] {
+  return snapPoint.transform?.rotation ?? DEFAULT_LOCAL_ROTATION;
+}
 
 /**
  * Generate default snap points on the middle of each side of the bounding box.
@@ -30,7 +39,7 @@ export type SnappingPoint = {
  */
 export function generateDefaultSnappingPoints(
   object: Object3D
-): SnappingPoint[] {
+): SnapPoint[] {
   const boundingBox = new Box3().setFromObject(object);
   const center = boundingBox.getCenter(new Vector3());
   const size = boundingBox.getSize(new Vector3());
@@ -41,42 +50,38 @@ export function generateDefaultSnappingPoints(
   return [
     // Front side (positive Z)
     {
-      position: {
-        x: localCenter.x,
-        y: localCenter.y,
-        z: localCenter.z + size.z / 2,
+      id: 'front',
+      transform: {
+        position: [localCenter.x, localCenter.y, localCenter.z + size.z / 2],
+        rotation: [0, 0, 0],
       },
-      rotation: { x: 0, y: 0, z: 0 },
       snapRadius: DEFAULT_SNAP_RADIUS,
     },
     // Back side (negative Z)
     {
-      position: {
-        x: localCenter.x,
-        y: localCenter.y,
-        z: localCenter.z - size.z / 2,
+      id: 'back',
+      transform: {
+        position: [localCenter.x, localCenter.y, localCenter.z - size.z / 2],
+        rotation: [0, Math.PI, 0],
       },
-      rotation: { x: 0, y: Math.PI, z: 0 },
       snapRadius: DEFAULT_SNAP_RADIUS,
     },
     // Right side (positive X)
     {
-      position: {
-        x: localCenter.x + size.x / 2,
-        y: localCenter.y,
-        z: localCenter.z,
+      id: 'right',
+      transform: {
+        position: [localCenter.x + size.x / 2, localCenter.y, localCenter.z],
+        rotation: [0, Math.PI / 2, 0],
       },
-      rotation: { x: 0, y: Math.PI / 2, z: 0 },
       snapRadius: DEFAULT_SNAP_RADIUS,
     },
     // Left side (negative X)
     {
-      position: {
-        x: localCenter.x - size.x / 2,
-        y: localCenter.y,
-        z: localCenter.z,
+      id: 'left',
+      transform: {
+        position: [localCenter.x - size.x / 2, localCenter.y, localCenter.z],
+        rotation: [0, -Math.PI / 2, 0],
       },
-      rotation: { x: 0, y: -Math.PI / 2, z: 0 },
       snapRadius: DEFAULT_SNAP_RADIUS,
     },
   ];
@@ -93,23 +98,16 @@ export function createSnappingPointsForObject(
   cameraProvider: () => Camera | null,
   sphereTracker: Set<Mesh>
 ) {
-  if (!object.userData.snappingPoints) return;
+  if (!object.userData.snapPoints) return;
 
-  const snappingPoints = object.userData.snappingPoints as SnappingPoint[];
+  const snappingPoints = object.userData.snapPoints as SnapPoint[];
 
   snappingPoints.forEach((snapPoint) => {
     // Create a group to hold both the base sphere and camera-facing outline circles
     const snapPointGroup = new Group();
-    snapPointGroup.position.set(
-      snapPoint.position.x,
-      snapPoint.position.y,
-      snapPoint.position.z
-    );
-    snapPointGroup.rotation.set(
-      snapPoint.rotation.x,
-      snapPoint.rotation.y,
-      snapPoint.rotation.z
-    );
+    snapPointGroup.position.copy(getSnapPointLocalPosition(snapPoint));
+    const [rx, ry, rz] = getSnapPointLocalRotation(snapPoint);
+    snapPointGroup.rotation.set(rx, ry, rz);
     snapPointGroup.name = 'SnappingPointSphere';
 
     // Create main bright white sphere (base)
@@ -271,7 +269,7 @@ export function showAllSnappingPoints(
 
   // Find all objects with snap points and create visualization spheres if they don't exist
   rootObject.traverse((child) => {
-    if (child.userData.isPlacedObject && child.userData.snappingPoints) {
+    if (child.userData.isPlacedObject && child.userData.snapPoints) {
       // Only create snapping points if they don't already exist
       if (!hasSnappingPointVisualizations(child)) {
         createSnappingPointsForObject(child, cameraProvider, sphereTracker);
@@ -306,20 +304,15 @@ export function hideAllSnappingPoints(rootObject: Object3D) {
  */
 export function getSnappingPointWorldPosition(
   object: Object3D,
-  snapPoint: SnappingPoint
+  snapPoint: SnapPoint
 ): Vector3 {
-  const localPos = new Vector3(
-    snapPoint.position.x,
-    snapPoint.position.y,
-    snapPoint.position.z
-  );
-  return object.localToWorld(localPos);
+  return object.localToWorld(getSnapPointLocalPosition(snapPoint));
 }
 
 // Private function to check if two snapping points are compatible (accepts/provides)
 function snappingPointsAreCompatible(
-  draggedPoint: SnappingPoint,
-  targetPoint: SnappingPoint
+  draggedPoint: SnapPoint,
+  targetPoint: SnapPoint
 ): boolean {
   // If targetPoint.accepts is empty or not defined, accept anything
   if (!targetPoint.accepts || targetPoint.accepts.length === 0) {
@@ -339,35 +332,30 @@ function snappingPointsAreCompatible(
  */
 export function findSnappingConnections(
   draggedObject: Object3D,
-  targetObject: Object3D
+  targetObject: Object3D,
+  isPointUsed?: SnapPointUsageChecker
 ): Array<{
-  draggedPoint: SnappingPoint;
-  targetPoint: SnappingPoint;
+  draggedPoint: SnapPoint;
+  targetPoint: SnapPoint;
   distance: number;
 }> {
-  if (
-    !draggedObject.userData.snappingPoints ||
-    !targetObject.userData.snappingPoints
-  ) {
+  if (!draggedObject.userData.snapPoints || !targetObject.userData.snapPoints) {
     return [];
   }
 
-  const draggedPoints = draggedObject.userData
-    .snappingPoints as SnappingPoint[];
-  const targetPoints = targetObject.userData.snappingPoints as SnappingPoint[];
+  const draggedPoints = draggedObject.userData.snapPoints as SnapPoint[];
+  const targetPoints = targetObject.userData.snapPoints as SnapPoint[];
   const connections: Array<{
-    draggedPoint: SnappingPoint;
-    targetPoint: SnappingPoint;
+    draggedPoint: SnapPoint;
+    targetPoint: SnapPoint;
     distance: number;
   }> = [];
 
   draggedPoints.forEach((draggedPoint) => {
-    // Skip already used snap points
-    if (draggedPoint.isUsed) return;
+    if (isPointUsed?.(draggedObject, draggedPoint)) return;
 
     targetPoints.forEach((targetPoint) => {
-      // Skip already used snap points
-      if (targetPoint.isUsed) return;
+      if (isPointUsed?.(targetObject, targetPoint)) return;
 
       // Check if accepts/provides match
       if (!snappingPointsAreCompatible(draggedPoint, targetPoint)) return;
@@ -401,17 +389,17 @@ export function findSnappingConnections(
 }
 
 export function findCompatibleSnappingPoints(
-  snapPoint: SnappingPoint,
-  targetObject: Object3D
-): SnappingPoint[] {
-  if (!targetObject.userData.snappingPoints) {
+  snapPoint: SnapPoint,
+  targetObject: Object3D,
+  isPointUsed?: (snapPoint: SnapPoint) => boolean
+): SnapPoint[] {
+  if (!targetObject.userData.snapPoints) {
     return [];
   }
-  const targetSnappingPoints = targetObject.userData
-    .snappingPoints as SnappingPoint[];
+  const targetSnappingPoints = targetObject.userData.snapPoints as SnapPoint[];
   return targetSnappingPoints.filter(
     (targetSnapPoint) =>
-      !targetSnapPoint.isUsed &&
+      !isPointUsed?.(targetSnapPoint) &&
       snappingPointsAreCompatible(snapPoint, targetSnapPoint)
   );
 }
@@ -421,8 +409,9 @@ export function findSnappingPointUnderMouse(
   mouseY: number,
   camera: Camera,
   rootObject: Object3D,
-  viewport?: { width: number; height: number; left: number; top: number }
-): [SnappingPoint, Object3D] | null {
+  viewport?: { width: number; height: number; left: number; top: number },
+  isPointUsed?: SnapPointUsageChecker
+): [SnapPoint, Object3D] | null {
   const raycaster = new Raycaster();
 
   // If viewport is provided, use it; otherwise fall back to window dimensions
@@ -444,17 +433,16 @@ export function findSnappingPointUnderMouse(
   raycaster.setFromCamera(mouse, camera);
   const ray = raycaster.ray;
 
-  let closestSnapPoint: SnappingPoint | null = null;
+  let closestSnapPoint: SnapPoint | null = null;
   let closestDistance = Infinity;
   let obj: Object3D | null = null;
 
   // Traverse all objects with snapping points
   rootObject.traverse((c) => {
-    if (c.userData && c.userData.snappingPoints) {
-      const snappingPoints = c.userData.snappingPoints as SnappingPoint[];
+    if (c.userData && c.userData.snapPoints) {
+      const snappingPoints = c.userData.snapPoints as SnapPoint[];
       snappingPoints.forEach((snapPoint) => {
-        // Skip used snapping points
-        if (snapPoint.isUsed) return;
+        if (isPointUsed?.(c, snapPoint)) return;
 
         // Get world position of the snap point
         const worldPos = getSnappingPointWorldPosition(c, snapPoint);
@@ -483,8 +471,8 @@ export function findSnappingPointUnderMouse(
 export function createSnappedGroup(
   object1: Object3D,
   object2: Object3D,
-  snapPoint1: SnappingPoint,
-  snapPoint2: SnappingPoint
+  snapPoint1: SnapPoint,
+  snapPoint2: SnapPoint
 ): Object3D {
   // Create a new group to contain both objects - use Group type for proper recognition
   const group = new Group();
@@ -524,10 +512,8 @@ export function createSnappedGroup(
   group.attach(object1);
   group.attach(object2);
 
-  // Don't mark the original snap points as used - keep them visible
-  // The connection information is stored in snapConnections for ungrouping
-  // snapPoint1.isUsed = true;
-  // snapPoint2.isUsed = true;
+  // Keep source snap point data immutable; runtime usage is inferred from
+  // connection records instead of mutating SnapPoint payloads.
 
   // Copy userData from one of the objects to maintain properties, but exclude snapping points
   group.userData = { ...object1.userData, ...group.userData };
@@ -543,7 +529,7 @@ export function createSnappedGroup(
   } catch (e) {}
 
   // Ensure the group itself doesn't have snapping points - only its children should
-  delete group.userData.snappingPoints;
+  delete group.userData.snapPoints;
 
   // Mark child objects to not be treated as standalone placed objects in snapping point visualization
   // but preserve their snapping points for after ungrouping
