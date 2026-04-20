@@ -430,8 +430,8 @@
         "name": "Modular scenes"
       },
       {
-        "htmlId": "bulk-placement",
-        "name": "Bulk placement"
+        "htmlId": "room-surface-snap",
+        "name": "Room surface snap (walls)"
       },
       {
         "htmlId": "transforms",
@@ -444,6 +444,10 @@
       {
         "htmlId": "set-src-from-buffer",
         "name": "Set SRC from Buffer"
+      },
+      {
+        "htmlId": "bulk-placement",
+        "name": "Bulk placement"
       }
     ]
   }

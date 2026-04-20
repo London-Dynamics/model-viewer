@@ -29,7 +29,16 @@ import {
   createSnappedGroup,
   getSnappedGroup,
   findSnappingConnections,
+  getPrimarySurfaceSnapPoint,
+  requiresSurfaceSnap,
 } from '../../utilities/snapping-points.js';
+import {
+  applySurfaceSnapTransform,
+  clientToNdc,
+  findSurfaceSnapHitForNdc,
+  getBaseModelObject,
+  getRoomFloorY,
+} from '../../utilities/surface-snapping.js';
 
 import { getErrorMessage } from '../../utilities/errors.js';
 
@@ -145,6 +154,7 @@ export declare interface LDModularInterface {
   attachMaterial: AttachMaterialFunction;
   clear: ClearSceneFunction;
   disableBaseModelShadows: boolean;
+  srcIsRoom: boolean;
 
   toggleBaseModelVisibility(state?: boolean): void;
 
@@ -273,14 +283,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'disable-base-model-shadows' })
     disableBaseModelShadows: boolean = false;
 
+    @property({ type: Boolean, attribute: 'src-is-room' })
+    srcIsRoom: boolean = false;
+
     // Store bound event handler reference
     private _boundSelectionChangeHandler: ((event: Event) => void) | null =
       null;
     private _boundDeleteKeyHandler: ((event: KeyboardEvent) => void) | null =
       null;
+    private _boundLoadHandler: (() => void) | null = null;
 
     connectedCallback() {
       super.connectedCallback();
+      this._syncRoomSourceMode();
 
       // Keep stable references so listeners are properly removed.
       this._boundSelectionChangeHandler = (event: Event) => {
@@ -319,10 +334,55 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       };
       this.addEventListener('keydown', this._boundDeleteKeyHandler);
 
+      this._boundLoadHandler = () => {
+        this._syncRoomSourceMode();
+      };
+      this.addEventListener('load', this._boundLoadHandler);
+
       // Setup drag handlers for puzzler
       try {
         this.setupDragHandlers();
       } catch (e) {}
+    }
+
+    updated(changedProperties: Map<string | number | symbol, unknown>) {
+      super.updated(changedProperties);
+      if (
+        changedProperties.has('srcIsRoom') ||
+        changedProperties.has('disableBaseModelShadows')
+      ) {
+        this._syncRoomSourceMode();
+      }
+    }
+
+    private _syncRoomSourceMode() {
+      if (!this.srcIsRoom) return;
+
+      if (!this.disableBaseModelShadows) {
+        this.disableBaseModelShadows = true;
+      }
+      if (!(this as any).disableBaseModelSelection) {
+        (this as any).disableBaseModelSelection = true;
+      }
+      this._applyRoomSourceRuntimeFlags();
+    }
+
+    private _applyRoomSourceRuntimeFlags() {
+      const scene = (this as any)[$scene];
+      if (!scene) return;
+      const baseModel = getBaseModelObject(scene);
+      if (!baseModel) return;
+
+      baseModel.userData.selectable = false;
+      baseModel.traverse((child) => {
+        child.userData.selectable = false;
+        if ('castShadow' in child) {
+          (child as any).castShadow = false;
+        }
+        if ('receiveShadow' in child) {
+          (child as any).receiveShadow = true;
+        }
+      });
     }
 
     disconnectedCallback() {
@@ -340,6 +400,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this._boundDeleteKeyHandler) {
         this.removeEventListener('keydown', this._boundDeleteKeyHandler);
         this._boundDeleteKeyHandler = null;
+      }
+      if (this._boundLoadHandler) {
+        this.removeEventListener('load', this._boundLoadHandler);
+        this._boundLoadHandler = null;
       }
 
       this.teardownDragHandlers();
@@ -1936,6 +2000,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private dragOffset: Vector3 = new Vector3();
     private floorPlane: Plane = new Plane(new Vector3(0, 1, 0), 0);
     private originalFloorY: number | undefined = undefined;
+    private _dragSurfaceSnapValid: boolean = true;
 
     /**
      * Public API: ungroup the currently selected group object (if any).
@@ -2759,6 +2824,51 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    private _findRoomSurfaceObject(): Object3D | null {
+      const scene = (this as any)[$scene];
+      if (!scene) return null;
+      return getBaseModelObject(scene);
+    }
+
+    private _applySurfaceSnapForNdc(object: Object3D, ndc: Vector2): boolean {
+      const snapPoint = getPrimarySurfaceSnapPoint(object);
+      if (!snapPoint) return false;
+
+      const scene = (this as any)[$scene];
+      const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
+      const roomObject = this._findRoomSurfaceObject();
+      if (!camera || !roomObject) return false;
+
+      const hit = findSurfaceSnapHitForNdc(
+        camera,
+        ndc,
+        roomObject,
+        snapPoint,
+        object
+      );
+      if (!hit) return false;
+
+      const floorY = getRoomFloorY(roomObject);
+      applySurfaceSnapTransform(object, snapPoint, hit, floorY);
+      this._setPendingSnapConnection(null);
+      return true;
+    }
+
+    applySurfaceSnapForPlacement(
+      object: Object3D,
+      clientX: number,
+      clientY: number
+    ): boolean {
+      const rect = this.getBoundingClientRect();
+      const ndc = clientToNdc(clientX, clientY, rect);
+      if (!ndc) return false;
+      return this._applySurfaceSnapForNdc(object, ndc);
+    }
+
+    private _applySurfaceSnapForCurrentMouse(object: Object3D): boolean {
+      return this._applySurfaceSnapForNdc(object, this.currentMousePosition);
+    }
+
     /**
      * Returns true if the given client position is over a selectable object.
      * Used to disable camera on pointer down when in editMode so the camera does not orbit.
@@ -3172,6 +3282,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       (this as any).isDragging = true;
+      this._dragSurfaceSnapValid = true;
       if (this._currentDragTarget || (this as any).selectedObjects?.[0]) {
         const transformTarget =
           this._currentDragTarget || (this as any).selectedObjects[0];
@@ -3293,6 +3404,33 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const object =
         this._currentDragTarget || (this as any).selectedObjects[0];
 
+      const isSurfaceSnapObject = requiresSurfaceSnap(object);
+      if (isSurfaceSnapObject) {
+        this._dragSurfaceSnapValid = this._applySurfaceSnapForCurrentMouse(object);
+        if (!this._dragSurfaceSnapValid) {
+          return;
+        }
+
+        this.requestShadowUpdate();
+        (this as any)[$needsRender]();
+        try {
+          this.updateSnappingPointSlots();
+        } catch (e) {}
+
+        this._dispatchTransformEvent('transform', object);
+        (this as any).dispatchEvent(
+          new CustomEvent('object-drag', {
+            detail: {
+              object,
+              position: object.position.clone(),
+            },
+            bubbles: true,
+            composed: true,
+          })
+        );
+        return;
+      }
+
       const intersectionPoint = new Vector3();
       if (
         (this as any).raycaster.ray.intersectPlane(
@@ -3409,6 +3547,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._recentlyDisconnectedPairs.clear();
 
       this._currentDragTarget = null;
+      this._dragSurfaceSnapValid = true;
 
       if (this.pendingSnapConnection) {
         try {
@@ -4319,6 +4458,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const onPointerUp = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
+            const requiresWallSurfaceSnap =
+              (session as any).requiresSurfaceSnap?.() ?? false;
+            const hasValidWallSurfaceSnap =
+              (session as any).hasValidSurfaceSnap?.() ?? false;
+            if (requiresWallSurfaceSnap && !hasValidWallSurfaceSnap) {
+              session.cancel();
+              return;
+            }
+
             const releaseDistance =
               placementStartClientX !== null && placementStartClientY !== null
                 ? Math.hypot(
@@ -4405,6 +4553,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             this._setPendingSnapConnection(null);
             const ph = (session as any).placeholder as Object3D | null;
             if (!ph) return;
+            if (requiresSurfaceSnap(ph)) return;
             const wp = new Vector3(
               detail.worldPoint.x,
               detail.worldPoint.y,
@@ -4693,6 +4842,7 @@ class PlacementSession extends EventTarget {
   // Store the target position where the bottom-center of the bounding box should be
   private _targetBottomCenter: { x: number; y: number; z: number } | null =
     null;
+  private _hasValidSurfaceSnap: boolean = false;
 
   constructor(
     element: any,
@@ -4715,6 +4865,20 @@ class PlacementSession extends EventTarget {
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
+  }
+
+  requiresSurfaceSnap(): boolean {
+    if (this.placeholder) {
+      return requiresSurfaceSnap(this.placeholder);
+    }
+    const placementSnapPoints = getPlacementSnapPoints(this._options);
+    return (placementSnapPoints || []).some(
+      (snapPoint) => !!(snapPoint as any)?.surfaceSnap
+    );
+  }
+
+  hasValidSurfaceSnap(): boolean {
+    return !this.requiresSurfaceSnap() || this._hasValidSurfaceSnap;
   }
 
   private _createPlaceholderFromBounds(
@@ -4920,6 +5084,7 @@ class PlacementSession extends EventTarget {
         clientY
       ) as Vector3 | null;
       if (!world) {
+        this._hasValidSurfaceSnap = false;
         // pointer outside or no valid ray intersection
         (this as any).dispatchEvent(
           new CustomEvent('update', {
@@ -4936,6 +5101,7 @@ class PlacementSession extends EventTarget {
 
       // If no placeholder exists, just track position and return
       if (!this.placeholder) {
+        this._hasValidSurfaceSnap = false;
         (this as any).dispatchEvent(
           new CustomEvent('update', {
             detail: {
@@ -5015,78 +5181,86 @@ class PlacementSession extends EventTarget {
 
       this.placeholder.position.copy(objectLocalPos);
 
-      // Check for snapping during interactive placement if snapping is enabled
-      if (
-        (this._element as any).snappingEnabled &&
-        this.placeholder &&
-        this.placeholder.userData.snapPoints
-      ) {
+      // Check for snapping during interactive placement if snapping is enabled.
+      // Surface snap has priority and bypasses point-to-point snapping.
+      this._hasValidSurfaceSnap = !this.requiresSurfaceSnap();
+      if ((this._element as any).snappingEnabled && this.placeholder) {
         try {
-          const targetObject = (this._element as any).findTargetObject();
-          if (targetObject) {
-            // Find potential snap targets by traversing all placed objects
-            let bestConnection: any = null;
-            targetObject.traverse((child: any) => {
-              if (
-                child.userData.isPlacedObject &&
-                child !== this.placeholder &&
-                child.userData.snapPoints
-              ) {
-                const connections = findSnappingConnections(
-                  this.placeholder!,
-                  child,
-                  (object, snapPoint) =>
-                    (this._element as any).isSnapPointUsed(object, snapPoint)
-                );
-                if (connections && connections.length > 0) {
-                  const connection = {
-                    ...connections[0],
-                    targetObject: child,
-                  };
-                  if (
-                    !bestConnection ||
-                    connection.distance < bestConnection.distance
-                  ) {
-                    bestConnection = connection;
+          if (requiresSurfaceSnap(this.placeholder)) {
+            const snappedToSurface = (this._element as any).applySurfaceSnapForPlacement(
+              this.placeholder,
+              clientX,
+              clientY
+            );
+            this._hasValidSurfaceSnap = !!snappedToSurface;
+            (this._element as any).pendingSnapConnection = null;
+          } else if (this.placeholder.userData.snapPoints) {
+            const targetObject = (this._element as any).findTargetObject();
+            if (targetObject) {
+              // Find potential snap targets by traversing all placed objects
+              let bestConnection: any = null;
+              targetObject.traverse((child: any) => {
+                if (
+                  child.userData.isPlacedObject &&
+                  child !== this.placeholder &&
+                  child.userData.snapPoints
+                ) {
+                  const connections = findSnappingConnections(
+                    this.placeholder!,
+                    child,
+                    (object, snapPoint) =>
+                      (this._element as any).isSnapPointUsed(object, snapPoint)
+                  );
+                  if (connections && connections.length > 0) {
+                    const connection = {
+                      ...connections[0],
+                      targetObject: child,
+                    };
+                    if (
+                      !bestConnection ||
+                      connection.distance < bestConnection.distance
+                    ) {
+                      bestConnection = connection;
+                    }
                   }
                 }
+              });
+
+              if (bestConnection) {
+                // Apply temporary snapping for visual feedback
+                const draggedWorld = getSnappingPointWorldPosition(
+                  this.placeholder!,
+                  bestConnection.draggedPoint
+                );
+                const targetWorld = getSnappingPointWorldPosition(
+                  bestConnection.targetObject,
+                  bestConnection.targetPoint
+                );
+                const offset = new Vector3().subVectors(
+                  targetWorld,
+                  draggedWorld
+                );
+                this.log(
+                  '[puzzler] updatePosition applying snap offset:',
+                  offset.toArray()
+                );
+                this.placeholder.position.add(offset);
+                this.log(
+                  '[puzzler] updatePosition after snap:',
+                  this.placeholder.position.toArray()
+                );
+
+                // Record pending connection for commit
+                (this._element as any).pendingSnapConnection = {
+                  draggedObject: this.placeholder!,
+                  targetObject: bestConnection.targetObject,
+                  draggedPoint: bestConnection.draggedPoint,
+                  targetPoint: bestConnection.targetPoint,
+                };
+              } else {
+                // Clear any pending connection if no snap found
+                (this._element as any).pendingSnapConnection = null;
               }
-            });
-
-            if (bestConnection) {
-              // Apply temporary snapping for visual feedback
-              const draggedWorld = getSnappingPointWorldPosition(
-                this.placeholder!,
-                bestConnection.draggedPoint
-              );
-              const targetWorld = getSnappingPointWorldPosition(
-                bestConnection.targetObject,
-                bestConnection.targetPoint
-              );
-              const offset = new Vector3().subVectors(
-                targetWorld,
-                draggedWorld
-              );
-              this.log(
-                '[puzzler] updatePosition applying snap offset:',
-                offset.toArray()
-              );
-              this.placeholder.position.add(offset);
-              this.log(
-                '[puzzler] updatePosition after snap:',
-                this.placeholder.position.toArray()
-              );
-
-              // Record pending connection for commit
-              (this._element as any).pendingSnapConnection = {
-                draggedObject: this.placeholder!,
-                targetObject: bestConnection.targetObject,
-                draggedPoint: bestConnection.draggedPoint,
-                targetPoint: bestConnection.targetPoint,
-              };
-            } else {
-              // Clear any pending connection if no snap found
-              (this._element as any).pendingSnapConnection = null;
             }
           }
         } catch (e) {
@@ -5400,6 +5574,8 @@ class PlacementSession extends EventTarget {
         name: this._options?.name || this.id,
         part: this._options?.part,
       };
+      gltf.scene.userData.isSurfaceSnapped =
+        this.requiresSurfaceSnap() && this._hasValidSurfaceSnap;
       const placedSnapPoints = getPlacementSnapPoints(this._options);
       if (placedSnapPoints) {
         try {

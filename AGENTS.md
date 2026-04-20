@@ -42,6 +42,7 @@ To write or update documentation:
 - API documentation is maintained in `packages/modelviewer.dev/data/docs.json`. Add or update entries here for each feature, including clear descriptions, default values, and links to relevant examples. The feature or mixin name in the documentation must match the source file or module name (e.g., `ld_camera.ts` should be documented under "LD Camera").
 - Example metadata is managed in `packages/modelviewer.dev/data/examples.json`. Add or update entries here to register new examples or categories.
 - Example pages are implemented as HTML files in `packages/modelviewer.dev/examples/`. Create or update these files to provide runnable demonstrations.
+- Whenever an example is added or reordered in `packages/modelviewer.dev/examples/`, update `packages/modelviewer.dev/data/examples.json` in the same change.
 - Each major feature documented in `docs.json` should have at least one corresponding example page listed in `examples.json` and implemented in the examples directory.
 - In `docs.json`, link to the most relevant example pages for each feature, but you do not need a separate example for every method or property.
 - Keep cross-references between documentation and examples up to date and consistent.

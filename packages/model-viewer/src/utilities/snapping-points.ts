@@ -15,6 +15,7 @@ import type { SnapPoint } from '@london-dynamics/types/planner';
 
 export const SNAP_POINT_DIAMETER = 0.1; // Diameter of snap point spheres in meters
 export const DEFAULT_SNAP_RADIUS = SNAP_POINT_DIAMETER * 2;
+export type SurfaceType = 'floor' | 'wall' | 'ceiling';
 
 type SnapPointUsageChecker = (
   object: Object3D,
@@ -23,6 +24,61 @@ type SnapPointUsageChecker = (
 
 const DEFAULT_LOCAL_POSITION: [number, number, number] = [0, 0, 0];
 const DEFAULT_LOCAL_ROTATION: [number, number, number] = [0, 0, 0];
+
+function getVerticalConstraintValue(
+  snapPoint: SnapPoint,
+  preferredKey: 'minFromFloor' | 'maxFromFloor',
+  legacyKey: 'min' | 'max'
+): number | undefined {
+  const constraint = (snapPoint as any)?.verticalConstraint;
+  if (!constraint) return undefined;
+  const preferred = constraint[preferredKey];
+  if (typeof preferred === 'number') return preferred;
+  const legacy = constraint[legacyKey];
+  return typeof legacy === 'number' ? legacy : undefined;
+}
+
+export function getSurfaceSnapPoints(object: Object3D): SnapPoint[] {
+  const snapPoints = object.userData?.snapPoints as SnapPoint[] | undefined;
+  if (!Array.isArray(snapPoints)) return [];
+  return snapPoints.filter((snapPoint) => !!(snapPoint as any)?.surfaceSnap);
+}
+
+export function getPrimarySurfaceSnapPoint(object: Object3D): SnapPoint | null {
+  const points = getSurfaceSnapPoints(object);
+  return points.length > 0 ? points[0] : null;
+}
+
+export function requiresSurfaceSnap(object: Object3D): boolean {
+  return getSurfaceSnapPoints(object).length > 0;
+}
+
+export function allowsSurfaceType(
+  snapPoint: SnapPoint,
+  surfaceType: SurfaceType
+): boolean {
+  const surfaces = (snapPoint as any)?.allowedSurfaces as
+    | SurfaceType[]
+    | undefined;
+  if (!surfaces || surfaces.length === 0) return true;
+  return surfaces.includes(surfaceType);
+}
+
+export function getSurfaceSnapOffset(snapPoint: SnapPoint): number {
+  const offset = (snapPoint as any)?.surfaceSnap?.offset;
+  if (typeof offset !== 'number' || !Number.isFinite(offset)) {
+    return 0;
+  }
+  return Math.max(offset, 0);
+}
+
+export function getMinFromFloorConstraint(snapPoint: SnapPoint): number | undefined {
+  return getVerticalConstraintValue(snapPoint, 'minFromFloor', 'min');
+}
+
+export function getMaxFromFloorConstraint(snapPoint: SnapPoint): number | undefined {
+  return getVerticalConstraintValue(snapPoint, 'maxFromFloor', 'max');
+}
 
 function getSnapPointLocalPosition(snapPoint: SnapPoint): Vector3 {
   const [x, y, z] = snapPoint.transform?.position ?? DEFAULT_LOCAL_POSITION;

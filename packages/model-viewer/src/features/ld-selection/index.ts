@@ -103,6 +103,12 @@ export type SelectionScope = 'scene' | 'part' | 'group' | 'all';
 
 export interface SelectionChangeDetail {
   selectedObjects: Object3D[];
+  selectedObjectSurfaceSnapState: Array<{
+    uuid: string;
+    name: string;
+    isSurfaceSnapped: boolean;
+  }>;
+  isSurfaceSnapped: boolean;
   scope: SelectionScope;
   type: 'select' | 'deselect' | 'clear';
 }
@@ -634,8 +640,18 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     protected _dispatchSelectionChange(type: 'select' | 'deselect' | 'clear') {
+      const selectedObjectSurfaceSnapState = this.selectedObjects.map((object) => ({
+        uuid: object.uuid,
+        name: object.name || '',
+        isSurfaceSnapped: this._isObjectSurfaceSnapped(object),
+      }));
       const detail: SelectionChangeDetail = {
         selectedObjects: [...this.selectedObjects],
+        selectedObjectSurfaceSnapState,
+        isSurfaceSnapped:
+          selectedObjectSurfaceSnapState.length > 0
+            ? selectedObjectSurfaceSnapState[0].isSurfaceSnapped
+            : false,
         scope: this.selectionScope,
         type,
       };
@@ -647,6 +663,24 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
           composed: true,
         })
       );
+    }
+
+    protected _isObjectSurfaceSnapped(object: Object3D): boolean {
+      if (!object) return false;
+      if (object.userData?.isSurfaceSnapped === true) return true;
+
+      if (object.userData?.isSnappedGroup === true) {
+        let hasSnappedChild = false;
+        object.traverse((child) => {
+          if (hasSnappedChild) return;
+          if (child.userData?.isSurfaceSnapped === true) {
+            hasSnappedChild = true;
+          }
+        });
+        return hasSnappedChild;
+      }
+
+      return false;
     }
 
     /**

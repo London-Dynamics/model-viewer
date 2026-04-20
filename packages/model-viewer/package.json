@@ -96,7 +96,7 @@
     "three": "^0.172.0"
   },
   "devDependencies": {
-    "@london-dynamics/types": "0.0.63",
+    "@london-dynamics/types": "0.0.64",
     "@rollup/plugin-commonjs": "^28.0.3",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@rollup/plugin-replace": "^6.0.2",
