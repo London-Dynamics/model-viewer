@@ -44,8 +44,29 @@ const LOCAL_AXIS_X = new Vector3(1, 0, 0);
 const LOCAL_AXIS_Y = new Vector3(0, 1, 0);
 const LOCAL_AXIS_Z = new Vector3(0, 0, 1);
 const OBJECT_LOCAL_BOUNDS_CACHE = new WeakMap<Object3D, Box3>();
+const ROOM_SURFACE_INDEX_CACHE = new WeakMap<Object3D, RoomSurfaceIndex>();
 const TMP_ROOT_INV = new Matrix4();
 const TMP_CHILD_TO_OBJECT = new Matrix4();
+const TMP_HIT_LOCAL_POINT = new Vector3();
+const TMP_HIT_LOCAL_NORMAL = new Vector3();
+const TMP_WORLD_NORMAL = new Vector3();
+const TMP_WORLD_QUAT = new Quaternion();
+const TMP_WORLD_QUAT_INV = new Quaternion();
+const TMP_WALL_WORLD_QUAT = new Quaternion();
+const TMP_OBJECT_TO_WALL_QUAT = new Quaternion();
+const TMP_AXIS_IN_OBJECT_X = new Vector3();
+const TMP_AXIS_IN_OBJECT_Y = new Vector3();
+const TMP_AXIS_IN_OBJECT_Z = new Vector3();
+const TMP_BOX = new Box3();
+const SHARED_RAYCASTER = new Raycaster();
+
+type RoomSurfaceIndex = {
+  all: Object3D[];
+  wallTagged: Object3D[];
+  floorTagged: Object3D[];
+  ceilingTagged: Object3D[];
+  untagged: Object3D[];
+};
 
 function getSnapPointLocalPosition(snapPoint: SnapPoint): Vector3 {
   const pos = snapPoint.transform?.position ?? [0, 0, 0];
@@ -125,31 +146,31 @@ export function findSurfaceSnapHitForNdc(
   snapPoint: SnapPoint,
   snappedObject: Object3D
 ): SurfaceSnapHit | null {
-  const raycaster = new Raycaster();
-  raycaster.setFromCamera(ndc, camera);
-  const intersections = raycaster.intersectObject(roomObject, true);
+  SHARED_RAYCASTER.setFromCamera(ndc, camera);
+  const candidates = getCandidateRoomObjects(roomObject, snapPoint);
+  const intersections = SHARED_RAYCASTER.intersectObjects(candidates, false);
 
   for (const intersection of intersections) {
     if (!intersection.face) continue;
-    const worldNormal = intersection.face.normal
-      .clone()
+    TMP_WORLD_NORMAL
+      .copy(intersection.face.normal)
       .transformDirection(intersection.object.matrixWorld)
       .normalize();
-    const surfaceType = classifySurfaceType(intersection.object, worldNormal);
+    const surfaceType = classifySurfaceType(intersection.object, TMP_WORLD_NORMAL);
     if (!allowsSurfaceType(snapPoint, surfaceType)) continue;
     if (
       !passesEdgeClearance(
         snapPoint,
         intersection.object,
         intersection.point,
-        worldNormal,
+        TMP_WORLD_NORMAL,
         snappedObject
       )
     )
       continue;
     return {
       point: intersection.point.clone(),
-      normal: worldNormal,
+      normal: TMP_WORLD_NORMAL.clone(),
       surfaceType,
       object: intersection.object,
     };
@@ -168,14 +189,16 @@ function getGeometryBounds(object: Object3D): Box3 | null {
       return null;
     }
   }
-  const bbox = geometry.boundingBox as Box3 | null;
-  return bbox ? bbox.clone() : null;
+  return (geometry.boundingBox as Box3 | null) || null;
 }
 
 function getLocalSurfaceNormal(object: Object3D, worldNormal: Vector3): Vector3 {
-  const worldQuat = new Quaternion();
-  object.getWorldQuaternion(worldQuat);
-  return worldNormal.clone().applyQuaternion(worldQuat.clone().invert()).normalize();
+  object.getWorldQuaternion(TMP_WORLD_QUAT);
+  TMP_WORLD_QUAT_INV.copy(TMP_WORLD_QUAT).invert();
+  return TMP_HIT_LOCAL_NORMAL
+    .copy(worldNormal)
+    .applyQuaternion(TMP_WORLD_QUAT_INV)
+    .normalize();
 }
 
 function getHorizontalAxis(
@@ -273,7 +296,7 @@ function getObjectLocalBounds(object: Object3D): Box3 | null {
       if (!childBounds) return;
 
       TMP_CHILD_TO_OBJECT.multiplyMatrices(TMP_ROOT_INV, child.matrixWorld);
-      const transformed = childBounds.clone().applyMatrix4(TMP_CHILD_TO_OBJECT);
+      const transformed = TMP_BOX.copy(childBounds).applyMatrix4(TMP_CHILD_TO_OBJECT);
       if (!hasBounds) {
         out.copy(transformed);
         hasBounds = true;
@@ -336,13 +359,15 @@ function getAxisInsetsFromObjectEdge(
     object.quaternion
   );
 
-  const wallWorldQuat = new Quaternion();
-  hitObject.getWorldQuaternion(wallWorldQuat);
-  const objectToWallQuat = wallWorldQuat.clone().invert().multiply(worldQuaternion);
+  hitObject.getWorldQuaternion(TMP_WALL_WORLD_QUAT);
+  TMP_OBJECT_TO_WALL_QUAT
+    .copy(TMP_WALL_WORLD_QUAT)
+    .invert()
+    .multiply(worldQuaternion);
 
-  const wallAxisInObjectX = LOCAL_AXIS_X.clone().applyQuaternion(objectToWallQuat);
-  const wallAxisInObjectY = LOCAL_AXIS_Y.clone().applyQuaternion(objectToWallQuat);
-  const wallAxisInObjectZ = LOCAL_AXIS_Z.clone().applyQuaternion(objectToWallQuat);
+  TMP_AXIS_IN_OBJECT_X.copy(LOCAL_AXIS_X).applyQuaternion(TMP_OBJECT_TO_WALL_QUAT);
+  TMP_AXIS_IN_OBJECT_Y.copy(LOCAL_AXIS_Y).applyQuaternion(TMP_OBJECT_TO_WALL_QUAT);
+  TMP_AXIS_IN_OBJECT_Z.copy(LOCAL_AXIS_Z).applyQuaternion(TMP_OBJECT_TO_WALL_QUAT);
 
   const halfX = ((bounds.max.x - bounds.min.x) * Math.abs(object.scale.x)) / 2;
   const halfY = ((bounds.max.y - bounds.min.y) * Math.abs(object.scale.y)) / 2;
@@ -351,18 +376,18 @@ function getAxisInsetsFromObjectEdge(
   return {
     horizontalInset: getInsetForWallAxis(
       getWallAxisUnit(horizontalAxis),
-      wallAxisInObjectX,
-      wallAxisInObjectY,
-      wallAxisInObjectZ,
+      TMP_AXIS_IN_OBJECT_X,
+      TMP_AXIS_IN_OBJECT_Y,
+      TMP_AXIS_IN_OBJECT_Z,
       halfX,
       halfY,
       halfZ
     ),
     verticalInset: getInsetForWallAxis(
       getWallAxisUnit(verticalAxis),
-      wallAxisInObjectX,
-      wallAxisInObjectY,
-      wallAxisInObjectZ,
+      TMP_AXIS_IN_OBJECT_X,
+      TMP_AXIS_IN_OBJECT_Y,
+      TMP_AXIS_IN_OBJECT_Z,
       halfX,
       halfY,
       halfZ
@@ -383,7 +408,7 @@ function passesEdgeClearance(
   const bounds = getGeometryBounds(hitObject);
   if (!bounds) return true;
 
-  const localPoint = hitObject.worldToLocal(worldPoint.clone());
+  const localPoint = hitObject.worldToLocal(TMP_HIT_LOCAL_POINT.copy(worldPoint));
   const horizontalAxis = getHorizontalAxis(hitObject, worldNormal, bounds);
   const verticalAxis: 'x' | 'y' | 'z' = 'y';
 
@@ -402,6 +427,71 @@ function passesEdgeClearance(
     passesRangeClearance(edgeClearance.horizontal, horizontalContext, horizontalInset) &&
     passesRangeClearance(edgeClearance.vertical, verticalContext, verticalInset)
   );
+}
+
+function getRoomSurfaceIndex(roomObject: Object3D): RoomSurfaceIndex {
+  const cached = ROOM_SURFACE_INDEX_CACHE.get(roomObject);
+  if (cached) return cached;
+
+  const index: RoomSurfaceIndex = {
+    all: [],
+    wallTagged: [],
+    floorTagged: [],
+    ceilingTagged: [],
+    untagged: [],
+  };
+
+  roomObject.traverse((child) => {
+    const geometry = (child as any)?.geometry;
+    if (!geometry) return;
+    index.all.push(child);
+    const taggedType = getSurfaceTypeFromMetadata(child);
+    if (taggedType === 'wall') {
+      index.wallTagged.push(child);
+    } else if (taggedType === 'floor') {
+      index.floorTagged.push(child);
+    } else if (taggedType === 'ceiling') {
+      index.ceilingTagged.push(child);
+    } else {
+      index.untagged.push(child);
+    }
+  });
+
+  ROOM_SURFACE_INDEX_CACHE.set(roomObject, index);
+  return index;
+}
+
+function getCandidateRoomObjects(
+  roomObject: Object3D,
+  snapPoint: SnapPoint
+): Object3D[] {
+  const index = getRoomSurfaceIndex(roomObject);
+  const allowed = (snapPoint as any)?.allowedSurfaces as SurfaceType[] | undefined;
+  if (!allowed || allowed.length === 0) {
+    return index.all;
+  }
+
+  const out: Object3D[] = [];
+  const seen = new Set<string>();
+  const pushUnique = (objects: Object3D[]) => {
+    for (const object of objects) {
+      const key = object.uuid;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(object);
+    }
+  };
+
+  for (const surfaceType of allowed) {
+    if (surfaceType === 'wall') pushUnique(index.wallTagged);
+    if (surfaceType === 'floor') pushUnique(index.floorTagged);
+    if (surfaceType === 'ceiling') pushUnique(index.ceilingTagged);
+  }
+
+  // Keep normal-heuristic fallback working for untagged geometry.
+  pushUnique(index.untagged);
+
+  return out.length > 0 ? out : index.all;
 }
 
 function getDesiredForward(

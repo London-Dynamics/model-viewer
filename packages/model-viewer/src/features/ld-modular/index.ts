@@ -4418,10 +4418,26 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         : null;
       let maxDistanceSq = 0;
       let pointerCaptured = false;
+      let pendingPointerMove: { clientX: number; clientY: number } | null = null;
+      let pointerMoveRaf = 0;
 
       // Wire default pointer capture (window-level) so consumers don't need to
       // manage global listeners. Pointer moves update the placeholder; pointer
       // up commits the placement. ESC cancels.
+      const flushPointerMove = () => {
+        pointerMoveRaf = 0;
+        const pending = pendingPointerMove;
+        pendingPointerMove = null;
+        if (!pending) return;
+        try {
+          if (session.state === 'placing') {
+            session.updatePosition(pending.clientX, pending.clientY);
+          }
+        } catch (err) {
+          // swallow
+        }
+      };
+
       const onPointerMove = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
@@ -4448,7 +4464,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               const dy = e.clientY - placementStartClientY;
               maxDistanceSq = Math.max(maxDistanceSq, dx * dx + dy * dy);
             }
-            session.updatePosition(e.clientX, e.clientY);
+            pendingPointerMove = { clientX: e.clientX, clientY: e.clientY };
+            if (pointerMoveRaf === 0) {
+              pointerMoveRaf = requestAnimationFrame(flushPointerMove);
+            }
           }
         } catch (err) {
           // swallow
@@ -4513,6 +4532,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         window.removeEventListener('pointerup', onPointerUp);
         window.removeEventListener('pointercancel', onPointerCancel);
         window.removeEventListener('keydown', onKeyDown);
+        if (pointerMoveRaf !== 0) {
+          cancelAnimationFrame(pointerMoveRaf);
+          pointerMoveRaf = 0;
+        }
+        pendingPointerMove = null;
       };
 
       // Clean up listeners when session ends or errors.
