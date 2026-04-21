@@ -98,6 +98,16 @@ function getSurfaceTypeFromMetadata(object: Object3D): SurfaceType | null {
   return null;
 }
 
+function getWallAttachmentTarget(object: Object3D): Object3D | null {
+  let current: Object3D | null = object;
+  while (current) {
+    const name = (current.name || '').toLowerCase();
+    if (name.startsWith('wall_')) return current;
+    current = current.parent || null;
+  }
+  return null;
+}
+
 export function classifySurfaceType(
   hitObject: Object3D,
   worldNormal: Vector3
@@ -633,4 +643,15 @@ export function applySurfaceSnapTransform(
   object.updateMatrixWorld(true);
   object.userData = object.userData || {};
   object.userData.isSurfaceSnapped = true;
+  object.userData.attachedSurfaceType = hit.surfaceType;
+  object.userData.attachedSurfaceName = hit.object.name || '';
+  object.userData.attachedSurfaceUuid = hit.object.uuid || '';
+  if (hit.surfaceType === 'wall') {
+    const wallTarget = getWallAttachmentTarget(hit.object) || hit.object;
+    object.userData.attachedWallName = wallTarget.name || '';
+    object.userData.attachedWallUuid = wallTarget.uuid || '';
+  } else {
+    delete object.userData.attachedWallName;
+    delete object.userData.attachedWallUuid;
+  }
 }

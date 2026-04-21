@@ -91,8 +91,11 @@ export type PlacementGraphNode = {
 };
 
 const DEFAULT_SNAP_POINT_ROTATION: [number, number, number] = [0, 0, 0];
+const ROOM_WALL_BACKFACE_HIDE_THRESHOLD = 0.001;
 
-function getPlacementSnapPoints(options?: PlacementOptions): SnapPoint[] | undefined {
+function getPlacementSnapPoints(
+  options?: PlacementOptions
+): SnapPoint[] | undefined {
   return options?.snapPoints ?? options?.part?.snapPoints;
 }
 
@@ -292,6 +295,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _boundDeleteKeyHandler: ((event: KeyboardEvent) => void) | null =
       null;
     private _boundLoadHandler: (() => void) | null = null;
+    private _roomWallVisibilityCacheDirty: boolean = true;
+    private _roomWallEntries: Map<
+      string,
+      {
+        wall: Object3D;
+        skirting: Object3D | null;
+        wallNormalLocal: Vector3;
+      }
+    > = new Map();
+    private _roomAttachedObjectsByWallName: Map<string, Set<Object3D>> =
+      new Map();
+    private _roomHiddenAttachedObjects: Set<Object3D> = new Set();
+    private _roomHiddenSkirtings: Set<Object3D> = new Set();
+    private _tmpCameraWorldPos: Vector3 = new Vector3();
+    private _tmpWallWorldPos: Vector3 = new Vector3();
+    private _tmpCameraToWallDir: Vector3 = new Vector3();
+    private _tmpWallWorldNormal: Vector3 = new Vector3();
+    private _tmpMeshWorldQuat: Quaternion = new Quaternion();
+    private _tmpWallWorldQuat: Quaternion = new Quaternion();
 
     connectedCallback() {
       super.connectedCallback();
@@ -336,6 +358,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this._boundLoadHandler = () => {
         this._syncRoomSourceMode();
+        this._markRoomWallVisibilityCacheDirty();
       };
       this.addEventListener('load', this._boundLoadHandler);
 
@@ -349,14 +372,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       super.updated(changedProperties);
       if (
         changedProperties.has('srcIsRoom') ||
-        changedProperties.has('disableBaseModelShadows')
+        changedProperties.has('disableBaseModelShadows') ||
+        changedProperties.has('src')
       ) {
         this._syncRoomSourceMode();
+        this._markRoomWallVisibilityCacheDirty();
       }
     }
 
     private _syncRoomSourceMode() {
-      if (!this.srcIsRoom) return;
+      if (!this.srcIsRoom) {
+        this._resetRoomAttachedVisibility();
+        return;
+      }
 
       if (!this.disableBaseModelShadows) {
         this.disableBaseModelShadows = true;
@@ -365,6 +393,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any).disableBaseModelSelection = true;
       }
       this._applyRoomSourceRuntimeFlags();
+      this._markRoomWallVisibilityCacheDirty();
     }
 
     private _applyRoomSourceRuntimeFlags() {
@@ -388,6 +417,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     disconnectedCallback() {
       super.disconnectedCallback();
       this.cancelRequestedShadowUpdate();
+      this._resetRoomAttachedVisibility();
 
       // Clean up event listener
       if (this._boundSelectionChangeHandler) {
@@ -661,6 +691,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
       try {
         if (this._breakLinkSlotsVisible) this.updateBreakLinkSlots();
+      } catch (e) {}
+      try {
+        this._updateRoomAttachedVisibility();
       } catch (e) {}
 
       // Step rotation animations (framerate independent) and clear shadow
@@ -2613,8 +2646,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         targetObject.traverse((child: any) => {
           // Show slots for all objects with snapping points
           if (child.userData?.snapPoints) {
-            const snapPoints = child.userData
-              .snapPoints as SnapPoint[];
+            const snapPoints = child.userData.snapPoints as SnapPoint[];
             snapPoints.forEach((snapPoint, index) => {
               if (this.isSnapPointUsed(child, snapPoint)) return;
 
@@ -2830,6 +2862,164 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return getBaseModelObject(scene);
     }
 
+    private _markRoomWallVisibilityCacheDirty() {
+      this._roomWallVisibilityCacheDirty = true;
+    }
+
+    private _getWallIndexFromName(name: string): string | null {
+      if (!name || !name.startsWith('wall_')) return null;
+      return name.slice('wall_'.length);
+    }
+
+    private _inferWallNormalLocal(wall: Object3D): Vector3 {
+      const mesh = (wall as any).isMesh
+        ? wall
+        : (wall as any).getObjectByProperty?.('isMesh', true);
+      if (!mesh?.geometry?.attributes?.normal?.array) {
+        return new Vector3(0, 0, 1);
+      }
+      const normalAttr = mesh.geometry.attributes.normal
+        .array as ArrayLike<number>;
+      if (normalAttr.length < 3) return new Vector3(0, 0, 1);
+      const normal = new Vector3(normalAttr[0], normalAttr[1], normalAttr[2]);
+      if (normal.lengthSq() <= 1e-8) return new Vector3(0, 0, 1);
+      if (mesh !== wall) {
+        mesh.getWorldQuaternion(this._tmpMeshWorldQuat);
+        wall.getWorldQuaternion(this._tmpWallWorldQuat);
+        normal
+          .normalize()
+          .applyQuaternion(this._tmpMeshWorldQuat)
+          .applyQuaternion(this._tmpWallWorldQuat.invert());
+      }
+      return normal.normalize();
+    }
+
+    private _rebuildRoomWallVisibilityCache() {
+      this._roomWallEntries.clear();
+      this._roomAttachedObjectsByWallName.clear();
+
+      const roomObject = this._findRoomSurfaceObject();
+      const targetObject = this.findTargetObject();
+      if (!roomObject || !targetObject) {
+        this._roomWallVisibilityCacheDirty = false;
+        return;
+      }
+
+      roomObject.traverse((child) => {
+        const wallName = child.name || '';
+        if (!wallName.startsWith('wall_')) return;
+        const wallIndex = this._getWallIndexFromName(wallName);
+        const skirtingName = wallIndex != null ? `skirting_${wallIndex}` : '';
+        const skirting =
+          skirtingName.length > 0
+            ? ((child as any).getObjectByName?.(
+                skirtingName
+              ) as Object3D | null)
+            : null;
+        this._roomWallEntries.set(wallName, {
+          wall: child,
+          skirting: skirting || null,
+          wallNormalLocal: this._inferWallNormalLocal(child),
+        });
+      });
+
+      targetObject.traverse((child) => {
+        if (child.userData?.isPlacedObject !== true) return;
+        const wallName = child.userData?.attachedWallName;
+        if (!wallName || typeof wallName !== 'string') return;
+        let set = this._roomAttachedObjectsByWallName.get(wallName);
+        if (!set) {
+          set = new Set<Object3D>();
+          this._roomAttachedObjectsByWallName.set(wallName, set);
+        }
+        set.add(child);
+      });
+
+      this._roomWallVisibilityCacheDirty = false;
+    }
+
+    private _setWallAttachmentsVisibility(wallName: string, visible: boolean) {
+      const attached = this._roomAttachedObjectsByWallName.get(wallName);
+      if (attached) {
+        attached.forEach((object) => {
+          object.visible = visible;
+          if (visible) this._roomHiddenAttachedObjects.delete(object);
+          else this._roomHiddenAttachedObjects.add(object);
+        });
+      }
+
+      const wallEntry = this._roomWallEntries.get(wallName);
+      if (wallEntry?.skirting) {
+        wallEntry.skirting.visible = visible;
+        if (visible) this._roomHiddenSkirtings.delete(wallEntry.skirting);
+        else this._roomHiddenSkirtings.add(wallEntry.skirting);
+      }
+    }
+
+    private _resetRoomAttachedVisibility() {
+      this._roomHiddenAttachedObjects.forEach((object) => {
+        object.visible = true;
+      });
+      this._roomHiddenSkirtings.forEach((object) => {
+        object.visible = true;
+      });
+      this._roomHiddenAttachedObjects.clear();
+      this._roomHiddenSkirtings.clear();
+      this._roomWallEntries.clear();
+      this._roomAttachedObjectsByWallName.clear();
+      this._roomWallVisibilityCacheDirty = true;
+    }
+
+    private _updateRoomAttachedVisibility() {
+      if (!this.srcIsRoom) return;
+      const scene = (this as any)[$scene];
+      if (!scene) return;
+      const camera = scene.getCamera ? scene.getCamera() : scene.camera;
+      if (!camera) return;
+
+      if (this._isRoomWallVisibilityCacheInvalid()) {
+        this._roomWallVisibilityCacheDirty = true;
+      }
+      if (this._roomWallVisibilityCacheDirty) {
+        this._rebuildRoomWallVisibilityCache();
+      }
+
+      camera.getWorldPosition(this._tmpCameraWorldPos);
+
+      this._roomWallEntries.forEach((entry, wallName) => {
+        this._tmpWallWorldNormal
+          .copy(entry.wallNormalLocal)
+          .transformDirection(entry.wall.matrixWorld)
+          .normalize();
+        entry.wall.getWorldPosition(this._tmpWallWorldPos);
+        this._tmpCameraToWallDir
+          .copy(this._tmpWallWorldPos)
+          .sub(this._tmpCameraWorldPos);
+        if (this._tmpCameraToWallDir.lengthSq() <= 1e-8) {
+          this._setWallAttachmentsVisibility(wallName, true);
+          return;
+        }
+        this._tmpCameraToWallDir.normalize();
+        const wallBackFacingCamera =
+          this._tmpWallWorldNormal.dot(this._tmpCameraToWallDir) >
+          ROOM_WALL_BACKFACE_HIDE_THRESHOLD;
+        this._setWallAttachmentsVisibility(wallName, !wallBackFacingCamera);
+      });
+    }
+
+    private _isRoomWallVisibilityCacheInvalid(): boolean {
+      for (const [, entry] of this._roomWallEntries) {
+        if (!entry.wall.parent) return true;
+        if (entry.skirting && !entry.skirting.parent) return true;
+      }
+      for (const [, objects] of this._roomAttachedObjectsByWallName) {
+        for (const object of objects) {
+          if (!object.parent) return true;
+        }
+      }
+      return false;
+    }
+
     private _applySurfaceSnapForNdc(object: Object3D, ndc: Vector2): boolean {
       const snapPoint = getPrimarySurfaceSnapPoint(object);
       if (!snapPoint) return false;
@@ -2850,6 +3040,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const floorY = getRoomFloorY(roomObject);
       applySurfaceSnapTransform(object, snapPoint, hit, floorY);
+      if (object.userData?.isPlacedObject === true) {
+        this._markRoomWallVisibilityCacheDirty();
+      }
       this._setPendingSnapConnection(null);
       return true;
     }
@@ -3406,7 +3599,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const isSurfaceSnapObject = requiresSurfaceSnap(object);
       if (isSurfaceSnapObject) {
-        this._dragSurfaceSnapValid = this._applySurfaceSnapForCurrentMouse(object);
+        this._dragSurfaceSnapValid =
+          this._applySurfaceSnapForCurrentMouse(object);
         if (!this._dragSurfaceSnapValid) {
           return;
         }
@@ -3558,6 +3752,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (dragTarget) {
         this._dispatchTransformEvent('transformend', dragTarget);
+        if (dragTarget.userData?.isPlacedObject === true) {
+          this._markRoomWallVisibilityCacheDirty();
+        }
       }
 
       // update shadows/bbox after drag ends / reparenting done
@@ -4418,7 +4615,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         : null;
       let maxDistanceSq = 0;
       let pointerCaptured = false;
-      let pendingPointerMove: { clientX: number; clientY: number } | null = null;
+      let pendingPointerMove: { clientX: number; clientY: number } | null =
+        null;
       let pointerMoveRaf = 0;
 
       // Wire default pointer capture (window-level) so consumers don't need to
@@ -5211,11 +5409,9 @@ class PlacementSession extends EventTarget {
       if ((this._element as any).snappingEnabled && this.placeholder) {
         try {
           if (requiresSurfaceSnap(this.placeholder)) {
-            const snappedToSurface = (this._element as any).applySurfaceSnapForPlacement(
-              this.placeholder,
-              clientX,
-              clientY
-            );
+            const snappedToSurface = (
+              this._element as any
+            ).applySurfaceSnapForPlacement(this.placeholder, clientX, clientY);
             this._hasValidSurfaceSnap = !!snappedToSurface;
             (this._element as any).pendingSnapConnection = null;
           } else if (this.placeholder.userData.snapPoints) {
@@ -5600,6 +5796,42 @@ class PlacementSession extends EventTarget {
       };
       gltf.scene.userData.isSurfaceSnapped =
         this.requiresSurfaceSnap() && this._hasValidSurfaceSnap;
+      const placeholderUserData = this.placeholder?.userData || {};
+      if (
+        typeof placeholderUserData.attachedSurfaceType === 'string' &&
+        placeholderUserData.attachedSurfaceType.length > 0
+      ) {
+        gltf.scene.userData.attachedSurfaceType =
+          placeholderUserData.attachedSurfaceType;
+      }
+      if (
+        typeof placeholderUserData.attachedSurfaceName === 'string' &&
+        placeholderUserData.attachedSurfaceName.length > 0
+      ) {
+        gltf.scene.userData.attachedSurfaceName =
+          placeholderUserData.attachedSurfaceName;
+      }
+      if (
+        typeof placeholderUserData.attachedSurfaceUuid === 'string' &&
+        placeholderUserData.attachedSurfaceUuid.length > 0
+      ) {
+        gltf.scene.userData.attachedSurfaceUuid =
+          placeholderUserData.attachedSurfaceUuid;
+      }
+      if (
+        typeof placeholderUserData.attachedWallName === 'string' &&
+        placeholderUserData.attachedWallName.length > 0
+      ) {
+        gltf.scene.userData.attachedWallName =
+          placeholderUserData.attachedWallName;
+      }
+      if (
+        typeof placeholderUserData.attachedWallUuid === 'string' &&
+        placeholderUserData.attachedWallUuid.length > 0
+      ) {
+        gltf.scene.userData.attachedWallUuid =
+          placeholderUserData.attachedWallUuid;
+      }
       const placedSnapPoints = getPlacementSnapPoints(this._options);
       if (placedSnapPoints) {
         try {
@@ -5615,6 +5847,9 @@ class PlacementSession extends EventTarget {
       } catch (e) {
         scene.add(gltf.scene);
       }
+      try {
+        element._markRoomWallVisibilityCacheDirty?.();
+      } catch (e) {}
 
       try {
         const el = element as any;
@@ -5675,7 +5910,8 @@ class PlacementSession extends EventTarget {
                     const connections = findSnappingConnections(
                       snappableObj,
                       child,
-                      (object, snapPoint) => el.isSnapPointUsed(object, snapPoint)
+                      (object, snapPoint) =>
+                        el.isSnapPointUsed(object, snapPoint)
                     );
                     if (connections && connections.length > 0) {
                       const closest = connections[0];

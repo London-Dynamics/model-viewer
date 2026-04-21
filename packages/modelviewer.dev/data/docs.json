@@ -1617,7 +1617,7 @@
       {
         "name": "selection-change",
         "htmlName": "selectionChange",
-        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). Listen to this event to react to selection changes programmatically."
+        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
       }
     ]
   },
@@ -1705,6 +1705,18 @@
         "default": {
           "default": "#165dfc",
           "options": "any valid CSS color string"
+        }
+      },
+      {
+        "name": "src-is-room",
+        "htmlName": "srcIsRoom",
+        "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, wall backface visibility rules can hide wall-attached placed objects, and matching skirting_N follows wall_N visibility.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
         }
       }
     ],
