@@ -92,6 +92,12 @@ export type PlacementGraphNode = {
   children?: PlacementGraphNode[];
 };
 
+export type GlbBoundsResult = {
+  filename: string;
+  min: [number, number, number];
+  max: [number, number, number];
+};
+
 const DEFAULT_SNAP_POINT_ROTATION: [number, number, number] = [0, 0, 0];
 const ROOM_WALL_BACKFACE_HIDE_THRESHOLD = 0.001;
 
@@ -155,6 +161,8 @@ type RotationOptions = {
 export declare interface LDModularInterface {
   load: LoadFunction;
   loadMany: LoadManyFunction;
+  getGlbBounds(src: string): Promise<GlbBoundsResult>;
+  getGlbBoundsMany(srcs: string[]): Promise<GlbBoundsResult[]>;
   attachObject: AttachFunction;
   attachMaterial: AttachMaterialFunction;
   clear: ClearSceneFunction;
@@ -852,6 +860,50 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.clearLoadProgress();
       const promises = srcs.map((item) => this.load(item.src, item.id));
       return Promise.all(promises);
+    }
+
+    async getGlbBounds(src: string): Promise<GlbBoundsResult> {
+      const loader = (this as any)[$renderer]?.loader;
+      if (!loader || typeof loader.load !== 'function') {
+        throw new Error('Renderer loader unavailable for bounds calculation');
+      }
+
+      const gltf = await loader.load(src, this, () => {});
+      if (!gltf?.scene) {
+        throw new Error('Loaded GLTF missing scene');
+      }
+
+      gltf.scene.updateMatrixWorld(true);
+      const bbox = new Box3().setFromObject(gltf.scene);
+      if (
+        !Number.isFinite(bbox.min.x) ||
+        !Number.isFinite(bbox.min.y) ||
+        !Number.isFinite(bbox.min.z) ||
+        !Number.isFinite(bbox.max.x) ||
+        !Number.isFinite(bbox.max.y) ||
+        !Number.isFinite(bbox.max.z)
+      ) {
+        throw new Error('Computed GLB bounds are invalid');
+      }
+
+      let filename = src;
+      try {
+        filename = new URL(src).pathname.split('/').pop() || src;
+      } catch (e) {}
+
+      return {
+        filename,
+        min: [bbox.min.x, bbox.min.y, bbox.min.z],
+        max: [bbox.max.x, bbox.max.y, bbox.max.z],
+      };
+    }
+
+    async getGlbBoundsMany(srcs: string[]): Promise<GlbBoundsResult[]> {
+      const results: GlbBoundsResult[] = [];
+      for (const src of srcs) {
+        results.push(await this.getGlbBounds(src));
+      }
+      return results;
     }
 
     private _loadStatusMap: Map<

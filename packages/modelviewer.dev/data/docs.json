@@ -1702,6 +1702,22 @@
         ]
       },
       {
+        "name": "getGlbBounds(src: string): Promise<{ filename: string; min: [number, number, number]; max: [number, number, number] }>",
+        "htmlName": "getGlbBounds",
+        "description": "Load a GLB source and compute its axis-aligned bounding box. Returns filename (derived from URL path), min, and max arrays suitable for placement placeholder bounds.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getGlbBoundsMany(srcs: string[]): Promise<Array<{ filename: string; min: [number, number, number]; max: [number, number, number] }>>",
+        "htmlName": "getGlbBoundsMany",
+        "description": "Compute bounds for multiple GLB URLs sequentially and return an array of filename/min/max results.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>"
+        ]
+      },
+      {
         "name": "placeManyGlb(items: BulkPlacementItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined> }): Promise<{ id: string; node: Object3D }[]>",
         "htmlName": "placeManyGlb",
         "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Rotation values in each item transform are interpreted as radians (Three.js Euler XYZ). Supports a configurable maximum concurrency (default 4) and emits standard progress events with reason: 'bulk-placement' and aggregated total progress, plus a bulk-placement-complete event when finished.",
