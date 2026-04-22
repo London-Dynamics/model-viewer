@@ -1345,6 +1345,8 @@
                           button.addEventListener('mousedown', (event) => {
                             const { src, name } = event.currentTarget.dataset;
                             if (!src) return;
+                            const lowResSrc =
+                              '../../shared-assets/models/cube.gltf';
 
                             const placementOptions = {
                               name,
@@ -1353,11 +1355,18 @@
                                 editable: true,
                                 snapPoints: snapPointsByPart[name] || [],
                               },
+                              getHighResUrl: async () => {
+                                console.log(
+                                  'Requesting high-res URL for part',
+                                  src
+                                );
+                                return src;
+                              },
                             };
 
                             modelViewer.beginPlacement(
-                              src,
-                              src,
+                              lowResSrc,
+                              undefined,
                               placementOptions,
                               {
                                 clientX: event.clientX,

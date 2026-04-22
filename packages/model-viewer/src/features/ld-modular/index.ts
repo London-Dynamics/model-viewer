@@ -5181,6 +5181,46 @@ class PlacementSession extends EventTarget {
     return placeholder;
   }
 
+  private _createPlaceholderAnchor(scene: any, element: any): Object3D {
+    const placeholder = new Object3D();
+    placeholder.name = this._options?.name
+      ? this._options.name + `_${+new Date()}`
+      : this.id;
+
+    placeholder.userData = {
+      selectable: true,
+      ...(placeholder.userData || {}),
+    };
+    placeholder.userData.isPlacementPlaceholder = true;
+
+    const placeholderSnapPoints = getPlacementSnapPoints(this._options);
+    if (placeholderSnapPoints) {
+      try {
+        placeholder.userData.snapPoints = placeholderSnapPoints;
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (typeof this._options?.selectable !== 'undefined') {
+      placeholder.userData.selectable = this._options.selectable;
+    }
+
+    try {
+      scene.target.add(placeholder);
+    } catch (e) {
+      scene.add(placeholder);
+    }
+
+    try {
+      placeholder.visible = false;
+    } catch (e) {}
+    try {
+      element[$needsRender]();
+    } catch (e) {}
+
+    return placeholder;
+  }
+
   // Internal: load low-res placeholder and insert into scene
   async _loadPlaceholder() {
     if (!this._element) return;
@@ -5208,9 +5248,18 @@ class PlacementSession extends EventTarget {
           return;
         }
 
-        // No placeholder - session will track cursor position only, but will never commit
+        // No low-res URL and no bounds placeholder available.
+        // Create a lightweight anchor placeholder so interactive snapping
+        // (especially surfaceSnap) still works in getHighResUrl-only flows.
+        const anchorPlaceholder = this._createPlaceholderAnchor(scene, element);
+        this.placeholder = anchorPlaceholder;
+        (this as any).dispatchEvent(
+          new CustomEvent('placeholder-loaded', {
+            detail: { sessionId: this.id, placeholder: anchorPlaceholder },
+          })
+        );
         this.log(
-          '[puzzler] PlacementSession: No low-res URL provided, skipping placeholder'
+          '[puzzler] PlacementSession: No low-res URL provided, using anchor placeholder'
         );
         return;
       }
@@ -5366,11 +5415,23 @@ class PlacementSession extends EventTarget {
       const bboxLocal = new Box3().setFromObject(this.placeholder);
 
       // Bottom-center in object's local coordinate system
-      const bottomCenterLocal = new Vector3(
-        (bboxLocal.min.x + bboxLocal.max.x) / 2,
-        bboxLocal.min.y,
-        (bboxLocal.min.z + bboxLocal.max.z) / 2
-      );
+      let bottomCenterLocal: Vector3;
+      if (
+        Number.isFinite(bboxLocal.min.x) &&
+        Number.isFinite(bboxLocal.max.x) &&
+        Number.isFinite(bboxLocal.min.y) &&
+        Number.isFinite(bboxLocal.min.z) &&
+        Number.isFinite(bboxLocal.max.z)
+      ) {
+        bottomCenterLocal = new Vector3(
+          (bboxLocal.min.x + bboxLocal.max.x) / 2,
+          bboxLocal.min.y,
+          (bboxLocal.min.z + bboxLocal.max.z) / 2
+        );
+      } else {
+        // Placeholder anchor (no mesh): treat local origin as bottom-center.
+        bottomCenterLocal = new Vector3(0, 0, 0);
+      }
 
       // Restore to parent
       if (parent) {
