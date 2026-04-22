@@ -1672,42 +1672,6 @@
         "default": { "default": "false", "options": "true, false" }
       },
       {
-        "name": "cursor-visible",
-        "htmlName": "cursorVisible",
-        "description": "Toggle visibility of the placement cursor used during interactive placement.",
-        "links": [
-          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ],
-        "default": {
-          "default": "false",
-          "options": "true, false"
-        }
-      },
-      {
-        "name": "cursor-size",
-        "htmlName": "cursorSize",
-        "description": "Diameter of the placement cursor in meters.",
-        "links": [
-          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ],
-        "default": {
-          "default": "0.5",
-          "options": "number (meters)"
-        }
-      },
-      {
-        "name": "cursor-colour",
-        "htmlName": "cursorColour",
-        "description": "CSS color used for the placement cursor.",
-        "links": [
-          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ],
-        "default": {
-          "default": "#165dfc",
-          "options": "any valid CSS color string"
-        }
-      },
-      {
         "name": "src-is-room",
         "htmlName": "srcIsRoom",
         "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, wall backface visibility rules can hide wall-attached placed objects, and matching skirting_N follows wall_N visibility.",

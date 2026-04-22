@@ -104,9 +104,6 @@
         align-items: center;
       }
 
-      #modular-demo::part(ld-rotation-control):hover {
-      }
-
       #modular-demo::part(ld-rotation-icon) {
         font-size: 16px;
         line-height: 1;
@@ -392,29 +389,6 @@
                               </div>
                             </div>
                             <div class="grid grid-cols-2 gap-4">
-                              <div class="flex items-center">
-                                <button
-                                  id="toggle-cursor"
-                                  type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
-                                  role="switch"
-                                  aria-checked="false"
-                                  aria-labelledby="show-cursor-label"
-                                >
-                                  <span
-                                    aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
-                                  ></span>
-                                </button>
-                                <span
-                                  class="ml-2 text-sm"
-                                  id="show-cursor-label"
-                                >
-                                  <span class="font-medium text-gray-900"
-                                    >Cursor Visible</span
-                                  >
-                                </span>
-                              </div>
                               <div class="flex items-center">
                                 <button
                                   id="toggle-snapping-points"
@@ -861,8 +835,6 @@
 
                             const { filename, ...placementOptions } = dataset;
 
-                            modelViewer.setAttribute('cursor-visible', '');
-
                             const lowresSrc = `../../shared-assets/models/${filename}`;
                             const highResSrc = lowresSrc;
 
@@ -905,9 +877,7 @@
 
                             session.addEventListener(
                               'placeholder-loaded',
-                              (e) => {
-                                //modelViewer.removeAttribute('cursor-visible');
-                              }
+                              (e) => {}
                             );
 
                             session.addEventListener('loading-start', (e) => {
@@ -955,7 +925,6 @@
 
                             session.addEventListener('loaded', (e) => {
                               console.log('Loaded placed object');
-                              modelViewer.removeAttribute('cursor-visible');
                               removeLoaderHotspot(e.detail.sessionId);
                               logSceneGraph();
                               session = null;
@@ -1031,19 +1000,6 @@
                             'aria-checked',
                             isOrthographic ? 'true' : 'false'
                           );
-                        });
-
-                      document
-                        .getElementById('toggle-cursor')
-                        .addEventListener('click', (e) => {
-                          const el = e.target;
-                          if (el.getAttribute('aria-checked') === 'true') {
-                            el.setAttribute('aria-checked', 'false');
-                            modelViewer.removeAttribute('cursor-visible');
-                          } else {
-                            el.setAttribute('aria-checked', 'true');
-                            modelViewer.setAttribute('cursor-visible', '');
-                          }
                         });
 
                       // Snapping toggle handler
@@ -1338,6 +1294,32 @@
                           },
                         ],
                       };
+                      const boundsByPart = {
+                        window: {
+                          min: [
+                            -0.6118119359016418,
+                            -1.3969838619232178e-8,
+                            -0.05527731031179428,
+                          ],
+                          max: [
+                            0.6118119955062866,
+                            1.4524229764938354,
+                            0.1190357431769371,
+                          ],
+                        },
+                        door: {
+                          min: [
+                            -0.4841478338397186,
+                            -2.984302072547815e-8,
+                            -0.04106838019338431,
+                          ],
+                          max: [
+                            0.4840838776973738,
+                            2.052496018033463,
+                            0.07476986552067244,
+                          ],
+                        },
+                      };
 
                       document
                         .querySelectorAll('.place-room-part')
@@ -1345,8 +1327,6 @@
                           button.addEventListener('mousedown', (event) => {
                             const { src, name } = event.currentTarget.dataset;
                             if (!src) return;
-                            const lowResSrc =
-                              '../../shared-assets/models/cube.gltf';
 
                             const placementOptions = {
                               name,
@@ -1354,6 +1334,7 @@
                                 type: 'scene',
                                 editable: true,
                                 snapPoints: snapPointsByPart[name] || [],
+                                bounds: boundsByPart[name],
                               },
                               getHighResUrl: async () => {
                                 console.log(
@@ -1365,7 +1346,7 @@
                             };
 
                             modelViewer.beginPlacement(
-                              lowResSrc,
+                              undefined,
                               undefined,
                               placementOptions,
                               {

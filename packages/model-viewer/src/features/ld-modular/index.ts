@@ -22,7 +22,7 @@ import ModelViewerElementBase, {
   $tick,
   $userInputElement,
 } from '../../model-viewer-base.js';
-import { $getMouseWorldPoint } from '../ld-cursor/index.js';
+import { getMouseWorldPointOnPlacementPlane } from '../../utilities/mouse-world-point.js';
 
 import {
   getSnappingPointWorldPosition,
@@ -38,7 +38,9 @@ import {
   findSurfaceSnapHitForNdc,
   getBaseModelObject,
   getRoomFloorY,
+  type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
+import { PlacementCursor } from './placement-cursor.js';
 
 import { getErrorMessage } from '../../utilities/errors.js';
 
@@ -694,6 +696,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
       try {
         this._updateRoomAttachedVisibility();
+      } catch (e) {}
+      try {
+        this._activePlacementSession?.tickPlacementCursor(delta);
       } catch (e) {}
 
       // Step rotation animations (framerate independent) and clear shadow
@@ -3020,14 +3025,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return false;
     }
 
-    private _applySurfaceSnapForNdc(object: Object3D, ndc: Vector2): boolean {
+    private _applySurfaceSnapForNdc(
+      object: Object3D,
+      ndc: Vector2
+    ): SurfaceSnapHit | null {
       const snapPoint = getPrimarySurfaceSnapPoint(object);
-      if (!snapPoint) return false;
+      if (!snapPoint) return null;
 
       const scene = (this as any)[$scene];
       const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
       const roomObject = this._findRoomSurfaceObject();
-      if (!camera || !roomObject) return false;
+      if (!camera || !roomObject) return null;
 
       const hit = findSurfaceSnapHitForNdc(
         camera,
@@ -3036,7 +3044,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         snapPoint,
         object
       );
-      if (!hit) return false;
+      if (!hit) return null;
 
       const floorY = getRoomFloorY(roomObject);
       applySurfaceSnapTransform(object, snapPoint, hit, floorY);
@@ -3044,22 +3052,22 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._markRoomWallVisibilityCacheDirty();
       }
       this._setPendingSnapConnection(null);
-      return true;
+      return hit;
     }
 
     applySurfaceSnapForPlacement(
       object: Object3D,
       clientX: number,
       clientY: number
-    ): boolean {
+    ): SurfaceSnapHit | null {
       const rect = this.getBoundingClientRect();
       const ndc = clientToNdc(clientX, clientY, rect);
-      if (!ndc) return false;
+      if (!ndc) return null;
       return this._applySurfaceSnapForNdc(object, ndc);
     }
 
     private _applySurfaceSnapForCurrentMouse(object: Object3D): boolean {
-      return this._applySurfaceSnapForNdc(object, this.currentMousePosition);
+      return !!this._applySurfaceSnapForNdc(object, this.currentMousePosition);
     }
 
     /**
@@ -4675,6 +4683,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const onPointerUp = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
+            session.hidePlacementCursor();
             const requiresWallSurfaceSnap =
               (session as any).requiresSurfaceSnap?.() ?? false;
             const hasValidWallSurfaceSnap =
@@ -5065,6 +5074,7 @@ class PlacementSession extends EventTarget {
   private _targetBottomCenter: { x: number; y: number; z: number } | null =
     null;
   private _hasValidSurfaceSnap: boolean = false;
+  private _placementCursor: PlacementCursor | null = null;
 
   constructor(
     element: any,
@@ -5084,9 +5094,93 @@ class PlacementSession extends EventTarget {
     this.log = log;
     this.warn = warn;
     this.error = error;
+    this._ensurePlacementCursor();
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
+  }
+
+  private _ensurePlacementCursor() {
+    if (this._placementCursor || !this._element) return;
+    const scene = (this._element as any)[$scene];
+    const parent = scene?.target || scene;
+    if (!parent) return;
+
+    const cursor = new PlacementCursor(() => {
+      try {
+        (this._element as any)?.[$needsRender]();
+      } catch (e) {}
+    });
+    parent.add(cursor);
+    this._placementCursor = cursor;
+
+    const defaultWorld = new Vector3();
+    if (scene?.target) {
+      scene.target.getWorldPosition(defaultWorld);
+    }
+    cursor.showOnFloor(defaultWorld);
+  }
+
+  private _disposePlacementCursor() {
+    if (!this._placementCursor) return;
+    this._placementCursor.dispose();
+    this._placementCursor = null;
+  }
+
+  hidePlacementCursor() {
+    this._placementCursor?.hide();
+  }
+
+  tickPlacementCursor(deltaMs: number) {
+    this._placementCursor?.tick(deltaMs);
+  }
+
+  private _getWallCursorPointFromPlaceholder(
+    surfaceHit: SurfaceSnapHit
+  ): Vector3 | null {
+    if (!this.placeholder) return null;
+    const bbox = new Box3().setFromObject(this.placeholder);
+    if (
+      !Number.isFinite(bbox.min.x) ||
+      !Number.isFinite(bbox.min.y) ||
+      !Number.isFinite(bbox.min.z) ||
+      !Number.isFinite(bbox.max.x) ||
+      !Number.isFinite(bbox.max.y) ||
+      !Number.isFinite(bbox.max.z)
+    ) {
+      return null;
+    }
+
+    const center = bbox.getCenter(new Vector3());
+    const halfSize = bbox.getSize(new Vector3()).multiplyScalar(0.5);
+    const normal = surfaceHit.normal.clone().normalize();
+    const projectedHalfDepth =
+      Math.abs(normal.x) * halfSize.x +
+      Math.abs(normal.y) * halfSize.y +
+      Math.abs(normal.z) * halfSize.z;
+
+    return center.addScaledVector(normal, -projectedHalfDepth);
+  }
+
+  private _updatePlacementCursor(
+    worldPoint: Vector3,
+    surfaceHit: SurfaceSnapHit | null,
+    snappedSurfacePoint: Vector3 | null = null
+  ) {
+    this._ensurePlacementCursor();
+    if (!this._placementCursor) return;
+    if (this.requiresSurfaceSnap() && !surfaceHit) {
+      this._placementCursor.hide();
+      return;
+    }
+    if (surfaceHit && surfaceHit.surfaceType === 'wall') {
+      this._placementCursor.showOnSurface(
+        snappedSurfacePoint || surfaceHit.point,
+        surfaceHit.normal
+      );
+      return;
+    }
+    this._placementCursor.showOnFloor(worldPoint);
   }
 
   requiresSurfaceSnap(): boolean {
@@ -5125,7 +5219,7 @@ class PlacementSession extends EventTarget {
 
     const geometry = new BoxGeometry(width, height, depth);
     const material = new MeshBasicMaterial({
-      color: 0xffffff,
+      color: 0x6495ed,
       transparent: true,
       opacity: 0.5,
     });
@@ -5350,12 +5444,15 @@ class PlacementSession extends EventTarget {
     if (!this._element) return;
 
     try {
-      const world = (this._element as any)[$getMouseWorldPoint](
+      const world = getMouseWorldPointOnPlacementPlane(
+        this._element as unknown as HTMLElement,
+        (this._element as any)[$scene],
         clientX,
         clientY
-      ) as Vector3 | null;
+      );
       if (!world) {
         this._hasValidSurfaceSnap = false;
+        this.hidePlacementCursor();
         // pointer outside or no valid ray intersection
         (this as any).dispatchEvent(
           new CustomEvent('update', {
@@ -5370,9 +5467,12 @@ class PlacementSession extends EventTarget {
       // Also store this as the target bottom-center position
       this._targetBottomCenter = { x: world.x, y: world.y, z: world.z };
 
+      let placementSurfaceHit: SurfaceSnapHit | null = null;
+
       // If no placeholder exists, just track position and return
       if (!this.placeholder) {
         this._hasValidSurfaceSnap = false;
+        this._updatePlacementCursor(world, null);
         (this as any).dispatchEvent(
           new CustomEvent('update', {
             detail: {
@@ -5467,13 +5567,28 @@ class PlacementSession extends EventTarget {
       // Check for snapping during interactive placement if snapping is enabled.
       // Surface snap has priority and bypasses point-to-point snapping.
       this._hasValidSurfaceSnap = !this.requiresSurfaceSnap();
+      let snappedSurfacePoint: Vector3 | null = null;
       if ((this._element as any).snappingEnabled && this.placeholder) {
         try {
           if (requiresSurfaceSnap(this.placeholder)) {
-            const snappedToSurface = (
+            const surfaceHit = (
               this._element as any
             ).applySurfaceSnapForPlacement(this.placeholder, clientX, clientY);
-            this._hasValidSurfaceSnap = !!snappedToSurface;
+            placementSurfaceHit = surfaceHit;
+            this._hasValidSurfaceSnap = !!surfaceHit;
+            if (surfaceHit) {
+              snappedSurfacePoint =
+                this._getWallCursorPointFromPlaceholder(surfaceHit);
+              if (!snappedSurfacePoint) {
+                const snapPoint = getPrimarySurfaceSnapPoint(this.placeholder);
+                if (snapPoint) {
+                  snappedSurfacePoint = getSnappingPointWorldPosition(
+                    this.placeholder,
+                    snapPoint
+                  );
+                }
+              }
+            }
             (this._element as any).pendingSnapConnection = null;
           } else if (this.placeholder.userData.snapPoints) {
             const targetObject = (this._element as any).findTargetObject();
@@ -5548,6 +5663,11 @@ class PlacementSession extends EventTarget {
           // Ignore snapping errors during placement
         }
       }
+      this._updatePlacementCursor(
+        world,
+        placementSurfaceHit,
+        snappedSurfacePoint
+      );
 
       (this as any).dispatchEvent(
         new CustomEvent('update', {
@@ -5623,6 +5743,7 @@ class PlacementSession extends EventTarget {
       return Promise.reject(new Error('Session not placing'));
     }
 
+    this.hidePlacementCursor();
     this.state = 'loading';
 
     // Compute a reasonable center point for the placeholder so callers
@@ -5776,22 +5897,6 @@ class PlacementSession extends EventTarget {
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
-
-        const placeholderBBox = new Box3().setFromObject(this.placeholder);
-        const finalBBox = new Box3().setFromObject(gltf.scene);
-
-        const placeholderHeight = placeholderBBox.max.y - placeholderBBox.min.y;
-        const finalHeight = finalBBox.max.y - finalBBox.min.y;
-
-        const heightDiff = finalHeight - placeholderHeight;
-        if (
-          Number.isFinite(placeholderHeight) &&
-          Number.isFinite(finalHeight) &&
-          Number.isFinite(heightDiff) &&
-          Math.abs(heightDiff) > 0.01
-        ) {
-          gltf.scene.position.y -= heightDiff;
-        }
       } else {
         if (this._targetBottomCenter) {
           gltf.scene.position.set(0, 0, 0);
@@ -6067,6 +6172,7 @@ class PlacementSession extends EventTarget {
   }
 
   cancel() {
+    this.hidePlacementCursor();
     this._cleanupPlaceholder();
     this.state = 'cancelled';
     (this as any).dispatchEvent(
@@ -6098,6 +6204,7 @@ class PlacementSession extends EventTarget {
   }
 
   private _endInteractive() {
+    this._disposePlacementCursor();
     // Drop reference to element so caller may start another interactive session
     this._element = null;
   }

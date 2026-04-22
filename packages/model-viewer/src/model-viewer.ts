@@ -31,7 +31,6 @@ import { LDFloatingControlStripMixin } from './features/ld-floating-control-stri
 import { LDLightsMixin } from './features/ld-lights.js';
 import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
 import { LDMeasureMixin } from './features/ld-measure/index.js';
-import { LDCursorMixin } from './features/ld-cursor/index.js';
 import { LDModularMixin } from './features/ld-modular/index.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
 
@@ -46,25 +45,23 @@ export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
 const ModelViewerElementImpl = LDMaterialManagerMixin(
   LDFloatingControlStripMixin(
-    LDCursorMixin(
-      LDMeasureMixin(
-        LDModularMixin(
-          LDSelectionMixin(
-            LDLightsMixin(
-              LDImageCaptureMixin(
-                LDCameraMixin(
-                  LDEnvironmentMixin(
-                    LDAnimationMixin(
-                      LDDebugMixin(
-                        AnnotationMixin(
-                        SceneGraphMixin(
-                          StagingMixin(
-                            EnvironmentMixin(
-                              LDControlsMixin(
-                                ARMixin(
-                                  LoadingMixin(
-                                    AnimationMixin(ModelViewerElementBase)
-                                  )
+    LDMeasureMixin(
+      LDModularMixin(
+        LDSelectionMixin(
+          LDLightsMixin(
+            LDImageCaptureMixin(
+              LDCameraMixin(
+                LDEnvironmentMixin(
+                  LDAnimationMixin(
+                    LDDebugMixin(
+                      AnnotationMixin(
+                      SceneGraphMixin(
+                        StagingMixin(
+                          EnvironmentMixin(
+                            LDControlsMixin(
+                              ARMixin(
+                                LoadingMixin(
+                                  AnimationMixin(ModelViewerElementBase)
                                 )
                               )
                             )
