@@ -10,8 +10,8 @@ import {
   Vector3,
 } from 'three';
 
-export const PLACEMENT_CURSOR_DIAMETER_M = 0.2;
-export const PLACEMENT_CURSOR_PULSE_SPEED = 0.5;
+export const PLACEMENT_CURSOR_DIAMETER_M = 0.5;
+export const PLACEMENT_CURSOR_PULSE_SPEED = 0.4;
 export const PLACEMENT_CURSOR_PULSE_GROWTH_RATIO = 0.12;
 
 const CURSOR_RENDER_ORDER = 9999;

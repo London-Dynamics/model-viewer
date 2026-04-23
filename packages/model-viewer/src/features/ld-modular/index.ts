@@ -38,6 +38,7 @@ import {
   findSurfaceSnapHitForNdc,
   getBaseModelObject,
   getRoomFloorY,
+  invalidateRoomSurfaceIndexCache,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
 import { PlacementCursor } from './placement-cursor.js';
@@ -368,6 +369,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this._boundLoadHandler = () => {
         this._syncRoomSourceMode();
+        invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
         this._markRoomWallVisibilityCacheDirty();
       };
       this.addEventListener('load', this._boundLoadHandler);
@@ -385,6 +387,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         changedProperties.has('disableBaseModelShadows') ||
         changedProperties.has('src')
       ) {
+        if (changedProperties.has('src')) {
+          invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
+        }
         this._syncRoomSourceMode();
         this._markRoomWallVisibilityCacheDirty();
       }
@@ -756,6 +761,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {
         console.error(e);
       }
+    }
+
+    invalidateSurfaceSnappingCache(): void {
+      invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
     }
 
     toggleBaseModelVisibility(visible?: boolean): void {
@@ -5616,11 +5625,13 @@ class PlacementSession extends EventTarget {
 
       this.placeholder.position.copy(objectLocalPos);
 
-      // Check for snapping during interactive placement if snapping is enabled.
-      // Surface snap has priority and bypasses point-to-point snapping.
+      // Check for snapping during interactive placement.
+      // Surface snap has priority and runs whenever required by the part,
+      // even if generic point-to-point snapping is disabled.
+      // Point-to-point snapping continues to honor `snappingEnabled`.
       this._hasValidSurfaceSnap = !this.requiresSurfaceSnap();
       let snappedSurfacePoint: Vector3 | null = null;
-      if ((this._element as any).snappingEnabled && this.placeholder) {
+      if (this.placeholder) {
         try {
           if (requiresSurfaceSnap(this.placeholder)) {
             const surfaceHit = (
@@ -5640,9 +5651,19 @@ class PlacementSession extends EventTarget {
                   );
                 }
               }
+              if (snappedSurfacePoint) {
+                this._targetBottomCenter = {
+                  x: snappedSurfacePoint.x,
+                  y: snappedSurfacePoint.y,
+                  z: snappedSurfacePoint.z,
+                };
+              }
             }
             (this._element as any).pendingSnapConnection = null;
-          } else if (this.placeholder.userData.snapPoints) {
+          } else if (
+            (this._element as any).snappingEnabled &&
+            this.placeholder.userData.snapPoints
+          ) {
             const targetObject = (this._element as any).findTargetObject();
             if (targetObject) {
               // Find potential snap targets by traversing all placed objects
@@ -5945,64 +5966,78 @@ class PlacementSession extends EventTarget {
       }
 
       if (this.placeholder) {
-        gltf.scene.position.copy(this.placeholder.position);
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
         gltf.scene.name = this.placeholder.name;
       } else {
-        if (this._targetBottomCenter) {
-          gltf.scene.position.set(0, 0, 0);
-          gltf.scene.updateMatrixWorld(true);
-          const bboxLocal = new Box3().setFromObject(gltf.scene);
-
-          const bottomCenterLocal = new Vector3(
-            (bboxLocal.min.x + bboxLocal.max.x) / 2,
-            bboxLocal.min.y,
-            (bboxLocal.min.z + bboxLocal.max.z) / 2
-          );
-
-          const target = (scene as any).target;
-          if (target) {
-            target.updateMatrixWorld(true);
-          }
-          const targetWorldPos = new Vector3();
-          if (target) {
-            target.getWorldPosition(targetWorldPos);
-          }
-
-          const cursorWorld = new Vector3(
-            this._targetBottomCenter.x,
-            this._targetBottomCenter.y,
-            this._targetBottomCenter.z
-          );
-
-          const objectLocalPos = new Vector3()
-            .subVectors(cursorWorld, targetWorldPos)
-            .sub(bottomCenterLocal);
-
-          gltf.scene.position.copy(objectLocalPos);
-        } else if (this._lastCursorPosition) {
-          gltf.scene.position.set(
-            this._lastCursorPosition.x,
-            this._lastCursorPosition.y,
-            this._lastCursorPosition.z
-          );
-          this.log(
-            '[puzzler] Placed object using cursor position:',
-            gltf.scene.position.toArray(),
-            'from cursor:',
-            this._lastCursorPosition
-          );
-        } else {
-          const message =
-            '[puzzler] No placeholder or cursor position - object placed at origin';
-          if (this.warn) {
-            this.warn(message);
-          }
-        }
         gltf.scene.name = this._options?.name
           ? this._options.name + `_${+new Date()}`
           : this.id;
+      }
+
+      const hasSurfaceSnappedPlaceholder =
+        this.placeholder?.userData?.isSurfaceSnapped === true;
+
+      if (this.placeholder && hasSurfaceSnappedPlaceholder) {
+        // Preserve exact wall/surface placement transform from the placeholder.
+        gltf.scene.position.copy(this.placeholder.position);
+      } else if (this._targetBottomCenter) {
+        // Align final GLB bottom-center to the tracked placement anchor so
+        // placeholder and final-model origin differences do not cause offsets.
+        const finalQuaternion = gltf.scene.quaternion.clone();
+        const finalScale = gltf.scene.scale.clone();
+
+        gltf.scene.position.set(0, 0, 0);
+        gltf.scene.quaternion.set(0, 0, 0, 1);
+        gltf.scene.scale.set(1, 1, 1);
+        gltf.scene.updateMatrixWorld(true);
+        const bboxLocal = new Box3().setFromObject(gltf.scene);
+        const bottomCenterLocal = new Vector3(
+          (bboxLocal.min.x + bboxLocal.max.x) / 2,
+          bboxLocal.min.y,
+          (bboxLocal.min.z + bboxLocal.max.z) / 2
+        );
+
+        gltf.scene.quaternion.copy(finalQuaternion);
+        gltf.scene.scale.copy(finalScale);
+
+        const target = (scene as any).target;
+        if (target) {
+          target.updateMatrixWorld(true);
+        }
+        const anchorWorld = new Vector3(
+          this._targetBottomCenter.x,
+          this._targetBottomCenter.y,
+          this._targetBottomCenter.z
+        );
+        const anchorLocal = target
+          ? target.worldToLocal(anchorWorld.clone())
+          : anchorWorld.clone();
+        const bottomOffsetLocal = bottomCenterLocal
+          .clone()
+          .multiply(gltf.scene.scale)
+          .applyQuaternion(gltf.scene.quaternion);
+        gltf.scene.position.copy(anchorLocal.sub(bottomOffsetLocal));
+      } else if (this.placeholder) {
+        gltf.scene.position.copy(this.placeholder.position);
+      } else if (this._lastCursorPosition) {
+        gltf.scene.position.set(
+          this._lastCursorPosition.x,
+          this._lastCursorPosition.y,
+          this._lastCursorPosition.z
+        );
+        this.log(
+          '[puzzler] Placed object using cursor position:',
+          gltf.scene.position.toArray(),
+          'from cursor:',
+          this._lastCursorPosition
+        );
+      } else {
+        const message =
+          '[puzzler] No placeholder or cursor position - object placed at origin';
+        if (this.warn) {
+          this.warn(message);
+        }
       }
 
       gltf.scene.userData = {

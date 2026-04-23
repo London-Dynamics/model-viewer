@@ -68,6 +68,13 @@ type RoomSurfaceIndex = {
   untagged: Object3D[];
 };
 
+export function invalidateRoomSurfaceIndexCache(
+  roomObject: Object3D | null | undefined
+): void {
+  if (!roomObject) return;
+  ROOM_SURFACE_INDEX_CACHE.delete(roomObject);
+}
+
 function getSnapPointLocalPosition(snapPoint: SnapPoint): Vector3 {
   const pos = snapPoint.transform?.position ?? [0, 0, 0];
   return new Vector3(pos[0], pos[1], pos[2]);
