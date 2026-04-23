@@ -18,8 +18,8 @@ interface Defaults {
 }
 
 interface Entry {
-  name: string, htmlName: string, description: string, default: Defaults,
-      links: string[],
+  name: string, htmlName: string, description: string, signature?: string,
+      default?: Defaults, links?: string[],
 }
 
 interface Category {
@@ -224,7 +224,7 @@ export function getLowerCaseKey(key: string): string {
   return key.split(' ').map((value) => value.toLowerCase()).join('');
 }
 
-function createDefaultTable(entry: Entry): string {
+function createDefaultTable(defaultValue: Defaults): string {
   return `
 <table class="value-table">
   <tr>
@@ -232,25 +232,35 @@ function createDefaultTable(entry: Entry): string {
     <th>Options</th>
   </tr>
   <tr>
-    <td>${entry.default.default}</td>
-    <td>${entry.default.options}</td>
+    <td>${defaultValue.default}</td>
+    <td>${defaultValue.options}</td>
   </tr>
 </table>`;
 }
 
 function createLinks(
-    entry: Entry,
+    links: string[],
+    htmlName: string,
     pluralLowerCaseSubcategory: string,
     lowerCaseCategory: string): string {
   const id = 'links'.concat(
-      entry.htmlName, pluralLowerCaseSubcategory, lowerCaseCategory);
+      htmlName, pluralLowerCaseSubcategory, lowerCaseCategory);
 
   let linksEntry = `<div class="links" id=${id}>`;
-  for (const link of entry.links) {
+  for (const link of links) {
     linksEntry += `<div>${link}</div>`;
   }
   linksEntry += `</div>`;
   return linksEntry;
+}
+
+function escapeHTML(value: string): string {
+  return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
 }
 
 function createEntry(
@@ -265,19 +275,26 @@ function createEntry(
     entry.htmlName
   ].join('-');
 
-  const links = 'links' in entry ?
-      createLinks(entry, pluralLowerCaseSubcategory, lowerCaseCategory) :
+  const links = entry.links ?
+      createLinks(
+          entry.links, entry.htmlName, pluralLowerCaseSubcategory,
+          lowerCaseCategory) :
+      '';
+
+  const signature = 'signature' in entry && entry.signature ?
+      `<p class="entry-signature"><code>${escapeHTML(entry.signature)}</code></p>` :
       '';
 
   const entryContainer = `
 <div class=${lowerCaseSubcategory.concat('-container')}>
   <div class=${lowerCaseSubcategory.concat('-name')} id=${subcategoryNameId}>
     <h4>${entry.name}</h4>
+    ${signature}
   </div>
   <div class=${lowerCaseSubcategory.concat('-definition')}>
     <p>${entry.description}</p>
   </div>
-  ${'default' in entry ? createDefaultTable(entry) : ''}
+  ${entry.default ? createDefaultTable(entry.default) : ''}
   ${links}
 </div>`;
   return entryContainer;

@@ -7,7 +7,9 @@
         "name": "src",
         "htmlName": "src",
         "description": "The URL to the 3D model. Only <a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0\">glTF</a>/<a href=\"https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#glb-file-format-specification\">GLB</a> models are supported.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -17,7 +19,9 @@
         "name": "alt",
         "htmlName": "alt",
         "description": "Configures the model with custom text that will be used to describe the model to viewers who use a screen reader or otherwise depend on additional semantic context to understand what they are viewing.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "empty string",
           "options": "any description"
@@ -27,7 +31,9 @@
         "name": "poster",
         "htmlName": "poster",
         "description": "Displays an image instead of the model, useful for showing the user something before a model is loaded and ready to render.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "empty string",
           "options": "any legal URL"
@@ -37,7 +43,9 @@
         "name": "loading",
         "htmlName": "loading",
         "description": "An enumerable attribute describing under what conditions the model should be preloaded. The supported values are \"auto\", \"lazy\" and \"eager\". Auto is equivalent to lazy, which loads the model when it is near the viewport for <span class='attribute'>reveal=\"auto\"</span>, and when interacted with for <span class='attribute'>reveal=\"interaction\"</span>. Eager loads the model immediately.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "auto",
           "options": "auto, lazy, eager"
@@ -47,7 +55,9 @@
         "name": "reveal",
         "htmlName": "reveal",
         "description": "This attribute controls when the model should be revealed. If <span class='attribute'>reveal</span> is set to \"auto\", the model will be revealed as soon as it is done loading and rendering. If <span class='attribute'>reveal</span> is set to \"manual\", the model will remain hidden until <span class='attribute'>dismissPoster()</span> is called.",
-        "links": ["<a href=\"../examples/loading\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/loading\">Related examples</a>"
+        ],
         "default": {
           "default": "auto",
           "options": "auto, manual"
@@ -878,7 +888,9 @@
         "name": "--min-hotspot-opacity",
         "htmlName": "minHotspotOpacity",
         "description": "Sets the opacity of hidden hotspots.",
-        "links": ["<a href=\"../examples/annotations/\">Related examples</a>"],
+        "links": [
+          "<a href=\"../examples/annotations/\">Related examples</a>"
+        ],
         "default": {
           "default": "0.25",
           "options": "any value between 0 and 1"
@@ -1310,7 +1322,7 @@
           "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
         ],
         "default": {
-          "default": 1.0,
+          "default": 1,
           "options": "any number >= 0.0"
         }
       },
@@ -1589,7 +1601,6 @@
       }
     ]
   },
-
   {
     "Title": "LD Selection",
     "htmlName": "ld_selection",
@@ -1601,7 +1612,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "scene", "options": "scene, part, group, all" }
+        "default": {
+          "default": "scene",
+          "options": "scene, part, group, all"
+        }
       },
       {
         "name": "highlight-selected",
@@ -1610,7 +1624,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "false", "options": "true, false" }
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
       }
     ],
     "Events": [
@@ -1621,7 +1638,6 @@
       }
     ]
   },
-
   {
     "Title": "LD Modular",
     "htmlName": "ld_modular",
@@ -1633,7 +1649,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "false", "options": "true, false" }
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
       },
       {
         "name": "snap-distance",
@@ -1642,7 +1661,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "0.2", "options": "number (meters)" }
+        "default": {
+          "default": "0.2",
+          "options": "number (meters)"
+        }
       },
       {
         "name": "snap-hysteresis",
@@ -1651,7 +1673,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "1.5", "options": "number (>= 1)" }
+        "default": {
+          "default": "1.5",
+          "options": "number (>= 1)"
+        }
       },
       {
         "name": "snapping-enabled",
@@ -1660,7 +1685,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "false", "options": "true, false" }
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
       },
       {
         "name": "snapping-points-visible",
@@ -1669,7 +1697,10 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "default": { "default": "false", "options": "true, false" }
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
       },
       {
         "name": "src-is-room",
@@ -1686,226 +1717,253 @@
     ],
     "Methods": [
       {
-        "name": "load(src: string, id: string): Promise<GLTF>",
+        "name": "load",
         "htmlName": "load",
         "description": "Load a GLTF/GLB at the provided URL and register it under the given id. Resolves with the loaded GLTF object and updates internal load progress events.",
         "links": [
           "<a href=\"../examples/ld_modular/#load\">Related examples</a>"
-        ]
+        ],
+        "signature": "load(src: string, id: string): Promise<GLTF>"
       },
       {
-        "name": "loadMany(items: Array<{src: string; id: string}>): Promise<GLTF[]>",
+        "name": "loadMany",
         "htmlName": "loadMany",
         "description": "Load multiple GLTF/GLB files in parallel. Returns a Promise that resolves with an array of loaded GLTFs.",
         "links": [
           "<a href=\"../examples/ld_modular/#load-many\">Related examples</a>"
-        ]
+        ],
+        "signature": "loadMany(items: Array<{src: string; id: string}>): Promise<GLTF[]>"
       },
       {
-        "name": "getGlbBounds(src: string): Promise<{ filename: string; min: [number, number, number]; max: [number, number, number] }>",
+        "name": "getGlbBounds",
         "htmlName": "getGlbBounds",
         "description": "Load a GLB source and compute its axis-aligned bounding box. Returns filename (derived from URL path), min, and max arrays suitable for placement placeholder bounds.",
         "links": [
           "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>"
-        ]
+        ],
+        "signature": "getGlbBounds(src: string): Promise<{ filename: string; min: [number, number, number]; max: [number, number, number] }>"
       },
       {
-        "name": "getGlbBoundsMany(srcs: string[]): Promise<Array<{ filename: string; min: [number, number, number]; max: [number, number, number] }>>",
+        "name": "getGlbBoundsMany",
         "htmlName": "getGlbBoundsMany",
         "description": "Compute bounds for multiple GLB URLs sequentially and return an array of filename/min/max results.",
         "links": [
           "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>"
-        ]
+        ],
+        "signature": "getGlbBoundsMany(srcs: string[]): Promise<Array<{ filename: string; min: [number, number, number]; max: [number, number, number] }>>"
       },
       {
-        "name": "placeManyGlb(items: BulkPlacementItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined> }): Promise<{ id: string; node: Object3D }[]>",
+        "name": "placeManyGlb",
         "htmlName": "placeManyGlb",
         "description": "Place multiple GLBs into the scene at known transforms using placeGlb internally. Rotation values in each item transform are interpreted as radians (Three.js Euler XYZ). Supports a configurable maximum concurrency (default 4) and emits standard progress events with reason: 'bulk-placement' and aggregated total progress, plus a bulk-placement-complete event when finished.",
         "links": [
           "<a href=\"../examples/ld_modular/#bulk-placement\">Related examples</a>"
-        ]
+        ],
+        "signature": "placeManyGlb(items: BulkPlacementItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkPlacementItem) => Promise<string | undefined> }): Promise<{ id: string; node: Object3D }[]>"
       },
       {
-        "name": "setSrcFromBuffer(buffer: ArrayBuffer)",
+        "name": "setSrcFromBuffer",
         "htmlName": "setSrcFromBuffer",
         "description": "Sets the model source from an ArrayBuffer instead of a URL. Useful for loading models from binary data stored in memory or received from APIs.",
         "links": [
           "<a href=\"../examples/ld_modular/#set-src-from-buffer\">Related examples</a>"
-        ]
+        ],
+        "signature": "setSrcFromBuffer(buffer: ArrayBuffer)"
       },
       {
-        "name": "deDraco(inputBuffer: ArrayBuffer)",
+        "name": "deDraco",
         "htmlName": "deDraco",
         "description": "Removes DRACO compression from a GLB file provided as an ArrayBuffer. Returns a Promise that resolves to an uncompressed GLB ArrayBuffer. This is useful for compatibility with systems that don't support DRACO compression.",
-        "links": ["<a href=\"../examples/ld_modular\">Related examples</a>"]
+        "links": [
+          "<a href=\"../examples/ld_modular\">Related examples</a>"
+        ],
+        "signature": "deDraco(inputBuffer: ArrayBuffer)"
       },
-
       {
-        "name": "attachObject(id: string, options?: PositionOptions): void",
+        "name": "attachObject",
         "htmlName": "attachObject",
         "description": "Instantiate or attach a previously-loaded model (by id) into the scene. Optional position/rotation/scale anchor may be provided.",
         "links": [
           "<a href=\"../examples/ld_modular/#attach\">Related examples</a>"
-        ]
+        ],
+        "signature": "attachObject(id: string, options?: PositionOptions): void"
       },
       {
-        "name": "detachObject(id: string): void",
+        "name": "detachObject",
         "htmlName": "detachObject",
-        "description": "Remove an attached object (by id) from the scene. Does not necessarily remove the cached GLTF."
+        "description": "Remove an attached object (by id) from the scene. Does not necessarily remove the cached GLTF.",
+        "signature": "detachObject(id: string): void"
       },
       {
-        "name": "attachMaterial(id: string): void",
+        "name": "attachMaterial",
         "htmlName": "attachMaterial",
-        "description": "TODO"
+        "description": "TODO",
+        "signature": "attachMaterial(id: string): void"
       },
       {
-        "name": "clear(): void",
+        "name": "clear",
         "htmlName": "clear",
-        "description": "Clear the puzzler scene (detach placed objects and reset internal registries)."
+        "description": "Clear the puzzler scene (detach placed objects and reset internal registries).",
+        "signature": "clear(): void"
       },
       {
-        "name": "beginPlacement(lowResSrc: string, highResSrc: string, options?: PlacementOptions, initialMouse?: {clientX:number,clientY:number}): PlacementSession",
+        "name": "beginPlacement",
         "htmlName": "beginPlacement",
         "description": "Start an interactive placement session. Returns a PlacementSession (EventTarget) that emits events (start, update, placeholder-loaded, loading-start, progress, loaded, error, cancel). Use session.commit() to finish placement and obtain the placed node.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ]
+        ],
+        "signature": "beginPlacement(lowResSrc: string, highResSrc: string, options?: PlacementOptions, initialMouse?: {clientX:number,clientY:number}): PlacementSession"
       },
-
       {
-        "name": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; }): Promise<{ id: string; node: Object3D }>",
+        "name": "placeGlb",
         "htmlName": "placeGlb",
         "description": "Immediately place a GLB into the scene at a known transform. Rotation values are interpreted as radians (Three.js Euler XYZ). Shares behavior with beginPlacement/PlacementSession.commit for loading events, bounds-based placeholders, snapping, and userData. Returns a Promise that resolves with the created node.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ]
+        ],
+        "signature": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; }): Promise<{ id: string; node: Object3D }>"
       },
-
       {
-        "name": "setPosition(objectName: string, value: [number, number, number]): void",
+        "name": "setPosition",
         "htmlName": "setPosition",
         "description": "Overloaded. Use setPosition(objectName, [x,y,z]) to target a named object, or setPosition([x,y,z]) to apply to currently selected root objects. Selection mode no-ops when nothing is selected.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setPosition(objectName: string, value: [number, number, number]): void"
       },
       {
-        "name": "setPositionX(objectName: string, x: number): void",
+        "name": "setPositionX",
         "htmlName": "setPositionX",
         "description": "Overloaded. Use setPositionX(objectName, x) to target one object, or setPositionX(x) to apply to currently selected root objects. Preserves Y/Z and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setPositionX(objectName: string, x: number): void"
       },
       {
-        "name": "setPositionY(objectName: string, y: number): void",
+        "name": "setPositionY",
         "htmlName": "setPositionY",
         "description": "Overloaded. Use setPositionY(objectName, y) to target one object, or setPositionY(y) to apply to currently selected root objects. Preserves X/Z and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setPositionY(objectName: string, y: number): void"
       },
       {
-        "name": "setPositionZ(objectName: string, z: number): void",
+        "name": "setPositionZ",
         "htmlName": "setPositionZ",
         "description": "Overloaded. Use setPositionZ(objectName, z) to target one object, or setPositionZ(z) to apply to currently selected root objects. Preserves X/Y and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setPositionZ(objectName: string, z: number): void"
       },
       {
-        "name": "setRotation(objectName: string, anglesDegrees: [number, number, number]): void",
+        "name": "setRotation",
         "htmlName": "setRotation",
         "description": "Overloaded. Use setRotation(objectName, [xDeg,yDeg,zDeg], options?) to target one object, or setRotation([xDeg,yDeg,zDeg], options?) to apply to currently selected root objects. Supports the same absolute/relative rotation inputs and options in both forms; selection mode no-ops when empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setRotation(objectName: string, anglesDegrees: [number, number, number]): void"
       },
       {
-        "name": "setRotationX(objectName: string, xDeg: number, order?: string): void",
+        "name": "setRotationX",
         "htmlName": "setRotationX",
         "description": "Overloaded. Use setRotationX(objectName, x, options?) to target one object, or setRotationX(x, options?) to apply to currently selected root objects. Preserves Y/Z, supports number or relative string inputs, and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setRotationX(objectName: string, xDeg: number, order?: string): void"
       },
       {
-        "name": "setRotationY(objectName: string, yDeg: number, order?: string): void",
+        "name": "setRotationY",
         "htmlName": "setRotationY",
         "description": "Overloaded. Use setRotationY(objectName, y, options?) to target one object, or setRotationY(y, options?) to apply to currently selected root objects. Preserves X/Z, supports number or relative string inputs, and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setRotationY(objectName: string, yDeg: number, order?: string): void"
       },
       {
-        "name": "setRotationZ(objectName: string, zDeg: number, order?: string): void",
+        "name": "setRotationZ",
         "htmlName": "setRotationZ",
         "description": "Overloaded. Use setRotationZ(objectName, z, options?) to target one object, or setRotationZ(z, options?) to apply to currently selected root objects. Preserves X/Y, supports number or relative string inputs, and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setRotationZ(objectName: string, zDeg: number, order?: string): void"
       },
       {
-        "name": "setScale(objectName: string, value: [number, number, number]): void",
+        "name": "setScale",
         "htmlName": "setScale",
         "description": "Overloaded. Use setScale(objectName, [sx,sy,sz]) to target one object, or setScale([sx,sy,sz]) to apply to currently selected root objects. Selection mode no-ops when nothing is selected.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setScale(objectName: string, value: [number, number, number]): void"
       },
       {
-        "name": "setScaleX(objectName: string, sx: number): void",
+        "name": "setScaleX",
         "htmlName": "setScaleX",
         "description": "Overloaded. Use setScaleX(objectName, sx) to target one object, or setScaleX(sx) to apply to currently selected root objects. Preserves Y/Z and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setScaleX(objectName: string, sx: number): void"
       },
       {
-        "name": "setScaleY(objectName: string, sy: number): void",
+        "name": "setScaleY",
         "htmlName": "setScaleY",
         "description": "Overloaded. Use setScaleY(objectName, sy) to target one object, or setScaleY(sy) to apply to currently selected root objects. Preserves X/Z and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setScaleY(objectName: string, sy: number): void"
       },
       {
-        "name": "setScaleZ(objectName: string, sz: number): void",
+        "name": "setScaleZ",
         "htmlName": "setScaleZ",
         "description": "Overloaded. Use setScaleZ(objectName, sz) to target one object, or setScaleZ(sz) to apply to currently selected root objects. Preserves X/Y and no-ops when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "setScaleZ(objectName: string, sz: number): void"
       },
-
       {
-        "name": "getPosition(objectName: string): [number, number, number]",
+        "name": "getPosition",
         "htmlName": "getPosition",
         "description": "Overloaded. getPosition(objectName) returns [x,y,z] for a named object (throws if not found). getPosition() returns Array<[x,y,z]> for currently selected root objects, or [] when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "getPosition(objectName: string): [number, number, number]"
       },
       {
-        "name": "getRotation(objectName: string): [number, number, number]",
+        "name": "getRotation",
         "htmlName": "getRotation",
         "description": "Overloaded. getRotation(objectName) returns [xDeg,yDeg,zDeg] for a named object (throws if not found). getRotation() returns Array<[xDeg,yDeg,zDeg]> for currently selected root objects, or [] when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "getRotation(objectName: string): [number, number, number]"
       },
       {
-        "name": "getScale(objectName: string): [number, number, number]",
+        "name": "getScale",
         "htmlName": "getScale",
         "description": "Overloaded. getScale(objectName) returns [sx,sy,sz] for a named object (throws if not found). getScale() returns Array<[sx,sy,sz]> for currently selected root objects, or [] when selection is empty.",
         "links": [
           "<a href=\"../examples/ld_modular/#transforms\">Related examples</a>"
-        ]
+        ],
+        "signature": "getScale(objectName: string): [number, number, number]"
       },
       {
-        "name": "getPlacementTree()",
+        "name": "getPlacementTree",
         "htmlName": "getPlacementTree",
-        "description": "Returns a structured representation of the current scene's placed objects and groups, formatted as a tree. This includes object names, UUIDs, transforms, and group hierarchy, reflecting the logical assembly as seen by the user."
+        "description": "Returns a structured representation of the current scene's placed objects and groups, formatted as a tree. This includes object names, UUIDs, transforms, and group hierarchy, reflecting the logical assembly as seen by the user.",
+        "signature": "getPlacementTree()"
       }
     ],
     "Events": [

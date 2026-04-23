@@ -45,6 +45,7 @@ To write or update documentation:
 - Whenever an example is added or reordered in `packages/modelviewer.dev/examples/`, update `packages/modelviewer.dev/data/examples.json` in the same change.
 - Each major feature documented in `docs.json` should have at least one corresponding example page listed in `examples.json` and implemented in the examples directory.
 - In `docs.json`, link to the most relevant example pages for each feature, but you do not need a separate example for every method or property.
+- For method entries in `docs.json`, set `name` to only the function name (for example, `getGlbBounds`) and put the full function head/signature (arguments + return type) in a separate `signature` field.
 - Keep cross-references between documentation and examples up to date and consistent.
 
 ## API References

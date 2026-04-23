@@ -22,6 +22,13 @@
   background-color: #ececec;
 }
 
+.entry-signature {
+  margin: 8px 0 0;
+  font-size: 0.9em;
+  font-family: monospace;
+  word-break: break-word;
+}
+
 .attribute-definition,
 .cs-definition,
 .part-definition,
