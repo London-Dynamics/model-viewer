@@ -206,6 +206,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private thirdPartyControls: CameraControls;
   private domElement: HTMLElement;
   private scene: any; // ModelScene reference for recenter functionality
+  private canEnableInteraction: () => boolean;
   private _inputSensitivity: number = 1;
   private _orbitSensitivity: number = 1;
   private _zoomSensitivity: number = 1;
@@ -321,11 +322,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   constructor(
     camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
     element: HTMLElement,
-    scene: any
+    scene: any,
+    canEnableInteraction: () => boolean = () => true
   ) {
     this.thirdPartyControls = new CameraControls(camera, element);
     this.domElement = element;
     this.scene = scene; // Store scene reference for recenter functionality
+    this.canEnableInteraction = canEnableInteraction;
 
     // Initialize default settings to match SmoothControls behavior
     this.thirdPartyControls.smoothTime = 0.25;
@@ -427,6 +430,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   enableInteraction(): void {
+    if (!this.canEnableInteraction()) {
+      this.disableInteraction();
+      return;
+    }
     this.thirdPartyControls.enabled = true;
     // Add tap detection listeners using mouse events (not pointer events)
     // to avoid conflicts with CameraControls' setPointerCapture
@@ -1219,7 +1226,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     protected [$controls] = new ThirdPartyControlsAdapter(
       this[$scene].camera as THREE.PerspectiveCamera,
       this[$userInputElement],
-      this[$scene]
+      this[$scene],
+      () => this.cameraControls
     );
 
     protected [$lastSpherical] = new THREE.Spherical();
