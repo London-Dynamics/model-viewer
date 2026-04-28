@@ -154,20 +154,25 @@
                 <span class="font-medium">LD Modular</span> by
                 <a href="https://londondynamics.com" target="_blank"
                   >London Dynamics</a
-                >. This page showcases various utility functions used by
-                Client-side Puzzler.
+                >. This page showcases the LD Modular API through practical
+                examples for placing GLBs into a scene, selecting and editing
+                modular entities, and managing scene content throughout an
+                interactive workflow.
               </h4>
 
               <div class="heading">
                 <h2 class="demo-title">Place a GLB into the scene</h2>
                 <h4>
-                  <span class="attribute">placeGLB()</span> – adds more geometry
-                  to the scene.
+                  <span class="attribute">placeGLB()</span> – place and register a
+                  GLB in the modular scene.
                 </h4>
                 <p>
-                  This example uses CSS parts to style the default UI elements
-                  from the light DOM. Check the CSS in the page head to see how
-                  <code>::part()</code> selectors work.
+                  Interactively place a model, select it, and use the control
+                  strip while transform events stream in the debug readout. The
+                  code demonstrates how to configure a modular-ready
+                  <code>&lt;model-viewer&gt;</code>, call
+                  <code>placeGLB()</code>, and wire UI actions to placement and
+                  editing behavior.
                 </p>
               </div>
               <example-snippet stamp-to="modular" highlight-as="html">
@@ -996,6 +1001,16 @@
                           const btn = document.getElementById('camera-type');
                           const isOrthographic =
                             modelViewer.getCameraType() === 'orthographic';
+
+                          if (isOrthographic) {
+                            modelViewer.rotateCamera(0, 0, true);
+                            modelViewer.removeAttribute('camera-controls');
+                          } else if (
+                            !modelViewer.hasAttribute('camera-controls')
+                          ) {
+                            modelViewer.setAttribute('camera-controls', '');
+                          }
+
                           btn.setAttribute(
                             'aria-checked',
                             isOrthographic ? 'true' : 'false'
@@ -1158,9 +1173,17 @@
               <div class="heading">
                 <h2 class="demo-title">Room Surface Snap (Walls)</h2>
                 <h4>
-                  Drag window/door parts and release them on walls only using
-                  <span class="attribute">surfaceSnap</span>.
+                  Constrain dragging with
+                  <span class="attribute">surfaceSnap</span> so parts snap to
+                  valid wall surfaces.
                 </h4>
+                <p>
+                  Interactively drag window and door parts around the room and
+                  observe that placement is accepted only on supported walls.
+                  The code demonstrates room-aware model configuration,
+                  per-object snap options, and event wiring for constrained
+                  surface placement.
+                </p>
               </div>
               <example-snippet stamp-to="room-surface-snap" highlight-as="html">
                 <template>
@@ -1435,7 +1458,7 @@
           <div class="content">
             <div class="wrapper">
               <div class="heading">
-                <h2 class="demo-title">Transforms</h2>
+                <h2 class="demo-title">Transform objects and scene</h2>
                 <h4>
                   Call <span class="attribute">rotate()</span>,
                   <span class="attribute">translate()</span>, and
@@ -1443,6 +1466,12 @@
                   to manipulate its transform. The name "scene" can be used to
                   manipulate the entire model.
                 </h4>
+                <p>
+                  Use the sliders to rotate selected nodes and the full scene in
+                  real time. The code demonstrates mapping UI inputs to modular
+                  transform APIs and targeting either specific object names or
+                  the root scene node.
+                </p>
               </div>
               <example-snippet stamp-to="transforms" highlight-as="html">
                 <template>
@@ -1620,13 +1649,20 @@
           <div class="content">
             <div class="wrapper">
               <div class="heading">
-                <h2 class="demo-title">Rotation Mode</h2>
+                <h2 class="demo-title">Rotation modes and snapping</h2>
                 <h4>
                   Call <span class="attribute">rotate()</span>, with an object's
                   name to manipulate its rotation. The name "scene" can be used
                   to manipulate the entire model. The rotation mode can be set
                   to "relative" or "snapToClosest".
                 </h4>
+                <p>
+                  Click preset angle buttons to compare exact, relative, and
+                  snap-to-closest rotations on the same object. The code
+                  demonstrates passing rotation mode options into
+                  <code>rotate()</code> and building predictable snapping
+                  controls for editor-style workflows.
+                </p>
               </div>
               <example-snippet stamp-to="rotation-mode" highlight-as="html">
                 <template>
@@ -1814,11 +1850,18 @@
           <div class="content">
             <div class="wrapper">
               <div class="heading">
-                <h2 class="demo-title">Buffer, not SRC!</h2>
+                <h2 class="demo-title">Load model source from buffer</h2>
                 <h4>
-                  <span class="attribute">setSrcFromBuffer()</span> – Update the
-                  source from an ArrayBuffer instead of URL.
+                  <span class="attribute">setSrcFromBuffer()</span> – replace the
+                  active model from an <code>ArrayBuffer</code> instead of a URL.
                 </h4>
+                <p>
+                  Interactively swap between preloaded model buffers using the
+                  control buttons and watch the viewer update without changing
+                  the source URL. The code demonstrates fetching serialized
+                  buffer payloads, converting them to <code>ArrayBuffer</code>,
+                  and calling <code>setSrcFromBuffer()</code>.
+                </p>
               </div>
               <example-snippet
                 stamp-to="set-src-from-buffer"
@@ -1925,6 +1968,13 @@
                   <span class="attribute">placeManyGlb()</span> – place multiple
                   GLBs at once using known transforms.
                 </h4>
+                <p>
+                  Run bulk placement to instantiate a full layout and track
+                  progress in the panel while optional tree logging verifies the
+                  result. The code demonstrates preparing batched placement
+                  payloads and executing <code>placeManyGlb()</code> for
+                  deterministic multi-object scene setup.
+                </p>
               </div>
               <example-snippet stamp-to="bulk-placement" highlight-as="html">
                 <template>
