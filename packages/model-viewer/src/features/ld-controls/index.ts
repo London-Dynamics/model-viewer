@@ -142,6 +142,7 @@ const CAMERA_CONTROLS_METHODS_TO_EXPOSE = [
 
 type ExposedMethodNames = (typeof CAMERA_CONTROLS_METHODS_TO_EXPOSE)[number];
 type ExposedCameraControlsMethods = Pick<CameraControls, ExposedMethodNames>;
+type InteractionMode = 'rotate' | 'pan';
 
 /**
  * Adapter interface that bridges between the 3rd party controls and the expected SmoothControls interface
@@ -155,6 +156,7 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   disableZoom: boolean;
   enablePan: boolean;
   enableTap: boolean;
+  interactionMode: InteractionMode;
   changeSource: ChangeSource;
 
   // Methods that need to be implemented by the adapter
@@ -214,6 +216,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _disableZoom: boolean = false;
   private _enablePan: boolean = true;
   private _enableTap: boolean = true;
+  private _interactionMode: InteractionMode = 'rotate';
 
   // Tap detection state
   private startTime: number = 0;
@@ -286,14 +289,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   set disableZoom(value: boolean) {
     this._disableZoom = value;
-    // CameraControls doesn't have a direct disableZoom, but we can control via mouse/touch actions
-    if (value) {
-      // Disable zoom actions
-      this.thirdPartyControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
-    } else {
-      // Re-enable zoom
-      this.thirdPartyControls.mouseButtons.wheel = CameraControls.ACTION.DOLLY;
-    }
+    this.applyInteractionBindings();
   }
 
   get enablePan(): boolean {
@@ -302,12 +298,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   set enablePan(value: boolean) {
     this._enablePan = value;
-    // CameraControls doesn't have direct enablePan, but we can control via mouse actions
-    if (!value) {
-      this.thirdPartyControls.mouseButtons.right = CameraControls.ACTION.NONE;
-    } else {
-      this.thirdPartyControls.mouseButtons.right = CameraControls.ACTION.TRUCK;
-    }
+    this.applyInteractionBindings();
   }
 
   get enableTap(): boolean {
@@ -317,6 +308,15 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   set enableTap(value: boolean) {
     this._enableTap = value;
     // Tap handling is implemented via pointer event listeners in enableInteraction/disableInteraction
+  }
+
+  get interactionMode(): InteractionMode {
+    return this._interactionMode;
+  }
+
+  set interactionMode(value: InteractionMode) {
+    this._interactionMode = value;
+    this.applyInteractionBindings();
   }
 
   constructor(
@@ -427,6 +427,65 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Set up sensitivity mappings
     this.updateSensitivity();
+    this.applyInteractionBindings();
+  }
+
+  private applyInteractionBindings(): void {
+    const controls = this.thirdPartyControls;
+    const wheelZoomAction =
+      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
+        ? CameraControls.ACTION.ZOOM
+        : CameraControls.ACTION.DOLLY) as typeof controls.mouseButtons.wheel;
+    const mouseZoomAction =
+      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
+        ? CameraControls.ACTION.ZOOM
+        : CameraControls.ACTION.DOLLY) as typeof controls.mouseButtons.middle;
+    const touchZoomAction =
+      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
+        ? CameraControls.ACTION.TOUCH_ZOOM
+        : CameraControls.ACTION.TOUCH_DOLLY) as typeof controls.touches.two;
+    const touchZoomTruckAction =
+      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
+        ? CameraControls.ACTION.TOUCH_ZOOM_TRUCK
+        : CameraControls.ACTION.TOUCH_DOLLY_TRUCK) as typeof controls.touches.two;
+
+    controls.mouseButtons.wheel = this._disableZoom
+      ? CameraControls.ACTION.NONE
+      : wheelZoomAction;
+    controls.mouseButtons.middle = mouseZoomAction;
+
+    if (this._interactionMode === 'pan') {
+      controls.mouseButtons.left = this._enablePan
+        ? CameraControls.ACTION.TRUCK
+        : CameraControls.ACTION.NONE;
+      controls.mouseButtons.right = this._enablePan
+        ? CameraControls.ACTION.TRUCK
+        : CameraControls.ACTION.NONE;
+
+      controls.touches.one = this._enablePan
+        ? CameraControls.ACTION.TOUCH_TRUCK
+        : CameraControls.ACTION.NONE;
+      controls.touches.two = this._enablePan
+        ? touchZoomTruckAction
+        : touchZoomAction;
+      controls.touches.three = this._enablePan
+        ? touchZoomTruckAction
+        : touchZoomAction;
+      return;
+    }
+
+    controls.mouseButtons.left = CameraControls.ACTION.ROTATE;
+    controls.mouseButtons.right = this._enablePan
+      ? CameraControls.ACTION.TRUCK
+      : CameraControls.ACTION.NONE;
+
+    controls.touches.one = CameraControls.ACTION.TOUCH_ROTATE;
+    controls.touches.two = this._enablePan
+      ? touchZoomTruckAction
+      : touchZoomAction;
+    controls.touches.three = this._enablePan
+      ? touchZoomTruckAction
+      : touchZoomAction;
   }
 
   enableInteraction(): void {
@@ -964,15 +1023,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       this.thirdPartyControls.maxDistance = this.options.maximumRadius;
     }
 
-    // Restore zoom settings
-    if (this._disableZoom) {
-      this.thirdPartyControls.mouseButtons.wheel = CameraControls.ACTION.NONE;
-    }
-
-    // Restore pan settings
-    if (!this._enablePan) {
-      this.thirdPartyControls.mouseButtons.right = CameraControls.ACTION.NONE;
-    }
+    this.applyInteractionBindings();
 
     // Restore the camera position and target
     this.thirdPartyControls.setLookAt(
@@ -1079,6 +1130,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
   class ControlsModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'camera-controls' })
     cameraControls: boolean = false;
+
+    @property({ type: String, attribute: 'interaction-mode' })
+    interactionMode: InteractionMode = 'rotate';
 
     @property({ type: Boolean, attribute: 'viewport-gizmo' })
     showViewportGizmo: boolean = false;
@@ -1227,7 +1281,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$scene].camera as THREE.PerspectiveCamera,
       this[$userInputElement],
       this[$scene],
-      () => this.cameraControls
+      () => this.cameraControls || this.interactionMode === 'pan'
     );
 
     protected [$lastSpherical] = new THREE.Spherical();
@@ -1353,9 +1407,11 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const controls = this[$controls];
       const scene = this[$scene];
+      const interactionAllowed =
+        this.cameraControls || this.interactionMode === 'pan';
 
       if (changedProperties.has('cameraControls')) {
-        if (this.cameraControls) {
+        if (interactionAllowed) {
           controls.enableInteraction();
           if (this.interactionPrompt === InteractionPromptStrategy.AUTO) {
             this[$waitingToPromptUser] = true;
@@ -1365,6 +1421,15 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           this[$deferInteractionPrompt]();
         }
         this[$userInputElement].setAttribute('aria-label', this[$ariaLabel]);
+      }
+
+      if (changedProperties.has('interactionMode')) {
+        controls.interactionMode = this.interactionMode;
+        if (interactionAllowed) {
+          controls.enableInteraction();
+        } else {
+          controls.disableInteraction();
+        }
       }
 
       if (changedProperties.has('disableZoom')) {

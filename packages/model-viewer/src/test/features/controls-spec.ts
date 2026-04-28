@@ -14,6 +14,7 @@
  */
 
 import {expect} from 'chai';
+import CameraControls from 'camera-controls';
 import {Camera, Vector3} from 'three';
 
 import {$controls, $promptAnimatedContainer, $promptElement, CameraChangeDetails, cameraOrbitIntrinsics, ControlsInterface, DEFAULT_FOV_DEG, DEFAULT_MIN_FOV_DEG, INTERACTION_PROMPT, SphericalPosition} from '../../features/controls.js';
@@ -417,6 +418,46 @@ suite('Controls', () => {
       element.cameraControls = false;
       await timePasses();
       expect(controls.interactionEnabled).to.be.false;
+    });
+
+    test('enables interaction in pan mode without camera-controls', async () => {
+      element.cameraControls = false;
+      element.interactionMode = 'pan';
+      await timePasses();
+      expect(controls.interactionEnabled).to.be.true;
+    });
+
+    test('uses native pan bindings in pan interaction mode', async () => {
+      element.interactionMode = 'pan';
+      await timePasses();
+
+      const cc = (controls as any).thirdPartyControls;
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.TRUCK);
+      expect(cc.touches.one).to.equal(CameraControls.ACTION.TOUCH_TRUCK);
+      expect(cc.mouseButtons.wheel).to.not.equal(CameraControls.ACTION.NONE);
+    });
+
+    test('restores rotate bindings when interaction mode is rotate', async () => {
+      element.interactionMode = 'pan';
+      await timePasses();
+      element.interactionMode = 'rotate';
+      await timePasses();
+
+      const cc = (controls as any).thirdPartyControls;
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.ROTATE);
+      expect(cc.touches.one).to.equal(CameraControls.ACTION.TOUCH_ROTATE);
+    });
+
+    test('preserves pan mode bindings when camera type changes', async () => {
+      element.interactionMode = 'pan';
+      await timePasses();
+
+      (element as any).setCameraType('orthographic');
+      await timePasses();
+
+      const cc = (controls as any).thirdPartyControls;
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.TRUCK);
+      expect(cc.touches.one).to.equal(CameraControls.ACTION.TOUCH_TRUCK);
     });
 
     suite('when user is interacting', () => {

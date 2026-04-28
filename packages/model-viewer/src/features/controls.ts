@@ -284,6 +284,7 @@ const $syncMaxFieldOfView = Symbol('syncMaxFieldOfView');
 
 export declare interface ControlsInterface {
   cameraControls: boolean;
+  interactionMode: 'rotate' | 'pan';
   cameraOrbit: string;
   cameraTarget: string;
   fieldOfView: string;
@@ -323,6 +324,9 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
   class ControlsModelViewerElement extends ModelViewerElement {
     @property({ type: Boolean, attribute: 'camera-controls' })
     cameraControls: boolean = false;
+
+    @property({ type: String, attribute: 'interaction-mode' })
+    interactionMode: 'rotate' | 'pan' = 'rotate';
 
     @style({
       intrinsics: cameraOrbitIntrinsics,

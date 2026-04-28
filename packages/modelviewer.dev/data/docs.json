@@ -482,6 +482,18 @@
         "description": "Disables panning interactions, which are enabled by default using two-finger touch, or dragging with right-click or modifier keys."
       },
       {
+        "name": "interaction-mode",
+        "htmlName": "interactionMode",
+        "description": "Selects the primary drag interaction mode when using camera controls. Use <code>rotate</code> (default) for orbit behavior, or <code>pan</code> to disable rotation and use drag for panning while keeping zoom enabled. When set to <code>pan</code>, camera interactions remain enabled even if <span class=\"attribute\">camera-controls</span> is not present.",
+        "default": {
+          "default": "rotate",
+          "options": "rotate, pan"
+        },
+        "links": [
+          "<a href=\"../examples/ld_camera/#interaction-mode-pan\"><span class='attribute'>interaction-mode</span> example</a>"
+        ]
+      },
+      {
         "name": "disable-tap",
         "htmlName": "disableTap",
         "description": "Disables tap-to-recenter behavior (both center-the-tapped-point and reset-view-when-tapping-outside). This attribute has no effect in combination with 'disable-pan', as the tap-to-recenter behavior is part of the panning interactions. It is recommended to create custom re-centering behavior when using 'disable-tap' as after panning and rotating, it is effectively impossible for the user to exactly return to their starting view.",

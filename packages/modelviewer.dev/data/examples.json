@@ -362,6 +362,10 @@
         "name": "Viewport Gizmo Positioning"
       },
       {
+        "htmlId": "interaction-mode-pan",
+        "name": "Interaction Mode (Pan)"
+      },
+      {
         "htmlId": "get-camera-json",
         "name": "Get Camera JSON"
       }

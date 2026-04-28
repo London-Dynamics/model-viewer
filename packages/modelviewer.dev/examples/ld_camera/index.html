@@ -276,6 +276,205 @@
         </div>
 
         <div class="sample">
+          <div id="interaction-mode-pan" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">
+                  Interaction mode: rotate vs pan
+                </h2>
+                <h4>
+                  Toggle <code>interaction-mode</code> between
+                  <code>rotate</code> and <code>pan</code>, then switch camera
+                  type to verify pan mode keeps interactions enabled even when
+                  <code>camera-controls</code> is not set.
+                </h4>
+              </div>
+              <example-snippet stamp-to="interaction-mode-pan" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="interaction-mode-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div
+                      class="bg-white px-4 *:py-2 -my-2 divide-y divide-stone-100 absolute bottom-4 left-4 rounded-md shadow-md"
+                    >
+                      <div class="flex items-center justify-between gap-4">
+                        <div class="flex items-center">
+                          <button
+                            type="button"
+                            id="interaction-camera-type-toggle"
+                            role="switch"
+                            aria-checked="false"
+                            class="group relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors aria-checked:bg-blue-600"
+                          >
+                            <span
+                              class="inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform group-aria-checked:translate-x-5"
+                            ></span>
+                          </button>
+                          <span class="ml-2 text-sm" id="camera-type-toggle-label">
+                            <span class="font-medium text-gray-900"
+                              >Camera Type</span
+                            >
+                            <span class="text-gray-500">
+                              (<span id="camera-type-value">perspective</span>)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="flex items-center justify-between gap-4">
+                        <div class="flex items-center">
+                          <button
+                            type="button"
+                            id="interaction-mode-toggle"
+                            role="switch"
+                            aria-checked="false"
+                            class="group relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors aria-checked:bg-blue-600"
+                          >
+                            <span
+                              class="inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform group-aria-checked:translate-x-5"
+                            ></span>
+                          </button>
+                          <span class="ml-2 text-sm" id="interaction-mode-toggle-label">
+                            <span class="font-medium text-gray-900"
+                              >Interaction Mode</span
+                            >
+                            <span class="text-gray-500">
+                              (<span id="interaction-mode-value">rotate</span>)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="flex items-center justify-between gap-4">
+                        <div class="flex items-center">
+                          <button
+                            type="button"
+                            id="camera-controls-toggle"
+                            role="switch"
+                            aria-checked="true"
+                            class="group relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors aria-checked:bg-blue-600"
+                          >
+                            <span
+                              class="inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform group-aria-checked:translate-x-5"
+                            ></span>
+                          </button>
+                          <span class="ml-2 text-sm" id="camera-controls-toggle-label">
+                            <span class="font-medium text-gray-900"
+                              >Camera Controls</span
+                            >
+                            <span class="text-gray-500">
+                              (<span id="camera-controls-value">on</span>)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div id="interaction-mode-state" class="text-xs text-stone-500">
+                        cameraType: perspective, interaction-mode: rotate,
+                        camera-controls: true
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#interaction-mode-demo'
+                      );
+                      const state = document.querySelector(
+                        '#interaction-mode-state'
+                      );
+                      const cameraTypeToggle = document.querySelector(
+                        '#interaction-camera-type-toggle'
+                      );
+                      const interactionModeToggle = document.querySelector(
+                        '#interaction-mode-toggle'
+                      );
+                      const cameraControlsToggle = document.querySelector(
+                        '#camera-controls-toggle'
+                      );
+                      const cameraTypeValue = document.querySelector(
+                        '#camera-type-value'
+                      );
+                      const interactionModeValue = document.querySelector(
+                        '#interaction-mode-value'
+                      );
+                      const cameraControlsValue = document.querySelector(
+                        '#camera-controls-value'
+                      );
+
+                      const updateState = () => {
+                        const cameraType = modelViewer.getCameraType();
+                        const interactionMode = modelViewer.interactionMode;
+                        const cameraControls = modelViewer.hasAttribute(
+                          'camera-controls'
+                        );
+                        const isOrthographic = cameraType === 'orthographic';
+                        const isPan = interactionMode === 'pan';
+
+                        cameraTypeToggle.setAttribute(
+                          'aria-checked',
+                          isOrthographic ? 'true' : 'false'
+                        );
+                        interactionModeToggle.setAttribute(
+                          'aria-checked',
+                          isPan ? 'true' : 'false'
+                        );
+                        cameraControlsToggle.setAttribute(
+                          'aria-checked',
+                          cameraControls ? 'true' : 'false'
+                        );
+                        cameraTypeValue.textContent = cameraType;
+                        interactionModeValue.textContent = interactionMode;
+                        cameraControlsValue.textContent = cameraControls
+                          ? 'on'
+                          : 'off';
+
+                        state.textContent =
+                          `cameraType: ${cameraType}, ` +
+                          `interaction-mode: ${interactionMode}, ` +
+                          `camera-controls: ${cameraControls}`;
+                      };
+
+                      cameraTypeToggle.addEventListener('click', () => {
+                        const nextType =
+                          modelViewer.getCameraType() === 'orthographic'
+                            ? 'perspective'
+                            : 'orthographic';
+                        modelViewer.setCameraType(nextType);
+                        updateState();
+                      });
+
+                      interactionModeToggle.addEventListener('click', () => {
+                        const nextMode =
+                          modelViewer.interactionMode === 'pan'
+                            ? 'rotate'
+                            : 'pan';
+                        modelViewer.setAttribute('interaction-mode', nextMode);
+                        updateState();
+                      });
+
+                      cameraControlsToggle.addEventListener('click', () => {
+                        if (modelViewer.hasAttribute('camera-controls')) {
+                          modelViewer.removeAttribute('camera-controls');
+                        } else {
+                          modelViewer.setAttribute('camera-controls', '');
+                        }
+                        updateState();
+                      });
+
+                      updateState();
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div id="get-camera-json" class="demo"></div>
           <div class="content">
             <div class="wrapper">
