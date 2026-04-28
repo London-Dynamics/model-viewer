@@ -1,0 +1,569 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Image Capture</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Image Capture examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer-module.min.js"
+    ></script>
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="capture-image" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h4 id="intro">
+                  <span class="font-medium">LD Image Capture </span>by
+                  <a href="https://londondynamics.com" target="_blank"
+                    >London Dynamics</a
+                  >. Capture the current view as a data URL with optional width,
+                  height, file type, camera pose, and crop using
+                  <code>captureImage()</code>.
+                </h4>
+                <div class="heading">
+                  <h2 class="demo-title">Capture Image</h2>
+                  <h4>
+                    Capture the current view as PNG or JPEG. The data URL is
+                    shown in the console and can be used as an image
+                    <code>src</code>.
+                  </h4>
+                </div>
+              </div>
+              <example-snippet stamp-to="capture-image" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="capture-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div
+                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md flex flex-wrap gap-2"
+                    >
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 d"
+                        type="button"
+                        id="capturePng"
+                      >
+                        Capture PNG
+                      </button>
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 d"
+                        type="button"
+                        id="captureJpeg"
+                      >
+                        Capture JPEG
+                      </button>
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 d"
+                        type="button"
+                        id="captureResized"
+                      >
+                        Capture 320×240
+                      </button>
+                    </div>
+                  </model-viewer>
+                  <div
+                    id="capture-result"
+                    class="absolute top-2 right-2 max-w-xs overflow-hidden rounded shadow-lg bg-white z-10"
+                  ></div>
+                  <script type="module">
+                    (() => {
+                      const el = document.querySelector('#capture-demo');
+                      const captureResult =
+                        document.querySelector('#capture-result');
+                      document
+                        .getElementById('capturePng')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            fileType: 'image/png',
+                          });
+                          console.log(
+                            'PNG data URL (first 80 chars):',
+                            dataUrl.slice(0, 80) + '...'
+                          );
+                          captureResult.innerHTML = `<img src="${dataUrl}" alt="PNG image" />`;
+                        });
+                      document
+                        .getElementById('captureJpeg')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            fileType: 'image/jpeg',
+                            encoderOptions: 0.9,
+                          });
+                          console.log(
+                            'JPEG data URL (first 80 chars):',
+                            dataUrl.slice(0, 80) + '...'
+                          );
+                          captureResult.innerHTML = `<img src="${dataUrl}" alt="JPEG image" />`;
+                        });
+                      document
+                        .getElementById('captureResized')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            width: 320,
+                            height: 240,
+                            fileType: 'image/png',
+                          });
+                          console.log(
+                            '320×240 (offscreen render, first 80 chars):',
+                            dataUrl.slice(0, 80) + '...'
+                          );
+                          captureResult.innerHTML = `<img src="${dataUrl}" alt="320×240 capture" />`;
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="capture-with-camera" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Capture with camera pose</h2>
+                <h4>
+                  Pass a camera state (e.g. from <code>getCameraJSON()</code>)
+                  into <code>captureImage({ camera })</code>. The view is
+                  updated to that pose, one frame is rendered, then the image is
+                  captured.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="capture-with-camera"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="capture-camera-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div
+                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md flex flex-wrap gap-2"
+                    >
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 d"
+                        type="button"
+                        id="saveCameraThenCapture"
+                      >
+                        Save current view, then capture after 2s
+                      </button>
+                    </div>
+                  </model-viewer>
+                  <div
+                    id="capture-wcam-result"
+                    class="absolute top-2 right-2 max-w-xs overflow-hidden rounded shadow-lg bg-white z-10"
+                  ></div>
+                  <script type="module">
+                    (() => {
+                      const el = document.querySelector('#capture-camera-demo');
+                      const result = document.querySelector(
+                        '#capture-wcam-result'
+                      );
+                      document
+                        .getElementById('saveCameraThenCapture')
+                        .addEventListener('click', async () => {
+                          const camera = el.getCameraJSON();
+                          if (!camera || !camera.object) return;
+                          setTimeout(async () => {
+                            const dataUrl = await el.captureImage({
+                              camera: camera.object,
+                              fileType: 'image/png',
+                            });
+                            result.innerHTML = `<img src="${dataUrl}" alt="Captured with saved camera" />`;
+                            console.log(
+                              'Captured with saved camera (first 80 chars):',
+                              dataUrl.slice(0, 80) + '...'
+                            );
+                          }, 2000);
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="capture-with-crop" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Capture with crop</h2>
+                <h4>
+                  Use <code>crop: { x, y, width, height }</code> (in source
+                  canvas pixels) to capture only a region. Optionally combine
+                  with <code>width</code> and <code>height</code> to scale the
+                  crop.
+                </h4>
+              </div>
+              <example-snippet stamp-to="capture-with-crop" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="capture-crop-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div
+                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md flex flex-wrap gap-2"
+                    >
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 d"
+                        type="button"
+                        id="captureCenterCrop"
+                      >
+                        Capture 1024×576 → 512×512 square
+                      </button>
+                    </div>
+                  </model-viewer>
+                  <div
+                    id="capture-crop-result"
+                    class="absolute top-2 right-2 max-w-xs overflow-hidden rounded shadow-lg bg-white z-10"
+                  ></div>
+                  <script type="module">
+                    (() => {
+                      const el = document.querySelector('#capture-crop-demo');
+                      const result = document.querySelector(
+                        '#capture-crop-result'
+                      );
+                      document
+                        .getElementById('captureCenterCrop')
+                        .addEventListener('click', async () => {
+                          const baseWidth = 1024;
+                          const baseHeight = 576;
+                          const squareSize = 512;
+
+                          const dataUrl = await el.captureImage({
+                            frame: '1:1',
+                            width: baseWidth,
+                            height: baseHeight,
+                            fileType: 'image/png',
+                            fitToBox: true,
+                            crop: {
+                              fit: 'cover',
+                              focalPoint: { x: 0.5, y: 0.5 },
+                              safeArea: 0.75,
+                            },
+                          });
+
+                          result.innerHTML = `<img src="${dataUrl}" alt="Centered square crop" width="${squareSize}" height="${squareSize}" />`;
+                          console.log(
+                            'Square crop (512x512) URL (first 80 chars):',
+                            dataUrl.slice(0, 80) + '...'
+                          );
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="capture-background-color" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Background color</h2>
+                <h4>
+                  Use <code>backgroundColor</code> so formats like JPEG (no
+                  transparency) show a solid background instead of black.
+                  Default is white; here it is set to
+                  <code>cornflowerblue</code>.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="capture-background-color"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="capture-bg-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div
+                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md flex flex-wrap gap-2"
+                    >
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 d"
+                        type="button"
+                        id="captureJpegCornflowerblue"
+                      >
+                        Capture JPEG (cornflowerblue)
+                      </button>
+                    </div>
+                  </model-viewer>
+                  <div
+                    id="capture-bg-result"
+                    class="absolute top-2 right-2 max-w-xs overflow-hidden rounded shadow-lg bg-white z-10"
+                  ></div>
+                  <script type="module">
+                    (() => {
+                      const el = document.querySelector('#capture-bg-demo');
+                      const result =
+                        document.querySelector('#capture-bg-result');
+                      document
+                        .getElementById('captureJpegCornflowerblue')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            fileType: 'image/jpeg',
+                            encoderOptions: 0.9,
+                            backgroundColor: 'cornflowerblue',
+                          });
+                          result.innerHTML = `<img src="${dataUrl}" alt="JPEG cornflowerblue" />`;
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="capture-orthographic-views" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">
+                  Orthographic views (above, front, side)
+                </h2>
+                <h4>
+                  Use <code>setCameraType('orthographic')</code> and
+                  <code>rotateCamera(azimuth, polar, false)</code> to set each
+                  view, then <code>getCameraJSON()</code> to get the camera
+                  state. Pass that into <code>captureImage({ camera })</code> to
+                  capture without changing the visible view. Click “Prepare
+                  views” once, then capture from above, front, or side.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="capture-orthographic-views"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="capture-ortho-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div
+                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md flex flex-wrap gap-2"
+                    >
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        type="button"
+                        id="prepareOrthoViews"
+                      >
+                        Prepare views
+                      </button>
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        type="button"
+                        id="captureAbove"
+                        disabled
+                      >
+                        Capture from above
+                      </button>
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        type="button"
+                        id="captureFront"
+                        disabled
+                      >
+                        Capture from front
+                      </button>
+                      <button
+                        class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                        type="button"
+                        id="captureSide"
+                        disabled
+                      >
+                        Capture from side
+                      </button>
+                    </div>
+                  </model-viewer>
+                  <div
+                    id="capture-ortho-result"
+                    class="absolute top-2 right-2 max-w-[12rem] overflow-hidden rounded shadow-lg bg-white z-10 flex flex-col gap-1 p-1"
+                  ></div>
+                  <script type="module">
+                    (() => {
+                      const el = document.querySelector('#capture-ortho-demo');
+                      const result = document.querySelector(
+                        '#capture-ortho-result'
+                      );
+                      let aboveCamera = null;
+                      let frontCamera = null;
+                      let sideCamera = null;
+
+                      async function prepareViews() {
+                        const saved = el.getCameraJSON();
+                        if (!saved?.object) return;
+                        el.setCameraType('orthographic');
+                        el.rotateCamera(0, 0, false);
+                        await new Promise((r) => requestAnimationFrame(r));
+                        aboveCamera = el.getCameraJSON()?.object ?? null;
+                        el.rotateCamera(0, 90, false);
+                        await new Promise((r) => requestAnimationFrame(r));
+                        frontCamera = el.getCameraJSON()?.object ?? null;
+                        el.rotateCamera(90, 90, false);
+                        await new Promise((r) => requestAnimationFrame(r));
+                        sideCamera = el.getCameraJSON()?.object ?? null;
+                        el.setCameraFromJSON(saved.object);
+                        document.getElementById('captureAbove').disabled =
+                          !aboveCamera;
+                        document.getElementById('captureFront').disabled =
+                          !frontCamera;
+                        document.getElementById('captureSide').disabled =
+                          !sideCamera;
+                      }
+
+                      document
+                        .getElementById('prepareOrthoViews')
+                        .addEventListener('click', prepareViews);
+
+                      document
+                        .getElementById('captureAbove')
+                        .addEventListener('click', async () => {
+                          if (!aboveCamera) return;
+                          const dataUrl = await el.captureImage({
+                            camera: aboveCamera,
+                            fileType: 'image/png',
+                            backgroundColor: 'white',
+                          });
+                          const img = document.createElement('img');
+                          img.src = dataUrl;
+                          img.alt = 'Above';
+                          img.title = 'Above';
+                          result.innerHTML = ``;
+                          result.appendChild(img);
+                        });
+
+                      document
+                        .getElementById('captureFront')
+                        .addEventListener('click', async () => {
+                          if (!frontCamera) return;
+                          const dataUrl = await el.captureImage({
+                            camera: frontCamera,
+                            fileType: 'image/png',
+                            backgroundColor: 'white',
+                          });
+                          const img = document.createElement('img');
+                          img.src = dataUrl;
+                          img.alt = 'Front';
+                          img.title = 'Front';
+                          result.innerHTML = ``;
+                          result.appendChild(img);
+                        });
+
+                      document
+                        .getElementById('captureSide')
+                        .addEventListener('click', async () => {
+                          if (!sideCamera) return;
+                          const dataUrl = await el.captureImage({
+                            camera: sideCamera,
+                            fileType: 'image/png',
+                            backgroundColor: 'white',
+                          });
+                          const img = document.createElement('img');
+                          img.src = dataUrl;
+                          img.alt = 'Side';
+                          img.title = 'Side';
+                          result.innerHTML = ``;
+                          result.appendChild(img);
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_image_capture');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+    <script type="module" src="../built/dependencies.js"></script>
+  </body>
+</html>
