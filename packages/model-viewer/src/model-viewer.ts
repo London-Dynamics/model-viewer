@@ -27,6 +27,7 @@ import {LDLightsMixin} from './features/ld-lights.js';
 import {LDCameraMixin} from './features/ld-camera.js';
 import {LDMeasureMixin} from './features/ld-measure.js';
 import {LDPuzzlerMixin} from './features/ld-puzzler.js';
+import {LDBloomMixin} from './features/ld-bloom.js';
 import ModelViewerElementBase from './model-viewer-base.js';
 
 // Export these to allow lazy-loaded LottieLoader.js to find what it needs.
@@ -34,8 +35,8 @@ import ModelViewerElementBase from './model-viewer-base.js';
 export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
 
 export const ModelViewerElement =
-LDMeasureMixin(LDPuzzlerMixin(LDLightsMixin(LDCameraMixin(LDEnvironmentMixin(LDTransformsMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
-        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase))))))))))))));
+LDMeasureMixin(LDBloomMixin(LDPuzzlerMixin(LDLightsMixin(LDCameraMixin(LDEnvironmentMixin(LDTransformsMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
+        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase)))))))))))))));
 
 export type ModelViewerElement = InstanceType<typeof ModelViewerElement>;
 
