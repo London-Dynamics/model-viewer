@@ -22,6 +22,7 @@ import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 
 import { LDAnimationMixin } from './features/ld-animation.js';
+import { LDBloomMixin } from './features/ld-bloom.js';
 import { LDControlsMixin } from './features/ld-controls/index.js';
 import { LDDebugMixin } from './features/ld-debug.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
@@ -46,28 +47,32 @@ export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 const ModelViewerElementImpl = LDMaterialManagerMixin(
   LDFloatingControlStripMixin(
     LDMeasureMixin(
-      LDModularMixin(
-        LDSelectionMixin(
-          LDLightsMixin(
-            LDImageCaptureMixin(
-              LDCameraMixin(
-                LDEnvironmentMixin(
-                  LDAnimationMixin(
-                    LDDebugMixin(
-                      AnnotationMixin(
-                      SceneGraphMixin(
-                        StagingMixin(
-                          EnvironmentMixin(
-                            LDControlsMixin(
-                              ARMixin(
-                                LoadingMixin(
-                                  AnimationMixin(ModelViewerElementBase)
+      LDBloomMixin(
+        LDModularMixin(
+          LDSelectionMixin(
+            LDLightsMixin(
+              LDImageCaptureMixin(
+                LDCameraMixin(
+                  LDEnvironmentMixin(
+                    LDAnimationMixin(
+                      LDDebugMixin(
+                        AnnotationMixin(
+                          SceneGraphMixin(
+                            StagingMixin(
+                              EnvironmentMixin(
+                                LDControlsMixin(
+                                  ARMixin(
+                                    LoadingMixin(
+                                      AnimationMixin(ModelViewerElementBase)
+                                    )
+                                  )
                                 )
                               )
                             )
                           )
                         )
                       )
+                    )
                     )
                   )
                 )
@@ -77,7 +82,6 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
         )
       )
     )
-  )
   )
 );
 
