@@ -179,8 +179,8 @@
                       const targetColor = document.querySelector('#target-color');
                       const targetName = document.querySelector('#target-name');
 
-                      modelUrl.value = modelViewer.src;
-                      environmentUrl.value = modelViewer.environmentImage;
+                      modelUrl.value = modelViewer.getAttribute('src');
+                      environmentUrl.value = modelViewer.getAttribute('environment-image');
 
                       const updateTarget = () => {
                         modelViewer.setBloomTargets([
@@ -194,8 +194,10 @@
                         ]);
                       };
 
-                      modelViewer.addEventListener('load', updateTarget);
-                      updateTarget();
+                      customElements.whenDefined('model-viewer').then(() => {
+                        modelViewer.addEventListener('load', updateTarget);
+                        updateTarget();
+                      });
                       modelUrl.addEventListener('change', () => (modelViewer.src = modelUrl.value));
                       environmentUrl.addEventListener('change', () => {
                         modelViewer.environmentImage = environmentUrl.value;
