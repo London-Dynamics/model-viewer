@@ -21,8 +21,10 @@ import {EnvironmentMixin} from './features/environment.js';
 import {LoadingMixin} from './features/loading.js';
 import {SceneGraphMixin} from './features/scene-graph.js';
 import {StagingMixin} from './features/staging.js';
+
+import {LDAmbientOcclusionMixin} from './features/ld-ambient-occlusion.js';
 import {LDTransformsMixin} from './features/ld-transforms.js';
-import {LDEnvironmentMixin} from './features/ld-environment.js';
+import {LDEnvironmentMixin} from './features/ld-environment/index.js';
 import {LDLightsMixin} from './features/ld-lights.js';
 import {LDCameraMixin} from './features/ld-camera.js';
 import {LDMeasureMixin} from './features/ld-measure.js';
@@ -34,8 +36,8 @@ import ModelViewerElementBase from './model-viewer-base.js';
 export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
 
 export const ModelViewerElement =
-LDMeasureMixin(LDPuzzlerMixin(LDLightsMixin(LDCameraMixin(LDEnvironmentMixin(LDTransformsMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
-        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase))))))))))))));
+LDAmbientOcclusionMixin(LDMeasureMixin(LDPuzzlerMixin(LDLightsMixin(LDCameraMixin(LDEnvironmentMixin(LDTransformsMixin(AnnotationMixin(SceneGraphMixin(StagingMixin(EnvironmentMixin(ControlsMixin(
+        ARMixin(LoadingMixin(AnimationMixin(ModelViewerElementBase)))))))))))))));
 
 export type ModelViewerElement = InstanceType<typeof ModelViewerElement>;
 

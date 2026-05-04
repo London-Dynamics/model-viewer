@@ -60,6 +60,38 @@ error which you can work around using their `--legacy-peer-deps` option, which
 will allow you to go outside of our version range. Please do not file issues if
 you use this option. 
 
+## London Dynamics extensions
+
+This fork ships additional `ld-*` mixins that expose features used across
+London Dynamics projects. Alongside the previously documented water, lighting,
+camera and measurement utilities, you can now enable real-time ambient occlusion
+derived from [Rabbid76/three-js-ao-pass](https://github.com/Rabbid76/three-js-ao-pass).
+
+```html
+<model-viewer
+  src="Astronaut.glb"
+  camera-controls
+  ambient-occlusion
+  ao-algorithm="gtao"
+  ao-radius="5"
+  ao-intensity="0.9"
+  ao-output="default">
+</model-viewer>
+```
+
+Key attributes:
+
+* `ambient-occlusion`: master toggle
+* `ao-algorithm`: `ssao`, `sao`, `n8ao`, `hbao`, or `gtao`
+* `ao-radius`, `ao-intensity`, `ao-bias`, `ao-thickness`, `ao-samples`
+* `ao-noise` (`magic-square` or `random`) and `ao-screen-space-radius`
+* `ao-output`: `default`, `diffuse`, `ao`, `denoise`, `depth`, `normal`
+* Poisson denoise knobs (`ao-denoise-radius`, `ao-denoise-rings`, `ao-denoise-samples`, `ao-denoise-luma-phi`, `ao-denoise-depth-phi`, `ao-denoise-normal-phi`)
+
+The AO mixin will automatically register an internal `EffectComposer`. If you
+already provide a custom composer via `registerEffectComposer`, you can integrate
+the `AOPass` manually using the same options shown above.
+
 ## Browser Support
 
 `<model-viewer>` is supported on the last 2 major versions of all evergreen
