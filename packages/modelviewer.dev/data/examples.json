@@ -316,6 +316,16 @@
     ]
   },
   {
+    "name": "LD Bloom",
+    "htmlName": "ld_bloom",
+    "examples": [
+      {
+        "htmlId": "ld-bloom",
+        "name": "Bloom"
+      }
+    ]
+  },
+  {
     "name": "LD Transforms",
     "htmlName": "ld_transforms",
     "examples": [

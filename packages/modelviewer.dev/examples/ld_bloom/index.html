@@ -25,23 +25,50 @@
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
     <link rel="shortcut icon" type="image/png" href="../../assets/favicon.png" />
     <style>
-      model-viewer {
-        background: #0b1020;
+      /* Stack the model-viewer above the controls instead of using overlay
+         positioning, so the controls panel can never cover the model. The
+         model-viewer fills whatever space is left between the page header and
+         the controls. */
+      #ld-bloom example-snippet,
+      #ld-bloom example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-bloom-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      /* Near-black neutral grey (~85% black). When the user toggles the
+         environment skybox off, this is what shows behind the model —
+         dark enough to make emissive bloom pop, but light enough that a
+         dark model is still visible against it.
+
+         The selector matches the `.demo model-viewer` rule in
+         examples.css (specificity 0,1,1) so we win without needing
+         `!important`. */
+      .demo model-viewer {
+        background: #262626;
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
       }
 
       .controls {
-        position: absolute;
-        left: 16px;
-        right: 16px;
-        bottom: 16px;
+        flex: 0 0 auto;
+        margin: 16px;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 12px;
         padding: 16px;
         border-radius: 8px;
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.92);
         color: #333;
         pointer-events: auto;
+        max-height: 50vh;
+        overflow-y: auto;
       }
 
       .controls label {
@@ -51,6 +78,16 @@
         color: #555;
         font-size: 0.65rem;
         text-transform: uppercase;
+      }
+
+      .controls .target-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 8px;
+        align-items: center;
+        font-size: 0.7rem;
+        text-transform: none;
+        color: #333;
       }
 
       .controls input,
@@ -79,34 +116,50 @@
                   <span class="attribute">bloom-targets</span>
                 </h2>
                 <h4>
-                  Enable bloom by mesh or material name without pre-authoring
-                  emissive materials. Switch between Three.js UnrealBloomPass and
-                  BloomPass, adjust MSAA, and use smart quality for movement.
+                  Pick a test rig from the dropdown:
+                  <strong>Cubes</strong> targets meshes
+                  (<code>Mesh-1</code>, <code>Mesh-3</code>,
+                  <code>Mesh-6</code>) on a simple six-cube model;
+                  <strong>Car</strong> targets the
+                  <code>Polestar_RenderMaterial_RedLight</code> and
+                  <code>Polestar_RenderMaterial_WhiteLight</code>
+                  materials on a parked Polestar lit by an HDRI parking
+                  lot, so only the rear red glass and the white head/DRL
+                  lights bloom.
                 </h4>
               </div>
               <example-snippet stamp-to="ld-bloom" highlight-as="html">
                 <template>
+                  <div class="ld-bloom-stage">
                   <model-viewer
                     id="bloom-demo"
                     bloom
                     bloom-mode="unreal"
                     bloom-quality="smart"
-                    bloom-strength="2.5"
-                    bloom-radius="0.55"
+                    bloom-strength="0.6"
+                    bloom-radius="0.2"
                     bloom-threshold="0.05"
                     bloom-msaa="8"
-                    alt="A glowing 3D puzzle model"
-                    src="https://assets.v2.londondynamics.com/e30a2277-db50-4c06-9223-22873d8899c9/puzzle/b40c8ded-045f-679f-a34e-e5a71032799b.glb"
+                    alt="Selective bloom test rig"
+                    src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/6_cubes.glb"
                     environment-image="../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr"
                     skybox-image="../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr"
                     exposure="1.2"
                     camera-controls
                     touch-action="pan-y"
                     camera-orbit="45deg 65deg auto"
-                    shadow-intensity="0.2"
+                    shadow-intensity="1"
+                    shadow-softness="1"
                     interaction-prompt="none"
                   ></model-viewer>
                   <div class="controls">
+                    <label style="grid-column: 1 / -1;">
+                      Test
+                      <select id="preset">
+                        <option value="cubes">Cubes (mesh targets)</option>
+                        <option value="car">Car (material target — Polestar red lights)</option>
+                      </select>
+                    </label>
                     <label>
                       Model URL
                       <input id="model-url" type="url" />
@@ -121,7 +174,8 @@
                     </label>
                     <label>
                       Environment exposure
-                      <input id="exposure" type="range" min="0" max="4" step="0.05" value="1.2" />
+                      <input id="exposure" type="range" min="0" max="20" step="0.05" value="1.2" />
+                      <span id="exposure-value" style="font-size:0.7rem;color:#777;">1.2</span>
                     </label>
                     <label>
                       Bloom enabled
@@ -144,60 +198,181 @@
                     </label>
                     <label>
                       Strength
-                      <input id="bloom-strength" type="range" min="0" max="8" step="0.1" value="2.5" />
+                      <input id="bloom-strength" type="range" min="0" max="3" step="0.05" value="0.6" />
+                      <span id="bloom-strength-value" style="font-size:0.7rem;color:#777;">0.6</span>
                     </label>
                     <label>
                       Radius
-                      <input id="bloom-radius" type="range" min="0" max="1" step="0.01" value="0.55" />
+                      <input id="bloom-radius" type="range" min="0" max="1" step="0.01" value="0.2" />
+                      <span id="bloom-radius-value" style="font-size:0.7rem;color:#777;">0.2</span>
                     </label>
                     <label>
-                      Target glow
-                      <input id="target-enabled" type="checkbox" checked />
+                      Threshold
+                      <input id="bloom-threshold" type="range" min="0" max="1" step="0.01" value="0.05" />
+                      <span id="bloom-threshold-value" style="font-size:0.7rem;color:#777;">0.05</span>
                     </label>
-                    <label>
-                      Target color
-                      <input id="target-color" type="color" value="#00f0ff" />
+                    <label style="grid-column: 1 / -1;">
+                      Targets
+                      <div id="target-rows"></div>
                     </label>
-                    <label>
-                      Target name
-                      <input id="target-name" value="RearLightNEON_(1)" />
+                    <label style="grid-column: 1 / -1;">
+                      Mesh and material names in model (drag bottom-right corner to resize)
+                      <textarea id="mesh-names" rows="14" readonly style="font-size:0.6rem;font-family:monospace;resize:vertical;" placeholder="Load a model to see mesh and material names…"></textarea>
                     </label>
+                  </div>
                   </div>
                   <script type="module">
                     (() => {
                       const modelViewer = document.querySelector('#bloom-demo');
+                      const presetSelect = document.querySelector('#preset');
                       const modelUrl = document.querySelector('#model-url');
                       const environmentUrl = document.querySelector('#environment-url');
                       const showEnvironment = document.querySelector('#show-environment');
                       const exposure = document.querySelector('#exposure');
+                      const exposureValue = document.querySelector('#exposure-value');
                       const bloomEnabled = document.querySelector('#bloom-enabled');
                       const bloomMode = document.querySelector('#bloom-mode');
                       const bloomQuality = document.querySelector('#bloom-quality');
                       const bloomStrength = document.querySelector('#bloom-strength');
+                      const bloomStrengthValue = document.querySelector('#bloom-strength-value');
                       const bloomRadius = document.querySelector('#bloom-radius');
-                      const targetEnabled = document.querySelector('#target-enabled');
-                      const targetColor = document.querySelector('#target-color');
-                      const targetName = document.querySelector('#target-name');
+                      const bloomRadiusValue = document.querySelector('#bloom-radius-value');
+                      const bloomThreshold = document.querySelector('#bloom-threshold');
+                      const bloomThresholdValue = document.querySelector('#bloom-threshold-value');
+                      const targetRows = document.querySelector('#target-rows');
+                      const meshNames = document.querySelector('#mesh-names');
 
-                      modelUrl.value = modelViewer.getAttribute('src');
-                      environmentUrl.value = modelViewer.getAttribute('environment-image');
+                      // Each preset describes a complete test rig: model,
+                      // environment, suggested exposure, camera framing, and
+                      // bloom targets (which can be either meshes or
+                      // materials).
+                      const PRESETS = {
+                        cubes: {
+                          src: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/6_cubes.glb',
+                          environment: '../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr',
+                          exposure: 1.2,
+                          cameraOrbit: '45deg 65deg auto',
+                          targets: [
+                            {kind: 'mesh', name: 'Mesh-1', color: '#ff3366', enabled: true},
+                            {kind: 'mesh', name: 'Mesh-3', color: '#33ff88', enabled: true},
+                            {kind: 'mesh', name: 'Mesh-6', color: '#3388ff', enabled: true},
+                          ],
+                        },
+                        car: {
+                          src: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb',
+                          environment: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr',
+                          exposure: 1.35,
+                          cameraOrbit: '45deg 75deg auto',
+                          targets: [
+                            {kind: 'material', name: 'Polestar_RenderMaterial_RedLight', color: '#ff0000', enabled: true},
+                            {kind: 'material', name: 'Polestar_RenderMaterial_WhiteLight', color: '#ffffff', enabled: true},
+                          ],
+                        },
+                      };
 
-                      const updateTarget = () => {
-                        modelViewer.setBloomTargets([
-                          {
-                            mesh: targetName.value,
-                            material: targetName.value,
-                            color: targetColor.value,
-                            intensity: Number(bloomStrength.value),
-                            enabled: targetEnabled.checked,
-                          },
-                        ]);
+                      let presetTargets = [];
+
+                      const renderTargetRow = (target, index) => {
+                        const row = document.createElement('div');
+                        row.className = 'target-row';
+                        const toggle = document.createElement('input');
+                        toggle.type = 'checkbox';
+                        toggle.checked = target.enabled;
+                        toggle.dataset.index = String(index);
+                        toggle.dataset.field = 'enabled';
+                        const kindSelect = document.createElement('select');
+                        for (const kind of ['mesh', 'material']) {
+                          const opt = document.createElement('option');
+                          opt.value = kind;
+                          opt.textContent = kind;
+                          if (kind === target.kind) opt.selected = true;
+                          kindSelect.append(opt);
+                        }
+                        kindSelect.dataset.index = String(index);
+                        kindSelect.dataset.field = 'kind';
+                        const nameInput = document.createElement('input');
+                        nameInput.type = 'text';
+                        nameInput.value = target.name;
+                        nameInput.dataset.index = String(index);
+                        nameInput.dataset.field = 'name';
+                        const colorInput = document.createElement('input');
+                        colorInput.type = 'color';
+                        colorInput.value = target.color;
+                        colorInput.dataset.index = String(index);
+                        colorInput.dataset.field = 'color';
+                        row.append(toggle, kindSelect, nameInput, colorInput);
+                        row.style.gridTemplateColumns = 'auto auto 1fr auto';
+                        return row;
+                      };
+
+                      const renderTargets = () => {
+                        targetRows.replaceChildren();
+                        presetTargets.forEach((target, i) => {
+                          targetRows.append(renderTargetRow(target, i));
+                        });
+                      };
+
+                      const updateTargets = () => {
+                        const intensity = Number(bloomStrength.value);
+                        modelViewer.setBloomTargets(
+                          presetTargets.map((t) => ({
+                            [t.kind]: t.name,
+                            color: t.color,
+                            enabled: t.enabled,
+                            intensity,
+                          })),
+                        );
+                      };
+
+                      targetRows.addEventListener('input', (event) => {
+                        const target = event.target;
+                        const index = Number(target.dataset.index);
+                        const field = target.dataset.field;
+                        if (Number.isNaN(index) || !field) return;
+                        if (field === 'enabled') {
+                          presetTargets[index].enabled = target.checked;
+                        } else {
+                          presetTargets[index][field] = target.value;
+                        }
+                        updateTargets();
+                      });
+
+                      const inspectModel = () => {
+                        const {meshes, materials} = modelViewer.getSceneNodeNames();
+                        meshNames.value = `MESHES (${meshes.length}):\n${meshes.join('\n') || '(none)'}\n\nMATERIALS (${materials.length}):\n${materials.join('\n') || '(none)'}`;
+                      };
+
+                      const applyPreset = (key) => {
+                        const preset = PRESETS[key];
+                        if (!preset) return;
+                        presetTargets = preset.targets.map((t) => ({...t}));
+                        renderTargets();
+                        modelUrl.value = preset.src;
+                        environmentUrl.value = preset.environment;
+                        exposure.value = String(preset.exposure);
+                        exposureValue.textContent = String(preset.exposure);
+                        modelViewer.exposure = preset.exposure;
+                        modelViewer.cameraOrbit = preset.cameraOrbit;
+                        modelViewer.environmentImage = preset.environment;
+                        if (showEnvironment.checked) {
+                          modelViewer.skyboxImage = preset.environment;
+                        }
+                        modelViewer.src = preset.src;
+                        // setBloomTargets is also called once the model loads,
+                        // but call it now too so toggling presets works even if
+                        // the new model is cached.
+                        updateTargets();
                       };
 
                       customElements.whenDefined('model-viewer').then(() => {
-                        modelViewer.addEventListener('load', updateTarget);
-                        updateTarget();
+                        modelViewer.addEventListener('load', () => {
+                          updateTargets();
+                          inspectModel();
+                        });
+                        applyPreset('cubes');
                       });
+
+                      presetSelect.addEventListener('change', () => applyPreset(presetSelect.value));
                       modelUrl.addEventListener('change', () => (modelViewer.src = modelUrl.value));
                       environmentUrl.addEventListener('change', () => {
                         modelViewer.environmentImage = environmentUrl.value;
@@ -208,18 +383,26 @@
                       showEnvironment.addEventListener('change', () => {
                         modelViewer.skyboxImage = showEnvironment.checked ? environmentUrl.value : null;
                       });
-                      exposure.addEventListener('input', () => (modelViewer.exposure = Number(exposure.value)));
+                      exposure.addEventListener('input', () => {
+                        modelViewer.exposure = Number(exposure.value);
+                        exposureValue.textContent = exposure.value;
+                      });
                       bloomEnabled.addEventListener('change', () => (modelViewer.bloom = bloomEnabled.checked));
                       bloomMode.addEventListener('change', () => (modelViewer.bloomMode = bloomMode.value));
                       bloomQuality.addEventListener('change', () => (modelViewer.bloomQuality = bloomQuality.value));
                       bloomStrength.addEventListener('input', () => {
                         modelViewer.bloomStrength = Number(bloomStrength.value);
-                        updateTarget();
+                        bloomStrengthValue.textContent = bloomStrength.value;
+                        updateTargets();
                       });
-                      bloomRadius.addEventListener('input', () => (modelViewer.bloomRadius = Number(bloomRadius.value)));
-                      targetEnabled.addEventListener('change', updateTarget);
-                      targetColor.addEventListener('input', updateTarget);
-                      targetName.addEventListener('change', updateTarget);
+                      bloomRadius.addEventListener('input', () => {
+                        modelViewer.bloomRadius = Number(bloomRadius.value);
+                        bloomRadiusValue.textContent = bloomRadius.value;
+                      });
+                      bloomThreshold.addEventListener('input', () => {
+                        modelViewer.bloomThreshold = Number(bloomThreshold.value);
+                        bloomThresholdValue.textContent = bloomThreshold.value;
+                      });
                     })();
                   </script>
                 </template>
