@@ -682,12 +682,14 @@
                   With <span class="attribute">src-is-room</span>, use
                   <span class="attribute">walls</span> and
                   <span class="attribute">floor</span> (Lit booleans, default
-                  <code>false</code>) to show tagged <code>wall_*</code> nodes, a
-                  <code>walls</code> group, a <code>floor</code> node, or
+                  <code>false</code>) to show tagged <code>wall_*</code> nodes,
+                  a <code>walls</code> group, a <code>floor</code> node, or
                   <code>floor_*</code> nodes. This example starts with both on.
                   Enable <span class="attribute">debug</span> to log effective
-                  flags on load and when toggling. Measurement and grid are
-                  independent of room shell visibility.
+                  flags on load and when toggling. Use the
+                  <strong>Measurements</strong> switch to hide dimension lines
+                  and measure UI while keeping the grid. Measurement and grid
+                  are independent of room shell visibility.
                 </p>
               </div>
               <example-snippet stamp-to="room-measure-grid" highlight-as="html">
@@ -716,7 +718,7 @@
                           <h3
                             class="text-base! m-0! font-normal! text-gray-400"
                           >
-                            Room shell and grid
+                            Room shell, measure, and grid
                           </h3>
                           <div
                             class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
@@ -744,6 +746,29 @@
                                 >
                                   <span class="font-medium text-gray-900"
                                     >Grid</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="room-measure-toggle-measure"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-measure-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-measure-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Measurements</span
                                   >
                                 </span>
                               </div>
@@ -847,6 +872,10 @@
 
                       bindBoolAttrToggle('room-measure-toggle-walls', 'walls');
                       bindBoolAttrToggle('room-measure-toggle-floor', 'floor');
+                      bindBoolAttrToggle(
+                        'room-measure-toggle-measure',
+                        'measure'
+                      );
 
                       document
                         .getElementById('room-measure-toggle-grid')

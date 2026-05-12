@@ -21,18 +21,27 @@ function getOrCreateGridRootContainer(
   host: any,
   deps: GridShapeDeps
 ): Object3D {
+  const target = deps.getGridTargetObject();
+  if (!target) {
+    throw new Error('Target object not found for grid shape lines');
+  }
+
+  const reparentIfNeeded = (obj: Object3D) => {
+    if (obj.parent !== target) {
+      obj.parent?.remove(obj);
+      target.add(obj);
+    }
+  };
+
   if (host[deps.gridContainerSymbol]) {
+    reparentIfNeeded(host[deps.gridContainerSymbol]);
     return host[deps.gridContainerSymbol];
   }
 
   deps.createGrid();
   if (host[deps.gridContainerSymbol]) {
+    reparentIfNeeded(host[deps.gridContainerSymbol]);
     return host[deps.gridContainerSymbol];
-  }
-
-  const target = deps.getGridTargetObject();
-  if (!target) {
-    throw new Error('Target object not found for grid shape lines');
   }
 
   host[deps.gridContainerSymbol] = new Object3D();
