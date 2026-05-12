@@ -1205,6 +1205,8 @@
                     highlight-selected
                     edit
                     src-is-room
+                    walls
+                    floor
                     viewport-gizmo
                   >
                     <div slot="floating-control-strip">
@@ -1258,6 +1260,50 @@
                                 Place Door
                               </button>
                             </div>
+                            <div
+                              class="text-sm text-gray-600 flex flex-wrap gap-6 items-center"
+                            >
+                              <div class="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  id="room-surface-toggle-walls"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-surface-walls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="text-xs font-medium text-gray-900"
+                                  id="room-surface-walls-label"
+                                  >Walls</span
+                                >
+                              </div>
+                              <div class="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  id="room-surface-toggle-floor"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-surface-floor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="text-xs font-medium text-gray-900"
+                                  id="room-surface-floor-label"
+                                  >Floor</span
+                                >
+                              </div>
+                            </div>
                             <p class="text-xs text-gray-500 m-0">
                               Release over a wall to commit placement.
                             </p>
@@ -1271,6 +1317,26 @@
                       const modelViewer = document.querySelector(
                         '#room-surface-snap-demo'
                       );
+
+                      const bindBoolAttrToggle = (buttonId, attrName) => {
+                        document
+                          .getElementById(buttonId)
+                          .addEventListener('click', (event) => {
+                            const el = event.currentTarget;
+                            const on =
+                              el.getAttribute('aria-checked') === 'true';
+                            if (on) {
+                              el.setAttribute('aria-checked', 'false');
+                              modelViewer.removeAttribute(attrName);
+                            } else {
+                              el.setAttribute('aria-checked', 'true');
+                              modelViewer.setAttribute(attrName, '');
+                            }
+                          });
+                      };
+
+                      bindBoolAttrToggle('room-surface-toggle-walls', 'walls');
+                      bindBoolAttrToggle('room-surface-toggle-floor', 'floor');
 
                       const snapPointsByPart = {
                         window: [

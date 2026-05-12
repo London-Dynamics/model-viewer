@@ -169,8 +169,8 @@ export declare interface LDModularInterface {
   clear: ClearSceneFunction;
   disableBaseModelShadows: boolean;
   srcIsRoom: boolean;
-
-  toggleBaseModelVisibility(state?: boolean): void;
+  walls: boolean;
+  floor: boolean;
 
   setPosition(objectName: string, value: [number, number, number]): void;
   setPosition(value: [number, number, number]): void;
@@ -300,6 +300,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'src-is-room' })
     srcIsRoom: boolean = false;
 
+    @property({ type: Boolean, attribute: 'walls' })
+    walls: boolean = false;
+
+    @property({ type: Boolean, attribute: 'floor' })
+    floor: boolean = false;
+
     // Store bound event handler reference
     private _boundSelectionChangeHandler: ((event: Event) => void) | null =
       null;
@@ -317,6 +323,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     > = new Map();
     private _roomAttachedObjectsByWallName: Map<string, Set<Object3D>> =
       new Map();
+    private _roomFloorAttachedObjects: Set<Object3D> = new Set();
     private _roomHiddenAttachedObjects: Set<Object3D> = new Set();
     private _roomHiddenSkirtings: Set<Object3D> = new Set();
     private _tmpCameraWorldPos: Vector3 = new Vector3();
@@ -371,6 +378,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._syncRoomSourceMode();
         invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
         this._markRoomWallVisibilityCacheDirty();
+        this._applyRoomTaggedSurfaceVisibility();
+        if (this.srcIsRoom) {
+          this._logRoomTaggedSurfaceVisibility('load');
+        }
       };
       this.addEventListener('load', this._boundLoadHandler);
 
@@ -393,10 +404,22 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._syncRoomSourceMode();
         this._markRoomWallVisibilityCacheDirty();
       }
+
+      if (
+        changedProperties.has('walls') ||
+        changedProperties.has('floor') ||
+        changedProperties.has('srcIsRoom')
+      ) {
+        this._applyRoomTaggedSurfaceVisibility();
+        if (this.srcIsRoom) {
+          this._logRoomTaggedSurfaceVisibility('updated');
+        }
+      }
     }
 
     private _syncRoomSourceMode() {
       if (!this.srcIsRoom) {
+        this._resetRoomTaggedSurfaceVisibilityOverrides();
         this._resetRoomAttachedVisibility();
         return;
       }
@@ -432,6 +455,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     disconnectedCallback() {
       super.disconnectedCallback();
       this.cancelRequestedShadowUpdate();
+      this._resetRoomTaggedSurfaceVisibilityOverrides();
       this._resetRoomAttachedVisibility();
 
       // Clean up event listener
@@ -767,46 +791,79 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
     }
 
-    toggleBaseModelVisibility(visible?: boolean): void {
-      const scene = this[$scene];
+    private _roomShellNameLower(name: string | undefined): string {
+      return (name || '').toLowerCase();
+    }
 
-      // Find base model
-      let baseModel: Object3D | undefined;
-      scene.traverse((object) => {
-        if (object?.userData?.isBaseModel) {
-          baseModel = object;
-        }
-      });
+    /** Wall shell: `wall_*` meshes or a `walls` group (e.g. Babylon exports). */
+    private _isRoomWallShellNode(name: string | undefined): boolean {
+      const n = this._roomShellNameLower(name);
+      return n === 'walls' || n.startsWith('wall_');
+    }
 
+    /** Floor shell: `floor_*` meshes or a node named `floor` (e.g. Babylon exports). */
+    private _isRoomFloorShellNode(name: string | undefined): boolean {
+      const n = this._roomShellNameLower(name);
+      return n === 'floor' || n.startsWith('floor_');
+    }
+
+    /**
+     * When `src-is-room` is off, restore tagged room meshes to visible so
+     * leaving room mode does not leave wall/floor shell nodes stuck hidden.
+     */
+    private _resetRoomTaggedSurfaceVisibilityOverrides() {
+      const scene = (this as any)[$scene];
+      if (!scene) return;
+      const baseModel = getBaseModelObject(scene);
       if (!baseModel) return;
-
-      const newVisibility =
-        typeof visible === 'boolean' ? visible : !baseModel.visible;
-
-      // Toggle visibility and shadow casting on base model
       baseModel.traverse((child) => {
-        // Store original castShadow state if not already stored
-        if (child.userData.originalCastShadow === undefined) {
-          child.userData.originalCastShadow =
-            (child as any).castShadow ?? false;
-        }
-
-        child.visible = newVisibility;
-
-        // Disable shadow casting when hidden, restore when visible
-        if (newVisibility) {
-          (child as any).castShadow = child.userData.originalCastShadow;
-        } else {
-          (child as any).castShadow = false;
+        if (
+          this._isRoomWallShellNode(child.name) ||
+          this._isRoomFloorShellNode(child.name)
+        ) {
+          child.visible = true;
         }
       });
-
-      // Queue shadow re-render with updated visibility
-      if (scene.shadow) {
-        scene.shadow.needsUpdate = true;
-      }
-
       (this as any)[$needsRender]();
+    }
+
+    /**
+     * Applies `walls` / `floor` to wall shell nodes (`wall_*`, optional `walls`
+     * group) and floor shell nodes (`floor_*`, or a node named `floor`) when
+     * `src-is-room` is set; no-op otherwise (and clears overrides when room mode
+     * is off).
+     */
+    private _applyRoomTaggedSurfaceVisibility() {
+      if (!this.srcIsRoom) {
+        this._resetRoomTaggedSurfaceVisibilityOverrides();
+        return;
+      }
+      const scene = (this as any)[$scene];
+      if (!scene) return;
+      const baseModel = getBaseModelObject(scene);
+      if (!baseModel) return;
+      baseModel.traverse((child) => {
+        if (this._isRoomWallShellNode(child.name)) {
+          child.visible = !!this.walls;
+        } else if (this._isRoomFloorShellNode(child.name)) {
+          child.visible = !!this.floor;
+        }
+      });
+      (this as any)[$needsRender]();
+    }
+
+    private _logRoomTaggedSurfaceVisibility(source: 'load' | 'updated') {
+      const host = this as any;
+      if (!this.srcIsRoom || !host.debug) {
+        return;
+      }
+      if (typeof host.log === 'function') {
+        host.log(
+          `[src-is-room] Room tagged surfaces (${source}): walls=${this.walls}, floor=${this.floor}. ` +
+            'Wall shell: `walls` or `wall_*`; floor shell: `floor` or `floor_*`. ' +
+            'Wall attachments follow `walls` and camera backface; floor-surface attachments follow `floor`.'
+        );
+      }
     }
 
     private _puzzleRegistry: Map<string, GLTF> = new Map();
@@ -3001,6 +3058,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         set.add(child);
       });
 
+      this._roomFloorAttachedObjects.clear();
+      targetObject.traverse((child) => {
+        if (child.userData?.isPlacedObject !== true) return;
+        if (child.userData?.attachedSurfaceType === 'floor') {
+          this._roomFloorAttachedObjects.add(child);
+        }
+      });
+
       this._roomWallVisibilityCacheDirty = false;
     }
 
@@ -3033,6 +3098,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._roomHiddenSkirtings.clear();
       this._roomWallEntries.clear();
       this._roomAttachedObjectsByWallName.clear();
+      this._roomFloorAttachedObjects.clear();
       this._roomWallVisibilityCacheDirty = true;
     }
 
@@ -3062,14 +3128,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           .copy(this._tmpWallWorldPos)
           .sub(this._tmpCameraWorldPos);
         if (this._tmpCameraToWallDir.lengthSq() <= 1e-8) {
-          this._setWallAttachmentsVisibility(wallName, true);
+          this._setWallAttachmentsVisibility(wallName, this.walls);
           return;
         }
         this._tmpCameraToWallDir.normalize();
         const wallBackFacingCamera =
           this._tmpWallWorldNormal.dot(this._tmpCameraToWallDir) >
           ROOM_WALL_BACKFACE_HIDE_THRESHOLD;
-        this._setWallAttachmentsVisibility(wallName, !wallBackFacingCamera);
+        const cameraWantsAttachmentsVisible = !wallBackFacingCamera;
+        this._setWallAttachmentsVisibility(
+          wallName,
+          this.walls && cameraWantsAttachmentsVisible
+        );
+      });
+
+      this._roomFloorAttachedObjects.forEach((object: Object3D) => {
+        const visible = this.floor;
+        object.visible = visible;
+        if (visible) this._roomHiddenAttachedObjects.delete(object);
+        else this._roomHiddenAttachedObjects.add(object);
       });
     }
 
@@ -3082,6 +3159,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         for (const object of objects) {
           if (!object.parent) return true;
         }
+      }
+      for (const object of this._roomFloorAttachedObjects) {
+        if (!object.parent) return true;
       }
       return false;
     }

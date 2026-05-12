@@ -146,26 +146,6 @@
                               </div>
                               <div class="flex items-center">
                                 <button
-                                  id="toggle-base-model"
-                                  type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
-                                  role="switch"
-                                  aria-checked="true"
-                                  aria-labelledby="show-base-model"
-                                >
-                                  <span
-                                    aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
-                                  ></span>
-                                </button>
-                                <span class="ml-3 text-sm" id="show-base-model">
-                                  <span class="font-medium text-gray-900"
-                                    >Show Model</span
-                                  >
-                                </span>
-                              </div>
-                              <div class="flex items-center">
-                                <button
                                   id="toggle-grid"
                                   type="button"
                                   class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
@@ -430,21 +410,6 @@
                         });
 
                       document
-                        .getElementById('toggle-base-model')
-                        .addEventListener('click', (e) => {
-                          const el = e.target;
-                          if (el.getAttribute('aria-checked') === 'true') {
-                            el.setAttribute('aria-checked', 'false');
-
-                            modelViewer.toggleBaseModelVisibility(false);
-                          } else {
-                            el.setAttribute('aria-checked', 'true');
-
-                            modelViewer.toggleBaseModelVisibility(true);
-                          }
-                        });
-
-                      document
                         .getElementById('toggle-lines')
                         .addEventListener('click', (e) => {
                           const el = e.target;
@@ -700,6 +665,226 @@
                             modelViewer.setAttribute('grid-shapes', '');
                           }
                         });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="room-measure-grid" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Room measure and grid</h2>
+                <p>
+                  With <span class="attribute">src-is-room</span>, use
+                  <span class="attribute">walls</span> and
+                  <span class="attribute">floor</span> (Lit booleans, default
+                  <code>false</code>) to show tagged <code>wall_*</code> nodes, a
+                  <code>walls</code> group, a <code>floor</code> node, or
+                  <code>floor_*</code> nodes. This example starts with both on.
+                  Enable <span class="attribute">debug</span> to log effective
+                  flags on load and when toggling. Measurement and grid are
+                  independent of room shell visibility.
+                </p>
+              </div>
+              <example-snippet stamp-to="room-measure-grid" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="room-measure-grid-demo"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Room with measurement grid and shell toggles"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    min-camera-orbit="auto auto 0.5m"
+                    max-camera-orbit="auto auto auto"
+                    selection-scope="scene"
+                    measure
+                    grid
+                    src-is-room
+                    walls
+                    floor
+                    debug
+                  >
+                    <div class="absolute bottom-0 inset-x-0 p-2">
+                      <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-5">
+                          <h3
+                            class="text-base! m-0! font-normal! text-gray-400"
+                          >
+                            Room shell and grid
+                          </h3>
+                          <div
+                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                          >
+                            <div
+                              class="text-sm text-gray-500 grid grid-cols-2 gap-4"
+                            >
+                              <div class="flex items-center">
+                                <button
+                                  id="room-measure-toggle-grid"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-grid-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-grid-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="room-measure-toggle-grid-shapes"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="room-measure-grid-shapes-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-grid-shapes-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid shapes</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="room-measure-toggle-walls"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-walls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-walls-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Walls</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="flex items-center">
+                                <button
+                                  id="room-measure-toggle-floor"
+                                  type="button"
+                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-floor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-floor-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Floor</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#room-measure-grid-demo'
+                      );
+
+                      const bindBoolAttrToggle = (buttonId, attrName) => {
+                        document
+                          .getElementById(buttonId)
+                          .addEventListener('click', (e) => {
+                            const el = e.currentTarget;
+                            const on =
+                              el.getAttribute('aria-checked') === 'true';
+                            if (on) {
+                              el.setAttribute('aria-checked', 'false');
+                              modelViewer.removeAttribute(attrName);
+                            } else {
+                              el.setAttribute('aria-checked', 'true');
+                              modelViewer.setAttribute(attrName, '');
+                            }
+                          });
+                      };
+
+                      bindBoolAttrToggle('room-measure-toggle-walls', 'walls');
+                      bindBoolAttrToggle('room-measure-toggle-floor', 'floor');
+
+                      document
+                        .getElementById('room-measure-toggle-grid')
+                        .addEventListener('click', (e) => {
+                          const el = e.currentTarget;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('room-measure-toggle-grid-shapes')
+                        .addEventListener('click', (e) => {
+                          const el = e.currentTarget;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid-shapes');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid-shapes', '');
+                          }
+                        });
+
+                      modelViewer.addEventListener('load', () => {
+                        const squarePath = [
+                          [0, 0],
+                          [1.1, 0],
+                          [1.1, 1.1],
+                          [0, 1.1],
+                        ];
+                        modelViewer.addGridShapeLines(squarePath, {
+                          id: 'room-measure-square',
+                        });
+                      });
                     })();
                   </script>
                 </template>

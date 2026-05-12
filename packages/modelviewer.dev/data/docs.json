@@ -1485,9 +1485,10 @@
       {
         "name": "grid",
         "htmlName": "grid",
-        "description": "Show or hide a measurement grid on the ground plane, using the selected measurement unit.",
+        "description": "Show or hide a measurement grid on the ground plane, using the selected measurement unit. Enabling the grid does not change room shell visibility; with <span class=\"attribute\">src-is-room</span>, use <span class=\"attribute\">walls</span> and <span class=\"attribute\">floor</span> (LD Modular) for tagged surfaces.",
         "links": [
-          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#measure\">Related examples</a>",
+          "<a href=\"../examples/ld_measure/#room-measure-grid\">Room + grid</a>"
         ],
         "default": {
           "default": "false",
@@ -1499,7 +1500,8 @@
         "htmlName": "gridShapes",
         "description": "Show or hide custom grid shape lines added via addGridShapeLines(). Shape data is retained while hidden and becomes visible when enabled again.",
         "links": [
-          "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>"
+          "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>",
+          "<a href=\"../examples/ld_measure/#room-measure-grid\">Room + grid</a>"
         ],
         "default": {
           "default": "false",
@@ -1717,9 +1719,36 @@
       {
         "name": "src-is-room",
         "htmlName": "srcIsRoom",
-        "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, wall backface visibility rules can hide wall-attached placed objects, and matching skirting_N follows wall_N visibility.",
+        "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, and matching skirting_N follows wall_N visibility. Wall shell nodes (`walls` group or `wall_*`) and floor shell nodes (`floor` or `floor_*`) are shown only when the separate <span class=\"attribute\">walls</span> and <span class=\"attribute\">floor</span> booleans are true (they default to false). Placed objects with <code>userData.attachedWallName</code> follow <span class=\"attribute\">walls</span> and camera backface rules; objects with <code>userData.attachedSurfaceType === 'floor'</code> follow <span class=\"attribute\">floor</span>. With <span class=\"attribute\">debug</span> enabled, the element logs effective walls/floor flags after load and when those attributes change.",
         "links": [
-          "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>",
+          "<a href=\"../examples/ld_measure/#room-measure-grid\">Room measure + grid</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "walls",
+        "htmlName": "walls",
+        "description": "When <span class=\"attribute\">src-is-room</span> is true, controls visibility of base-model wall shell nodes: a group named <code>walls</code> (case-insensitive) or any object whose name starts with <code>wall_</code>. Also hides or shows placed objects whose <code>userData.attachedWallName</code> matches that wall (combined with camera backface rules when <span class=\"attribute\">walls</span> is true). No effect when src-is-room is false. Defaults to false (Lit boolean).",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Room surface snap</a>",
+          "<a href=\"../examples/ld_measure/#room-measure-grid\">Room measure + grid</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "floor",
+        "htmlName": "floor",
+        "description": "When <span class=\"attribute\">src-is-room</span> is true, controls visibility of base-model objects named <code>floor</code> (case-insensitive) or whose names start with <code>floor_</code>, and hides or shows placed objects with <code>userData.attachedSurfaceType === 'floor'</code>. No effect when src-is-room is false. Defaults to false (Lit boolean).",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Room surface snap</a>",
+          "<a href=\"../examples/ld_measure/#room-measure-grid\">Room measure + grid</a>"
         ],
         "default": {
           "default": "false",

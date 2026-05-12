@@ -422,6 +422,10 @@
       {
         "htmlId": "grid-shapes",
         "name": "Grid shape lines"
+      },
+      {
+        "htmlId": "room-measure-grid",
+        "name": "Room measure and grid"
       }
     ]
   },
