@@ -2005,6 +2005,15 @@
         "htmlName": "getPlacementTree",
         "description": "Returns a structured representation of the current scene's placed objects and groups, formatted as a tree. This includes object names, UUIDs, transforms, and group hierarchy, reflecting the logical assembly as seen by the user.",
         "signature": "getPlacementTree()"
+      },
+      {
+        "name": "removeSelectedObjects",
+        "htmlName": "removeSelectedObjects",
+        "description": "Removes the current modular selection (placed objects/groups), clearing selection first. Multiple calls scheduled in the same JavaScript task (for example from both a host <code>window</code> keydown listener and the element's own handler) are coalesced into one removal pass via a microtask; do not use a time-based debounce so key repeat can still remove successive selections. Options are merged across coalesced calls so <code>animate: true</code> wins if any caller requested animated removal. Host applications that add a global listener should mirror the element's own rules: ignore the shortcut when the key is not Delete/Backspace or when <code>event.target</code> is an <code>input</code>, <code>textarea</code>, or <code>contenteditable</code>; only call <code>preventDefault</code> when there is a non-empty modular selection to remove.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "signature": "removeSelectedObjects(options?: { animate?: boolean }): void"
       }
     ],
     "Events": [

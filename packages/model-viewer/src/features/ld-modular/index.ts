@@ -64,6 +64,7 @@ import {
   stepQuatAnimations,
 } from '../../utilities/animation.js';
 import { LogFunction, WarnFunction, ErrorFunction } from '../ld-debug.js';
+import { shouldIgnoreModularDeleteKeydown } from './modular-delete-keydown.js';
 
 // Re-export SnapPoint type for external use
 export type { SnapPoint };
@@ -312,6 +313,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _boundDeleteKeyHandler: ((event: KeyboardEvent) => void) | null =
       null;
     private _boundLoadHandler: (() => void) | null = null;
+    private _removeSelectedFlushScheduled = false;
+    private _removeSelectedMergedOptions: { animate?: boolean } | undefined =
+      undefined;
     private _roomWallVisibilityCacheDirty: boolean = true;
     private _roomWallEntries: Map<
       string,
@@ -347,26 +351,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       this._boundDeleteKeyHandler = (event: KeyboardEvent) => {
-        const target = event.target as EventTarget | null;
-        const targetEl =
-          target && (target as Node).nodeType === Node.ELEMENT_NODE
-            ? (target as Element)
-            : null;
-        const tagName = targetEl?.tagName?.toLowerCase();
-        const isEditableTarget =
-          tagName === 'input' ||
-          tagName === 'textarea' ||
-          !!targetEl?.closest('[contenteditable=""], [contenteditable="true"]');
-
-        if (isEditableTarget) {
+        if (shouldIgnoreModularDeleteKeydown(event)) {
           return;
         }
 
-        if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-
         const selectedObjects = ((this as any).selectedObjects ||
           []) as Object3D[];
-        console.log('selectedObjects', selectedObjects);
+
         if (selectedObjects.length === 0) return;
 
         event.preventDefault();
@@ -4516,11 +4507,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Remove currently selected objects/groups.
-     * Handles single and multi-selection and avoids duplicate removals when
-     * both a parent group and its child are selected.
+     * Merge options for a coalesced remove pass (animate wins if any caller requests it).
      */
-    removeSelectedObjects(options?: { animate?: boolean }) {
+    private _mergeRemoveSelectedCoalescedOptions(
+      next?: { animate?: boolean }
+    ): void {
+      if (!next || next.animate !== true) return;
+      if (!this._removeSelectedMergedOptions) {
+        this._removeSelectedMergedOptions = {};
+      }
+      this._removeSelectedMergedOptions.animate = true;
+    }
+
+    private _flushRemoveSelectedObjects(options?: { animate?: boolean }) {
       try {
         const selected = (
           ((this as any).selectedObjects || []) as Object3D[]
@@ -4554,6 +4553,28 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {
         // swallow
       }
+    }
+
+    /**
+     * Remove currently selected objects/groups.
+     * Handles single and multi-selection and avoids duplicate removals when
+     * both a parent group and its child are selected.
+     *
+     * Multiple synchronous calls (e.g. host window listener and the element's
+     * own keydown) are coalesced into one removal pass in the same task via a
+     * microtask; options are merged so `animate: true` wins if any caller set it.
+     */
+    removeSelectedObjects(options?: { animate?: boolean }) {
+      this._mergeRemoveSelectedCoalescedOptions(options);
+      if (this._removeSelectedFlushScheduled) return;
+      this._removeSelectedFlushScheduled = true;
+      queueMicrotask(() => {
+        this._removeSelectedFlushScheduled = false;
+        const merged = this._removeSelectedMergedOptions;
+        this._removeSelectedMergedOptions = undefined;
+        if (!this.isConnected) return;
+        this._flushRemoveSelectedObjects(merged);
+      });
     }
 
     /**
