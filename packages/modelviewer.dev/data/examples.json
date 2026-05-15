@@ -458,15 +458,5 @@
         "name": "Bulk placement"
       }
     ]
-  },
-  {
-    "name": "LD Ambient Occlusion",
-    "htmlName": "ld_ambient_occlusion",
-    "examples": [
-      {
-        "htmlId": "ld-ambient-occlusion",
-        "name": "Real-time AO"
-      }
-    ]
   }
 ]
