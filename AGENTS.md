@@ -1,74 +1,39 @@
-# AGENTS.md
+# Agents
 
-## Overview
+## Cursor Cloud specific instructions
 
-This document provides guidance for automated coding agents working within this repository. It outlines agent responsibilities, operational guidelines, and references to APIs and tools to help agents function effectively.
+### Overview
+This is the **model-viewer** monorepo — a web component library for displaying interactive 3D models (glTF/GLB). It is a London Dynamics fork published as `@london-dynamics/model-viewer`. The repo uses **npm workspaces** with 5 packages under `packages/`.
 
-## Agent Roles & Responsibilities
+### Node.js version
+The project requires **Node.js 18** (see `.nvmrc`). Load it via:
+```
+export NVM_DIR="$HOME/.nvm" && source "$NVM_DIR/nvm.sh"
+```
 
-List each agent and assign its specific roles and responsibilities below. (You will be prompted to specify which agent(s) should work on which role(s).)
+### Key commands
+See the root `README.md` for all commands. Quick reference:
+- **Install deps**: `npm install` (uses npm workspaces; runs `prepare` scripts that create symlinks and fetch git submodules)
+- **Build**: `npm run build` (builds all workspaces)
+- **Test**: `npm run test` or `npm run test:ci` (runs tests across workspaces)
+- **Serve docs**: `npm run serve` (serves static files on port 8080; browse `/packages/modelviewer.dev/` for docs, `/packages/space-opera/editor/` for the editor)
+- **Lint**: `npm run lint` (currently a no-op — `.eslintignore` excludes all packages)
 
-| Agent Name    | Role(s) / Responsibilities                                                                                              |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| any GPT       | Documentation, Run tests                                                                                                |
-| Claude Sonnet | Code generation, Write and update tests, Dependency management, Linting and formatting, Error handling, API integration |
-| Claude Opus   | Refactoring                                                                                                             |
+### Known issues at HEAD
+- `packages/model-viewer` has a **pre-existing build failure**: `src/features/ld-environment.ts` was deleted but still imported in `src/model-viewer.ts`. This prevents `tsc` from completing for this package. The other 4 packages (`model-viewer-effects`, `modelviewer.dev`, `render-fidelity-tools`, `space-opera`) build and test normally.
+- The `lib/` directory in `model-viewer` is committed with stale compiled output, so the web test runner can run some tests, but many fail because `lib/features/ld-environment.js` is missing.
 
-## Repository Structure
+### Testing notes
+- Tests use `@web/test-runner` with **Playwright** browsers (Chromium, Firefox, WebKit).
+- **WebKit does not work** on Ubuntu 24.04 in this environment due to ICU library version mismatch (`uidna_nameToUnicode_70` symbol missing). Use Chromium (and optionally Firefox) for tests.
+- To run tests for a single package: `npm run test --workspace=<package-name>` or `cd packages/<name> && npx web-test-runner --playwright --browsers chromium`
+- Puppeteer is a dependency of `render-fidelity-tools`. Set `PUPPETEER_SKIP_DOWNLOAD=1` during `npm install` to avoid a long/hanging browser download; the Puppeteer browsers from a previous install are cached at `~/.cache/puppeteer/`.
 
-- **packages/model-viewer**: Main application code. All application logic, features, and core functionality should be placed and edited here.
-- **packages/modelviewer.dev**: Documentation and example site. All documentation, guides, and example-related changes should be limited to this directory.
+### Serving the app
+`npm run serve` starts `http-server` at the repo root on port 8080. Key routes:
+- Docs site: `http://localhost:8080/packages/modelviewer.dev/`
+- Loading examples: `http://localhost:8080/packages/modelviewer.dev/examples/loading/`
+- Model editor: `http://localhost:8080/packages/space-opera/editor/`
 
-Agents must limit all code edits to:
-
-- Application: packages/model-viewer
-- Documentation: packages/modelviewer.dev
-
-## Usage Guidelines
-
-- Always start with `nvm use` to ensure the correct Node.js version is active.
-- During development, the build command is `npm run build:dev` inside `packages/model-viewer`.
-- For final test and production builds, use `npm run build` inside `packages/model-viewer`.
-- Agents should operate within the boundaries of the repository’s coding standards and best practices.
-- All file edits must be atomic and well-documented.
-- Commit messages should be clear and descriptive.
-- Handle errors gracefully and report issues when encountered.
-- Collaborate with other agents and respect file ownership where applicable.
-
-## Documentation Guidelines
-
-To write or update documentation:
-
-- API documentation is maintained in `packages/modelviewer.dev/data/docs.json`. Add or update entries here for each feature, including clear descriptions, default values, and links to relevant examples. The feature or mixin name in the documentation must match the source file or module name (e.g., `ld_camera.ts` should be documented under "LD Camera").
-- Example metadata is managed in `packages/modelviewer.dev/data/examples.json`. Add or update entries here to register new examples or categories.
-- Example pages are implemented as HTML files in `packages/modelviewer.dev/examples/`. Create or update these files to provide runnable demonstrations.
-- Whenever an example is added or reordered in `packages/modelviewer.dev/examples/`, update `packages/modelviewer.dev/data/examples.json` in the same change.
-- Each major feature documented in `docs.json` should have at least one corresponding example page listed in `examples.json` and implemented in the examples directory.
-- In `docs.json`, link to the most relevant example pages for each feature, but you do not need a separate example for every method or property.
-- For method entries in `docs.json`, set `name` to only the function name (for example, `getGlbBounds`) and put the full function head/signature (arguments + return type) in a separate `signature` field.
-- Keep cross-references between documentation and examples up to date and consistent.
-
-## API References
-
-Agents may use the following APIs, libraries, or tools to perform their tasks:
-
-- [Node.js](https://nodejs.org/) – JavaScript runtime environment
-- [Three.js](https://threejs.org/) – 3D library used in this project
-- [@yomotsu/camera-controls](https://yomotsu.github.io/camera-controls/) – Advanced camera controls
-- [@fennec-hub/three-viewport-gizmo](https://fennec-hub.github.io/three-viewport-gizmo/) – Customizable standalone interactive three.js view helper controls
-- [Rollup](https://rollupjs.org/) – Module bundler
-- [Tailwind CSS](https://tailwindcss.com/) – Utility-first CSS framework
-- [Web Test Runner](https://modern-web.dev/docs/test-runner/overview/) – Testing framework
-- [TypeScript](https://www.typescriptlang.org/) – Typed JavaScript
-
-Add more references as needed for new tools or APIs.
-
-## Best Practices
-
-- Follow the repository’s code style and formatting rules.
-- Write modular, maintainable, and well-documented code.
-- Enforce DRY (Don't Repeat Yourself) principles.
-- Only function and class blocks need to be documented; do not document individual lines within functions.
-- Review changes before committing.
-- Communicate and coordinate with other agents to avoid conflicts.
-- Keep this document updated as agent roles or APIs evolve.
+### Pre-commit hook
+The repo has a Husky pre-commit hook (`scripts/pre-commit.sh`) that auto-formats staged `.ts` files with `clang-format`. Husky v7 may not auto-install hooks; you may need to run `npx husky install` once.
