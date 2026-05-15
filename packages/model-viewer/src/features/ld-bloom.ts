@@ -28,7 +28,7 @@ import ModelViewerElementBase, {
   EffectComposerInterface
 } from '../model-viewer-base.js';
 import {ModelScene} from '../three-components/ModelScene.js';
-import {Constructor, resolveDpr} from '../utilities.js';
+import {Constructor} from '../utilities.js';
 
 export type LDBloomMode = 'unreal'|'classic';
 export type LDBloomQualityMode = 'performance'|'quality'|'smart';
@@ -353,8 +353,8 @@ class LDBloomComposer implements EffectComposerInterface {
     this.finalComposer.addPass(this.blendPass);
     this.finalComposer.addPass(this.outputPass);
 
-    this.setSize(
-        this.scene.width * resolveDpr(), this.scene.height * resolveDpr());
+    const dpr = window.devicePixelRatio || 1;
+    this.setSize(this.scene.width * dpr, this.scene.height * dpr);
   }
 
   private updateBloomParams(): void {

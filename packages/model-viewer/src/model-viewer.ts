@@ -73,7 +73,6 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
                         )
                       )
                     )
-                    )
                   )
                 )
               )
