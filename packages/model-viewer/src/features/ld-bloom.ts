@@ -717,7 +717,9 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private[$syncBloom](): void {
       if (!this.bloom) {
-        this.unregisterEffectComposer();
+        if (this[$scene].effectRenderer === this[$composer]) {
+          this.unregisterEffectComposer();
+        }
         this[$needsRender]();
         return;
       }

@@ -142,13 +142,13 @@
                     bloom-threshold="0.05"
                     bloom-msaa="8"
                     alt="Selective bloom test rig"
-                    src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/6_cubes.glb"
-                    environment-image="../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr"
-                    skybox-image="../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr"
-                    exposure="1.2"
+                    src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
+                    environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr"
+                    skybox-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr"
+                    exposure="1.35"
                     camera-controls
                     touch-action="pan-y"
-                    camera-orbit="45deg 65deg auto"
+                    camera-orbit="45deg 75deg auto"
                     shadow-intensity="1"
                     shadow-softness="1"
                     interaction-prompt="none"
@@ -158,7 +158,7 @@
                       Test
                       <select id="preset">
                         <option value="cubes">Cubes (mesh targets)</option>
-                        <option value="car">Car (material target — Polestar red lights)</option>
+                        <option value="car" selected>Car (material target — Polestar red lights)</option>
                         <option value="boat">Boat (material targets)</option>
                       </select>
                     </label>
@@ -394,8 +394,8 @@
                           updateTargets();
                           inspectModel();
                         });
-                        presetSelect.value = 'boat';
-                        applyPreset('boat');
+                        presetSelect.value = 'car';
+                        applyPreset('car');
                       });
 
                       presetSelect.addEventListener('change', () => applyPreset(presetSelect.value));

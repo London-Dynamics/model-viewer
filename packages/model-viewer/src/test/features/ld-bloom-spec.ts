@@ -45,6 +45,25 @@ const addCubeMesh = (element: ModelViewerElement, name: string):
       return {mesh, material};
     };
 
+const createShadow = (): Object3D&{
+  needsUpdate: boolean,
+  setIntensity(intensity: number): void,
+  setScene(scene: unknown, softness: number, side: string): void,
+  dispose(): void
+} => {
+  const shadow = new Object3D() as Object3D&{
+    needsUpdate: boolean,
+    setIntensity(intensity: number): void,
+    setScene(scene: unknown, softness: number, side: string): void,
+    dispose(): void
+  };
+  shadow.needsUpdate = false;
+  shadow.setIntensity = () => {};
+  shadow.setScene = () => {};
+  shadow.dispose = () => {};
+  return shadow;
+};
+
 suite('LD Bloom', () => {
   let element: ModelViewerElement;
 
@@ -112,7 +131,7 @@ suite('LD Bloom', () => {
   });
 
   test('excludes the generated soft shadow from bloom by default', async () => {
-    const shadow = new Object3D();
+    const shadow = createShadow();
     element[$scene].shadow = shadow as any;
     element.setBloomTargets([{mesh: 'Mesh-1'}]);
     element.bloom = true;
@@ -127,7 +146,7 @@ suite('LD Bloom', () => {
   });
 
   test('keeps the generated soft shadow in bloom when opted in', async () => {
-    const shadow = new Object3D();
+    const shadow = createShadow();
     element[$scene].shadow = shadow as any;
     element.bloomSoftShadow = true;
     element.setBloomTargets([{mesh: 'Mesh-1'}]);
@@ -142,7 +161,7 @@ suite('LD Bloom', () => {
 
   test('pads the generated soft-shadow camera during shadow bloom',
       async () => {
-        const shadow = new Object3D();
+        const shadow = createShadow();
         const floor = new Object3D();
         const camera = new Object3D();
         (shadow as unknown as {floor: Object3D}).floor = floor;
@@ -172,7 +191,7 @@ suite('LD Bloom', () => {
 
   test('keeps the soft-shadow plane padded during the final bloom composite',
       async () => {
-        const shadow = new Object3D();
+        const shadow = createShadow();
         const floor = new Object3D();
         const camera = new Object3D();
         (shadow as unknown as {floor: Object3D}).floor = floor;
@@ -214,7 +233,7 @@ suite('LD Bloom', () => {
 
   test('does not mask soft-shadow meshes when shadow bloom is opted in',
       async () => {
-        const shadow = new Object3D();
+        const shadow = createShadow();
         const shadowMaterial = new MeshBasicMaterial({color: '#000000'});
         shadowMaterial.transparent = true;
         const shadowPlane = new Mesh(new BoxGeometry(), shadowMaterial);

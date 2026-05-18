@@ -21,6 +21,7 @@ import { LoadingMixin } from './features/loading.js';
 import { SceneGraphMixin } from './features/scene-graph.js';
 import { StagingMixin } from './features/staging.js';
 
+import { LDAmbientOcclusionMixin } from './features/ld-ambient-occlusion.js';
 import { LDAnimationMixin } from './features/ld-animation.js';
 import { LDBloomMixin } from './features/ld-bloom.js';
 import { LDControlsMixin } from './features/ld-controls/index.js';
@@ -48,22 +49,24 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
   LDFloatingControlStripMixin(
     LDMeasureMixin(
       LDBloomMixin(
-        LDModularMixin(
-          LDSelectionMixin(
-            LDLightsMixin(
-              LDImageCaptureMixin(
-                LDCameraMixin(
-                  LDEnvironmentMixin(
-                    LDAnimationMixin(
-                      LDDebugMixin(
-                        AnnotationMixin(
-                          SceneGraphMixin(
-                            StagingMixin(
-                              EnvironmentMixin(
-                                LDControlsMixin(
-                                  ARMixin(
-                                    LoadingMixin(
-                                      AnimationMixin(ModelViewerElementBase)
+        LDAmbientOcclusionMixin(
+          LDModularMixin(
+            LDSelectionMixin(
+              LDLightsMixin(
+                LDImageCaptureMixin(
+                  LDCameraMixin(
+                    LDEnvironmentMixin(
+                      LDAnimationMixin(
+                        LDDebugMixin(
+                          AnnotationMixin(
+                            SceneGraphMixin(
+                              StagingMixin(
+                                EnvironmentMixin(
+                                  LDControlsMixin(
+                                    ARMixin(
+                                      LoadingMixin(
+                                        AnimationMixin(ModelViewerElementBase)
+                                      )
                                     )
                                   )
                                 )
