@@ -51,6 +51,7 @@ export declare interface LDBloomInterface {
   bloomThreshold: number;
   bloomQuality: LDBloomQualityMode;
   bloomMsaa: number;
+  bloomSoftShadow: boolean;
   setBloomTargets(targets: LDBloomTarget[]): void;
   getBloomTargets(): LDBloomTarget[];
   setBloomTargetEnabled(
@@ -63,6 +64,7 @@ const DEFAULT_BLOOM_RADIUS = 0.2;
 const DEFAULT_BLOOM_THRESHOLD = 0.05;
 const DEFAULT_BLOOM_MSAA = 4;
 const SMART_IDLE_MS = 250;
+const MIN_SHADOW_BLOOM_SCALE = 3;
 
 const $composer = Symbol('composer');
 const $targets = Symbol('targets');
@@ -150,18 +152,42 @@ class LDBloomComposer implements EffectComposerInterface {
     const previousClearAlpha = this.renderer.getClearAlpha();
     this.renderer.setClearAlpha(0);
 
-    if (this.targets.length > 0) {
-      this.darkenNonTargeted();
-      this.bloomComposer.render(deltaTime);
-      this.restoreNonTargeted();
-    } else {
-      this.bloomComposer.render(deltaTime);
-    }
+    const renderBloomInput = () => {
+      if (this.targets.length > 0) {
+        this.darkenNonTargeted();
+        this.bloomComposer!.render(deltaTime);
+        this.restoreNonTargeted();
+      } else {
+        this.bloomComposer!.render(deltaTime);
+      }
+    };
 
-    this.finalComposer.render(deltaTime);
+    const renderFinalComposite = () => {
+      this.updateBlendPassParams();
+      this.finalComposer!.render(deltaTime);
+    };
+
+    const shadow = this.scene.shadow;
+    if (this.host.bloomSoftShadow && shadow != null) {
+      this.runWithPaddedShadowPlane(shadow, () => {
+        renderBloomInput();
+        renderFinalComposite();
+      });
+    } else {
+      this.runWithShadowBloomState(renderBloomInput);
+      renderFinalComposite();
+    }
 
     this.renderer.setClearAlpha(previousClearAlpha);
     this.renderer.toneMapping = previousToneMapping;
+  }
+
+  private updateBlendPassParams(): void {
+    const material = this.blendPass?.material as ShaderMaterial|undefined;
+    if (material == null) {
+      return;
+    }
+    material.uniforms['bloomSoftShadow'].value = this.host.bloomSoftShadow;
   }
 
   updatePass(): void {
@@ -189,6 +215,72 @@ class LDBloomComposer implements EffectComposerInterface {
     this.finalComposer = undefined;
   }
 
+  runWithShadowBloomState(callback: () => void): void {
+    const shadow = this.scene?.shadow;
+    if (shadow == null) {
+      callback();
+      return;
+    }
+
+    if (this.host.bloomSoftShadow) {
+      this.runWithPaddedShadowPlane(shadow, callback);
+      return;
+    }
+
+    const previousVisible = shadow.visible;
+    shadow.visible = false;
+    try {
+      callback();
+    } finally {
+      shadow.visible = previousVisible;
+    }
+  }
+
+  private runWithPaddedShadowPlane(shadow: Object3D, callback: () => void):
+      void {
+    const floor = (shadow as unknown as {floor?: Object3D}).floor;
+    const shadowCamera = (shadow as unknown as {camera?: Object3D}).camera;
+    if (floor == null || shadowCamera == null) {
+      callback();
+      return;
+    }
+
+    const previousScale = floor.scale.clone();
+    const previousCameraScale = shadowCamera.scale.clone();
+    const scale = Math.max(
+        MIN_SHADOW_BLOOM_SCALE, 1 + Math.max(0, this.host.bloomRadius) * 4);
+    shadowCamera.scale.multiplyScalar(scale);
+    if (this.renderer != null && this.scene != null &&
+        'render' in shadow && typeof shadow.render === 'function') {
+      shadow.render(this.renderer, this.scene);
+    }
+    try {
+      callback();
+    } finally {
+      floor.scale.copy(previousScale);
+      shadowCamera.scale.copy(previousCameraScale);
+      if ('needsUpdate' in shadow) {
+        shadow.needsUpdate = true;
+      }
+    }
+  }
+
+  private isBloomSoftShadowObject(object: Object3D): boolean {
+    const shadow = this.scene?.shadow;
+    if (!this.host.bloomSoftShadow || shadow == null) {
+      return false;
+    }
+
+    let current: Object3D|null = object;
+    while (current != null) {
+      if (current === shadow) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
+  }
+
   private findTarget(object: Object3D, material: Material): LDBloomTarget
       |undefined {
     return this.targets.find(
@@ -203,6 +295,10 @@ class LDBloomComposer implements EffectComposerInterface {
     this.hasDarkenedState = true;
 
     this.scene!.traverse((object: Object3D) => {
+      if (this.isBloomSoftShadowObject(object)) {
+        return;
+      }
+
       if (!(object as Mesh).isMesh) {
         return;
       }
@@ -332,6 +428,7 @@ class LDBloomComposer implements EffectComposerInterface {
           uniforms: {
             baseTexture: {value: null},
             bloomTexture: {value: this.bloomComposer.renderTarget2.texture},
+            bloomSoftShadow: {value: this.host.bloomSoftShadow},
           },
           vertexShader: ADDITIVE_BLEND_VERT,
           fragmentShader: ADDITIVE_BLEND_FRAG,
@@ -352,6 +449,7 @@ class LDBloomComposer implements EffectComposerInterface {
     this.finalComposer.addPass(renderPass);
     this.finalComposer.addPass(this.blendPass);
     this.finalComposer.addPass(this.outputPass);
+    this.updateBlendPassParams();
 
     const dpr = window.devicePixelRatio || 1;
     this.setSize(this.scene.width * dpr, this.scene.height * dpr);
@@ -403,11 +501,19 @@ const ADDITIVE_BLEND_VERT = `
 const ADDITIVE_BLEND_FRAG = `
   uniform sampler2D baseTexture;
   uniform sampler2D bloomTexture;
+  uniform bool bloomSoftShadow;
   varying vec2 vUv;
   void main() {
     vec4 base = texture2D(baseTexture, vUv);
     vec4 bloom = texture2D(bloomTexture, vUv);
-    gl_FragColor = vec4(base.rgb + bloom.rgb, base.a);
+    // model-viewer's generated soft shadow is a semi-transparent plane in the
+    // base render. When shadow bloom is disabled, keep bloom off those
+    // semi-transparent pixels while still allowing bloom on opaque model pixels
+    // and empty CSS-background pixels.
+    float isEmpty = 1.0 - step(0.001, base.a);
+    float isOpaque = step(0.999, base.a);
+    float bloomFactor = bloomSoftShadow ? 1.0 : clamp(isEmpty + isOpaque, 0.0, 1.0);
+    gl_FragColor = vec4(base.rgb + bloom.rgb * bloomFactor, base.a);
   }
 `;
 
@@ -475,6 +581,9 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({type: Number, attribute: 'bloom-msaa'})
     bloomMsaa = DEFAULT_BLOOM_MSAA;
+
+    @property({type: Boolean, attribute: 'bloom-soft-shadow'})
+    bloomSoftShadow = false;
 
     private[$composer]: LDBloomComposer|null = null;
     private[$targets]: LDBloomTarget[] = [];
@@ -554,7 +663,8 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
           changedProperties.has('bloomStrength') ||
           changedProperties.has('bloomRadius') ||
           changedProperties.has('bloomThreshold') ||
-          changedProperties.has('bloomMsaa')) {
+          changedProperties.has('bloomMsaa') ||
+          changedProperties.has('bloomSoftShadow')) {
         this[$syncBloom]();
       }
     }

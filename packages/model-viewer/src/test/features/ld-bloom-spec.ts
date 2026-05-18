@@ -6,6 +6,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Object3D,
   Texture
 } from 'three';
 
@@ -22,9 +23,13 @@ type BloomComposerInternals = {
   activeMsaa: number;
   hasDarkenedState: boolean;
   savedBackground: Color|Texture|null;
+  bloomComposer?: {render(deltaTime?: DOMHighResTimeStamp): void};
+  finalComposer?: {render(deltaTime?: DOMHighResTimeStamp): void};
   darkenNonTargeted(): void;
   restoreNonTargeted(): void;
   dispose(): void;
+  render(deltaTime?: DOMHighResTimeStamp): void;
+  runWithShadowBloomState(callback: () => void): void;
 };
 
 const getComposer = (element: ModelViewerElement): BloomComposerInternals =>
@@ -105,6 +110,134 @@ suite('LD Bloom', () => {
     expect(stored[0].material).to.equal('SwitchableMaterial');
     expect(stored[0].enabled).to.equal(false);
   });
+
+  test('excludes the generated soft shadow from bloom by default', async () => {
+    const shadow = new Object3D();
+    element[$scene].shadow = shadow as any;
+    element.setBloomTargets([{mesh: 'Mesh-1'}]);
+    element.bloom = true;
+    await timePasses();
+
+    const composer = getComposer(element);
+    composer.runWithShadowBloomState(() => {
+      expect(shadow.visible).to.equal(false);
+    });
+
+    expect(shadow.visible).to.equal(true);
+  });
+
+  test('keeps the generated soft shadow in bloom when opted in', async () => {
+    const shadow = new Object3D();
+    element[$scene].shadow = shadow as any;
+    element.bloomSoftShadow = true;
+    element.setBloomTargets([{mesh: 'Mesh-1'}]);
+    element.bloom = true;
+    await timePasses();
+
+    const composer = getComposer(element);
+    composer.runWithShadowBloomState(() => {
+      expect(shadow.visible).to.equal(true);
+    });
+  });
+
+  test('pads the generated soft-shadow camera during shadow bloom',
+      async () => {
+        const shadow = new Object3D();
+        const floor = new Object3D();
+        const camera = new Object3D();
+        (shadow as unknown as {floor: Object3D}).floor = floor;
+        (shadow as unknown as {camera: Object3D}).camera = camera;
+        element[$scene].shadow = shadow as any;
+        element.bloomSoftShadow = true;
+        element.bloomRadius = 0.2;
+        element.setBloomTargets([{mesh: 'Mesh-1'}]);
+        element.bloom = true;
+        await timePasses();
+
+        const composer = getComposer(element);
+        const originalScale = floor.scale.clone();
+        const originalCameraScale = camera.scale.clone();
+        composer.runWithShadowBloomState(() => {
+          expect(floor.scale.x).to.equal(originalScale.x);
+          expect(floor.scale.y).to.equal(originalScale.y);
+          expect(camera.scale.x).to.be.greaterThan(originalCameraScale.x);
+          expect(camera.scale.y).to.be.greaterThan(originalCameraScale.y);
+        });
+
+        expect(floor.scale.x).to.equal(originalScale.x);
+        expect(floor.scale.y).to.equal(originalScale.y);
+        expect(camera.scale.x).to.equal(originalCameraScale.x);
+        expect(camera.scale.y).to.equal(originalCameraScale.y);
+      });
+
+  test('keeps the soft-shadow plane padded during the final bloom composite',
+      async () => {
+        const shadow = new Object3D();
+        const floor = new Object3D();
+        const camera = new Object3D();
+        (shadow as unknown as {floor: Object3D}).floor = floor;
+        (shadow as unknown as {camera: Object3D}).camera = camera;
+        element[$scene].shadow = shadow as any;
+        element.bloomSoftShadow = true;
+        element.setBloomTargets([{mesh: 'Mesh-1'}]);
+        element.bloom = true;
+        await timePasses();
+
+        const composer = getComposer(element);
+        const bloomScales: number[] = [];
+        const finalScales: number[] = [];
+        const shadowRenderScales: number[] = [];
+        const originalScale = floor.scale.x;
+        const originalCameraScale = camera.scale.x;
+
+        expect(composer.bloomComposer).to.not.equal(undefined);
+        expect(composer.finalComposer).to.not.equal(undefined);
+
+        (shadow as unknown as {render: () => void}).render = () => {
+          shadowRenderScales.push(camera.scale.x);
+        };
+        composer.bloomComposer!.render = () => {
+          bloomScales.push(camera.scale.x);
+        };
+        composer.finalComposer!.render = () => {
+          finalScales.push(camera.scale.x);
+        };
+
+        composer.render(0);
+
+        expect(shadowRenderScales[0]).to.be.greaterThan(originalCameraScale);
+        expect(bloomScales[0]).to.be.greaterThan(originalCameraScale);
+        expect(finalScales[0]).to.be.greaterThan(originalCameraScale);
+        expect(floor.scale.x).to.equal(originalScale);
+        expect(camera.scale.x).to.equal(originalCameraScale);
+      });
+
+  test('does not mask soft-shadow meshes when shadow bloom is opted in',
+      async () => {
+        const shadow = new Object3D();
+        const shadowMaterial = new MeshBasicMaterial({color: '#000000'});
+        shadowMaterial.transparent = true;
+        const shadowPlane = new Mesh(new BoxGeometry(), shadowMaterial);
+        shadow.add(shadowPlane);
+        element[$scene].add(shadow);
+        element[$scene].shadow = shadow as any;
+
+        addCubeMesh(element, 'Mesh-1');
+        element.bloomSoftShadow = true;
+        element.setBloomTargets([{mesh: 'Mesh-1'}]);
+        element.bloom = true;
+        await timePasses();
+
+        const composer = getComposer(element);
+        composer.darkenNonTargeted();
+        try {
+          expect(shadow.visible).to.equal(true);
+          expect(shadowPlane.visible).to.equal(true);
+          expect(shadowPlane.material).to.equal(shadowMaterial);
+        } finally {
+          composer.restoreNonTargeted();
+        }
+      });
 
   test(
       'applies bloom emissive to the right meshes during the bloom pass',
