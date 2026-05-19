@@ -460,6 +460,23 @@ suite('Controls', () => {
       expect(cc.touches.one).to.equal(CameraControls.ACTION.TOUCH_TRUCK);
     });
 
+    test('disableDragInteraction disables orbit/pan but keeps wheel zoom', async () => {
+      await timePasses();
+      const adapter = controls as any;
+
+      adapter.disableDragInteraction();
+      const cc = adapter.thirdPartyControls;
+      expect(cc.enabled).to.be.true;
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.NONE);
+      expect(cc.mouseButtons.right).to.equal(CameraControls.ACTION.NONE);
+      expect(cc.touches.one).to.equal(CameraControls.ACTION.NONE);
+      expect(cc.mouseButtons.wheel).to.not.equal(CameraControls.ACTION.NONE);
+
+      adapter.enableDragInteraction();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.ROTATE);
+      expect(cc.touches.one).to.equal(CameraControls.ACTION.TOUCH_ROTATE);
+    });
+
     suite('when user is interacting', () => {
       test('sets an appropriate camera-change event source', async () => {
         await rafPasses();

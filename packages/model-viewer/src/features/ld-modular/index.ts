@@ -3204,7 +3204,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     /**
      * Returns true if the given client position is over a selectable object.
-     * Used to disable camera on pointer down when in editMode so the camera does not orbit.
+     * Used to disable orbit/pan on pointer down when in editMode so the camera does not orbit.
      * Uses the same input element as camera controls for rect so coordinates match.
      */
     private _isPointerOverSelectableObject(
@@ -3317,8 +3317,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       (this as any).addEventListener('touchmove', this.onTouchMove.bind(this));
       (this as any).addEventListener('touchend', this.onTouchEnd.bind(this));
 
-      // When editMode is on, keep camera disabled while pointer is over a selectable object
-      // so click/drag doesn't orbit. We disable on pointermove (over selectable) so we're
+      // When editMode is on, disable orbit/pan (not zoom) while pointer is over a selectable
+      // object so click/drag doesn't orbit. We disable on pointermove (over selectable) so we're
       // already disabled before pointerdown, since CameraControls registers before us.
       const inputEl = (this as any)[$userInputElement];
       this._onPointerDownCaptureBound = this._onPointerDownCapture.bind(this);
@@ -3415,8 +3415,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Disable camera when pointer moves over a selectable (so we're disabled before pointerdown).
-     * Re-enable when pointer leaves selectable and we're not dragging.
+     * Disable orbit/pan when pointer moves over a selectable (so we're disabled before pointerdown).
+     * Wheel/pinch zoom stays enabled. Re-enable drag when pointer leaves selectable.
      * Do not disable when user is dragging the camera (pointer went down on empty space).
      * Throttled to one raycast per frame for performance in large scenes.
      */
@@ -3442,10 +3442,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
         try {
           if (overSelectable) {
-            (this as any)[$controls].disableInteraction?.();
+            (this as any)[$controls].disableDragInteraction?.();
             this._cameraDisabledForPointer = true;
           } else if (this._cameraDisabledForPointer) {
-            (this as any)[$controls].enableInteraction?.();
+            (this as any)[$controls].enableDragInteraction?.();
             this._cameraDisabledForPointer = false;
           }
         } catch (_) {}
@@ -3463,18 +3463,20 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._pointerDownOnSelectable = overSelectable;
       if (!overSelectable) return;
       try {
-        (this as any)[$controls].disableInteraction?.();
+        (this as any)[$controls].disableDragInteraction?.();
         this._cameraDisabledForPointer = true;
       } catch (_) {}
     }
 
-    private _onPointerUpCapture(_e: PointerEvent) {
+    private _onPointerUpCapture(e: PointerEvent) {
       this._pointerDownOnSelectable = null;
       if (!this._cameraDisabledForPointer) return;
+      if ((this as any).isDragging) return;
+      if (this._isPointerOverSelectableObject(e.clientX, e.clientY)) return;
       this._cameraDisabledForPointer = false;
       try {
         if ((this as any)[$controls]) {
-          (this as any)[$controls].enableInteraction?.();
+          (this as any)[$controls].enableDragInteraction?.();
         }
       } catch (_) {}
     }

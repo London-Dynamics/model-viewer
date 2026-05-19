@@ -162,6 +162,9 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   // Methods that need to be implemented by the adapter
   enableInteraction(): void;
   disableInteraction(): void;
+  /** Disables orbit/pan drag while keeping wheel/pinch zoom. */
+  disableDragInteraction(): void;
+  enableDragInteraction(): void;
   applyOptions(options: any): void;
   updateTouchActionStyle(): void;
   setDamperDecayTime(decay: number): void;
@@ -217,6 +220,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _enablePan: boolean = true;
   private _enableTap: boolean = true;
   private _interactionMode: InteractionMode = 'rotate';
+  private _dragInteractionDisabled: boolean = false;
 
   // Tap detection state
   private startTime: number = 0;
@@ -471,21 +475,83 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       controls.touches.three = this._enablePan
         ? touchZoomTruckAction
         : touchZoomAction;
-      return;
+    } else {
+      controls.mouseButtons.left = CameraControls.ACTION.ROTATE;
+      controls.mouseButtons.right = this._enablePan
+        ? CameraControls.ACTION.TRUCK
+        : CameraControls.ACTION.NONE;
+
+      controls.touches.one = CameraControls.ACTION.TOUCH_ROTATE;
+      controls.touches.two = this._enablePan
+        ? touchZoomTruckAction
+        : touchZoomAction;
+      controls.touches.three = this._enablePan
+        ? touchZoomTruckAction
+        : touchZoomAction;
     }
 
-    controls.mouseButtons.left = CameraControls.ACTION.ROTATE;
-    controls.mouseButtons.right = this._enablePan
-      ? CameraControls.ACTION.TRUCK
-      : CameraControls.ACTION.NONE;
+    if (this._dragInteractionDisabled) {
+      this.applyDragDisabledBindings();
+    }
+  }
 
-    controls.touches.one = CameraControls.ACTION.TOUCH_ROTATE;
-    controls.touches.two = this._enablePan
-      ? touchZoomTruckAction
-      : touchZoomAction;
-    controls.touches.three = this._enablePan
-      ? touchZoomTruckAction
-      : touchZoomAction;
+  /**
+   * Disable orbit/pan pointer drags while keeping wheel and pinch zoom.
+   * Used when the pointer is over a draggable object in edit mode.
+   */
+  disableDragInteraction(): void {
+    if (!this.canEnableInteraction()) {
+      return;
+    }
+    if (this._dragInteractionDisabled) {
+      return;
+    }
+    this._dragInteractionDisabled = true;
+    this.ensureControlsListening();
+    this.applyInteractionBindings();
+  }
+
+  enableDragInteraction(): void {
+    if (!this._dragInteractionDisabled) {
+      return;
+    }
+    this._dragInteractionDisabled = false;
+    if (!this.canEnableInteraction()) {
+      this.disableInteraction();
+      return;
+    }
+    this.ensureControlsListening();
+    this.applyInteractionBindings();
+  }
+
+  /** Turn on CameraControls and tap listeners without resetting drag-disabled state. */
+  private ensureControlsListening(): void {
+    if (!this.canEnableInteraction()) {
+      return;
+    }
+    const wasEnabled = this.thirdPartyControls.enabled;
+    this.thirdPartyControls.enabled = true;
+    if (wasEnabled) {
+      return;
+    }
+    this.domElement.addEventListener('mousedown', this.onMouseDown);
+    this.domElement.addEventListener('mouseup', this.onMouseUp);
+    this.domElement.addEventListener('touchstart', this.onTouchStart);
+    this.domElement.addEventListener('touchend', this.onTouchEnd);
+  }
+
+  private applyDragDisabledBindings(): void {
+    const controls = this.thirdPartyControls;
+    const touchZoomOnly =
+      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
+        ? CameraControls.ACTION.TOUCH_ZOOM
+        : CameraControls.ACTION.TOUCH_DOLLY) as typeof controls.touches.two;
+
+    controls.mouseButtons.left = CameraControls.ACTION.NONE;
+    controls.mouseButtons.right = CameraControls.ACTION.NONE;
+    controls.touches.one = CameraControls.ACTION.NONE;
+    controls.touches.two = touchZoomOnly;
+    controls.touches.three = touchZoomOnly;
   }
 
   enableInteraction(): void {
@@ -493,16 +559,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       this.disableInteraction();
       return;
     }
-    this.thirdPartyControls.enabled = true;
-    // Add tap detection listeners using mouse events (not pointer events)
-    // to avoid conflicts with CameraControls' setPointerCapture
-    this.domElement.addEventListener('mousedown', this.onMouseDown);
-    this.domElement.addEventListener('mouseup', this.onMouseUp);
-    this.domElement.addEventListener('touchstart', this.onTouchStart);
-    this.domElement.addEventListener('touchend', this.onTouchEnd);
+    this._dragInteractionDisabled = false;
+    this.ensureControlsListening();
+    this.applyInteractionBindings();
   }
 
   disableInteraction(): void {
+    this._dragInteractionDisabled = false;
     this.thirdPartyControls.enabled = false;
     // Remove tap detection listeners
     this.domElement.removeEventListener('mousedown', this.onMouseDown);
