@@ -513,7 +513,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any).error,
         undefined,
         highResSrc,
-        options
+        options,
+        true
       );
 
       // If explicit transforms are provided, prefer using a placeholder so the
@@ -5247,7 +5248,8 @@ class PlacementSession extends EventTarget {
     error?: ErrorFunction,
     lowResSrc?: string,
     highResSrc?: string,
-    options?: PlacementOptions
+    options?: PlacementOptions,
+    immediatePlacement = false
   ) {
     super();
     this.id = String(Date.now()) + '_' + Math.floor(Math.random() * 10000);
@@ -5258,7 +5260,9 @@ class PlacementSession extends EventTarget {
     this.log = log;
     this.warn = warn;
     this.error = error;
-    this._ensurePlacementCursor();
+    if (!immediatePlacement) {
+      this._ensurePlacementCursor();
+    }
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
@@ -6050,6 +6054,7 @@ class PlacementSession extends EventTarget {
   }
 
   private async _placeFinalGlb(element: any, srcToLoad: string) {
+    this._disposePlacementCursor();
     const loader = (element as any)[$renderer].loader;
     const scene = (element as any)[$scene];
 
