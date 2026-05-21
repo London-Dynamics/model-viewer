@@ -432,6 +432,21 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Set up sensitivity mappings
     this.updateSensitivity();
     this.applyInteractionBindings();
+
+    // CameraControls does not set changeSource like SmoothControls did on pointer
+    // events. Without this, interaction-prompt wiggle leaves changeSource as
+    // AUTOMATIC and user drags are not recognized (prompt never dismisses).
+    this.thirdPartyControls.addEventListener('controlstart', () => {
+      if (this.changeSource !== ChangeSource.AUTOMATIC) {
+        this.changeSource = ChangeSource.USER_INTERACTION;
+      }
+    });
+
+    this.thirdPartyControls.addEventListener('controlend', () => {
+      if (this.changeSource === ChangeSource.USER_INTERACTION) {
+        this.changeSource = ChangeSource.NONE;
+      }
+    });
   }
 
   private applyInteractionBindings(): void {
@@ -813,11 +828,18 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   adjustOrbit(deltaTheta: number, deltaPhi: number, deltaRadius: number): void {
-    // Adjust current orbit by deltas
-    this.thirdPartyControls.rotate(deltaTheta, deltaPhi, false);
+    // Match SmoothControls: apply deltas relative to the current goal orbit.
+    const goal = new THREE.Spherical();
+    this.thirdPartyControls.getSpherical(goal, true);
+    this.thirdPartyControls.rotateTo(
+      goal.theta - deltaTheta,
+      goal.phi - deltaPhi,
+      false
+    );
     if (deltaRadius !== 0) {
       this.thirdPartyControls.dolly(deltaRadius, false);
     }
+    this.thirdPartyControls.update(0);
   }
 
   rotate(
@@ -929,6 +951,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
    */
   validateAndFixCameraMatrix(): boolean {
     const camera = this.thirdPartyControls.camera;
+    let needsControlsUpdate = false;
 
     // Check if camera position and target are valid
     const position = camera.position;
@@ -943,6 +966,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     if (!positionValid) {
       position.set(0, 0, 5);
+      needsControlsUpdate = true;
     }
 
     // Check camera up vector
@@ -959,6 +983,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     if (!upValid) {
       up.set(0, 1, 0);
+      needsControlsUpdate = true;
     }
 
     // Check camera projection parameters (only for PerspectiveCamera)
@@ -995,12 +1020,14 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     if (!targetValid) {
       this.thirdPartyControls.setTarget(0, 0, 0, false);
+      needsControlsUpdate = true;
     }
 
-    // Force updates
-    this.thirdPartyControls.update(0);
-    camera.updateMatrix();
-    camera.updateMatrixWorld(true);
+    if (needsControlsUpdate) {
+      this.thirdPartyControls.update(0);
+      camera.updateMatrix();
+      camera.updateMatrixWorld(true);
+    }
 
     // Check if matrices are valid
     const matrixValid =
@@ -1792,6 +1819,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
+      let interactionPromptAdjustedOrbit = false;
+
       if (
         isFinite(this[$promptElementVisibleTime]) &&
         this.interactionPromptStyle === InteractionPromptStyle.WIGGLE
@@ -1813,6 +1842,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
           controls.changeSource = ChangeSource.AUTOMATIC;
           controls.adjustOrbit(deltaTheta, 0, 0);
+          interactionPromptAdjustedOrbit = true;
 
           this[$lastPromptOffset] = offset;
         }
@@ -1823,6 +1853,20 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (cameraMoved || targetMoved) {
         this[$onChange]();
+      } else if (interactionPromptAdjustedOrbit) {
+        // CameraControls may have applied the wiggle before update() returned true
+        // (e.g. when rotateTo snaps with enableTransition=false). Ensure a frame is
+        // rendered so the interaction prompt is visible without auto-rotate.
+        this[$needsRender]();
+      }
+
+      // Do not leave AUTOMATIC set after wiggle; otherwise the next controlstart
+      // is treated as part of the prompt instead of user interaction.
+      if (
+        interactionPromptAdjustedOrbit &&
+        controls.changeSource === ChangeSource.AUTOMATIC
+      ) {
+        controls.changeSource = ChangeSource.NONE;
       }
 
       if (this.viewportGizmoHandle) {
