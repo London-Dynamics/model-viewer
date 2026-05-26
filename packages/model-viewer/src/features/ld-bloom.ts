@@ -1,4 +1,4 @@
-import {property} from 'lit/decorators.js';
+import { property } from 'lit/decorators.js';
 import {
   Camera,
   Color,
@@ -14,25 +14,25 @@ import {
   Vector2,
   WebGLRenderer,
 } from 'three';
-import {BloomPass} from 'three/examples/jsm/postprocessing/BloomPass.js';
-import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass.js';
-import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass.js';
-import {ShaderPass} from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import {UnrealBloomPass} from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { BloomPass } from 'three/examples/jsm/postprocessing/BloomPass.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 import ModelViewerElementBase, {
   $needsRender,
   $onModelLoad,
   $scene,
-  EffectComposerInterface
+  EffectComposerInterface,
 } from '../model-viewer-base.js';
-import {ModelScene} from '../three-components/ModelScene.js';
-import {Constructor} from '../utilities.js';
+import { ModelScene } from '../three-components/ModelScene.js';
+import { Constructor } from '../utilities.js';
 
-export type LDBloomMode = 'unreal'|'classic';
-export type LDBloomQualityMode = 'performance'|'quality'|'smart';
-export type LDBloomTargetKind = 'material'|'mesh';
+export type LDBloomMode = 'unreal' | 'classic';
+export type LDBloomQualityMode = 'performance' | 'quality' | 'smart';
+export type LDBloomTargetKind = 'material' | 'mesh';
 
 export interface LDBloomTarget {
   material?: string;
@@ -44,7 +44,7 @@ export interface LDBloomTarget {
 
 export declare interface LDBloomInterface {
   bloom: boolean;
-  bloomTargets: string|null;
+  bloomTargets: string | null;
   bloomMode: LDBloomMode;
   bloomStrength: number;
   bloomRadius: number;
@@ -55,8 +55,11 @@ export declare interface LDBloomInterface {
   setBloomTargets(targets: LDBloomTarget[]): void;
   getBloomTargets(): LDBloomTarget[];
   setBloomTargetEnabled(
-      kind: LDBloomTargetKind, name: string, enabled: boolean): void;
-  getSceneNodeNames(): {meshes: string[], materials: string[]};
+    kind: LDBloomTargetKind,
+    name: string,
+    enabled: boolean
+  ): void;
+  getSceneNames(): { objects: string[]; materials: string[] };
 }
 
 const DEFAULT_BLOOM_STRENGTH = 0.6;
@@ -77,7 +80,7 @@ const $ensureComposer = Symbol('ensureComposer');
 class LDBloomComposer implements EffectComposerInterface {
   private bloomComposer?: EffectComposer;
   private finalComposer?: EffectComposer;
-  private bloomPass?: UnrealBloomPass|BloomPass;
+  private bloomPass?: UnrealBloomPass | BloomPass;
   private blendPass?: ShaderPass;
   private outputPass?: OutputPass;
   private renderer?: WebGLRenderer;
@@ -90,23 +93,27 @@ class LDBloomComposer implements EffectComposerInterface {
   // (in black) so that they correctly occlude bright targeted meshes behind
   // them — otherwise the bloom of e.g. a car's rear tail-lights would leak
   // through the front of the body when the camera is on the other side.
-  private savedMaterials = new Map<Object3D, Material|Material[]>();
+  private savedMaterials = new Map<Object3D, Material | Material[]>();
   // Non-targeted meshes whose visibility was toggled off for the bloom pass.
   // We hide *transparent* non-targets (e.g. a tail-light's outer red glass)
   // rather than swapping their material — replacing them with opaque black
   // would turn a see-through cover into a wall and silently kill the bloom of
   // the emissive mesh sitting right behind it.
   private hiddenObjects: Object3D[] = [];
-  private savedEmissive =
-      new Map<Material, {emissive?: Color, emissiveIntensity?: number}>();
-  private savedBackground: Color|Texture|null = null;
+  private savedEmissive = new Map<
+    Material,
+    { emissive?: Color; emissiveIntensity?: number }
+  >();
+  private savedBackground: Color | Texture | null = null;
   // True only between darkenNonTargeted and the matching restoreNonTargeted.
   // Without this guard, calling restoreNonTargeted outside a render cycle (eg
   // from dispose()) would write the still-null savedBackground onto the live
   // scene, permanently blanking the skybox.
   private hasDarkenedState = false;
 
-  constructor(private readonly host: LDBloomInterface&ModelViewerElementBase) {}
+  constructor(
+    private readonly host: LDBloomInterface & ModelViewerElementBase
+  ) {}
 
   setTargets(targets: LDBloomTarget[]): void {
     this.targets = targets;
@@ -136,8 +143,12 @@ class LDBloomComposer implements EffectComposerInterface {
   beforeRender(_time: DOMHighResTimeStamp, _delta: DOMHighResTimeStamp): void {}
 
   render(deltaTime?: DOMHighResTimeStamp): void {
-    if (!this.bloomComposer || !this.finalComposer || !this.renderer ||
-        !this.scene) {
+    if (
+      !this.bloomComposer ||
+      !this.finalComposer ||
+      !this.renderer ||
+      !this.scene
+    ) {
       return;
     }
 
@@ -183,7 +194,7 @@ class LDBloomComposer implements EffectComposerInterface {
   }
 
   private updateBlendPassParams(): void {
-    const material = this.blendPass?.material as ShaderMaterial|undefined;
+    const material = this.blendPass?.material as ShaderMaterial | undefined;
     if (material == null) {
       return;
     }
@@ -236,10 +247,12 @@ class LDBloomComposer implements EffectComposerInterface {
     }
   }
 
-  private runWithPaddedShadowPlane(shadow: Object3D, callback: () => void):
-      void {
-    const floor = (shadow as unknown as {floor?: Object3D}).floor;
-    const shadowCamera = (shadow as unknown as {camera?: Object3D}).camera;
+  private runWithPaddedShadowPlane(
+    shadow: Object3D,
+    callback: () => void
+  ): void {
+    const floor = (shadow as unknown as { floor?: Object3D }).floor;
+    const shadowCamera = (shadow as unknown as { camera?: Object3D }).camera;
     if (floor == null || shadowCamera == null) {
       callback();
       return;
@@ -248,10 +261,16 @@ class LDBloomComposer implements EffectComposerInterface {
     const previousScale = floor.scale.clone();
     const previousCameraScale = shadowCamera.scale.clone();
     const scale = Math.max(
-        MIN_SHADOW_BLOOM_SCALE, 1 + Math.max(0, this.host.bloomRadius) * 4);
+      MIN_SHADOW_BLOOM_SCALE,
+      1 + Math.max(0, this.host.bloomRadius) * 4
+    );
     shadowCamera.scale.multiplyScalar(scale);
-    if (this.renderer != null && this.scene != null &&
-        'render' in shadow && typeof shadow.render === 'function') {
+    if (
+      this.renderer != null &&
+      this.scene != null &&
+      'render' in shadow &&
+      typeof shadow.render === 'function'
+    ) {
       shadow.render(this.renderer, this.scene);
     }
     try {
@@ -271,7 +290,7 @@ class LDBloomComposer implements EffectComposerInterface {
       return false;
     }
 
-    let current: Object3D|null = object;
+    let current: Object3D | null = object;
     while (current != null) {
       if (current === shadow) {
         return true;
@@ -281,11 +300,15 @@ class LDBloomComposer implements EffectComposerInterface {
     return false;
   }
 
-  private findTarget(object: Object3D, material: Material): LDBloomTarget
-      |undefined {
+  private findTarget(
+    object: Object3D,
+    material: Material
+  ): LDBloomTarget | undefined {
     return this.targets.find(
-        t => (t.enabled !== false) &&
-            (t.mesh === object.name || t.material === material.name));
+      (t) =>
+        t.enabled !== false &&
+        (t.mesh === object.name || t.material === material.name)
+    );
   }
 
   private darkenNonTargeted(): void {
@@ -304,7 +327,7 @@ class LDBloomComposer implements EffectComposerInterface {
       }
       const mesh = object as Mesh;
       const objectMaterials = materialsForObject(object);
-      const matched = objectMaterials.some(m => !!this.findTarget(object, m));
+      const matched = objectMaterials.some((m) => !!this.findTarget(object, m));
 
       if (matched) {
         // Boost emissive so the mesh is bright enough to exceed bloom threshold
@@ -319,13 +342,15 @@ class LDBloomComposer implements EffectComposerInterface {
               emissive: std.emissive.clone(),
               emissiveIntensity: std.emissiveIntensity,
             });
-            std.emissive.set((target.color ?? '#ffffff') as ColorRepresentation);
+            std.emissive.set(
+              (target.color ?? '#ffffff') as ColorRepresentation
+            );
             std.emissiveIntensity = target.intensity ?? this.host.bloomStrength;
             material.needsUpdate = true;
           } else if ('color' in material) {
             // MeshBasicMaterial — boost color directly
             const basic = material as MeshBasicMaterial;
-            this.savedEmissive.set(material, {emissive: basic.color.clone()});
+            this.savedEmissive.set(material, { emissive: basic.color.clone() });
             basic.color.set((target.color ?? '#ffffff') as ColorRepresentation);
             material.needsUpdate = true;
           }
@@ -343,7 +368,7 @@ class LDBloomComposer implements EffectComposerInterface {
         //     (e.g. a tail-light's outer red glass) with opaque black would
         //     turn it into a wall and silently kill the bloom of the
         //     emissive mesh sitting right behind it.
-        if (objectMaterials.some(m => isTransparent(m))) {
+        if (objectMaterials.some((m) => isTransparent(m))) {
           mesh.visible = false;
           this.hiddenObjects.push(mesh);
         } else {
@@ -379,7 +404,7 @@ class LDBloomComposer implements EffectComposerInterface {
         (material as MeshStandardMaterial).emissive.copy(saved.emissive);
         if (saved.emissiveIntensity !== undefined) {
           (material as MeshStandardMaterial).emissiveIntensity =
-              saved.emissiveIntensity;
+            saved.emissiveIntensity;
         }
       } else if ('color' in material && saved.emissive) {
         (material as MeshBasicMaterial).color.copy(saved.emissive);
@@ -414,8 +439,11 @@ class LDBloomComposer implements EffectComposerInterface {
       this.bloomPass = new BloomPass(this.host.bloomStrength);
     } else {
       this.bloomPass = new UnrealBloomPass(
-          new Vector2(1, 1), this.host.bloomStrength, this.host.bloomRadius,
-          this.host.bloomThreshold);
+        new Vector2(1, 1),
+        this.host.bloomStrength,
+        this.host.bloomRadius,
+        this.host.bloomThreshold
+      );
     }
     this.updateBloomParams();
     this.bloomComposer.addPass(this.bloomPass);
@@ -424,16 +452,17 @@ class LDBloomComposer implements EffectComposerInterface {
     // 2 passes × needsSwap=true returns buffers to their initial positions.
     // Set the reference once at build time (Three.js example pattern).
     this.blendPass = new ShaderPass(
-        new ShaderMaterial({
-          uniforms: {
-            baseTexture: {value: null},
-            bloomTexture: {value: this.bloomComposer.renderTarget2.texture},
-            bloomSoftShadow: {value: this.host.bloomSoftShadow},
-          },
-          vertexShader: ADDITIVE_BLEND_VERT,
-          fragmentShader: ADDITIVE_BLEND_FRAG,
-        }),
-        'baseTexture');
+      new ShaderMaterial({
+        uniforms: {
+          baseTexture: { value: null },
+          bloomTexture: { value: this.bloomComposer.renderTarget2.texture },
+          bloomSoftShadow: { value: this.host.bloomSoftShadow },
+        },
+        vertexShader: ADDITIVE_BLEND_VERT,
+        fragmentShader: ADDITIVE_BLEND_FRAG,
+      }),
+      'baseTexture'
+    );
     this.blendPass.needsSwap = true;
 
     // Final composer: renders the full scene, additively blends bloom, then
@@ -465,8 +494,9 @@ class LDBloomComposer implements EffectComposerInterface {
       this.bloomPass.radius = this.host.bloomRadius;
       this.bloomPass.threshold = this.host.bloomThreshold;
     } else {
-      (this.bloomPass as BloomPass&{combineUniforms: Record<string, any>})
-          .combineUniforms['strength'].value = this.host.bloomStrength;
+      (
+        this.bloomPass as BloomPass & { combineUniforms: Record<string, any> }
+      ).combineUniforms['strength'].value = this.host.bloomStrength;
     }
   }
 }
@@ -521,14 +551,14 @@ const ADDITIVE_BLEND_FRAG = `
 // Drawing these meshes (instead of hiding them) preserves depth-buffer
 // occlusion so the rest of the model can correctly hide bright targeted
 // meshes that are physically behind it from the camera's point of view.
-const BLACK_MATERIAL = new MeshBasicMaterial({color: 0x000000});
+const BLACK_MATERIAL = new MeshBasicMaterial({ color: 0x000000 });
 
 // A material is treated as transparent for occlusion purposes if it would
 // not write a fully-opaque pixel into the depth buffer. We err on the side
 // of "transparent" (= hide instead of replace) because failing to occlude
 // is a much milder visual artefact than turning a glass cover into a wall
 // and silently killing a bloom that the user explicitly asked for.
-const isTransparent = (material: Material|null|undefined): boolean => {
+const isTransparent = (material: Material | null | undefined): boolean => {
   if (!material) {
     return false;
   }
@@ -553,41 +583,42 @@ const materialsForObject = (object: Object3D): Material[] => {
 };
 
 const cloneTargets = (targets: LDBloomTarget[]): LDBloomTarget[] =>
-    targets.map(target => ({...target}));
+  targets.map((target) => ({ ...target }));
 
 export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
-    ModelViewerElement: T): Constructor<LDBloomInterface>&T => {
+  ModelViewerElement: T
+): Constructor<LDBloomInterface> & T => {
   class LDBloomModelViewerElement extends ModelViewerElement {
-    @property({type: Boolean, attribute: 'bloom'})
+    @property({ type: Boolean, attribute: 'bloom' })
     bloom = false;
 
-    @property({type: String, attribute: 'bloom-targets'})
-    bloomTargets: string|null = null;
+    @property({ type: String, attribute: 'bloom-targets' })
+    bloomTargets: string | null = null;
 
-    @property({type: String, attribute: 'bloom-mode'})
+    @property({ type: String, attribute: 'bloom-mode' })
     bloomMode: LDBloomMode = 'unreal';
 
-    @property({type: Number, attribute: 'bloom-strength'})
+    @property({ type: Number, attribute: 'bloom-strength' })
     bloomStrength = DEFAULT_BLOOM_STRENGTH;
 
-    @property({type: Number, attribute: 'bloom-radius'})
+    @property({ type: Number, attribute: 'bloom-radius' })
     bloomRadius = DEFAULT_BLOOM_RADIUS;
 
-    @property({type: Number, attribute: 'bloom-threshold'})
+    @property({ type: Number, attribute: 'bloom-threshold' })
     bloomThreshold = DEFAULT_BLOOM_THRESHOLD;
 
-    @property({type: String, attribute: 'bloom-quality'})
+    @property({ type: String, attribute: 'bloom-quality' })
     bloomQuality: LDBloomQualityMode = 'quality';
 
-    @property({type: Number, attribute: 'bloom-msaa'})
+    @property({ type: Number, attribute: 'bloom-msaa' })
     bloomMsaa = DEFAULT_BLOOM_MSAA;
 
-    @property({type: Boolean, attribute: 'bloom-soft-shadow'})
+    @property({ type: Boolean, attribute: 'bloom-soft-shadow' })
     bloomSoftShadow = false;
 
-    private[$composer]: LDBloomComposer|null = null;
-    private[$targets]: LDBloomTarget[] = [];
-    private[$qualityTimer]: number|null = null;
+    private [$composer]: LDBloomComposer | null = null;
+    private [$targets]: LDBloomTarget[] = [];
+    private [$qualityTimer]: number | null = null;
 
     connectedCallback() {
       super.connectedCallback();
@@ -611,12 +642,12 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       return cloneTargets(this[$targets]);
     }
 
-    getSceneNodeNames(): {meshes: string[], materials: string[]} {
-      const meshes = new Set<string>();
+    getSceneNames(): { objects: string[]; materials: string[] } {
+      const objects = new Set<string>();
       const materials = new Set<string>();
       this[$scene].traverse((object: Object3D) => {
         if (object.name) {
-          meshes.add(object.name);
+          objects.add(object.name);
         }
         for (const material of materialsForObject(object)) {
           if (material.name) {
@@ -625,16 +656,19 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       });
       return {
-        meshes: [...meshes].sort(),
+        objects: [...objects].sort(),
         materials: [...materials].sort(),
       };
     }
 
     setBloomTargetEnabled(
-        kind: LDBloomTargetKind, name: string, enabled: boolean): void {
-      this[$targets] = this[$targets].map(target => {
+      kind: LDBloomTargetKind,
+      name: string,
+      enabled: boolean
+    ): void {
+      this[$targets] = this[$targets].map((target) => {
         if (target[kind] === name) {
-          return {...target, enabled};
+          return { ...target, enabled };
         }
         return target;
       });
@@ -642,29 +676,33 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$syncBloom]();
     }
 
-    updated(changedProperties: Map<string|number|symbol, unknown>) {
+    updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
 
       if (changedProperties.has('bloomTargets')) {
         this[$parseTargets]();
       }
 
-      if (changedProperties.has('bloomMode') ||
-          changedProperties.has('bloomStrength') ||
-          changedProperties.has('bloomRadius') ||
-          changedProperties.has('bloomThreshold') ||
-          changedProperties.has('bloomMsaa')) {
+      if (
+        changedProperties.has('bloomMode') ||
+        changedProperties.has('bloomStrength') ||
+        changedProperties.has('bloomRadius') ||
+        changedProperties.has('bloomThreshold') ||
+        changedProperties.has('bloomMsaa')
+      ) {
         this[$composer]?.updatePass();
       }
 
-      if (changedProperties.has('bloom') ||
-          changedProperties.has('bloomTargets') ||
-          changedProperties.has('bloomMode') ||
-          changedProperties.has('bloomStrength') ||
-          changedProperties.has('bloomRadius') ||
-          changedProperties.has('bloomThreshold') ||
-          changedProperties.has('bloomMsaa') ||
-          changedProperties.has('bloomSoftShadow')) {
+      if (
+        changedProperties.has('bloom') ||
+        changedProperties.has('bloomTargets') ||
+        changedProperties.has('bloomMode') ||
+        changedProperties.has('bloomStrength') ||
+        changedProperties.has('bloomRadius') ||
+        changedProperties.has('bloomThreshold') ||
+        changedProperties.has('bloomMsaa') ||
+        changedProperties.has('bloomSoftShadow')
+      ) {
         this[$syncBloom]();
       }
     }
@@ -674,9 +712,12 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$syncBloom]();
     }
 
-    private[$handleCameraChange] = () => {
-      if (!this.bloom || this.bloomQuality !== 'smart' ||
-          this.bloomMode !== 'unreal') {
+    private [$handleCameraChange] = () => {
+      if (
+        !this.bloom ||
+        this.bloomQuality !== 'smart' ||
+        this.bloomMode !== 'unreal'
+      ) {
         return;
       }
 
@@ -691,7 +732,7 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       }, SMART_IDLE_MS);
     };
 
-    private[$parseTargets](): void {
+    private [$parseTargets](): void {
       if (this.bloomTargets == null || this.bloomTargets.trim() === '') {
         this[$targets] = [];
         return;
@@ -706,16 +747,17 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    private[$ensureComposer](): void {
+    private [$ensureComposer](): void {
       if (this[$composer] == null) {
         this[$composer] = new LDBloomComposer(this);
       }
       this[$composer].setActiveMsaa(
-          this.bloomQuality === 'performance' ? 0 : this.bloomMsaa);
+        this.bloomQuality === 'performance' ? 0 : this.bloomMsaa
+      );
       this.registerEffectComposer(this[$composer]);
     }
 
-    private[$syncBloom](): void {
+    private [$syncBloom](): void {
       if (!this.bloom) {
         if (this[$scene].effectRenderer === this[$composer]) {
           this.unregisterEffectComposer();
@@ -728,8 +770,9 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       // that an explicit but fully-disabled target list still suppresses
       // global bloom: the composer keeps the selective-masking pipeline,
       // findTarget skips disabled entries, and every mesh ends up darkened.
-      const namedTargets =
-          this[$targets].filter(t => !!(t.material || t.mesh));
+      const namedTargets = this[$targets].filter(
+        (t) => !!(t.material || t.mesh)
+      );
 
       this[$ensureComposer]();
       this[$composer]!.setTargets(namedTargets);

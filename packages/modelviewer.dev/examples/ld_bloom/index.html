@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <title>&lt;model-viewer&gt; LD Bloom Examples</title>
@@ -23,7 +23,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
-    <link rel="shortcut icon" type="image/png" href="../../assets/favicon.png" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
     <style>
       /* Stack the model-viewer above the controls instead of using overlay
          positioning, so the controls panel can never cover the model. The
@@ -108,7 +112,9 @@
             <div class="wrapper">
               <h4 id="intro">
                 <span class="font-medium">LD Bloom</span> by
-                <a href="https://londondynamics.com" target="_blank">London Dynamics</a>.
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >.
               </h4>
               <div class="heading">
                 <h2 class="demo-title">
@@ -117,135 +123,206 @@
                 </h2>
                 <h4>
                   Pick a test rig from the dropdown:
-                  <strong>Cubes</strong> targets meshes
-                  (<code>Mesh-1</code>, <code>Mesh-3</code>,
-                  <code>Mesh-6</code>) on a simple six-cube model;
-                  <strong>Car</strong> targets the
+                  <strong>Cubes</strong> targets meshes (<code>Mesh-1</code>,
+                  <code>Mesh-3</code>, <code>Mesh-6</code>) on a simple six-cube
+                  model; <strong>Car</strong> targets the
                   <code>Polestar_RenderMaterial_RedLight</code> and
                   <code>Polestar_RenderMaterial_WhiteLight</code>
-                  materials on a parked Polestar lit by an HDRI parking
-                  lot, so only the rear red glass and the white head/DRL
-                  lights bloom; <strong>Boat</strong> targets lighting
-                  materials on the RS265 lighting test model.
+                  materials on a parked Polestar lit by an HDRI parking lot, so
+                  only the rear red glass and the white head/DRL lights bloom;
+                  <strong>Boat</strong> targets lighting materials on the RS265
+                  lighting test model.
                 </h4>
               </div>
               <example-snippet stamp-to="ld-bloom" highlight-as="html">
                 <template>
                   <div class="ld-bloom-stage">
-                  <model-viewer
-                    id="bloom-demo"
-                    bloom
-                    bloom-mode="unreal"
-                    bloom-quality="smart"
-                    bloom-strength="0.6"
-                    bloom-radius="0.2"
-                    bloom-threshold="0.05"
-                    bloom-msaa="8"
-                    alt="Selective bloom test rig"
-                    src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
-                    environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr"
-                    skybox-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr"
-                    exposure="1.35"
-                    camera-controls
-                    touch-action="pan-y"
-                    camera-orbit="45deg 75deg auto"
-                    shadow-intensity="1"
-                    shadow-softness="1"
-                    interaction-prompt="none"
-                  ></model-viewer>
-                  <div class="controls">
-                    <label style="grid-column: 1 / -1;">
-                      Test
-                      <select id="preset">
-                        <option value="cubes">Cubes (mesh targets)</option>
-                        <option value="car" selected>Car (material target — Polestar red lights)</option>
-                        <option value="boat">Boat (material targets)</option>
-                      </select>
-                    </label>
-                    <label>
-                      Model URL
-                      <input id="model-url" type="url" />
-                    </label>
-                    <label>
-                      Environment URL
-                      <input id="environment-url" type="url" />
-                    </label>
-                    <label>
-                      Show environment
-                      <input id="show-environment" type="checkbox" checked />
-                    </label>
-                    <label>
-                      Environment exposure
-                      <input id="exposure" type="range" min="0" max="20" step="0.05" value="1.2" />
-                      <span id="exposure-value" style="font-size:0.7rem;color:#777;">1.2</span>
-                    </label>
-                    <label>
-                      Bloom enabled
-                      <input id="bloom-enabled" type="checkbox" checked />
-                    </label>
-                    <label>
-                      Bloom soft shadow
-                      <input id="bloom-soft-shadow" type="checkbox" />
-                    </label>
-                    <label>
-                      Bloom type
-                      <select id="bloom-mode">
-                        <option value="unreal">UnrealBloomPass</option>
-                        <option value="classic">BloomPass</option>
-                      </select>
-                    </label>
-                    <label>
-                      Quality
-                      <select id="bloom-quality">
-                        <option value="smart">Smart</option>
-                        <option value="quality">Quality</option>
-                        <option value="performance">Performance</option>
-                      </select>
-                    </label>
-                    <label>
-                      Strength
-                      <input id="bloom-strength" type="range" min="0" max="3" step="0.05" value="0.6" />
-                      <span id="bloom-strength-value" style="font-size:0.7rem;color:#777;">0.6</span>
-                    </label>
-                    <label>
-                      Radius
-                      <input id="bloom-radius" type="range" min="0" max="1" step="0.01" value="0.2" />
-                      <span id="bloom-radius-value" style="font-size:0.7rem;color:#777;">0.2</span>
-                    </label>
-                    <label>
-                      Threshold
-                      <input id="bloom-threshold" type="range" min="0" max="1" step="0.01" value="0.05" />
-                      <span id="bloom-threshold-value" style="font-size:0.7rem;color:#777;">0.05</span>
-                    </label>
-                    <label style="grid-column: 1 / -1;">
-                      Targets
-                      <div id="target-rows"></div>
-                    </label>
-                    <label style="grid-column: 1 / -1;">
-                      Mesh and material names in model (drag bottom-right corner to resize)
-                      <textarea id="mesh-names" rows="14" readonly style="font-size:0.6rem;font-family:monospace;resize:vertical;" placeholder="Load a model to see mesh and material names…"></textarea>
-                    </label>
-                  </div>
+                    <model-viewer
+                      id="bloom-demo"
+                      bloom
+                      bloom-mode="unreal"
+                      bloom-quality="smart"
+                      bloom-strength="0.6"
+                      bloom-radius="0.2"
+                      bloom-threshold="0.05"
+                      bloom-msaa="8"
+                      alt="Selective bloom test rig"
+                      src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
+                      environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr"
+                      skybox-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr"
+                      exposure="1.35"
+                      camera-controls
+                      touch-action="pan-y"
+                      camera-orbit="45deg 75deg auto"
+                      shadow-intensity="1"
+                      shadow-softness="1"
+                      interaction-prompt="none"
+                    ></model-viewer>
+                    <div class="controls">
+                      <label style="grid-column: 1 / -1">
+                        Test
+                        <select id="preset">
+                          <option value="cubes">Cubes (mesh targets)</option>
+                          <option value="car" selected>
+                            Car (material target — Polestar red lights)
+                          </option>
+                          <option value="boat">Boat (material targets)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Model URL
+                        <input id="model-url" type="url" />
+                      </label>
+                      <label>
+                        Environment URL
+                        <input id="environment-url" type="url" />
+                      </label>
+                      <label>
+                        Show environment
+                        <input id="show-environment" type="checkbox" checked />
+                      </label>
+                      <label>
+                        Environment exposure
+                        <input
+                          id="exposure"
+                          type="range"
+                          min="0"
+                          max="20"
+                          step="0.05"
+                          value="1.2"
+                        />
+                        <span
+                          id="exposure-value"
+                          style="font-size: 0.7rem; color: #777"
+                          >1.2</span
+                        >
+                      </label>
+                      <label>
+                        Bloom enabled
+                        <input id="bloom-enabled" type="checkbox" checked />
+                      </label>
+                      <label>
+                        Bloom soft shadow
+                        <input id="bloom-soft-shadow" type="checkbox" />
+                      </label>
+                      <label>
+                        Bloom type
+                        <select id="bloom-mode">
+                          <option value="unreal">UnrealBloomPass</option>
+                          <option value="classic">BloomPass</option>
+                        </select>
+                      </label>
+                      <label>
+                        Quality
+                        <select id="bloom-quality">
+                          <option value="smart">Smart</option>
+                          <option value="quality">Quality</option>
+                          <option value="performance">Performance</option>
+                        </select>
+                      </label>
+                      <label>
+                        Strength
+                        <input
+                          id="bloom-strength"
+                          type="range"
+                          min="0"
+                          max="3"
+                          step="0.05"
+                          value="0.6"
+                        />
+                        <span
+                          id="bloom-strength-value"
+                          style="font-size: 0.7rem; color: #777"
+                          >0.6</span
+                        >
+                      </label>
+                      <label>
+                        Radius
+                        <input
+                          id="bloom-radius"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value="0.2"
+                        />
+                        <span
+                          id="bloom-radius-value"
+                          style="font-size: 0.7rem; color: #777"
+                          >0.2</span
+                        >
+                      </label>
+                      <label>
+                        Threshold
+                        <input
+                          id="bloom-threshold"
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value="0.05"
+                        />
+                        <span
+                          id="bloom-threshold-value"
+                          style="font-size: 0.7rem; color: #777"
+                          >0.05</span
+                        >
+                      </label>
+                      <label style="grid-column: 1 / -1">
+                        Targets
+                        <div id="target-rows"></div>
+                      </label>
+                      <label style="grid-column: 1 / -1">
+                        Mesh and material names in model (drag bottom-right
+                        corner to resize)
+                        <textarea
+                          id="mesh-names"
+                          rows="14"
+                          readonly
+                          style="
+                            font-size: 0.6rem;
+                            font-family: monospace;
+                            resize: vertical;
+                          "
+                          placeholder="Load a model to see mesh and material names…"
+                        ></textarea>
+                      </label>
+                    </div>
                   </div>
                   <script type="module">
                     (() => {
                       const modelViewer = document.querySelector('#bloom-demo');
                       const presetSelect = document.querySelector('#preset');
                       const modelUrl = document.querySelector('#model-url');
-                      const environmentUrl = document.querySelector('#environment-url');
-                      const showEnvironment = document.querySelector('#show-environment');
+                      const environmentUrl =
+                        document.querySelector('#environment-url');
+                      const showEnvironment =
+                        document.querySelector('#show-environment');
                       const exposure = document.querySelector('#exposure');
-                      const exposureValue = document.querySelector('#exposure-value');
-                      const bloomEnabled = document.querySelector('#bloom-enabled');
-                      const bloomSoftShadow = document.querySelector('#bloom-soft-shadow');
+                      const exposureValue =
+                        document.querySelector('#exposure-value');
+                      const bloomEnabled =
+                        document.querySelector('#bloom-enabled');
+                      const bloomSoftShadow =
+                        document.querySelector('#bloom-soft-shadow');
                       const bloomMode = document.querySelector('#bloom-mode');
-                      const bloomQuality = document.querySelector('#bloom-quality');
-                      const bloomStrength = document.querySelector('#bloom-strength');
-                      const bloomStrengthValue = document.querySelector('#bloom-strength-value');
-                      const bloomRadius = document.querySelector('#bloom-radius');
-                      const bloomRadiusValue = document.querySelector('#bloom-radius-value');
-                      const bloomThreshold = document.querySelector('#bloom-threshold');
-                      const bloomThresholdValue = document.querySelector('#bloom-threshold-value');
+                      const bloomQuality =
+                        document.querySelector('#bloom-quality');
+                      const bloomStrength =
+                        document.querySelector('#bloom-strength');
+                      const bloomStrengthValue = document.querySelector(
+                        '#bloom-strength-value'
+                      );
+                      const bloomRadius =
+                        document.querySelector('#bloom-radius');
+                      const bloomRadiusValue = document.querySelector(
+                        '#bloom-radius-value'
+                      );
+                      const bloomThreshold =
+                        document.querySelector('#bloom-threshold');
+                      const bloomThresholdValue = document.querySelector(
+                        '#bloom-threshold-value'
+                      );
                       const targetRows = document.querySelector('#target-rows');
                       const meshNames = document.querySelector('#mesh-names');
 
@@ -256,40 +333,88 @@
                       const PRESETS = {
                         cubes: {
                           src: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/6_cubes.glb',
-                          environment: '../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr',
+                          environment:
+                            '../../shared-assets/environments/spruit_sunrise_1k_HDR.hdr',
                           exposure: 1.2,
                           bloomSoftShadow: false,
                           cameraOrbit: '45deg 65deg auto',
                           targets: [
-                            {kind: 'mesh', name: 'Mesh-1', color: '#ff3366', enabled: true},
-                            {kind: 'mesh', name: 'Mesh-3', color: '#33ff88', enabled: true},
-                            {kind: 'mesh', name: 'Mesh-6', color: '#3388ff', enabled: true},
+                            {
+                              kind: 'mesh',
+                              name: 'Mesh-1',
+                              color: '#ff3366',
+                              enabled: true,
+                            },
+                            {
+                              kind: 'mesh',
+                              name: 'Mesh-3',
+                              color: '#33ff88',
+                              enabled: true,
+                            },
+                            {
+                              kind: 'mesh',
+                              name: 'Mesh-6',
+                              color: '#3388ff',
+                              enabled: true,
+                            },
                           ],
                         },
                         car: {
                           src: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb',
-                          environment: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr',
+                          environment:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/parkinglot-night.hdr',
                           exposure: 1.35,
                           showEnvironment: true,
                           bloomSoftShadow: false,
                           cameraOrbit: '45deg 75deg auto',
                           targets: [
-                            {kind: 'material', name: 'Polestar_RenderMaterial_RedLight', color: '#ff0000', enabled: true},
-                            {kind: 'material', name: 'Polestar_RenderMaterial_WhiteLight', color: '#ffffff', enabled: true},
+                            {
+                              kind: 'material',
+                              name: 'Polestar_RenderMaterial_RedLight',
+                              color: '#ff0000',
+                              enabled: true,
+                            },
+                            {
+                              kind: 'material',
+                              name: 'Polestar_RenderMaterial_WhiteLight',
+                              color: '#ffffff',
+                              enabled: true,
+                            },
                           ],
                         },
                         boat: {
                           src: 'https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/rs265_lighting_test.glb',
-                          environment: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/sunset-ocean-beach.hdr',
+                          environment:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/sunset-ocean-beach.hdr',
                           exposure: 11.35,
                           showEnvironment: false,
                           bloomSoftShadow: false,
                           cameraOrbit: '45deg 75deg auto',
                           targets: [
-                            {kind: 'material', name: 'ExteriorLightsHull', color: '#ffffff', enabled: true},
-                            {kind: 'material', name: 'InteriorLightsBow', color: '#ffffff', enabled: true},
-                            {kind: 'material', name: 'InteriorLightsFront', color: '#ffffff', enabled: true},
-                            {kind: 'material', name: 'InteriorLightsStern', color: '#ffffff', enabled: true},
+                            {
+                              kind: 'material',
+                              name: 'ExteriorLightsHull',
+                              color: '#ffffff',
+                              enabled: true,
+                            },
+                            {
+                              kind: 'material',
+                              name: 'InteriorLightsBow',
+                              color: '#ffffff',
+                              enabled: true,
+                            },
+                            {
+                              kind: 'material',
+                              name: 'InteriorLightsFront',
+                              color: '#ffffff',
+                              enabled: true,
+                            },
+                            {
+                              kind: 'material',
+                              name: 'InteriorLightsStern',
+                              color: '#ffffff',
+                              enabled: true,
+                            },
                           ],
                         },
                       };
@@ -344,7 +469,7 @@
                             color: t.color,
                             enabled: t.enabled,
                             intensity,
-                          })),
+                          }))
                         );
                       };
 
@@ -362,26 +487,31 @@
                       });
 
                       const inspectModel = () => {
-                        const {meshes, materials} = modelViewer.getSceneNodeNames();
-                        meshNames.value = `MESHES (${meshes.length}):\n${meshes.join('\n') || '(none)'}\n\nMATERIALS (${materials.length}):\n${materials.join('\n') || '(none)'}`;
+                        const { objects, materials } =
+                          modelViewer.getSceneNames();
+                        meshNames.value = `OBJECTS (${objects.length}):\n${objects.join('\n') || '(none)'}\n\nMATERIALS (${materials.length}):\n${materials.join('\n') || '(none)'}`;
                       };
 
                       const applyPreset = (key) => {
                         const preset = PRESETS[key];
                         if (!preset) return;
-                        presetTargets = preset.targets.map((t) => ({...t}));
+                        presetTargets = preset.targets.map((t) => ({ ...t }));
                         renderTargets();
                         modelUrl.value = preset.src;
                         environmentUrl.value = preset.environment;
                         exposure.value = String(preset.exposure);
                         exposureValue.textContent = String(preset.exposure);
-                        showEnvironment.checked = preset.showEnvironment ?? true;
-                        bloomSoftShadow.checked = preset.bloomSoftShadow ?? false;
+                        showEnvironment.checked =
+                          preset.showEnvironment ?? true;
+                        bloomSoftShadow.checked =
+                          preset.bloomSoftShadow ?? false;
                         modelViewer.exposure = preset.exposure;
                         modelViewer.bloomSoftShadow = bloomSoftShadow.checked;
                         modelViewer.cameraOrbit = preset.cameraOrbit;
                         modelViewer.environmentImage = preset.environment;
-                        modelViewer.skyboxImage = showEnvironment.checked ? preset.environment : null;
+                        modelViewer.skyboxImage = showEnvironment.checked
+                          ? preset.environment
+                          : null;
                         modelViewer.src = preset.src;
                         // setBloomTargets is also called once the model loads,
                         // but call it now too so toggling presets works even if
@@ -398,8 +528,13 @@
                         applyPreset('car');
                       });
 
-                      presetSelect.addEventListener('change', () => applyPreset(presetSelect.value));
-                      modelUrl.addEventListener('change', () => (modelViewer.src = modelUrl.value));
+                      presetSelect.addEventListener('change', () =>
+                        applyPreset(presetSelect.value)
+                      );
+                      modelUrl.addEventListener(
+                        'change',
+                        () => (modelViewer.src = modelUrl.value)
+                      );
                       environmentUrl.addEventListener('change', () => {
                         modelViewer.environmentImage = environmentUrl.value;
                         if (showEnvironment.checked) {
@@ -407,16 +542,32 @@
                         }
                       });
                       showEnvironment.addEventListener('change', () => {
-                        modelViewer.skyboxImage = showEnvironment.checked ? environmentUrl.value : null;
+                        modelViewer.skyboxImage = showEnvironment.checked
+                          ? environmentUrl.value
+                          : null;
                       });
                       exposure.addEventListener('input', () => {
                         modelViewer.exposure = Number(exposure.value);
                         exposureValue.textContent = exposure.value;
                       });
-                      bloomEnabled.addEventListener('change', () => (modelViewer.bloom = bloomEnabled.checked));
-                      bloomSoftShadow.addEventListener('change', () => (modelViewer.bloomSoftShadow = bloomSoftShadow.checked));
-                      bloomMode.addEventListener('change', () => (modelViewer.bloomMode = bloomMode.value));
-                      bloomQuality.addEventListener('change', () => (modelViewer.bloomQuality = bloomQuality.value));
+                      bloomEnabled.addEventListener(
+                        'change',
+                        () => (modelViewer.bloom = bloomEnabled.checked)
+                      );
+                      bloomSoftShadow.addEventListener(
+                        'change',
+                        () =>
+                          (modelViewer.bloomSoftShadow =
+                            bloomSoftShadow.checked)
+                      );
+                      bloomMode.addEventListener(
+                        'change',
+                        () => (modelViewer.bloomMode = bloomMode.value)
+                      );
+                      bloomQuality.addEventListener(
+                        'change',
+                        () => (modelViewer.bloomQuality = bloomQuality.value)
+                      );
                       bloomStrength.addEventListener('input', () => {
                         modelViewer.bloomStrength = Number(bloomStrength.value);
                         bloomStrengthValue.textContent = bloomStrength.value;
@@ -427,7 +578,9 @@
                         bloomRadiusValue.textContent = bloomRadius.value;
                       });
                       bloomThreshold.addEventListener('input', () => {
-                        modelViewer.bloomThreshold = Number(bloomThreshold.value);
+                        modelViewer.bloomThreshold = Number(
+                          bloomThreshold.value
+                        );
                         bloomThresholdValue.textContent = bloomThreshold.value;
                       });
                     })();
@@ -446,7 +599,10 @@
         </div>
       </div>
     </div>
-    <script type="module" src="../../examples/built/docs-and-examples.js"></script>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
     <script type="module">
       (() => {
         init('examples-ld_bloom');
@@ -460,6 +616,9 @@
     <script type="module" src="../built/dependencies.js"></script>
 
     <!-- Loads <model-viewer> on modern browsers: -->
-    <script type="module" src="../../../model-viewer/dist/model-viewer.js"></script>
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
   </body>
 </html>

@@ -14,7 +14,7 @@
 * limitations under the License.
 */
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <title>&lt;model-viewer&gt; LD Transforms</title>
@@ -373,8 +373,11 @@
 
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
-                        console.log('Object3D', modelViewer.getSceneObjects());
-                        console.log('Meshes', modelViewer.getSceneMeshes());
+
+                        console.log(
+                          'Objects and Materials',
+                          modelViewer.getSceneNames()
+                        );
                         console.groupEnd();
                       });
                     })();
@@ -686,8 +689,10 @@
 
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
-                        console.log('Object3D', modelViewer.getSceneObjects());
-                        console.log('Meshes', modelViewer.getSceneMeshes());
+                        console.log(
+                          'Objects and Materials',
+                          modelViewer.getSceneNames()
+                        );
                         console.groupEnd();
                       });
                     })();
