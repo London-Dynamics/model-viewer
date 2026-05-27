@@ -1299,6 +1299,236 @@
     ]
   },
   {
+    "Title": "LD Ambient Occlusion",
+    "htmlName": "ld_ambient_occlusion",
+    "Attributes": [
+      {
+        "name": "ambient-occlusion",
+        "htmlName": "ambientOcclusion",
+        "description": "Enable or disable real-time ambient occlusion post-processing.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "ao-algorithm",
+        "htmlName": "aoAlgorithm",
+        "description": "AO algorithm preset used by the composer.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "gtao",
+          "options": "ssao, sao, n8ao, hbao, gtao"
+        }
+      },
+      {
+        "name": "ao-radius",
+        "htmlName": "aoRadius",
+        "description": "Sampling radius for occlusion; larger values spread shadowing farther from contact points.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "4",
+          "options": "any number >= 0"
+        }
+      },
+      {
+        "name": "ao-intensity",
+        "htmlName": "aoIntensity",
+        "description": "Overall strength multiplier for the AO contribution.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "1",
+          "options": "any number >= 0"
+        }
+      },
+      {
+        "name": "ao-samples",
+        "htmlName": "aoSamples",
+        "description": "Number of AO samples per pixel (higher quality at higher cost).",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "24",
+          "options": "integer >= 2"
+        }
+      },
+      {
+        "name": "ao-output",
+        "htmlName": "aoOutput",
+        "description": "Output mode for debugging or compositing AO.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "default",
+          "options": "default, ao, no-ao, denoise, split, split-no-ao"
+        }
+      },
+      {
+        "name": "ao-noise",
+        "htmlName": "aoNoise",
+        "description": "Noise pattern used by AO sampling.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "magic-square",
+          "options": "magic-square, random"
+        }
+      },
+      {
+        "name": "ao-screen-space-radius",
+        "htmlName": "aoScreenSpaceRadius",
+        "description": "Interpret AO radius in screen space instead of world space.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ]
+  },
+  {
+    "Title": "LD Bloom",
+    "htmlName": "ld_bloom",
+    "Attributes": [
+      {
+        "name": "bloom",
+        "htmlName": "bloom",
+        "description": "Enable or disable bloom post-processing.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "bloom-targets",
+        "htmlName": "bloomTargets",
+        "description": "JSON array of selective bloom targets (mesh or material names plus optional enabled flag).",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-mode",
+        "htmlName": "bloomMode",
+        "description": "Bloom renderer mode.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "unreal",
+          "options": "unreal, selective"
+        }
+      },
+      {
+        "name": "bloom-strength",
+        "htmlName": "bloomStrength",
+        "description": "Bloom intensity multiplier.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-radius",
+        "htmlName": "bloomRadius",
+        "description": "Bloom blur radius.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-threshold",
+        "htmlName": "bloomThreshold",
+        "description": "Brightness threshold used to isolate bloom contribution.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-quality",
+        "htmlName": "bloomQuality",
+        "description": "Quality strategy for bloom anti-aliasing behavior.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "quality",
+          "options": "quality, performance, smart"
+        }
+      },
+      {
+        "name": "bloom-msaa",
+        "htmlName": "bloomMsaa",
+        "description": "MSAA sample count used by bloom when quality mode allows it.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-soft-shadow",
+        "htmlName": "bloomSoftShadow",
+        "description": "Include transparent/soft-shadow style surfaces in selective bloom masking.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "Methods": [
+      {
+        "name": "setBloomTargets(targets)",
+        "htmlName": "setBloomTargets",
+        "description": "Set selective bloom targets programmatically and sync the bloom-targets attribute.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getBloomTargets()",
+        "htmlName": "getBloomTargets",
+        "description": "Return a cloned array of current selective bloom targets.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getSceneNames()",
+        "htmlName": "getSceneNames",
+        "description": "Collect and return sorted mesh and material names from the current scene to help build selective target lists.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setBloomTargetEnabled(kind, name, enabled)",
+        "htmlName": "setBloomTargetEnabled",
+        "description": "Enable or disable one selective bloom target by mesh/material kind and name.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Camera",
     "htmlName": "ld_camera",
     "Methods": [
@@ -1407,6 +1637,50 @@
           "default": "0",
           "options": "any number (meters)"
         }
+      }
+    ]
+  },
+  {
+    "Title": "LD Floating Anchor",
+    "htmlName": "ld_floating_anchor",
+    "Attributes": [
+      {
+        "name": "disable-floating-controls",
+        "htmlName": "disableFloatingControls",
+        "description": "Hide and disable updates for the floating object anchor slot while preserving selection state.",
+        "links": [
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-sphere\">Bounding sphere anchor</a>",
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-floating-ui\">Floating UI radius offset</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "Methods": [
+      {
+        "name": "selectObjectForControls(object)",
+        "htmlName": "selectObjectForControls",
+        "description": "Explicitly set the object used to compute and position the floating anchor.",
+        "links": [
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-sphere\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "clearSelectedObject()",
+        "htmlName": "clearSelectedObject",
+        "description": "Clear the floating-anchor selection and hide the anchor UI.",
+        "links": [
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-sphere\">Related examples</a>"
+        ]
+      }
+    ],
+    "Slots": [
+      {
+        "name": "Floating Object Anchor",
+        "htmlName": "floating-object-anchor",
+        "description": "Slot for custom UI pinned to the selected object's projected bounding sphere. The slot/assigned element receives data attributes such as object name/uuid, sphereRadiusPx, and sphereCenterOffsetLocal."
       }
     ]
   },
@@ -2048,6 +2322,74 @@
         "name": "selection-change",
         "htmlName": "selectionChange",
         "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), metadata (array aligned with selectedObjects where each entry mirrors that object's userData), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
+      }
+    ]
+  },
+  {
+    "Title": "LD Transforms",
+    "htmlName": "ld_transforms",
+    "Methods": [
+      {
+        "name": "setPosition([x, y, z]) / setPosition(name, [x, y, z])",
+        "htmlName": "setPosition",
+        "description": "Set translation for selected object roots or a named object in scene units.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "setRotation([x, y, z], options?) / setRotation(name, [x, y, z], options?)",
+        "htmlName": "setRotation",
+        "description": "Set rotation in degrees for selected object roots or a named object, with support for absolute/relative updates.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "setScale([x, y, z]) / setScale(name, [x, y, z])",
+        "htmlName": "setScale",
+        "description": "Set scale for selected object roots or a named object.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "setPositionX/Y/Z(...), setRotationX/Y/Z(...), setScaleX/Y/Z(...)",
+        "htmlName": "axisTransforms",
+        "description": "Axis-specific transform helpers for one-axis updates while preserving other axes.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "getPosition(name?) / getRotation(name?) / getScale(name?)",
+        "htmlName": "getTransforms",
+        "description": "Read transforms from a named object or the current modular selection.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      }
+    ],
+    "Events": [
+      {
+        "name": "transformstart",
+        "htmlName": "transformstart",
+        "description": "Fires when a transform operation begins; detail includes position, rotation, and scale payloads."
+      },
+      {
+        "name": "transform",
+        "htmlName": "transform",
+        "description": "Fires continuously while a transform operation is in progress with live transform payloads."
+      },
+      {
+        "name": "transformend",
+        "htmlName": "transformend",
+        "description": "Fires when a transform operation ends with final position, rotation, and scale payloads."
       }
     ]
   }
