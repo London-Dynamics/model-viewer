@@ -1954,6 +1954,78 @@
         }
       },
       {
+        "name": "rotation-controls",
+        "htmlName": "rotationControls",
+        "description": "Enable floor rotation controls for the currently selected object. In v1 this exposes Y-axis rotation via a circular floor disc.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "disable-x-rotation-controls",
+        "htmlName": "disableXRotationControls",
+        "description": "Disable X-axis rotation controls. Defaults to true in the initial release.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "disable-y-rotation-controls",
+        "htmlName": "disableYRotationControls",
+        "description": "Disable Y-axis rotation controls. Set to false (default) to allow vertical-axis object rotation.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "disable-z-rotation-controls",
+        "htmlName": "disableZRotationControls",
+        "description": "Disable Z-axis rotation controls. Defaults to true in the initial release.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "rotation-controls-step",
+        "htmlName": "rotationControlsStep",
+        "description": "Step size in degrees for quantized live rotation while dragging the control disc. Use 0 for continuous rotation and default minor/major ticks.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "number (degrees)"
+        }
+      },
+      {
+        "name": "rotation-controls-highlight-color",
+        "htmlName": "rotationControlsHighlightColor",
+        "description": "Color used to render the floor rotation disc and tick marks.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "#3b82f6",
+          "options": "CSS color"
+        }
+      },
+      {
         "name": "src-is-room",
         "htmlName": "srcIsRoom",
         "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, and matching skirting_N follows wall_N visibility. Wall shell nodes (`walls` group or `wall_*`) and floor shell nodes (`floor` or `floor_*`) are shown only when the separate <span class=\"attribute\">walls</span> and <span class=\"attribute\">floor</span> booleans are true (they default to false). Placed objects with <code>userData.attachedWallName</code> follow <span class=\"attribute\">walls</span> and camera backface rules; objects with <code>userData.attachedSurfaceType === 'floor'</code> follow <span class=\"attribute\">floor</span>. With <span class=\"attribute\">debug</span> enabled, the element logs effective walls/floor flags after load and when those attributes change.",
@@ -2330,45 +2402,45 @@
     "htmlName": "ld_transforms",
     "Methods": [
       {
-        "name": "setPosition([x, y, z]) / setPosition(name, [x, y, z])",
+        "name": "setPosition",
         "htmlName": "setPosition",
-        "description": "Set translation for selected object roots or a named object in scene units.",
+        "description": "Set translation for selected object roots or a named object in scene units. Supports both setPosition([x, y, z]) and setPosition(name, [x, y, z]).",
         "links": [
           "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
           "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
         ]
       },
       {
-        "name": "setRotation([x, y, z], options?) / setRotation(name, [x, y, z], options?)",
+        "name": "setRotation",
         "htmlName": "setRotation",
-        "description": "Set rotation in degrees for selected object roots or a named object, with support for absolute/relative updates.",
+        "description": "Set rotation in degrees for selected object roots or a named object, with support for absolute/relative updates. Supports both setRotation([x, y, z], options?) and setRotation(name, [x, y, z], options?).",
         "links": [
           "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
           "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
         ]
       },
       {
-        "name": "setScale([x, y, z]) / setScale(name, [x, y, z])",
+        "name": "setScale",
         "htmlName": "setScale",
-        "description": "Set scale for selected object roots or a named object.",
+        "description": "Set scale for selected object roots or a named object. Supports both setScale([x, y, z]) and setScale(name, [x, y, z]).",
         "links": [
           "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
           "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
         ]
       },
       {
-        "name": "setPositionX/Y/Z(...), setRotationX/Y/Z(...), setScaleX/Y/Z(...)",
+        "name": "Axis transform helpers",
         "htmlName": "axisTransforms",
-        "description": "Axis-specific transform helpers for one-axis updates while preserving other axes.",
+        "description": "Axis-specific transform helpers (setPositionX/Y/Z, setRotationX/Y/Z, setScaleX/Y/Z) for one-axis updates while preserving other axes.",
         "links": [
           "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
           "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
         ]
       },
       {
-        "name": "getPosition(name?) / getRotation(name?) / getScale(name?)",
+        "name": "Transform getters",
         "htmlName": "getTransforms",
-        "description": "Read transforms from a named object or the current modular selection.",
+        "description": "Read transforms from a named object or the current modular selection via getPosition(name?), getRotation(name?), and getScale(name?).",
         "links": [
           "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
           "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"

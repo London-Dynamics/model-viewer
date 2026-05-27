@@ -702,6 +702,123 @@
             </div>
           </div>
         </div>
+        <div class="sample">
+          <div id="rotation-controls" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Rotation Controls (Y Axis)</h2>
+                <h4>
+                  Select an object and drag the floor disc to rotate around Y.
+                </h4>
+              </div>
+              <example-snippet stamp-to="rotation-controls" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="rotation-controls-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    edit
+                    selection-scope="part"
+                    rotation-controls
+                    src-is-room
+                    floor
+                    shadow-intensity="1"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Room with placed duck rotation controls demo"
+                  >
+                    <div
+                      id="rotation-controls-panel"
+                      class="absolute bottom-0 inset-x-0 p-2"
+                    >
+                      <div class="bg-white shadow-sm rounded-lg p-3 flex gap-3">
+                        <label class="text-sm flex items-center gap-2">
+                          Step (deg)
+                          <input
+                            id="rotation-step"
+                            type="number"
+                            min="0"
+                            step="1"
+                            value="0"
+                            class="border rounded px-2 py-1 w-20"
+                          />
+                        </label>
+                        <label class="text-sm flex items-center gap-2">
+                          Highlight
+                          <input
+                            id="rotation-color"
+                            type="color"
+                            value="#3b82f6"
+                            class="h-8 w-10 p-0 border-0 bg-transparent"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#rotation-controls-demo'
+                      );
+                      const stepInput = modelViewer.querySelector(
+                        '#rotation-step'
+                      );
+                      const colorInput = modelViewer.querySelector(
+                        '#rotation-color'
+                      );
+                      const applySettings = () => {
+                        modelViewer.rotationControlsStep =
+                          Number(stepInput.value) || 0;
+                        modelViewer.rotationControlsHighlightColor =
+                          colorInput.value || '#3b82f6';
+                      };
+                      const DUCK_URL =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb';
+                      const maybePlaceDuck = async () => {
+                        if (modelViewer.dataset.duckPlaced === 'true') return;
+                        modelViewer.dataset.duckPlaced = 'true';
+                        try {
+                          await modelViewer.placeGlb(DUCK_URL, {
+                            name: 'rotation-demo-duck',
+                            position: [0, 0, 0],
+                            part: { type: 'scene', editable: true },
+                          });
+                        } catch (error) {
+                          console.error(
+                            '[rotation-controls demo] failed to place duck',
+                            error
+                          );
+                        }
+                      };
+
+                      modelViewer.addEventListener('load', () => {
+                        if (!('IntersectionObserver' in window)) {
+                          maybePlaceDuck();
+                          return;
+                        }
+                        const observer = new IntersectionObserver(
+                          (entries) => {
+                            if (!entries.some((entry) => entry.isIntersecting)) {
+                              return;
+                            }
+                            observer.disconnect();
+                            maybePlaceDuck();
+                          },
+                          { root: null, threshold: 0.1 }
+                        );
+                        observer.observe(modelViewer);
+                      });
+                      stepInput.addEventListener('input', applySettings);
+                      colorInput.addEventListener('input', applySettings);
+                      applySettings();
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
 
         <div class="footer">
           <ul></ul>

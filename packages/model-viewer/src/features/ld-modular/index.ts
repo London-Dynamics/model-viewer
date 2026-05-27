@@ -67,6 +67,11 @@ import {
 } from '../../utilities/animation.js';
 import { LogFunction, WarnFunction, ErrorFunction } from '../ld-debug.js';
 import { shouldIgnoreModularDeleteKeydown } from './modular-delete-keydown.js';
+import {
+  consumeQuantizedRotationDelta,
+  normalizeSignedAngleDelta,
+  RotationControlDisc,
+} from './rotation-control-disc.js';
 
 // Re-export SnapPoint type for external use
 export type { SnapPoint };
@@ -187,6 +192,12 @@ export declare interface LDModularInterface {
   srcIsRoom: boolean;
   walls: boolean;
   floor: boolean;
+  rotationControls: boolean;
+  disableXRotationControls: boolean;
+  disableYRotationControls: boolean;
+  disableZRotationControls: boolean;
+  rotationControlsStep: number;
+  rotationControlsHighlightColor: string;
 
   setPosition(objectName: string, value: [number, number, number]): void;
   setPosition(value: [number, number, number]): void;
@@ -322,6 +333,24 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'floor' })
     floor: boolean = false;
 
+    @property({ type: Boolean, attribute: 'rotation-controls' })
+    rotationControls: boolean = false;
+
+    @property({ type: Boolean, attribute: 'disable-x-rotation-controls' })
+    disableXRotationControls: boolean = true;
+
+    @property({ type: Boolean, attribute: 'disable-y-rotation-controls' })
+    disableYRotationControls: boolean = false;
+
+    @property({ type: Boolean, attribute: 'disable-z-rotation-controls' })
+    disableZRotationControls: boolean = true;
+
+    @property({ type: Number, attribute: 'rotation-controls-step' })
+    rotationControlsStep: number = 0;
+
+    @property({ type: String, attribute: 'rotation-controls-highlight-color' })
+    rotationControlsHighlightColor: string = '#3b82f6';
+
     // Store bound event handler reference
     private _boundSelectionChangeHandler: ((event: Event) => void) | null =
       null;
@@ -421,6 +450,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._logRoomTaggedSurfaceVisibility('updated');
         }
       }
+
+      if (
+        changedProperties.has('rotationControls') ||
+        changedProperties.has('disableYRotationControls') ||
+        changedProperties.has('rotationControlsStep') ||
+        changedProperties.has('rotationControlsHighlightColor')
+      ) {
+        this._syncRotationControlDiscLifecycle();
+      }
     }
 
     private _syncRoomSourceMode() {
@@ -491,6 +529,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         // remove drag listeners when disconnected
         this.teardownDragHandlers();
       } catch (e) {}
+      this._disposeRotationControlDisc();
       try {
         // Use the slot maps and clearSlots helper so they are considered used
         this.clearSlots(this._snappingPointSlots);
@@ -743,6 +782,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
       try {
         this._activePlacementSession?.tickPlacementCursor(delta);
+      } catch (e) {}
+      try {
+        this._updateRotationControlDisc();
       } catch (e) {}
 
       // Step rotation animations (framerate independent) and clear shadow
@@ -1974,6 +2016,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.clearSlots(this._breakLinkSlots);
       }
 
+      this._syncRotationControlDiscLifecycle();
       (this as any)[$needsRender]();
     }
 
@@ -1997,11 +2040,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     /** Window listener for pointerup during drag so release is always received (e.g. over floating strip). */
     private _windowPointerUpForDragBound?: (e: PointerEvent) => void;
+    private _windowPointerMoveForRotationBound?: (e: PointerEvent) => void;
+    private _windowPointerUpForRotationBound?: (e: PointerEvent) => void;
     private _hoveredSelectableObject: Object3D | null = null;
     private _hoverAnchorSphereCache = new WeakMap<
       Object3D,
       ObjectAnchorSphereCacheEntry
     >();
+    private _rotationControlDisc: RotationControlDisc | null = null;
+    private _rotationGestureActive = false;
+    private _rotationGesturePointerId: number | null = null;
+    private _rotationGestureStartAngleRad = 0;
+    private _rotationGestureLastAngleRad = 0;
+    private _rotationGestureAccumulatedDeg = 0;
+    private _rotationGestureTarget: Object3D | null = null;
+    private _rotationDiscSizeLockedUuid: string | null = null;
 
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -3379,6 +3432,285 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
     }
 
+    private _canShowYRotationControl(): boolean {
+      return this.rotationControls && !this.disableYRotationControls;
+    }
+
+    private _getRotationDiscTarget(): Object3D | null {
+      const selected = ((this as any).selectedObjects || []) as Object3D[];
+      if (selected.length !== 1) return null;
+      return selected[0];
+    }
+
+    private _getRotationDiscFloorY(target: Object3D): number {
+      if (this.originalFloorY !== undefined) {
+        return this.originalFloorY;
+      }
+      return target.userData?.isSnappedGroup === true ? target.position.y : 0;
+    }
+
+    private _syncRotationControlDiscLifecycle() {
+      if (!this._canShowYRotationControl()) {
+        this._stopRotationGesture();
+        this._disposeRotationControlDisc();
+        return;
+      }
+      const target = this._getRotationDiscTarget();
+      if (!target) {
+        this._stopRotationGesture();
+        this._disposeRotationControlDisc();
+        return;
+      }
+      this._ensureRotationControlDisc();
+      const lockSize = this._rotationDiscSizeLockedUuid !== target.uuid;
+      if (lockSize) {
+        this._rotationDiscSizeLockedUuid = target.uuid;
+      }
+      this._rotationControlDisc?.update({
+        selectedObject: target,
+        camera: (this as any)[$scene].getCamera
+          ? (this as any)[$scene].getCamera()
+          : (this as any)[$scene].camera,
+        viewportWidth: (this as any)[$scene].width,
+        viewportHeight: (this as any)[$scene].height,
+        floorY: this._getRotationDiscFloorY(target),
+        highlightColor: this.rotationControlsHighlightColor,
+        stepDegrees: this.rotationControlsStep,
+        lockSize,
+      });
+      (this as any)[$needsRender]();
+    }
+
+    private _ensureRotationControlDisc() {
+      if (this._rotationControlDisc) return;
+      const scene = (this as any)[$scene];
+      // Match grid behavior: attach helpers to scene.target.
+      const parent = scene?.target || scene;
+      if (!parent) return;
+      this._rotationControlDisc = new RotationControlDisc();
+      this._rotationControlDisc.userData.noHit = true;
+      this._rotationControlDisc.userData.selectable = false;
+      parent.add(this._rotationControlDisc);
+    }
+
+    private _disposeRotationControlDisc() {
+      if (!this._rotationControlDisc) return;
+      this._rotationControlDisc.dispose();
+      this._rotationControlDisc = null;
+      this._rotationDiscSizeLockedUuid = null;
+    }
+
+    private _updateRotationControlDisc() {
+      if (!this._rotationControlDisc) return;
+      const target = this._getRotationDiscTarget();
+      if (!target || !this._canShowYRotationControl()) {
+        this._stopRotationGesture();
+        this._disposeRotationControlDisc();
+        return;
+      }
+      const scene = (this as any)[$scene];
+      const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
+      if (!camera) return;
+      this._rotationControlDisc.update({
+        selectedObject: target,
+        camera,
+        viewportWidth: scene.width,
+        viewportHeight: scene.height,
+        floorY: this._getRotationDiscFloorY(target),
+        highlightColor: this.rotationControlsHighlightColor,
+        stepDegrees: this.rotationControlsStep,
+        lockSize: false,
+      });
+    }
+
+    private _setPointerRayFromClient(clientX: number, clientY: number): boolean {
+      const inputEl = (this as any)[$userInputElement];
+      const scene = (this as any)[$scene];
+      if (!inputEl || !scene) return false;
+      const camera = scene.getCamera ? scene.getCamera() : scene.camera;
+      if (!camera) return false;
+      const rect = inputEl.getBoundingClientRect();
+      const mouseX = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const mouseY = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      (this as any).currentMousePosition.set(mouseX, mouseY);
+      (this as any).raycaster.setFromCamera((this as any).currentMousePosition, camera);
+      return true;
+    }
+
+    private _getRotationPointerAngleRad(
+      clientX: number,
+      clientY: number
+    ): number | null {
+      if (!this._rotationControlDisc || !this._rotationControlDisc.visible) {
+        return null;
+      }
+      if (!this._setPointerRayFromClient(clientX, clientY)) {
+        return null;
+      }
+      return this._rotationControlDisc.angleFromRay((this as any).raycaster.ray);
+    }
+
+    private _intersectRotationControlFromClientPoint(
+      clientX: number,
+      clientY: number
+    ) {
+      if (!this._rotationControlDisc || !this._rotationControlDisc.visible) {
+        return null;
+      }
+      if (!this._setPointerRayFromClient(clientX, clientY)) {
+        return null;
+      }
+      const discHit = this._rotationControlDisc.intersectRay((this as any).raycaster.ray);
+      if (!discHit) return null;
+
+      const targetObject = (this as any)._findTargetObject();
+      if (!targetObject) return null;
+      const allHits = (this as any).raycaster.intersectObject(targetObject, true);
+      const nearestModelDistance = allHits.find(
+        (hit: any) =>
+          hit.object.visible &&
+          !hit.object.userData?.noHit &&
+          !hit.object.userData?.rotationControl
+      )?.distance;
+      if (
+        nearestModelDistance != null &&
+        nearestModelDistance + 0.001 < discHit.distance
+      ) {
+        return null;
+      }
+      return discHit;
+    }
+
+    private _startRotationGesture(e: PointerEvent): boolean {
+      const target = this._getRotationDiscTarget();
+      if (!target) return false;
+      const discHit = this._intersectRotationControlFromClientPoint(
+        e.clientX,
+        e.clientY
+      );
+      if (!discHit) return false;
+      this._rotationGestureActive = true;
+      this._rotationGesturePointerId = e.pointerId;
+      this._rotationGestureStartAngleRad = discHit.angleRad;
+      this._rotationGestureLastAngleRad = discHit.angleRad;
+      this._rotationGestureAccumulatedDeg = 0;
+      this._rotationGestureTarget = target;
+      this._rotationControlDisc?.setDragArc(discHit.angleRad, discHit.angleRad);
+      this._windowPointerMoveForRotationBound =
+        this._onWindowPointerMoveForRotation.bind(this);
+      this._windowPointerUpForRotationBound =
+        this._onWindowPointerUpForRotation.bind(this);
+      window.addEventListener(
+        'pointermove',
+        this._windowPointerMoveForRotationBound,
+        true
+      );
+      window.addEventListener(
+        'pointerup',
+        this._windowPointerUpForRotationBound,
+        true
+      );
+      window.addEventListener(
+        'pointercancel',
+        this._windowPointerUpForRotationBound,
+        true
+      );
+      try {
+        (this as any)[$controls]?.disableDragInteraction?.();
+      } catch (_) {}
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return true;
+    }
+
+    private _updateRotationGesture(e: PointerEvent): boolean {
+      if (
+        !this._rotationGestureActive ||
+        this._rotationGesturePointerId !== e.pointerId ||
+        !this._rotationGestureTarget
+      ) {
+        return false;
+      }
+      const angleRad = this._getRotationPointerAngleRad(e.clientX, e.clientY);
+      if (angleRad == null) {
+        return true;
+      }
+      const deltaRad = -normalizeSignedAngleDelta(
+        angleRad - this._rotationGestureLastAngleRad
+      );
+      this._rotationGestureLastAngleRad = angleRad;
+      this._rotationControlDisc?.setDragArc(
+        this._rotationGestureStartAngleRad,
+        angleRad
+      );
+      const deltaDeg = (deltaRad * 180) / Math.PI;
+      const step = Math.max(0, this.rotationControlsStep || 0);
+      let applyDeltaDeg = deltaDeg;
+      if (step > 0) {
+        this._rotationGestureAccumulatedDeg += deltaDeg;
+        const quantized = consumeQuantizedRotationDelta(
+          this._rotationGestureAccumulatedDeg,
+          step
+        );
+        this._rotationGestureAccumulatedDeg = quantized.remaining;
+        applyDeltaDeg = quantized.consumedDelta;
+      }
+      if (Math.abs(applyDeltaDeg) > 1e-4) {
+        this.setRotationY(`+=${applyDeltaDeg}`);
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return true;
+    }
+
+    private _stopRotationGesture() {
+      if (!this._rotationGestureActive) return;
+      this._rotationGestureActive = false;
+      this._rotationGesturePointerId = null;
+      this._rotationGestureStartAngleRad = 0;
+      this._rotationGestureLastAngleRad = 0;
+      this._rotationGestureAccumulatedDeg = 0;
+      this._rotationGestureTarget = null;
+      this._rotationControlDisc?.clearDragArc();
+      if (this._windowPointerMoveForRotationBound) {
+        window.removeEventListener(
+          'pointermove',
+          this._windowPointerMoveForRotationBound,
+          true
+        );
+        this._windowPointerMoveForRotationBound = undefined;
+      }
+      if (this._windowPointerUpForRotationBound) {
+        window.removeEventListener(
+          'pointerup',
+          this._windowPointerUpForRotationBound,
+          true
+        );
+        window.removeEventListener(
+          'pointercancel',
+          this._windowPointerUpForRotationBound,
+          true
+        );
+        this._windowPointerUpForRotationBound = undefined;
+      }
+      try {
+        (this as any)[$controls]?.enableDragInteraction?.();
+      } catch (_) {}
+    }
+
+    private _onWindowPointerMoveForRotation(e: PointerEvent) {
+      this._updateRotationGesture(e);
+    }
+
+    private _onWindowPointerUpForRotation(e: PointerEvent) {
+      if (
+        this._rotationGestureActive &&
+        this._rotationGesturePointerId === e.pointerId
+      ) {
+        this._stopRotationGesture();
+      }
+    }
+
     // Drag / touch handlers and utilities (ported/adapted)
     private setupDragHandlers() {
       (this as any).addEventListener('mousedown', this.onMouseDown.bind(this));
@@ -3497,6 +3829,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Throttled to one raycast per frame for performance in large scenes.
      */
     private _onPointerMoveCapture(e: PointerEvent) {
+      if (this._updateRotationGesture(e)) {
+        return;
+      }
       if (!this.editMode || !(this as any)[$controls]) return;
       if ((this as any).isDragging) return;
       if (this._pointerDownOnSelectable === false) return;
@@ -3531,8 +3866,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _onPointerDownCapture(e: PointerEvent) {
-      if (!this.editMode || e.button !== 0) return;
+      if (e.button !== 0) return;
       if ((this as any)._isUIElement(e.target)) return;
+      if (this._canShowYRotationControl() && this._startRotationGesture(e)) {
+        return;
+      }
+      if (!this.editMode) return;
       if (!(this as any)[$controls]) return;
       const hoveredObject = this._resolvePointerSelectableObject(
         e.clientX,
@@ -3551,6 +3890,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _onPointerUpCapture(e: PointerEvent) {
+      if (
+        this._rotationGestureActive &&
+        this._rotationGesturePointerId === e.pointerId
+      ) {
+        this._stopRotationGesture();
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       this._pointerDownOnSelectable = null;
       if (!this._cameraDisabledForPointer) return;
       if ((this as any).isDragging) return;
@@ -3569,6 +3917,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private onMouseDown(event: MouseEvent) {
+      if (this._rotationGestureActive) {
+        return;
+      }
       // Only handle puzzler mouse interactions when edit-mode is active.
       if (!this.editMode) {
         return;

@@ -316,13 +316,18 @@ export class Shadow extends Object3D {
       baseModel.visible = false;
     }
 
-    // HACK: Hide grid during shadow rendering to prevent interference
+    // HACK: Hide helper overlays during shadow rendering to prevent interference
     let gridContainer: any = null;
     let gridWasVisible = false;
+    const hiddenShadowHelperObjects: Array<{ object: Object3D; visible: boolean }> = [];
     scene.traverse((object: any) => {
       if (object.name === 'ld-grid') {
         gridContainer = object;
         gridWasVisible = object.visible;
+        object.visible = false;
+      }
+      if (object.userData?.skipShadow === true && object.visible) {
+        hiddenShadowHelperObjects.push({ object, visible: true });
         object.visible = false;
       }
     });
@@ -356,6 +361,9 @@ export class Shadow extends Object3D {
     // HACK: Restore grid visibility
     if (gridContainer) {
       gridContainer.visible = gridWasVisible;
+    }
+    for (const entry of hiddenShadowHelperObjects) {
+      entry.object.visible = entry.visible;
     }
 
     this.blurShadow(renderer);

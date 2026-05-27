@@ -494,6 +494,10 @@
       {
         "htmlId": "transform-scene",
         "name": "Transform Scene"
+      },
+      {
+        "htmlId": "rotation-controls",
+        "name": "Rotation Controls (Y Axis)"
       }
     ]
   }
