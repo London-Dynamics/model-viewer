@@ -57,6 +57,38 @@
         stroke-dasharray: 6 4;
       }
 
+      #floating-ui-anchor-ref {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #165dfc;
+        pointer-events: none;
+      }
+
+      #floating-ui-panel {
+        position: absolute;
+        z-index: 40;
+        pointer-events: auto;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow:
+          0 8px 24px rgba(0, 0, 0, 0.2),
+          0 1px 2px rgba(0, 0, 0, 0.16);
+        padding: 8px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      #floating-ui-panel button {
+        border: 1px solid #d1d5db;
+        background: #fff;
+        border-radius: 9999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
       .anchor-hint {
         position: absolute;
         left: 12px;
@@ -260,6 +292,201 @@
                       });
 
                       modelViewer.addEventListener('load', updateSphereVisual);
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="floating-anchor-floating-ui" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Floating UI with radius offset</h2>
+                <h4>
+                  <span class="attribute">placement: "bottom"</span> with
+                  <span class="attribute">offset: sphereRadiusPx</span>
+                </h4>
+                <p>
+                  This uses an arbitrary HTML panel with Floating UI. The slot
+                  center is the reference, and
+                  <code>data-sphere-radius-px</code> is used as offset.
+                </p>
+              </div>
+              <example-snippet
+                stamp-to="floating-anchor-floating-ui"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="floating-ui-demo"
+                    src="../../shared-assets/models/empty.glb"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    snapping-enabled
+                    highlight-selected
+                    selection-scope="group"
+                    edit
+                    disable-base-model-selection
+                  >
+                    <div
+                      slot="floating-object-anchor"
+                      id="floating-ui-anchor-ref"
+                      data-no-raycast
+                    ></div>
+
+                    <div id="floating-ui-panel">
+                      <button type="button">Do Thing</button>
+                      <button type="button">Do Other Thing</button>
+                    </div>
+
+                    <div class="anchor-hint">
+                      Click “Place duck”, then click the floor and drag slightly
+                      to commit. Bottom placement + radius offset:
+                      <span id="radius-readout">—</span> px.
+                    </div>
+
+                    <div
+                      style="
+                        position: absolute;
+                        bottom: 12px;
+                        left: 12px;
+                        z-index: 30;
+                      "
+                    >
+                      <button
+                        type="button"
+                        id="place-duck-ui"
+                        style="
+                          border-radius: 6px;
+                          border: 1px solid #d1d5db;
+                          background: #fff;
+                          padding: 6px 10px;
+                          font-size: 12px;
+                          cursor: pointer;
+                        "
+                      >
+                        Place duck
+                      </button>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    import {
+                      autoUpdate,
+                      computePosition,
+                      flip,
+                      limitShift,
+                      offset,
+                      shift,
+                    } from 'https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.6.13/+esm';
+
+                    (() => {
+                      const modelViewer =
+                        document.getElementById('floating-ui-demo');
+                      const placeBtn = document.getElementById('place-duck-ui');
+                      const anchorRef = document.getElementById(
+                        'floating-ui-anchor-ref'
+                      );
+                      const panel =
+                        document.getElementById('floating-ui-panel');
+                      const radiusReadout =
+                        document.getElementById('radius-readout');
+                      const PLACE_SRC =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf';
+                      let placementArmed = false;
+
+                      const updateFloatingPanel = async () => {
+                        const raw = Number(anchorRef.dataset.sphereRadiusPx);
+                        const radiusPx = Number.isFinite(raw)
+                          ? Math.max(0, raw)
+                          : 0;
+                        radiusReadout.textContent = String(
+                          Math.round(radiusPx)
+                        );
+                        const hidden =
+                          radiusPx <= 0 || !anchorRef.dataset.objectUuid;
+                        panel.style.display = hidden ? 'none' : 'flex';
+                        if (hidden) return;
+
+                        const result = await computePosition(anchorRef, panel, {
+                          placement: 'bottom',
+                          middleware: [
+                            offset(({ placement, rects }) => {
+                              const verticalBudget =
+                                modelViewer.clientHeight * 0.5 -
+                                rects.floating.height * 0.5 -
+                                8;
+                              const horizontalBudget =
+                                modelViewer.clientWidth * 0.5 -
+                                rects.floating.width * 0.5 -
+                                8;
+                              const mainAxisBudget =
+                                placement.startsWith('top') ||
+                                placement.startsWith('bottom')
+                                  ? verticalBudget
+                                  : horizontalBudget;
+                              return Math.min(
+                                radiusPx,
+                                Math.max(0, mainAxisBudget)
+                              );
+                            }),
+                            flip({
+                              padding: 24,
+                              fallbackPlacements: ['top', 'right', 'left'],
+                            }),
+                            shift({ padding: 24, limiter: limitShift() }),
+                          ],
+                        });
+                        panel.style.left = `${result.x}px`;
+                        panel.style.top = `${result.y}px`;
+                      };
+
+                      new MutationObserver(
+                        () => void updateFloatingPanel()
+                      ).observe(anchorRef, {
+                        attributes: true,
+                        attributeFilter: [
+                          'data-sphere-radius-px',
+                          'data-object-uuid',
+                          'style',
+                        ],
+                      });
+                      autoUpdate(
+                        anchorRef,
+                        panel,
+                        () => void updateFloatingPanel()
+                      );
+
+                      placeBtn.addEventListener('click', () => {
+                        placementArmed = true;
+                        placeBtn.textContent =
+                          'Click the floor, drag to place…';
+                      });
+
+                      modelViewer.addEventListener('pointerdown', (event) => {
+                        if (!placementArmed) return;
+                        placementArmed = false;
+                        placeBtn.textContent = 'Place duck';
+                        const session = modelViewer.beginPlacement(
+                          undefined,
+                          PLACE_SRC,
+                          { part: { type: 'scene', snapPoints: [] } },
+                          { clientX: event.clientX, clientY: event.clientY }
+                        );
+                        session.updatePosition(event.clientX, event.clientY);
+                      });
+
+                      modelViewer.addEventListener(
+                        'load',
+                        () => void updateFloatingPanel()
+                      );
                     })();
                   </script>
                 </template>

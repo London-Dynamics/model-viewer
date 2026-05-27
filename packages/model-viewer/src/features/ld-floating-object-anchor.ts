@@ -23,6 +23,9 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { Constructor } from '../utilities.js';
 
+/** Scales the AABB-derived bounding sphere radius used for anchor placement. */
+const ANCHOR_SPHERE_RADIUS_MULTIPLIER = 0.9;
+
 const $floatingObjectAnchorSlot = Symbol('floatingObjectAnchorSlot');
 const $selectedObject = Symbol('selectedObject');
 const $updateFloatingObjectAnchor = Symbol('updateFloatingObjectAnchor');
@@ -34,6 +37,20 @@ const $formatVector = Symbol('formatVector');
 
 export const $selectObjectForControls = Symbol('selectObjectForControls');
 export const $clearSelectedObject = Symbol('clearSelectedObject');
+
+/**
+ * Placeholder for multi-select anchor bounds (not wired up yet).
+ *
+ * When several objects are selected, the anchor center should sit at the centroid
+ * of the selection. The radius should be the shortest semi-axis of an ovoid fitted
+ * around that selection — not the radius of one large sphere that encloses every
+ * object.
+ */
+export function computeMultiSelectionAnchorSphere(
+  _objects: readonly Object3D[]
+): Sphere {
+  return new Sphere(new Vector3(), 0);
+}
 
 export const LDFloatingObjectAnchorMixin = <
   T extends Constructor<ModelViewerElementBase>,
@@ -135,11 +152,15 @@ export const LDFloatingObjectAnchorMixin = <
           Math.abs(worldScale.z),
           Number.EPSILON
         );
-        const localRadius = worldSphere.radius / maxScale;
+        const localRadius =
+          (worldSphere.radius / maxScale) * ANCHOR_SPHERE_RADIUS_MULTIPLIER;
 
         const entry = { localCenter, localRadius };
         this[$objectAnchorSphereCache].set(object, entry);
-        return worldSphere;
+        return new Sphere(
+          worldSphere.center,
+          worldSphere.radius * ANCHOR_SPHERE_RADIUS_MULTIPLIER
+        );
       }
 
       object.updateMatrixWorld(true);
@@ -188,6 +209,8 @@ export const LDFloatingObjectAnchorMixin = <
         }
       }
 
+      // TODO(multi-select): use computeMultiSelectionAnchorSphere when more than
+      // one object is selected.
       const worldSphere = this[$getCachedWorldSphere](this[$selectedObject]);
       const projection = this[$computeSphereScreenProjection](worldSphere);
       const cachedSphere = this[$objectAnchorSphereCache].get(

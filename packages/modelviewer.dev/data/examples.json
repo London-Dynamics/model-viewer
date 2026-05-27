@@ -332,6 +332,10 @@
       {
         "htmlId": "floating-anchor-sphere",
         "name": "Bounding sphere anchor"
+      },
+      {
+        "htmlId": "floating-anchor-floating-ui",
+        "name": "Floating UI radius offset"
       }
     ]
   },
