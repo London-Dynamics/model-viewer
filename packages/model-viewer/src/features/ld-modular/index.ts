@@ -51,6 +51,8 @@ import { Euler } from 'three';
 import {
   $selectObjectForControls,
   $clearSelectedObject,
+  getObjectAnchorScreenProjection,
+  ObjectAnchorSphereCacheEntry,
 } from '../ld-floating-object-anchor.js';
 import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -147,6 +149,19 @@ type AttachFunction = (
 type AttachMaterialFunction = (materialId: string, targetId: string) => void;
 
 type ClearSceneFunction = () => void;
+
+export type HoverChangeDetail = {
+  hovered: boolean;
+  uuid: string;
+  name: string;
+  metadata: Record<string, unknown>;
+  anchor: {
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+    isVisible: boolean;
+  } | null;
+};
 
 type RotationOptions = {
   order?: EulerOrder;
@@ -1982,6 +1997,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     /** Window listener for pointerup during drag so release is always received (e.g. over floating strip). */
     private _windowPointerUpForDragBound?: (e: PointerEvent) => void;
+    private _hoveredSelectableObject: Object3D | null = null;
+    private _hoverAnchorSphereCache = new WeakMap<
+      Object3D,
+      ObjectAnchorSphereCacheEntry
+    >();
 
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -3203,33 +3223,28 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return !!this._applySurfaceSnapForNdc(object, this.currentMousePosition);
     }
 
-    /**
-     * Returns true if the given client position is over a selectable object.
-     * Used to disable orbit/pan on pointer down when in editMode so the camera does not orbit.
-     * Uses the same input element as camera controls for rect so coordinates match.
-     */
-    private _isPointerOverSelectableObject(
+    private _resolvePointerSelectableObject(
       clientX: number,
       clientY: number
-    ): boolean {
+    ): Object3D | null {
       const inputEl = (this as any)[$userInputElement];
-      if (!inputEl) return false;
+      if (!inputEl) return null;
       const rect = inputEl.getBoundingClientRect();
       const mouseX = ((clientX - rect.left) / rect.width) * 2 - 1;
       const mouseY = -(((clientY - rect.top) / rect.height) * 2 - 1);
       (this as any).currentMousePosition.set(mouseX, mouseY);
 
       const scene = (this as any)[$scene];
-      if (!scene) return false;
+      if (!scene) return null;
       const camera = scene.getCamera ? scene.getCamera() : scene.camera;
-      if (!camera) return false;
+      if (!camera) return null;
 
       (this as any).raycaster.setFromCamera(
         (this as any).currentMousePosition,
         camera
       );
       const targetObject = (this as any)._findTargetObject();
-      if (!targetObject) return false;
+      if (!targetObject) return null;
 
       const allPlacedObjects: Object3D[] = [];
       targetObject.traverse((child: any) => {
@@ -3249,7 +3264,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           !hit.object.userData?.noHit &&
           hit.object.userData?.selectable !== false
       );
-      if (intersects.length === 0) return false;
+      if (intersects.length === 0) return null;
 
       let intersectedObject = intersects[0].object;
       const hasPlacedObjects = allPlacedObjects.length > 0;
@@ -3299,9 +3314,68 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } else {
         objectToSelect = intersectedObject;
       }
-      return (
-        objectToSelect != null &&
-        (this as any)._isNodeSelectable(objectToSelect)
+      if (objectToSelect == null) return null;
+      return (this as any)._isNodeSelectable(objectToSelect)
+        ? objectToSelect
+        : null;
+    }
+
+    private _dispatchHoverChange(hoveredObject: Object3D | null): void {
+      if (this._hoveredSelectableObject === hoveredObject) return;
+      this._hoveredSelectableObject = hoveredObject;
+
+      if (!hoveredObject) {
+        const detail: HoverChangeDetail = {
+          hovered: false,
+          uuid: '',
+          name: '',
+          metadata: {},
+          anchor: null,
+        };
+        (this as any).dispatchEvent(
+          new CustomEvent('hover-change', {
+            detail,
+            bubbles: true,
+            composed: true,
+          })
+        );
+        return;
+      }
+
+      const scene = (this as any)[$scene];
+      const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
+      const projectionPayload =
+        scene && camera
+          ? getObjectAnchorScreenProjection({
+              object: hoveredObject,
+              camera,
+              viewportWidth: scene.width,
+              viewportHeight: scene.height,
+              sphereCache: this._hoverAnchorSphereCache,
+            }).projection
+          : null;
+
+      const detail: HoverChangeDetail = {
+        hovered: true,
+        uuid: hoveredObject.uuid || '',
+        name: hoveredObject.name || '',
+        metadata: { ...(hoveredObject.userData || {}) },
+        anchor: projectionPayload
+          ? {
+              centerX: projectionPayload.centerX,
+              centerY: projectionPayload.centerY,
+              radiusPx: Math.round(projectionPayload.radiusPx),
+              isVisible: projectionPayload.isVisible,
+            }
+          : null,
+      };
+
+      (this as any).dispatchEvent(
+        new CustomEvent('hover-change', {
+          detail,
+          bubbles: true,
+          composed: true,
+        })
       );
     }
 
@@ -3411,6 +3485,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._pointerMoveOverSelectableRaf = 0;
         }
         this._pendingPointerMove = null;
+        this._dispatchHoverChange(null);
         this._removeWindowDragListeners();
       } catch (e) {}
     }
@@ -3437,10 +3512,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         if ((this as any).isDragging) return;
         if (this._pointerDownOnSelectable === false) return;
 
-        const overSelectable = this._isPointerOverSelectableObject(
+        const hoveredObject = this._resolvePointerSelectableObject(
           p.clientX,
           p.clientY
         );
+        const overSelectable = hoveredObject != null;
+        this._dispatchHoverChange(hoveredObject);
         try {
           if (overSelectable) {
             (this as any)[$controls].disableDragInteraction?.();
@@ -3457,11 +3534,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.editMode || e.button !== 0) return;
       if ((this as any)._isUIElement(e.target)) return;
       if (!(this as any)[$controls]) return;
-      const overSelectable = this._isPointerOverSelectableObject(
+      const hoveredObject = this._resolvePointerSelectableObject(
         e.clientX,
         e.clientY
       );
+      const overSelectable = hoveredObject != null;
       this._pointerDownOnSelectable = overSelectable;
+      if (!overSelectable) {
+        this._dispatchHoverChange(null);
+      }
       if (!overSelectable) return;
       try {
         (this as any)[$controls].disableDragInteraction?.();
@@ -3473,7 +3554,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._pointerDownOnSelectable = null;
       if (!this._cameraDisabledForPointer) return;
       if ((this as any).isDragging) return;
-      if (this._isPointerOverSelectableObject(e.clientX, e.clientY)) return;
+      const hoveredObject = this._resolvePointerSelectableObject(
+        e.clientX,
+        e.clientY
+      );
+      this._dispatchHoverChange(hoveredObject);
+      if (hoveredObject) return;
       this._cameraDisabledForPointer = false;
       try {
         if ((this as any)[$controls]) {

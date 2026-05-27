@@ -103,6 +103,7 @@ export type SelectionScope = 'scene' | 'part' | 'group' | 'all';
 
 export interface SelectionChangeDetail {
   selectedObjects: Object3D[];
+  metadata: Array<Record<string, unknown>>;
   selectedObjectSurfaceSnapState: Array<{
     uuid: string;
     name: string;
@@ -647,6 +648,9 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       }));
       const detail: SelectionChangeDetail = {
         selectedObjects: [...this.selectedObjects],
+        metadata: this.selectedObjects.map((object) => ({
+          ...(object.userData || {}),
+        })),
         selectedObjectSurfaceSnapState,
         isSurfaceSnapped:
           selectedObjectSurfaceSnapState.length > 0

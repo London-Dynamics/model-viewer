@@ -1648,7 +1648,7 @@
       {
         "name": "selection-change",
         "htmlName": "selectionChange",
-        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
+        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), metadata (array aligned with selectedObjects where each entry mirrors that object's userData), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
       }
     ]
   },
@@ -2039,6 +2039,14 @@
         "description": "Dispatched when an in-progress transform operation ends. event.detail includes the final transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "hover-change",
+        "htmlName": "hoverChange",
+        "description": "Dispatched when hover enters, switches between, or leaves selectable placed objects in edit mode. event.detail contains hovered (boolean), uuid, name, metadata (hovered object's userData), and anchor ({ centerX, centerY, radiusPx, isVisible } in screen space using the same floating-anchor sphere math and multiplier). On leave, hovered is false and anchor is null.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#hover-anchor-metadata\">Related examples</a>"
         ]
       }
     ]

@@ -480,6 +480,10 @@
       {
         "htmlId": "bulk-placement",
         "name": "Bulk placement"
+      },
+      {
+        "htmlId": "hover-anchor-metadata",
+        "name": "Hover anchor metadata"
       }
     ]
   },

@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 
-import { Vector3, Box3, Sphere, Object3D } from 'three';
+import { Vector3, Box3, Sphere, Object3D, Camera } from 'three';
 import { property } from 'lit/decorators.js';
 
 import ModelViewerElementBase, {
@@ -29,9 +29,6 @@ const ANCHOR_SPHERE_RADIUS_MULTIPLIER = 0.9;
 const $floatingObjectAnchorSlot = Symbol('floatingObjectAnchorSlot');
 const $selectedObject = Symbol('selectedObject');
 const $updateFloatingObjectAnchor = Symbol('updateFloatingObjectAnchor');
-const $worldToScreen = Symbol('worldToScreen');
-const $computeSphereScreenProjection = Symbol('computeSphereScreenProjection');
-const $getCachedWorldSphere = Symbol('getCachedWorldSphere');
 const $objectAnchorSphereCache = Symbol('objectAnchorSphereCache');
 const $formatVector = Symbol('formatVector');
 
@@ -52,6 +49,100 @@ export function computeMultiSelectionAnchorSphere(
   return new Sphere(new Vector3(), 0);
 }
 
+export type ObjectAnchorSphereCacheEntry = {
+  localCenter: Vector3;
+  localRadius: number;
+};
+
+export type ObjectAnchorScreenProjection = {
+  centerX: number;
+  centerY: number;
+  radiusPx: number;
+  isVisible: boolean;
+};
+
+type AnchorProjectionInput = {
+  object: Object3D;
+  camera: Camera;
+  viewportWidth: number;
+  viewportHeight: number;
+  sphereCache: WeakMap<Object3D, ObjectAnchorSphereCacheEntry>;
+};
+
+export function getObjectAnchorScreenProjection({
+  object,
+  camera,
+  viewportWidth,
+  viewportHeight,
+  sphereCache,
+}: AnchorProjectionInput): {
+  projection: ObjectAnchorScreenProjection;
+  localCenter: Vector3;
+} {
+  const cached = sphereCache.get(object);
+  let worldSphere: Sphere;
+  let localCenter: Vector3;
+
+  if (!cached) {
+    const worldBounds = new Box3().setFromObject(object);
+    const baseWorldSphere = worldBounds.getBoundingSphere(new Sphere());
+    object.updateMatrixWorld(true);
+    localCenter = object.worldToLocal(baseWorldSphere.center.clone());
+    const worldScale = object.getWorldScale(new Vector3());
+    const maxScale = Math.max(
+      Math.abs(worldScale.x),
+      Math.abs(worldScale.y),
+      Math.abs(worldScale.z),
+      Number.EPSILON
+    );
+    const localRadius =
+      (baseWorldSphere.radius / maxScale) * ANCHOR_SPHERE_RADIUS_MULTIPLIER;
+    sphereCache.set(object, { localCenter, localRadius });
+    worldSphere = new Sphere(
+      baseWorldSphere.center,
+      baseWorldSphere.radius * ANCHOR_SPHERE_RADIUS_MULTIPLIER
+    );
+  } else {
+    object.updateMatrixWorld(true);
+    localCenter = cached.localCenter;
+    const center = object.localToWorld(cached.localCenter.clone());
+    const worldScale = object.getWorldScale(new Vector3());
+    const maxScale = Math.max(
+      Math.abs(worldScale.x),
+      Math.abs(worldScale.y),
+      Math.abs(worldScale.z),
+      Number.EPSILON
+    );
+    worldSphere = new Sphere(center, cached.localRadius * maxScale);
+  }
+
+  const center = worldSphere.center;
+  const projectedCenter = center.clone().project(camera);
+  const isVisible = projectedCenter.z < 1;
+  const toScreen = (position: Vector3): { x: number; y: number } => {
+    const vector = position.clone().project(camera);
+    return {
+      x: (vector.x * 0.5 + 0.5) * viewportWidth,
+      y: (vector.y * -0.5 + 0.5) * viewportHeight,
+    };
+  };
+  const screenCenter = toScreen(center);
+  const right = new Vector3();
+  right.setFromMatrixColumn((camera as any).matrixWorld, 0);
+  const rimPoint = center.clone().addScaledVector(right, worldSphere.radius);
+  const screenRim = toScreen(rimPoint);
+
+  return {
+    projection: {
+      centerX: screenCenter.x,
+      centerY: screenCenter.y,
+      radiusPx: Math.hypot(screenRim.x - screenCenter.x, screenRim.y - screenCenter.y),
+      isVisible,
+    },
+    localCenter,
+  };
+}
+
 export const LDFloatingObjectAnchorMixin = <
   T extends Constructor<ModelViewerElementBase>,
 >(
@@ -65,7 +156,7 @@ export const LDFloatingObjectAnchorMixin = <
     private [$selectedObject]: Object3D | null = null;
     private [$objectAnchorSphereCache] = new WeakMap<
       Object3D,
-      { localCenter: Vector3; localRadius: number }
+      ObjectAnchorSphereCacheEntry
     >();
 
     [$onModelLoad]() {
@@ -91,88 +182,6 @@ export const LDFloatingObjectAnchorMixin = <
       if (!this.disableFloatingControls && this[$selectedObject]) {
         this[$updateFloatingObjectAnchor]();
       }
-    }
-
-    private [$worldToScreen](position: Vector3): { x: number; y: number } {
-      const width = this[$scene].width;
-      const height = this[$scene].height;
-
-      const vector = position.clone().project(this[$scene].camera);
-
-      return {
-        x: (vector.x * 0.5 + 0.5) * width,
-        y: (vector.y * -0.5 + 0.5) * height,
-      };
-    }
-
-    private [$computeSphereScreenProjection](sphere: Sphere): {
-      centerX: number;
-      centerY: number;
-      radiusPx: number;
-      isVisible: boolean;
-    } {
-      const center = sphere.center;
-      const projectedCenter = center.clone().project(this[$scene].camera);
-      const isVisible = projectedCenter.z < 1;
-
-      const screenCenter = this[$worldToScreen](center);
-
-      const right = new Vector3();
-      right.setFromMatrixColumn(this[$scene].camera.matrixWorld, 0);
-      const rimPoint = center.clone().addScaledVector(right, sphere.radius);
-      const screenRim = this[$worldToScreen](rimPoint);
-
-      const radiusPx = Math.hypot(
-        screenRim.x - screenCenter.x,
-        screenRim.y - screenCenter.y
-      );
-
-      return {
-        centerX: screenCenter.x,
-        centerY: screenCenter.y,
-        radiusPx,
-        isVisible,
-      };
-    }
-
-    private [$getCachedWorldSphere](object: Object3D): Sphere {
-      const cached = this[$objectAnchorSphereCache].get(object);
-      if (!cached) {
-        // Compute once from rendered bounds, then store local-space offset so it
-        // remains valid regardless of object placement/orientation in the scene.
-        const worldBounds = new Box3().setFromObject(object);
-        const worldSphere = worldBounds.getBoundingSphere(new Sphere());
-
-        object.updateMatrixWorld(true);
-        const localCenter = object.worldToLocal(worldSphere.center.clone());
-        const worldScale = object.getWorldScale(new Vector3());
-        const maxScale = Math.max(
-          Math.abs(worldScale.x),
-          Math.abs(worldScale.y),
-          Math.abs(worldScale.z),
-          Number.EPSILON
-        );
-        const localRadius =
-          (worldSphere.radius / maxScale) * ANCHOR_SPHERE_RADIUS_MULTIPLIER;
-
-        const entry = { localCenter, localRadius };
-        this[$objectAnchorSphereCache].set(object, entry);
-        return new Sphere(
-          worldSphere.center,
-          worldSphere.radius * ANCHOR_SPHERE_RADIUS_MULTIPLIER
-        );
-      }
-
-      object.updateMatrixWorld(true);
-      const center = object.localToWorld(cached.localCenter.clone());
-      const worldScale = object.getWorldScale(new Vector3());
-      const maxScale = Math.max(
-        Math.abs(worldScale.x),
-        Math.abs(worldScale.y),
-        Math.abs(worldScale.z),
-        Number.EPSILON
-      );
-      return new Sphere(center, cached.localRadius * maxScale);
     }
 
     private [$formatVector](vector: Vector3): string {
@@ -211,14 +220,14 @@ export const LDFloatingObjectAnchorMixin = <
 
       // TODO(multi-select): use computeMultiSelectionAnchorSphere when more than
       // one object is selected.
-      const worldSphere = this[$getCachedWorldSphere](this[$selectedObject]);
-      const projection = this[$computeSphereScreenProjection](worldSphere);
-      const cachedSphere = this[$objectAnchorSphereCache].get(
-        this[$selectedObject]
-      );
-      const localOffsetText = cachedSphere
-        ? this[$formatVector](cachedSphere.localCenter)
-        : '0 0 0';
+      const { projection, localCenter } = getObjectAnchorScreenProjection({
+        object: this[$selectedObject],
+        camera: this[$scene].camera,
+        viewportWidth: this[$scene].width,
+        viewportHeight: this[$scene].height,
+        sphereCache: this[$objectAnchorSphereCache],
+      });
+      const localOffsetText = this[$formatVector](localCenter);
 
       if (projection.isVisible) {
         const radiusPx = Math.round(projection.radiusPx);
@@ -253,7 +262,7 @@ export const LDFloatingObjectAnchorMixin = <
 };
 
 export interface FloatingObjectAnchorInterface {
-  floatingControlsEnabled: boolean;
+  disableFloatingControls: boolean;
   selectObjectForControls(object: Object3D): void;
   clearSelectedObject(): void;
 }
