@@ -298,7 +298,7 @@ const templateResult = html` <style>
           opacity: 0.4;
        }
 
-       .ld-modular .ld-floating-control-strip {
+       .ld-modular .ld-floating-object-anchor {
          pointer-events: auto;
          position: absolute;
          z-index: 100;
@@ -400,10 +400,10 @@ const templateResult = html` <style>
           aria-hidden="true"
         ></div>
       </slot>
-      <slot name="floating-control-strip">
+      <slot name="floating-object-anchor">
         <div
-          class="ld-floating-control-strip"
-          part="ld-floating-control-strip"
+          class="ld-floating-object-anchor"
+          part="ld-floating-object-anchor"
           aria-hidden="true"
         ></div>
       </slot>

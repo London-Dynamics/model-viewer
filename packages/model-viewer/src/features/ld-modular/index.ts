@@ -51,7 +51,7 @@ import { Euler } from 'three';
 import {
   $selectObjectForControls,
   $clearSelectedObject,
-} from '../ld-floating-control-strip.js';
+} from '../ld-floating-object-anchor.js';
 import { GLTF, GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { LDExporter } from '../ld-exporter.js';

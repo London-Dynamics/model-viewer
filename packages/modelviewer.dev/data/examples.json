@@ -326,6 +326,16 @@
     ]
   },
   {
+    "name": "LD Floating Anchor",
+    "htmlName": "ld_floating_anchor",
+    "examples": [
+      {
+        "htmlId": "floating-anchor-sphere",
+        "name": "Bounding sphere anchor"
+      }
+    ]
+  },
+  {
     "name": "LD Transforms",
     "htmlName": "ld_transforms",
     "examples": [
