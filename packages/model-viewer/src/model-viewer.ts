@@ -29,7 +29,7 @@ import { LDDebugMixin } from './features/ld-debug.js';
 import { LDEnvironmentMixin } from './features/ld-environment/index.js';
 import { LDCameraMixin } from './features/ld-camera.js';
 import { LDImageCaptureMixin } from './features/ld-image-capture.js';
-import { LDFloatingControlStripMixin } from './features/ld-floating-control-strip.js';
+import { LDFloatingObjectAnchorMixin } from './features/ld-floating-object-anchor.js';
 import { LDLightsMixin } from './features/ld-lights.js';
 import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
 import { LDMeasureMixin } from './features/ld-measure/index.js';
@@ -46,7 +46,7 @@ import ModelViewerElementBase from './model-viewer-base.js';
 export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 
 const ModelViewerElementImpl = LDMaterialManagerMixin(
-  LDFloatingControlStripMixin(
+  LDFloatingObjectAnchorMixin(
     LDMeasureMixin(
       LDBloomMixin(
         LDAmbientOcclusionMixin(

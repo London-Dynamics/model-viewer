@@ -1299,6 +1299,258 @@
     ]
   },
   {
+    "Title": "LD Ambient Occlusion",
+    "htmlName": "ld_ambient_occlusion",
+    "Attributes": [
+      {
+        "name": "ambient-occlusion",
+        "htmlName": "ambientOcclusion",
+        "description": "Enable or disable real-time ambient occlusion post-processing.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "ao-algorithm",
+        "htmlName": "aoAlgorithm",
+        "description": "AO algorithm preset used by the composer.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "gtao",
+          "options": "ssao, sao, n8ao, hbao, gtao"
+        }
+      },
+      {
+        "name": "ao-radius",
+        "htmlName": "aoRadius",
+        "description": "Sampling radius for occlusion; larger values spread shadowing farther from contact points.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "4",
+          "options": "any number >= 0"
+        }
+      },
+      {
+        "name": "ao-intensity",
+        "htmlName": "aoIntensity",
+        "description": "Overall strength multiplier for the AO contribution.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "1",
+          "options": "any number >= 0"
+        }
+      },
+      {
+        "name": "ao-samples",
+        "htmlName": "aoSamples",
+        "description": "Number of AO samples per pixel (higher quality at higher cost).",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "24",
+          "options": "integer >= 2"
+        }
+      },
+      {
+        "name": "ao-output",
+        "htmlName": "aoOutput",
+        "description": "Output mode for debugging or compositing AO.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "default",
+          "options": "default, ao, no-ao, denoise, split, split-no-ao"
+        }
+      },
+      {
+        "name": "ao-noise",
+        "htmlName": "aoNoise",
+        "description": "Noise pattern used by AO sampling.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "magic-square",
+          "options": "magic-square, random"
+        }
+      },
+      {
+        "name": "ao-screen-space-radius",
+        "htmlName": "aoScreenSpaceRadius",
+        "description": "Interpret AO radius in screen space instead of world space.",
+        "links": [
+          "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ]
+  },
+  {
+    "Title": "LD Bloom",
+    "htmlName": "ld_bloom",
+    "Attributes": [
+      {
+        "name": "bloom",
+        "htmlName": "bloom",
+        "description": "Enable or disable bloom post-processing.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "bloom-targets",
+        "htmlName": "bloomTargets",
+        "description": "JSON array of selective bloom targets (mesh or material names plus optional enabled flag).",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-mode",
+        "htmlName": "bloomMode",
+        "description": "Bloom renderer mode.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "unreal",
+          "options": "unreal, selective"
+        }
+      },
+      {
+        "name": "bloom-strength",
+        "htmlName": "bloomStrength",
+        "description": "Bloom intensity multiplier.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-radius",
+        "htmlName": "bloomRadius",
+        "description": "Bloom blur radius.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-threshold",
+        "htmlName": "bloomThreshold",
+        "description": "Brightness threshold used to isolate bloom contribution.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-quality",
+        "htmlName": "bloomQuality",
+        "description": "Quality strategy for bloom anti-aliasing behavior.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "quality",
+          "options": "quality, performance, smart"
+        }
+      },
+      {
+        "name": "bloom-msaa",
+        "htmlName": "bloomMsaa",
+        "description": "MSAA sample count used by bloom when quality mode allows it.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "bloom-soft-shadow",
+        "htmlName": "bloomSoftShadow",
+        "description": "Include transparent/soft-shadow style surfaces in selective bloom masking.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "Methods": [
+      {
+        "name": "setBloomTargets(targets)",
+        "htmlName": "setBloomTargets",
+        "description": "Set selective bloom targets programmatically and sync the bloom-targets attribute.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getBloomTargets()",
+        "htmlName": "getBloomTargets",
+        "description": "Return a cloned array of current selective bloom targets.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getSceneNames()",
+        "htmlName": "getSceneNames",
+        "description": "Collect and return sorted mesh and material names from the current scene to help build selective target lists.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "setBloomTargetEnabled(kind, name, enabled)",
+        "htmlName": "setBloomTargetEnabled",
+        "description": "Enable or disable one selective bloom target by mesh/material kind and name.",
+        "links": [
+          "<a href=\"../examples/ld_bloom/#ld-bloom\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
+    "Title": "LD Camera",
+    "htmlName": "ld_camera",
+    "Methods": [
+      {
+        "name": "setCameraFromJSON(cameraMetadata)",
+        "htmlName": "setCameraFromJSON",
+        "description": "Restores the camera (and controls) from a JSON object produced by <code>getCameraJSON()</code>. Accepts the <code>.object</code> part of the metadata or a plain object with <code>matrix</code> (or <code>position</code>/<code>quaternion</code>), <code>up</code>, <code>near</code>, <code>far</code>, <code>zoom</code>, and for perspective <code>fov</code>/<code>aspect</code> or for orthographic <code>left</code>/<code>right</code>/<code>top</code>/<code>bottom</code>. Used by the viewer to restore the current view and by <code>captureImage({ camera })</code> to apply a saved view for a single render.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#get-camera-json\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getCameraJSON()",
+        "htmlName": "getCameraJSON",
+        "description": "Returns a snapshot of the current camera as a serializable object (<code>{ metadata, object }</code>). The <code>object</code> is compatible with <code>setCameraFromJSON()</code> and with <code>captureImage({ camera })</code>. Use it to save a view, restore it later, or capture an image from that view without changing the on-screen camera. The LD Camera example page includes a round-trip test and test data output to verify get/set behavior.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#get-camera-json\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Environment",
     "htmlName": "ld_environment",
     "Attributes": [
@@ -1389,6 +1641,68 @@
     ]
   },
   {
+    "Title": "LD Floating Anchor",
+    "htmlName": "ld_floating_anchor",
+    "Attributes": [
+      {
+        "name": "disable-floating-controls",
+        "htmlName": "disableFloatingControls",
+        "description": "Hide and disable updates for the floating object anchor slot while preserving selection state.",
+        "links": [
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-sphere\">Bounding sphere anchor</a>",
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-floating-ui\">Floating UI radius offset</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "Methods": [
+      {
+        "name": "selectObjectForControls(object)",
+        "htmlName": "selectObjectForControls",
+        "description": "Explicitly set the object used to compute and position the floating anchor.",
+        "links": [
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-sphere\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "clearSelectedObject()",
+        "htmlName": "clearSelectedObject",
+        "description": "Clear the floating-anchor selection and hide the anchor UI.",
+        "links": [
+          "<a href=\"../examples/ld_floating_anchor/#floating-anchor-sphere\">Related examples</a>"
+        ]
+      }
+    ],
+    "Slots": [
+      {
+        "name": "Floating Object Anchor",
+        "htmlName": "floating-object-anchor",
+        "description": "Slot for custom UI pinned to the selected object's projected bounding sphere. The slot/assigned element receives data attributes such as object name/uuid, sphereRadiusPx, and sphereCenterOffsetLocal."
+      }
+    ]
+  },
+  {
+    "Title": "LD Image Capture",
+    "htmlName": "ld_image_capture",
+    "Methods": [
+      {
+        "name": "captureImage(options?)",
+        "htmlName": "captureImage",
+        "description": "Captures the current view (or the view from an optional camera state) as a data URL string. When both <b>width</b> and <b>height</b> are set <em>and no frame is provided</em>, a second offscreen canvas is created at exactly that size and the scene is rendered to it once; the main canvas is not resized or altered and no additional cropping/scaling is applied. When width/height are not set, the current display canvas is used (with optional <b>crop</b>). If <b>camera</b> is provided, it is applied only for the capture and the previous camera is restored afterward. <b>backgroundColor</b> (default 'white') is used for transparent areas when capturing to formats like JPEG. Returns a Promise that resolves to the data URL.<br/><br/>To capture from fixed views (e.g. orthographic above, front, side) without changing what\u2019s on screen, use a \u201cPrepare views\u201d (or \u201cPrepare camera\u201d) step: temporarily set the camera type and rotation (e.g. <code>setCameraType('orthographic')</code> and <code>rotateCamera(azimuth, polar, false)</code> for each view), call <code>getCameraJSON()</code> to store the camera state, then restore the original camera. Pass the stored camera objects into <code>captureImage({ camera })</code> when capturing; the visible canvas is not altered.<br/><br/>Options (all optional): <b>frame</b> is a string aspect ratio like <code>\"1:1\"</code>, <code>\"16:9\"</code> or <code>\"9:16\"</code> that defines the final output shape; when provided, <b>width</b> and <b>height</b> are treated as maximum bounds (the image is rendered at a size that matches <b>frame</b> and fits inside width\u00d7height). <b>fileType</b> is the MIME type (default 'image/png'); <b>encoderOptions</b> is the quality 0\u20131 for lossy formats; <b>camera</b> is a camera state object compatible with <code>setCameraFromJSON</code>, used only for this capture; <b>crop</b> may be either a legacy pixel rect <code>{ x, y, width, height }</code> (in source canvas pixels, used when no frame is set) or a high-level object for frame-based cropping <code>{ fit, focalPoint, safeArea }</code> where <b>fit</b> is one of <code>'cover'</code> (default), <code>'contain'</code>, or <code>'fill'</code>, <b>focalPoint</b> is a normalized point <code>{ x, y }</code> (0\u20131) used to keep the subject in view, and <b>safeArea</b> is a normalized value 0\u20131 that shrinks the crop rectangle around the focal point for a tighter or looser framing (1.0 = default framing, lower values zoom in). <b>backgroundColor</b> is a CSS color name or hex (e.g. 'white', 'cornflowerblue'), default 'white'. When <b>fitToBox</b> is true and an offscreen render is used, the camera is temporarily refit to the scene's bounding box via <code>fitToBox</code> so the model fills the frame for the requested aspect; the visible camera is restored afterward.",
+        "links": [
+          "<a href=\"../examples/ld_image_capture/#capture-image\">Capture Image example</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-with-camera\">Capture with camera pose</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-with-crop\">Capture with crop</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-background-color\">Background color (cornflowerblue)</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-orthographic-views\">Orthographic views (Prepare views)</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Lights",
     "htmlName": "ld_lights",
     "Attributes": [
@@ -1412,46 +1726,6 @@
         "description": "Toggle lights in scene. If lights are on, they will be turned off, and vice versa. Add a boolean argument to force lights on or off.",
         "links": [
           "<a href=\"../examples/ld-lights/#toggle-lights\">Related examples</a>"
-        ]
-      }
-    ]
-  },
-  {
-    "Title": "LD Camera",
-    "htmlName": "ld_camera",
-    "Methods": [
-      {
-        "name": "setCameraFromJSON(cameraMetadata)",
-        "htmlName": "setCameraFromJSON",
-        "description": "Restores the camera (and controls) from a JSON object produced by <code>getCameraJSON()</code>. Accepts the <code>.object</code> part of the metadata or a plain object with <code>matrix</code> (or <code>position</code>/<code>quaternion</code>), <code>up</code>, <code>near</code>, <code>far</code>, <code>zoom</code>, and for perspective <code>fov</code>/<code>aspect</code> or for orthographic <code>left</code>/<code>right</code>/<code>top</code>/<code>bottom</code>. Used by the viewer to restore the current view and by <code>captureImage({ camera })</code> to apply a saved view for a single render.",
-        "links": [
-          "<a href=\"../examples/ld_camera/#get-camera-json\">Related examples</a>"
-        ]
-      },
-      {
-        "name": "getCameraJSON()",
-        "htmlName": "getCameraJSON",
-        "description": "Returns a snapshot of the current camera as a serializable object (<code>{ metadata, object }</code>). The <code>object</code> is compatible with <code>setCameraFromJSON()</code> and with <code>captureImage({ camera })</code>. Use it to save a view, restore it later, or capture an image from that view without changing the on-screen camera. The LD Camera example page includes a round-trip test and test data output to verify get/set behavior.",
-        "links": [
-          "<a href=\"../examples/ld_camera/#get-camera-json\">Related examples</a>"
-        ]
-      }
-    ]
-  },
-  {
-    "Title": "LD Image Capture",
-    "htmlName": "ld_image_capture",
-    "Methods": [
-      {
-        "name": "captureImage(options?)",
-        "htmlName": "captureImage",
-        "description": "Captures the current view (or the view from an optional camera state) as a data URL string. When both <b>width</b> and <b>height</b> are set <em>and no frame is provided</em>, a second offscreen canvas is created at exactly that size and the scene is rendered to it once; the main canvas is not resized or altered and no additional cropping/scaling is applied. When width/height are not set, the current display canvas is used (with optional <b>crop</b>). If <b>camera</b> is provided, it is applied only for the capture and the previous camera is restored afterward. <b>backgroundColor</b> (default 'white') is used for transparent areas when capturing to formats like JPEG. Returns a Promise that resolves to the data URL.<br/><br/>To capture from fixed views (e.g. orthographic above, front, side) without changing what’s on screen, use a “Prepare views” (or “Prepare camera”) step: temporarily set the camera type and rotation (e.g. <code>setCameraType('orthographic')</code> and <code>rotateCamera(azimuth, polar, false)</code> for each view), call <code>getCameraJSON()</code> to store the camera state, then restore the original camera. Pass the stored camera objects into <code>captureImage({ camera })</code> when capturing; the visible canvas is not altered.<br/><br/>Options (all optional): <b>frame</b> is a string aspect ratio like <code>\"1:1\"</code>, <code>\"16:9\"</code> or <code>\"9:16\"</code> that defines the final output shape; when provided, <b>width</b> and <b>height</b> are treated as maximum bounds (the image is rendered at a size that matches <b>frame</b> and fits inside width×height). <b>fileType</b> is the MIME type (default 'image/png'); <b>encoderOptions</b> is the quality 0–1 for lossy formats; <b>camera</b> is a camera state object compatible with <code>setCameraFromJSON</code>, used only for this capture; <b>crop</b> may be either a legacy pixel rect <code>{ x, y, width, height }</code> (in source canvas pixels, used when no frame is set) or a high-level object for frame-based cropping <code>{ fit, focalPoint, safeArea }</code> where <b>fit</b> is one of <code>'cover'</code> (default), <code>'contain'</code>, or <code>'fill'</code>, <b>focalPoint</b> is a normalized point <code>{ x, y }</code> (0–1) used to keep the subject in view, and <b>safeArea</b> is a normalized value 0–1 that shrinks the crop rectangle around the focal point for a tighter or looser framing (1.0 = default framing, lower values zoom in). <b>backgroundColor</b> is a CSS color name or hex (e.g. 'white', 'cornflowerblue'), default 'white'. When <b>fitToBox</b> is true and an offscreen render is used, the camera is temporarily refit to the scene's bounding box via <code>fitToBox</code> so the model fills the frame for the requested aspect; the visible camera is restored afterward.",
-        "links": [
-          "<a href=\"../examples/ld_image_capture/#capture-image\">Capture Image example</a>",
-          "<a href=\"../examples/ld_image_capture/#capture-with-camera\">Capture with camera pose</a>",
-          "<a href=\"../examples/ld_image_capture/#capture-with-crop\">Capture with crop</a>",
-          "<a href=\"../examples/ld_image_capture/#capture-background-color\">Background color (cornflowerblue)</a>",
-          "<a href=\"../examples/ld_image_capture/#capture-orthographic-views\">Orthographic views (Prepare views)</a>"
         ]
       }
     ]
@@ -1612,43 +1886,6 @@
         "name": "Dimension Labels",
         "htmlName": "dimensionLabels",
         "description": "Customise the dimension labels by adding three elements under <span class=\"attribute\">&lt;model-viewer&gt;</span>. They should look like this: <span class=\"attribute\">&lt;span slot=\"ruler-width\"&gt;Width&lt;/span&gt;</span>, <span class=\"attribute\">&lt;span slot=\"ruler-height\"&gt;Height&lt;/span&gt;</span>, <span class=\"attribute\">&lt;span slot=\"ruler-depth\"&gt;Depth&lt;/span&gt;</span>."
-      }
-    ]
-  },
-  {
-    "Title": "LD Selection",
-    "htmlName": "ld_selection",
-    "Attributes": [
-      {
-        "name": "selection-scope",
-        "htmlName": "selectionScope",
-        "description": "Selection granularity: 'part' selects individual placed parts, 'group' selects snapped groups (default), 'all' allows selecting any scene node.",
-        "links": [
-          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ],
-        "default": {
-          "default": "scene",
-          "options": "scene, part, group, all"
-        }
-      },
-      {
-        "name": "highlight-selected",
-        "htmlName": "highlightSelected",
-        "description": "When enabled, visually highlights the currently selected object. The highlight method can be overridden in subclasses for custom highlight behavior.",
-        "links": [
-          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
-        ],
-        "default": {
-          "default": "false",
-          "options": "true, false"
-        }
-      }
-    ],
-    "Events": [
-      {
-        "name": "selection-change",
-        "htmlName": "selectionChange",
-        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
       }
     ]
   },
@@ -2040,6 +2277,119 @@
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
+      },
+      {
+        "name": "hover-change",
+        "htmlName": "hoverChange",
+        "description": "Dispatched when hover enters, switches between, or leaves selectable placed objects in edit mode. event.detail contains hovered (boolean), uuid, name, metadata (hovered object's userData), and anchor ({ centerX, centerY, radiusPx, isVisible } in screen space using the same floating-anchor sphere math and multiplier). On leave, hovered is false and anchor is null.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#hover-anchor-metadata\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
+    "Title": "LD Selection",
+    "htmlName": "ld_selection",
+    "Attributes": [
+      {
+        "name": "selection-scope",
+        "htmlName": "selectionScope",
+        "description": "Selection granularity: 'part' selects individual placed parts, 'group' selects snapped groups (default), 'all' allows selecting any scene node.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "scene",
+          "options": "scene, part, group, all"
+        }
+      },
+      {
+        "name": "highlight-selected",
+        "htmlName": "highlightSelected",
+        "description": "When enabled, visually highlights the currently selected object. The highlight method can be overridden in subclasses for custom highlight behavior.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      }
+    ],
+    "Events": [
+      {
+        "name": "selection-change",
+        "htmlName": "selectionChange",
+        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), metadata (array aligned with selectedObjects where each entry mirrors that object's userData), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
+      }
+    ]
+  },
+  {
+    "Title": "LD Transforms",
+    "htmlName": "ld_transforms",
+    "Methods": [
+      {
+        "name": "setPosition([x, y, z]) / setPosition(name, [x, y, z])",
+        "htmlName": "setPosition",
+        "description": "Set translation for selected object roots or a named object in scene units.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "setRotation([x, y, z], options?) / setRotation(name, [x, y, z], options?)",
+        "htmlName": "setRotation",
+        "description": "Set rotation in degrees for selected object roots or a named object, with support for absolute/relative updates.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "setScale([x, y, z]) / setScale(name, [x, y, z])",
+        "htmlName": "setScale",
+        "description": "Set scale for selected object roots or a named object.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "setPositionX/Y/Z(...), setRotationX/Y/Z(...), setScaleX/Y/Z(...)",
+        "htmlName": "axisTransforms",
+        "description": "Axis-specific transform helpers for one-axis updates while preserving other axes.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      },
+      {
+        "name": "getPosition(name?) / getRotation(name?) / getScale(name?)",
+        "htmlName": "getTransforms",
+        "description": "Read transforms from a named object or the current modular selection.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#transform-geometry\">Transform Geometry</a>",
+          "<a href=\"../examples/ld_transforms/#transform-scene\">Transform Scene</a>"
+        ]
+      }
+    ],
+    "Events": [
+      {
+        "name": "transformstart",
+        "htmlName": "transformstart",
+        "description": "Fires when a transform operation begins; detail includes position, rotation, and scale payloads."
+      },
+      {
+        "name": "transform",
+        "htmlName": "transform",
+        "description": "Fires continuously while a transform operation is in progress with live transform payloads."
+      },
+      {
+        "name": "transformend",
+        "htmlName": "transformend",
+        "description": "Fires when a transform operation ends with final position, rotation, and scale payloads."
       }
     ]
   }

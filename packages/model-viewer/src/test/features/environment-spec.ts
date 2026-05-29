@@ -212,6 +212,16 @@ suite('Environment', () => {
         expect(scene.farRadius()).to.be.greaterThan(2);
       });
 
+      test('treats invalid skybox-height as zero', async function() {
+        element.setAttribute('skybox-height', '');
+        await element.updateComplete;
+        expect(scene.farRadius()).to.be.lessThan(2);
+
+        element.setAttribute('skybox-height', 'not-a-length');
+        await element.updateComplete;
+        expect(scene.farRadius()).to.be.lessThan(2);
+      });
+
       test('no skybox-image disables grounded skybox', async function() {
         element.setAttribute('skybox-image', '');
         await element.updateComplete;

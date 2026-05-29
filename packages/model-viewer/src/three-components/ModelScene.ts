@@ -696,9 +696,10 @@ export class ModelScene extends Scene {
   }
 
   setGroundedSkybox() {
-    const heightNode = parseExpressions(this.element.skyboxHeight)[0]
-      .terms[0] as NumberNode;
-    const height = normalizeUnit(heightNode).number;
+    const expressions = parseExpressions(this.element.skyboxHeight || '0');
+    const heightTerm = expressions[0]?.terms[0] as NumberNode | undefined;
+    const height =
+        heightTerm != null ? normalizeUnit(heightTerm).number : 0;
     const radius = GROUNDED_SKYBOX_SIZE * this.boundingSphere.radius;
 
     this.groundedSkybox.updateGeometry(height, radius);

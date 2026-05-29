@@ -316,46 +316,22 @@
     ]
   },
   {
+    "name": "LD Ambient Occlusion",
+    "htmlName": "ld_ambient_occlusion",
+    "examples": [
+      {
+        "htmlId": "ld-ambient-occlusion",
+        "name": "Real-time AO"
+      }
+    ]
+  },
+  {
     "name": "LD Bloom",
     "htmlName": "ld_bloom",
     "examples": [
       {
         "htmlId": "ld-bloom",
         "name": "Bloom"
-      }
-    ]
-  },
-  {
-    "name": "LD Transforms",
-    "htmlName": "ld_transforms",
-    "examples": [
-      {
-        "htmlId": "transform-geometry",
-        "name": "Transform Geometry"
-      },
-      {
-        "htmlId": "transform-scene",
-        "name": "Transform Scene"
-      }
-    ]
-  },
-  {
-    "name": "LD Environment",
-    "htmlName": "ld_environment",
-    "examples": [
-      {
-        "htmlId": "water",
-        "name": "Just Add Water"
-      }
-    ]
-  },
-  {
-    "name": "LD Lights",
-    "htmlName": "ld_lights",
-    "examples": [
-      {
-        "htmlId": "toggle-lights",
-        "name": "Toggle Lights"
       }
     ]
   },
@@ -382,6 +358,30 @@
     ]
   },
   {
+    "name": "LD Environment",
+    "htmlName": "ld_environment",
+    "examples": [
+      {
+        "htmlId": "water",
+        "name": "Just Add Water"
+      }
+    ]
+  },
+  {
+    "name": "LD Floating Anchor",
+    "htmlName": "ld_floating_anchor",
+    "examples": [
+      {
+        "htmlId": "floating-anchor-sphere",
+        "name": "Bounding sphere anchor"
+      },
+      {
+        "htmlId": "floating-anchor-floating-ui",
+        "name": "Floating UI radius offset"
+      }
+    ]
+  },
+  {
     "name": "LD Image Capture",
     "htmlName": "ld_image_capture",
     "examples": [
@@ -404,6 +404,16 @@
       {
         "htmlId": "capture-orthographic-views",
         "name": "Orthographic views"
+      }
+    ]
+  },
+  {
+    "name": "LD Lights",
+    "htmlName": "ld_lights",
+    "examples": [
+      {
+        "htmlId": "toggle-lights",
+        "name": "Toggle Lights"
       }
     ]
   },
@@ -466,16 +476,24 @@
       {
         "htmlId": "bulk-placement",
         "name": "Bulk placement"
+      },
+      {
+        "htmlId": "hover-anchor-metadata",
+        "name": "Hover anchor metadata"
       }
     ]
   },
   {
-    "name": "LD Ambient Occlusion",
-    "htmlName": "ld_ambient_occlusion",
+    "name": "LD Transforms",
+    "htmlName": "ld_transforms",
     "examples": [
       {
-        "htmlId": "ld-ambient-occlusion",
-        "name": "Real-time AO"
+        "htmlId": "transform-geometry",
+        "name": "Transform Geometry"
+      },
+      {
+        "htmlId": "transform-scene",
+        "name": "Transform Scene"
       }
     ]
   }
