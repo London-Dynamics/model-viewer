@@ -2341,7 +2341,7 @@
       {
         "name": "transformstart",
         "htmlName": "transformstart",
-        "description": "Dispatched when a transform operation begins (dragging or API-driven transforms such as setPosition/setRotation/setScale). event.detail includes the current transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
+        "description": "Dispatched when a transform operation begins (pointer drag, rotation disc, or API). <code>event.detail</code> is a <code>TransformEventDetail</code>: <code>target</code> ({ uuid, name }), <code>transform</code> ({ position, rotation, scale } — current authoritative values), and <code>active</code> ({ source, components, axes, delta }) describing the in-progress gesture. <code>active.delta</code> is the change since gesture start; rotation components are wrapped to <code>[-180, 180)</code> degrees (rotation-disc Y uses accumulated applied degrees, then wrapped). <code>source</code> is one of <code>pointer-drag</code>, <code>rotation-disc-y</code>, <code>api</code>, or <code>animation</code>.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
@@ -2349,7 +2349,7 @@
       {
         "name": "transform",
         "htmlName": "transform",
-        "description": "Dispatched continuously while a transform is being applied. event.detail contains the current transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
+        "description": "Dispatched continuously while a transform is in progress. Same <code>TransformEventDetail</code> shape as <code>transformstart</code>; <code>detail.transform</code> holds the current authoritative values and <code>detail.active</code> is set for the open gesture.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
@@ -2357,7 +2357,7 @@
       {
         "name": "transformend",
         "htmlName": "transformend",
-        "description": "Dispatched when an in-progress transform operation ends. event.detail includes the final transform payload: position ([x,y,z] meters), rotation ([x,y,z] degrees), and scale ([x,y,z]).",
+        "description": "Dispatched when a transform operation ends. <code>detail.transform</code> and <code>detail.target</code> reflect the final state; <code>detail.active</code> is <code>null</code>.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
@@ -2463,17 +2463,17 @@
       {
         "name": "transformstart",
         "htmlName": "transformstart",
-        "description": "Fires when a transform operation begins; detail includes position, rotation, and scale payloads."
+        "description": "Fires when a transform begins. detail: { target, transform, active } — see LD Modular transform events."
       },
       {
         "name": "transform",
         "htmlName": "transform",
-        "description": "Fires continuously while a transform operation is in progress with live transform payloads."
+        "description": "Fires during an in-progress transform. detail.transform has current values; detail.active describes the gesture."
       },
       {
         "name": "transformend",
         "htmlName": "transformend",
-        "description": "Fires when a transform operation ends with final position, rotation, and scale payloads."
+        "description": "Fires when a transform ends. detail.active is null; detail.transform is the final state."
       }
     ]
   }

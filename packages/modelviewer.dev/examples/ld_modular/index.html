@@ -488,126 +488,53 @@
                       const transformEventLabel = document.getElementById(
                         'placeglb-transform-events'
                       );
-                      let previousTransformDetail = null;
-                      let activeTransformProperty = 'position';
+                      const formatTriplet = (values) =>
+                        (Array.isArray(values) ? values : [])
+                          .slice(0, 3)
+                          .map((val) => Number(val).toFixed(3))
+                          .join(', ');
 
-                      const getPropertyDelta = (detail, prop) => {
-                        const current = Array.isArray(detail?.[prop])
-                          ? detail[prop]
-                          : [];
-                        const previous = Array.isArray(
-                          previousTransformDetail?.[prop]
-                        )
-                          ? previousTransformDetail[prop]
-                          : [];
-                        let totalDelta = 0;
-                        for (let i = 0; i < 3; i++) {
-                          const currentValue = Number(current[i] ?? 0);
-                          const previousValue = Number(
-                            previous[i] ?? currentValue
-                          );
-                          totalDelta += Math.abs(currentValue - previousValue);
+                      const formatTransform = (eventName, detail) => {
+                        if (!detail?.transform) {
+                          return `${eventName}\n(no payload)`;
                         }
-                        return totalDelta;
-                      };
-
-                      const getActiveTransformProperty = (
-                        eventName,
-                        detail
-                      ) => {
-                        if (!detail) return activeTransformProperty;
-                        const properties = ['position', 'rotation', 'scale'];
-                        let bestProperty = activeTransformProperty;
-                        let bestDelta = -1;
-                        properties.forEach((prop) => {
-                          const delta = getPropertyDelta(detail, prop);
-                          if (delta > bestDelta) {
-                            bestDelta = delta;
-                            bestProperty = prop;
-                          }
-                        });
-                        // If no deltas are detectable and we already have prior state,
-                        // keep the active property to avoid flipping labels at zero crossings.
-                        if (bestDelta <= 1e-9) {
-                          if (previousTransformDetail) {
-                            return activeTransformProperty;
-                          }
-                          // First event fallback: infer from absolute distance to defaults.
-                          const defaults = {
-                            position: [0, 0, 0],
-                            rotation: [0, 0, 0],
-                            scale: [1, 1, 1],
-                          };
-                          let bestAbs = -1;
-                          properties.forEach((prop) => {
-                            const arr = Array.isArray(detail[prop])
-                              ? detail[prop]
-                              : defaults[prop];
-                            const absDelta =
-                              Math.abs(
-                                Number(arr[0] ?? 0) - defaults[prop][0]
-                              ) +
-                              Math.abs(
-                                Number(arr[1] ?? 0) - defaults[prop][1]
-                              ) +
-                              Math.abs(Number(arr[2] ?? 0) - defaults[prop][2]);
-                            if (absDelta > bestAbs) {
-                              bestAbs = absDelta;
-                              bestProperty = prop;
-                            }
-                          });
-                        }
-                        return bestProperty;
-                      };
-
-                      const formatTransform = (
-                        eventName,
-                        detail,
-                        activeProperty
-                      ) => {
-                        if (!detail) return `${eventName}\n(no payload)`;
-                        const toTriplet = (values, fallback) => {
-                          const arr = Array.isArray(values) ? values : fallback;
-                          return arr
-                            .slice(0, 3)
-                            .map((val) => Number(val).toFixed(3))
-                            .join(', ');
-                        };
-                        const fallback =
-                          activeProperty === 'scale' ? [1, 1, 1] : [0, 0, 0];
-                        return [
+                        const {target, transform, active} = detail;
+                        const lines = [
                           eventName,
-                          `${activeProperty}: ${toTriplet(
-                            detail[activeProperty],
-                            fallback
-                          )}`,
-                        ].join('\n');
+                          `target: ${target?.name || '(unnamed)'} (${target?.uuid || '?'})`,
+                          `position: ${formatTriplet(transform.position)}`,
+                          `rotation: ${formatTriplet(transform.rotation)}`,
+                          `scale: ${formatTriplet(transform.scale)}`,
+                        ];
+                        if (active) {
+                          const axes = (active.components || [])
+                            .map((component) => {
+                              const componentAxes = active.axes?.[component];
+                              return componentAxes?.length
+                                ? `${component}[${componentAxes.join(',')}]`
+                                : component;
+                            })
+                            .join(', ');
+                          lines.push(
+                            `active: ${active.source}${axes ? ` (${axes})` : ''}`
+                          );
+                          if (active.source === 'rotation-disc-y') {
+                            const deltaY = active.delta?.rotation?.[1] ?? 0;
+                            const currentY = transform.rotation?.[1] ?? 0;
+                            lines.push(
+                              `rotation Y: ${Number(currentY).toFixed(3)}° (Δ ${Number(deltaY).toFixed(3)}°)`
+                            );
+                          }
+                        }
+                        return lines.join('\n');
                       };
 
                       const updateTransformLabel = (eventName, detail) => {
                         if (!transformEventLabel) return;
-                        activeTransformProperty = getActiveTransformProperty(
+                        transformEventLabel.textContent = formatTransform(
                           eventName,
                           detail
                         );
-                        transformEventLabel.textContent = formatTransform(
-                          eventName,
-                          detail,
-                          activeTransformProperty
-                        );
-                        if (detail) {
-                          previousTransformDetail = {
-                            position: Array.isArray(detail.position)
-                              ? [...detail.position]
-                              : [0, 0, 0],
-                            rotation: Array.isArray(detail.rotation)
-                              ? [...detail.rotation]
-                              : [0, 0, 0],
-                            scale: Array.isArray(detail.scale)
-                              ? [...detail.scale]
-                              : [1, 1, 1],
-                          };
-                        }
                       };
 
                       modelViewer.addEventListener(

@@ -73,6 +73,32 @@ import {
   ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY,
   RotationControlDisc,
 } from './rotation-control-disc.js';
+import {
+  ActiveTransform,
+  BeginTransformSessionOptions,
+  computeTransformDelta,
+  inferRotationAxesFromParsed,
+  TransformAxis,
+  TransformEventDetail,
+  TransformValues,
+} from './transform-events.js';
+
+export type {
+  ActiveTransform,
+  BeginTransformSessionOptions,
+  TransformAxis,
+  TransformComponent,
+  TransformEventDetail,
+  TransformSource,
+  TransformTarget,
+  TransformValues,
+} from './transform-events.js';
+export {
+  computeTransformDelta,
+  inferRotationAxesFromParsed,
+  normalizeAngleDeltaDeg,
+  shortestAngleDeltaDeg,
+} from './transform-events.js';
 
 function isRotationFineSnapModifierActive(e: PointerEvent): boolean {
   return e.getModifierState(ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY);
@@ -176,6 +202,8 @@ export type HoverChangeDetail = {
 type RotationOptions = {
   order?: EulerOrder;
   animate?: boolean;
+  /** When true, apply rotation without dispatching transform events. */
+  silent?: boolean;
   /**
    * How to interpret relative rotation values (e.g. "+90", "-=45"):
    * - undefined / 'relative': add or subtract the value from the current rotation (default).
@@ -808,11 +836,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         const animatingAfter = new Set(this._rotationAnimationMap.keys());
         const rotAfter = animatingAfter.size;
         for (const obj of animatingAfter) {
-          this._dispatchTransformEvent('transform', obj);
+          if (!this._transformSessions.has(obj)) {
+            this._beginTransformSession(obj, {
+              source: 'animation',
+              components: ['rotation'],
+              axes: {rotation: ['x', 'y', 'z']},
+            });
+          }
+          this._emitTransformUpdate(obj);
         }
         for (const obj of animatingBefore) {
           if (!animatingAfter.has(obj)) {
-            this._dispatchTransformEvent('transformend', obj);
+            this._endTransformSession(obj);
           }
         }
 
@@ -1214,23 +1249,146 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return [obj.scale.x, obj.scale.y, obj.scale.z];
     }
 
+    private _cloneTransformValues(obj: Object3D): TransformValues {
+      return {
+        position: [...this._getPositionFromObject(obj)] as [
+          number,
+          number,
+          number,
+        ],
+        rotation: [...this._getRotationFromObject(obj)] as [
+          number,
+          number,
+          number,
+        ],
+        scale: [...this._getScaleFromObject(obj)] as [number, number, number],
+      };
+    }
+
+    private _buildActiveTransform(obj: Object3D): ActiveTransform | null {
+      const session = this._transformSessions.get(obj);
+      if (!session) {
+        return null;
+      }
+      const current = this._cloneTransformValues(obj);
+      const rotationYDelta =
+        session.source === 'rotation-disc-y'
+          ? session.gestureRotationYDelta
+          : undefined;
+      return {
+        source: session.source,
+        components: session.components,
+        axes: session.axes ?? {},
+        delta: computeTransformDelta(current, session.startSnapshot, {
+          rotationYDelta,
+        }),
+      };
+    }
+
+    private _buildTransformEventDetail(
+      obj: Object3D,
+      active: ActiveTransform | null
+    ): TransformEventDetail {
+      return {
+        target: {uuid: obj.uuid, name: obj.name},
+        transform: this._cloneTransformValues(obj),
+        active,
+      };
+    }
+
     private _dispatchTransformEvent(
       type: 'transformstart' | 'transform' | 'transformend',
-      object: Object3D
+      _object: Object3D,
+      detail: TransformEventDetail
     ) {
       try {
         (this as any).dispatchEvent(
-          new CustomEvent(type, {
-            detail: {
-              position: this._getPositionFromObject(object),
-              rotation: this._getRotationFromObject(object),
-              scale: this._getScaleFromObject(object),
-            },
+          new CustomEvent<TransformEventDetail>(type, {
+            detail,
             bubbles: true,
             composed: true,
           })
         );
       } catch (e) {}
+    }
+
+    private _beginTransformSession(
+      obj: Object3D,
+      options: BeginTransformSessionOptions
+    ) {
+      if (this._transformSessions.has(obj)) {
+        return;
+      }
+      const startSnapshot = this._cloneTransformValues(obj);
+      this._transformSessions.set(obj, {
+        ...options,
+        startSnapshot,
+        gestureRotationYDelta: 0,
+      });
+      this._dispatchTransformEvent(
+        'transformstart',
+        obj,
+        this._buildTransformEventDetail(obj, this._buildActiveTransform(obj))
+      );
+    }
+
+    private _emitTransformUpdate(obj: Object3D) {
+      this._dispatchTransformEvent(
+        'transform',
+        obj,
+        this._buildTransformEventDetail(obj, this._buildActiveTransform(obj))
+      );
+    }
+
+    private _endTransformSession(obj: Object3D) {
+      if (!this._transformSessions.has(obj)) {
+        return;
+      }
+      this._transformSessions.delete(obj);
+      this._dispatchTransformEvent(
+        'transformend',
+        obj,
+        this._buildTransformEventDetail(obj, null)
+      );
+    }
+
+    private _runApiTransformOneShot(
+      obj: Object3D,
+      options: BeginTransformSessionOptions,
+      mutate: () => void
+    ) {
+      if (this._transformSessions.has(obj)) {
+        mutate();
+        this._emitTransformUpdate(obj);
+        return;
+      }
+      this._beginTransformSession(obj, options);
+      mutate();
+      this._emitTransformUpdate(obj);
+      this._endTransformSession(obj);
+    }
+
+    private _applyRotationDeltaY(target: Object3D, deltaDeg: number) {
+      if (Math.abs(deltaDeg) <= 1e-4) {
+        return;
+      }
+      const order = target.rotation.order;
+      const current = this._getRotationFromObject(target);
+      const finalDegs: [number, number, number] = [
+        current[0],
+        current[1] + deltaDeg,
+        current[2],
+      ];
+      this._setLogicalRotationOnObject(target, finalDegs);
+      const rotation = new Euler(
+        finalDegs[0] * (Math.PI / 180),
+        finalDegs[1] * (Math.PI / 180),
+        finalDegs[2] * (Math.PI / 180),
+        order
+      );
+      target.rotation.copy(rotation);
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
     }
 
     private _dispatchObjectRemoveEvent(object: Object3D) {
@@ -1390,17 +1548,36 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         endQuat = new Quaternion().setFromEuler(rotation);
       }
 
-      this._setLogicalRotationOnObject(obj, finalDegs);
+      const silent =
+        options?.silent === true || this._transformSessions.has(obj);
+      const rotationAxes = inferRotationAxesFromParsed(parsed, current);
+      const apiSessionOptions: BeginTransformSessionOptions = {
+        source: 'api',
+        components: ['rotation'],
+        axes: {rotation: rotationAxes},
+      };
+
+      const applyInstantRotation = () => {
+        this._setLogicalRotationOnObject(obj, finalDegs);
+        obj.rotation.copy(rotation!);
+      };
 
       if (!animate) {
-        this._dispatchTransformEvent('transformstart', obj);
-        obj.rotation.copy(rotation!);
-        this._dispatchTransformEvent('transform', obj);
-        this._dispatchTransformEvent('transformend', obj);
+        if (silent) {
+          applyInstantRotation();
+          this.requestShadowUpdate();
+          (this as any)[$needsRender]();
+          return;
+        }
+        this._runApiTransformOneShot(obj, apiSessionOptions, () => {
+          applyInstantRotation();
+        });
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return;
       }
+
+      this._setLogicalRotationOnObject(obj, finalDegs);
 
       try {
         const startQuat = obj.quaternion.clone();
@@ -1408,7 +1585,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           obj,
           createQuatAnimation(startQuat, endQuat)
         );
-        this._dispatchTransformEvent('transformstart', obj);
+        if (!silent && !this._transformSessions.has(obj)) {
+          this._beginTransformSession(obj, {
+            source: 'animation',
+            components: ['rotation'],
+            axes: {rotation: ['x', 'y', 'z']},
+          });
+        }
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return;
@@ -1422,9 +1605,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         } catch (err) {
           // ignore
         }
-        this._dispatchTransformEvent('transformstart', obj);
-        this._dispatchTransformEvent('transform', obj);
-        this._dispatchTransformEvent('transformend', obj);
+        if (silent) {
+          this.requestShadowUpdate();
+          (this as any)[$needsRender]();
+          return;
+        }
+        if (this._transformSessions.has(obj)) {
+          this._endTransformSession(obj);
+        }
+        this._runApiTransformOneShot(obj, apiSessionOptions, () => {});
         this.requestShadowUpdate();
         (this as any)[$needsRender]();
       }
@@ -1624,18 +1813,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        let didMutate = false;
-        try {
-          target.position.set(targetValue[0], targetValue[1], targetValue[2]);
-          didMutate = true;
-        } catch (e) {
-          // ignore invalid sets
-        }
-        if (didMutate) {
-          this._dispatchTransformEvent('transform', target);
-          this._dispatchTransformEvent('transformend', target);
-        }
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['position'],
+            axes: {position: ['x', 'y', 'z']},
+          },
+          () => {
+            target.position.set(
+              targetValue[0],
+              targetValue[1],
+              targetValue[2]
+            );
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1659,12 +1851,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        const pos = this._getPositionFromObject(target);
-        pos[0] = targetX;
-        target.position.set(pos[0], pos[1], pos[2]);
-        this._dispatchTransformEvent('transform', target);
-        this._dispatchTransformEvent('transformend', target);
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['position'],
+            axes: {position: ['x']},
+          },
+          () => {
+            const pos = this._getPositionFromObject(target);
+            pos[0] = targetX;
+            target.position.set(pos[0], pos[1], pos[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1683,12 +1882,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        const pos = this._getPositionFromObject(target);
-        pos[1] = targetY;
-        target.position.set(pos[0], pos[1], pos[2]);
-        this._dispatchTransformEvent('transform', target);
-        this._dispatchTransformEvent('transformend', target);
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['position'],
+            axes: {position: ['y']},
+          },
+          () => {
+            const pos = this._getPositionFromObject(target);
+            pos[1] = targetY;
+            target.position.set(pos[0], pos[1], pos[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1707,12 +1913,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        const pos = this._getPositionFromObject(target);
-        pos[2] = targetZ;
-        target.position.set(pos[0], pos[1], pos[2]);
-        this._dispatchTransformEvent('transform', target);
-        this._dispatchTransformEvent('transformend', target);
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['position'],
+            axes: {position: ['z']},
+          },
+          () => {
+            const pos = this._getPositionFromObject(target);
+            pos[2] = targetZ;
+            target.position.set(pos[0], pos[1], pos[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1746,18 +1959,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        let didMutate = false;
-        try {
-          target.scale.set(targetValue[0], targetValue[1], targetValue[2]);
-          didMutate = true;
-        } catch (e) {
-          // ignore invalid sets (e.g., zero/NaN)
-        }
-        if (didMutate) {
-          this._dispatchTransformEvent('transform', target);
-          this._dispatchTransformEvent('transformend', target);
-        }
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['scale'],
+            axes: {scale: ['x', 'y', 'z']},
+          },
+          () => {
+            target.scale.set(targetValue[0], targetValue[1], targetValue[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1781,12 +1993,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        const s = this._getScaleFromObject(target);
-        s[0] = targetSx;
-        target.scale.set(s[0], s[1], s[2]);
-        this._dispatchTransformEvent('transform', target);
-        this._dispatchTransformEvent('transformend', target);
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['scale'],
+            axes: {scale: ['x']},
+          },
+          () => {
+            const s = this._getScaleFromObject(target);
+            s[0] = targetSx;
+            target.scale.set(s[0], s[1], s[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1805,12 +2024,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        const s = this._getScaleFromObject(target);
-        s[1] = targetSy;
-        target.scale.set(s[0], s[1], s[2]);
-        this._dispatchTransformEvent('transform', target);
-        this._dispatchTransformEvent('transformend', target);
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['scale'],
+            axes: {scale: ['y']},
+          },
+          () => {
+            const s = this._getScaleFromObject(target);
+            s[1] = targetSy;
+            target.scale.set(s[0], s[1], s[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -1829,12 +2055,19 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (targets.length === 0) return;
       for (const target of targets) {
-        this._dispatchTransformEvent('transformstart', target);
-        const s = this._getScaleFromObject(target);
-        s[2] = targetSz;
-        target.scale.set(s[0], s[1], s[2]);
-        this._dispatchTransformEvent('transform', target);
-        this._dispatchTransformEvent('transformend', target);
+        this._runApiTransformOneShot(
+          target,
+          {
+            source: 'api',
+            components: ['scale'],
+            axes: {scale: ['z']},
+          },
+          () => {
+            const s = this._getScaleFromObject(target);
+            s[2] = targetSz;
+            target.scale.set(s[0], s[1], s[2]);
+          }
+        );
       }
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
@@ -2065,6 +2298,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _rotationGestureAccumulatedDeg = 0;
     private _rotationGestureTarget: Object3D | null = null;
     private _rotationDiscSizeLockedUuid: string | null = null;
+    private _transformSessions = new Map<
+      Object3D,
+      BeginTransformSessionOptions & {
+        startSnapshot: TransformValues;
+        /** Sum of applied Y deltas during rotation-disc-y gesture. */
+        gestureRotationYDelta: number;
+      }
+    >();
 
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -3620,6 +3861,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._rotationGestureLastAngleRad = discHit.angleRad;
       this._rotationGestureAccumulatedDeg = 0;
       this._rotationGestureTarget = target;
+      this._beginTransformSession(target, {
+        source: 'rotation-disc-y',
+        components: ['rotation'],
+        axes: {rotation: ['y']},
+      });
       this._rotationControlDisc?.setDragArc(discHit.angleRad, discHit.angleRad);
       this._windowPointerMoveForRotationBound =
         this._onWindowPointerMoveForRotation.bind(this);
@@ -3683,7 +3929,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         applyDeltaDeg = quantized.consumedDelta;
       }
       if (Math.abs(applyDeltaDeg) > 1e-4) {
-        this.setRotationY(`+=${applyDeltaDeg}`);
+        const target = this._rotationGestureTarget;
+        this._applyRotationDeltaY(target, applyDeltaDeg);
+        const session = this._transformSessions.get(target);
+        if (session?.source === 'rotation-disc-y') {
+          session.gestureRotationYDelta += applyDeltaDeg;
+        }
+        this._emitTransformUpdate(target);
       }
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -3692,12 +3944,16 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _stopRotationGesture() {
       if (!this._rotationGestureActive) return;
+      const gestureTarget = this._rotationGestureTarget;
       this._rotationGestureActive = false;
       this._rotationGesturePointerId = null;
       this._rotationGestureStartAngleRad = 0;
       this._rotationGestureLastAngleRad = 0;
       this._rotationGestureAccumulatedDeg = 0;
       this._rotationGestureTarget = null;
+      if (gestureTarget) {
+        this._endTransformSession(gestureTarget);
+      }
       this._rotationControlDisc?.clearDragArc();
       if (this._windowPointerMoveForRotationBound) {
         window.removeEventListener(
@@ -4086,7 +4342,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this._currentDragTarget || (this as any).selectedObjects?.[0]) {
         const transformTarget =
           this._currentDragTarget || (this as any).selectedObjects[0];
-        this._dispatchTransformEvent('transformstart', transformTarget);
+        const positionAxes = requiresSurfaceSnap(transformTarget)
+          ? (['x', 'y', 'z'] as TransformAxis[])
+          : (['x', 'z'] as TransformAxis[]);
+        this._beginTransformSession(transformTarget, {
+          source: 'pointer-drag',
+          components: ['position'],
+          axes: {position: positionAxes},
+        });
       }
       this.dragStartMousePosition.copy(this.currentMousePosition);
       try {
@@ -4218,7 +4481,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.updateSnappingPointSlots();
         } catch (e) {}
 
-        this._dispatchTransformEvent('transform', object);
+        this._emitTransformUpdate(object);
         (this as any).dispatchEvent(
           new CustomEvent('object-drag', {
             detail: {
@@ -4271,7 +4534,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.updateSnappingPointSlots();
         } catch (e) {}
 
-        this._dispatchTransformEvent('transform', object);
+        this._emitTransformUpdate(object);
 
         // Dispatch event so other mixins (like measure) can update
         (this as any).dispatchEvent(
@@ -4358,7 +4621,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (dragTarget) {
-        this._dispatchTransformEvent('transformend', dragTarget);
+        this._endTransformSession(dragTarget);
         if (dragTarget.userData?.isPlacedObject === true) {
           this._markRoomWallVisibilityCacheDirty();
         }
