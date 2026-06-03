@@ -2002,9 +2002,21 @@
         }
       },
       {
-        "name": "rotation-controls-step",
-        "htmlName": "rotationControlsStep",
-        "description": "Step size in degrees for quantized live rotation while dragging the control disc. Use 0 for continuous rotation and default minor/major ticks.",
+        "name": "rotation-controls-major-step",
+        "htmlName": "rotationControlsMajorStep",
+        "description": "Major tick spacing on the floor rotation disc (degrees) and snap increment while dragging without a modifier. Use 0 for default major ticks (45°) and continuous rotation.",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
+        ],
+        "default": {
+          "default": "0",
+          "options": "number (degrees)"
+        }
+      },
+      {
+        "name": "rotation-controls-fine-step",
+        "htmlName": "rotationControlsFineStep",
+        "description": "Minor tick spacing on the floor rotation disc (degrees) and snap increment while dragging with Shift held. Use 0 to hide minor ticks when a major step is set, or for continuous rotation with Shift.",
         "links": [
           "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
         ],

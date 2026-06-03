@@ -70,8 +70,13 @@ import { shouldIgnoreModularDeleteKeydown } from './modular-delete-keydown.js';
 import {
   consumeQuantizedRotationDelta,
   normalizeSignedAngleDelta,
+  ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY,
   RotationControlDisc,
 } from './rotation-control-disc.js';
+
+function isRotationFineSnapModifierActive(e: PointerEvent): boolean {
+  return e.getModifierState(ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY);
+}
 
 // Re-export SnapPoint type for external use
 export type { SnapPoint };
@@ -196,7 +201,8 @@ export declare interface LDModularInterface {
   disableXRotationControls: boolean;
   disableYRotationControls: boolean;
   disableZRotationControls: boolean;
-  rotationControlsStep: number;
+  rotationControlsMajorStep: number;
+  rotationControlsFineStep: number;
   rotationControlsHighlightColor: string;
 
   setPosition(objectName: string, value: [number, number, number]): void;
@@ -345,8 +351,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'disable-z-rotation-controls' })
     disableZRotationControls: boolean = true;
 
-    @property({ type: Number, attribute: 'rotation-controls-step' })
-    rotationControlsStep: number = 0;
+    @property({ type: Number, attribute: 'rotation-controls-major-step' })
+    rotationControlsMajorStep: number = 0;
+
+    @property({ type: Number, attribute: 'rotation-controls-fine-step' })
+    rotationControlsFineStep: number = 0;
 
     @property({ type: String, attribute: 'rotation-controls-highlight-color' })
     rotationControlsHighlightColor: string = '#3b82f6';
@@ -454,7 +463,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (
         changedProperties.has('rotationControls') ||
         changedProperties.has('disableYRotationControls') ||
-        changedProperties.has('rotationControlsStep') ||
+        changedProperties.has('rotationControlsMajorStep') ||
+        changedProperties.has('rotationControlsFineStep') ||
         changedProperties.has('rotationControlsHighlightColor')
       ) {
         this._syncRotationControlDiscLifecycle();
@@ -3475,7 +3485,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportHeight: (this as any)[$scene].height,
         floorY: this._getRotationDiscFloorY(target),
         highlightColor: this.rotationControlsHighlightColor,
-        stepDegrees: this.rotationControlsStep,
+        majorStepDegrees: this.rotationControlsMajorStep,
+        fineStepDegrees: this.rotationControlsFineStep,
         lockSize,
       });
       (this as any)[$needsRender]();
@@ -3518,12 +3529,16 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportHeight: scene.height,
         floorY: this._getRotationDiscFloorY(target),
         highlightColor: this.rotationControlsHighlightColor,
-        stepDegrees: this.rotationControlsStep,
+        majorStepDegrees: this.rotationControlsMajorStep,
+        fineStepDegrees: this.rotationControlsFineStep,
         lockSize: false,
       });
     }
 
-    private _setPointerRayFromClient(clientX: number, clientY: number): boolean {
+    private _setPointerRayFromClient(
+      clientX: number,
+      clientY: number
+    ): boolean {
       const inputEl = (this as any)[$userInputElement];
       const scene = (this as any)[$scene];
       if (!inputEl || !scene) return false;
@@ -3533,7 +3548,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const mouseX = ((clientX - rect.left) / rect.width) * 2 - 1;
       const mouseY = -(((clientY - rect.top) / rect.height) * 2 - 1);
       (this as any).currentMousePosition.set(mouseX, mouseY);
-      (this as any).raycaster.setFromCamera((this as any).currentMousePosition, camera);
+      (this as any).raycaster.setFromCamera(
+        (this as any).currentMousePosition,
+        camera
+      );
       return true;
     }
 
@@ -3547,7 +3565,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this._setPointerRayFromClient(clientX, clientY)) {
         return null;
       }
-      return this._rotationControlDisc.angleFromRay((this as any).raycaster.ray);
+      return this._rotationControlDisc.angleFromRay(
+        (this as any).raycaster.ray
+      );
     }
 
     private _intersectRotationControlFromClientPoint(
@@ -3560,12 +3580,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this._setPointerRayFromClient(clientX, clientY)) {
         return null;
       }
-      const discHit = this._rotationControlDisc.intersectRay((this as any).raycaster.ray);
+      const discHit = this._rotationControlDisc.intersectRay(
+        (this as any).raycaster.ray
+      );
       if (!discHit) return null;
 
       const targetObject = (this as any)._findTargetObject();
       if (!targetObject) return null;
-      const allHits = (this as any).raycaster.intersectObject(targetObject, true);
+      const allHits = (this as any).raycaster.intersectObject(
+        targetObject,
+        true
+      );
       const nearestModelDistance = allHits.find(
         (hit: any) =>
           hit.object.visible &&
@@ -3644,7 +3669,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         angleRad
       );
       const deltaDeg = (deltaRad * 180) / Math.PI;
-      const step = Math.max(0, this.rotationControlsStep || 0);
+      const step = isRotationFineSnapModifierActive(e)
+        ? Math.max(0, this.rotationControlsFineStep || 0)
+        : Math.max(0, this.rotationControlsMajorStep || 0);
       let applyDeltaDeg = deltaDeg;
       if (step > 0) {
         this._rotationGestureAccumulatedDeg += deltaDeg;
@@ -4949,9 +4976,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Merge options for a coalesced remove pass (animate wins if any caller requests it).
      */
-    private _mergeRemoveSelectedCoalescedOptions(
-      next?: { animate?: boolean }
-    ): void {
+    private _mergeRemoveSelectedCoalescedOptions(next?: {
+      animate?: boolean;
+    }): void {
       if (!next || next.animate !== true) return;
       if (!this._removeSelectedMergedOptions) {
         this._removeSelectedMergedOptions = {};

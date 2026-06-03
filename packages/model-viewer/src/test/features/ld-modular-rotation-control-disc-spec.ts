@@ -6,7 +6,10 @@ import {expect} from 'chai';
 import {
   consumeQuantizedRotationDelta,
   normalizeSignedAngleDelta,
+  resolveRotationDiscTickConfig,
 } from '../../features/ld-modular/rotation-control-disc.js';
+
+const deg = (degrees: number) => (degrees * Math.PI) / 180;
 
 suite('ld-modular rotation control disc', () => {
   test('normalizes signed angle deltas to shortest arc', () => {
@@ -24,5 +27,32 @@ suite('ld-modular rotation control disc', () => {
     const result = consumeQuantizedRotationDelta(-7.25, 0);
     expect(result.consumedDelta).to.equal(-7.25);
     expect(result.remaining).to.equal(0);
+  });
+
+  test('resolveRotationDiscTickConfig uses defaults when neither step is set', () => {
+    const config = resolveRotationDiscTickConfig(0, 0);
+    expect(config.majorStepRad).to.be.closeTo(deg(45), 1e-6);
+    expect(config.minorStepRad).to.be.closeTo(deg(15), 1e-6);
+    expect(config.showMinorTicks).to.equal(true);
+  });
+
+  test('resolveRotationDiscTickConfig shows major ticks only when major step is set', () => {
+    const config = resolveRotationDiscTickConfig(90, 0);
+    expect(config.majorStepRad).to.be.closeTo(deg(90), 1e-6);
+    expect(config.showMinorTicks).to.equal(false);
+  });
+
+  test('resolveRotationDiscTickConfig uses fine step for minor ticks', () => {
+    const config = resolveRotationDiscTickConfig(0, 10);
+    expect(config.majorStepRad).to.be.closeTo(deg(45), 1e-6);
+    expect(config.minorStepRad).to.be.closeTo(deg(10), 1e-6);
+    expect(config.showMinorTicks).to.equal(true);
+  });
+
+  test('resolveRotationDiscTickConfig applies both major and fine steps', () => {
+    const config = resolveRotationDiscTickConfig(90, 10);
+    expect(config.majorStepRad).to.be.closeTo(deg(90), 1e-6);
+    expect(config.minorStepRad).to.be.closeTo(deg(10), 1e-6);
+    expect(config.showMinorTicks).to.equal(true);
   });
 });

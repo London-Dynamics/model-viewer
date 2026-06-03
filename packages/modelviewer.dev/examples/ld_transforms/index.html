@@ -731,11 +731,13 @@
                       id="rotation-controls-panel"
                       class="absolute bottom-0 inset-x-0 p-2"
                     >
-                      <div class="bg-white shadow-sm rounded-lg p-3 flex gap-3">
+                      <div
+                        class="bg-white shadow-sm rounded-lg p-3 flex flex-wrap gap-3 items-center"
+                      >
                         <label class="text-sm flex items-center gap-2">
-                          Step (deg)
+                          Major step (°)
                           <input
-                            id="rotation-step"
+                            id="rotation-major-step"
                             type="number"
                             min="0"
                             step="1"
@@ -743,6 +745,20 @@
                             class="border rounded px-2 py-1 w-20"
                           />
                         </label>
+                        <label class="text-sm flex items-center gap-2">
+                          Fine step (°)
+                          <input
+                            id="rotation-fine-step"
+                            type="number"
+                            min="0"
+                            step="1"
+                            value="0"
+                            class="border rounded px-2 py-1 w-20"
+                          />
+                        </label>
+                        <span class="text-xs text-zinc-500"
+                          >Hold Shift for fine snap when fine step &gt; 0</span
+                        >
                         <label class="text-sm flex items-center gap-2">
                           Highlight
                           <input
@@ -761,15 +777,18 @@
                       const modelViewer = document.querySelector(
                         '#rotation-controls-demo'
                       );
-                      const stepInput = modelViewer.querySelector(
-                        '#rotation-step'
+                      const majorStepInput = modelViewer.querySelector(
+                        '#rotation-major-step'
                       );
-                      const colorInput = modelViewer.querySelector(
-                        '#rotation-color'
-                      );
+                      const fineStepInput =
+                        modelViewer.querySelector('#rotation-fine-step');
+                      const colorInput =
+                        modelViewer.querySelector('#rotation-color');
                       const applySettings = () => {
-                        modelViewer.rotationControlsStep =
-                          Number(stepInput.value) || 0;
+                        modelViewer.rotationControlsMajorStep =
+                          Number(majorStepInput.value) || 0;
+                        modelViewer.rotationControlsFineStep =
+                          Number(fineStepInput.value) || 0;
                         modelViewer.rotationControlsHighlightColor =
                           colorInput.value || '#3b82f6';
                       };
@@ -799,7 +818,9 @@
                         }
                         const observer = new IntersectionObserver(
                           (entries) => {
-                            if (!entries.some((entry) => entry.isIntersecting)) {
+                            if (
+                              !entries.some((entry) => entry.isIntersecting)
+                            ) {
                               return;
                             }
                             observer.disconnect();
@@ -809,7 +830,8 @@
                         );
                         observer.observe(modelViewer);
                       });
-                      stepInput.addEventListener('input', applySettings);
+                      majorStepInput.addEventListener('input', applySettings);
+                      fineStepInput.addEventListener('input', applySettings);
                       colorInput.addEventListener('input', applySettings);
                       applySettings();
                     })();

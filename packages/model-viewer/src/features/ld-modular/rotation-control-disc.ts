@@ -17,8 +17,11 @@ import {
 
 // --- Customisation (edit these) -----------------------------------------------
 
-const ROTATION_DISC_DEFAULT_MINOR_STEP_DEG = 7.5;
+const ROTATION_DISC_DEFAULT_MINOR_STEP_DEG = 15;
 const ROTATION_DISC_DEFAULT_MAJOR_STEP_DEG = 45;
+
+/** Modifier key for fine-step rotation snap while dragging the control disc. */
+export const ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY = 'Shift' as const;
 
 /** Minimum on-screen disc radius in CSS pixels. */
 const ROTATION_DISC_MIN_RADIUS_PX = 96;
@@ -140,6 +143,12 @@ function applyRotationDiscAppearanceUniforms(
   uniforms.uOpacity.value = discMasterOpacity;
 }
 
+export type RotationDiscTickConfig = {
+  majorStepRad: number;
+  minorStepRad: number;
+  showMinorTicks: boolean;
+};
+
 export type RotationDiscUpdateArgs = {
   selectedObject: Object3D;
   camera: Camera;
@@ -147,7 +156,8 @@ export type RotationDiscUpdateArgs = {
   viewportHeight: number;
   floorY: number;
   highlightColor: string;
-  stepDegrees: number;
+  majorStepDegrees: number;
+  fineStepDegrees: number;
   /** When true, recompute disc radius from the object bounding sphere. */
   lockSize?: boolean;
 };
@@ -167,6 +177,28 @@ function normalizeDegrees(stepDegrees: number): number {
     return 0;
   }
   return Math.min(360, Math.max(minStepEpsilon, Math.abs(stepDegrees)));
+}
+
+export function resolveRotationDiscTickConfig(
+  majorStepDegrees: number,
+  fineStepDegrees: number
+): RotationDiscTickConfig {
+  const normalizedMajor = normalizeDegrees(majorStepDegrees);
+  const normalizedFine = normalizeDegrees(fineStepDegrees);
+
+  const majorStepRad =
+    normalizedMajor > 0
+      ? degreesToRad(normalizedMajor)
+      : degreesToRad(ROTATION_DISC_DEFAULT_MAJOR_STEP_DEG);
+
+  const showMinorTicks = normalizedFine > 0 || normalizedMajor === 0;
+
+  const minorStepRad =
+    normalizedFine > 0
+      ? degreesToRad(normalizedFine)
+      : degreesToRad(ROTATION_DISC_DEFAULT_MINOR_STEP_DEG);
+
+  return { majorStepRad, minorStepRad, showMinorTicks };
 }
 
 function worldUnitsPerPixelAtDepth(
@@ -223,7 +255,7 @@ export class RotationControlDisc extends Object3D {
         uMajorStepRad: {
           value: degreesToRad(ROTATION_DISC_DEFAULT_MAJOR_STEP_DEG),
         },
-        uUseCustomStep: { value: 0 },
+        uShowMinorTicks: { value: 1 },
         uInnerRadius: { value: 0.75 },
         uMinorTickLength: { value: ROTATION_DISC_MINOR_TICK_LENGTH },
         uMajorTickLength: { value: ROTATION_DISC_MAJOR_TICK_LENGTH },
@@ -262,7 +294,7 @@ export class RotationControlDisc extends Object3D {
         uniform float uOpacity;
         uniform float uMinorStepRad;
         uniform float uMajorStepRad;
-        uniform float uUseCustomStep;
+        uniform float uShowMinorTicks;
         uniform float uInnerRadius;
         uniform float uMinorTickLength;
         uniform float uMajorTickLength;
@@ -324,9 +356,8 @@ export class RotationControlDisc extends Object3D {
 
           float minorTickDefault = smoothstep(uMinorTickAngularThickness, 0.0, minorDistance) * minorBand;
           float majorTickDefault = smoothstep(uMajorTickAngularThickness, 0.0, majorDistance) * majorBand;
-          float stepAsMajorTick = smoothstep(uMajorTickAngularThickness, 0.0, minorDistance) * majorBand;
-          float majorTick = (1.0 - uUseCustomStep) * majorTickDefault + uUseCustomStep * stepAsMajorTick;
-          float minorTick = (1.0 - uUseCustomStep) * minorTickDefault * (1.0 - step(0.001, majorTickDefault));
+          float majorTick = majorTickDefault;
+          float minorTick = uShowMinorTicks * minorTickDefault * (1.0 - step(0.001, majorTickDefault));
           float tickMask = max(minorTick, majorTick);
           vec3 tickRgb = mix(uMinorTickColor, uMajorTickColor, step(0.001, majorTick));
           float tickAlpha = tickMask * uTickOpacity;
@@ -419,7 +450,8 @@ export class RotationControlDisc extends Object3D {
       viewportHeight,
       floorY,
       highlightColor,
-      stepDegrees,
+      majorStepDegrees,
+      fineStepDegrees,
       lockSize,
     } = args;
 
@@ -488,20 +520,15 @@ export class RotationControlDisc extends Object3D {
       }
     }
 
-    const normalizedStep = normalizeDegrees(stepDegrees);
-    if (normalizedStep > 0) {
-      this._material.uniforms.uMinorStepRad.value =
-        (normalizedStep * Math.PI) / 180;
-      this._material.uniforms.uUseCustomStep.value = 1;
-    } else {
-      this._material.uniforms.uMinorStepRad.value = degreesToRad(
-        ROTATION_DISC_DEFAULT_MINOR_STEP_DEG
-      );
-      this._material.uniforms.uUseCustomStep.value = 0;
-    }
-    this._material.uniforms.uMajorStepRad.value = degreesToRad(
-      ROTATION_DISC_DEFAULT_MAJOR_STEP_DEG
+    const tickConfig = resolveRotationDiscTickConfig(
+      majorStepDegrees,
+      fineStepDegrees
     );
+    this._material.uniforms.uMajorStepRad.value = tickConfig.majorStepRad;
+    this._material.uniforms.uMinorStepRad.value = tickConfig.minorStepRad;
+    this._material.uniforms.uShowMinorTicks.value = tickConfig.showMinorTicks
+      ? 1
+      : 0;
     this._material.uniforms.uInnerRadius.value =
       this._innerRadiusWorld / this._outerRadiusWorld;
 
