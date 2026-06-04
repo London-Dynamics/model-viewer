@@ -15,6 +15,7 @@
 
 import {expect} from 'chai';
 
+import {LDEffectsComposer} from '../../../../features/ld-effects-composer/index.js';
 import {$renderer, $scene} from '../../../../model-viewer-base.js';
 import {ModelViewerElement} from '../../../../model-viewer.js';
 import {waitForEvent} from '../../../../utilities.js';
@@ -89,7 +90,7 @@ suite('LDAmbientOcclusion render integration', () => {
 
   test('registers an effect composer when initially enabled', async () => {
     expect(element.ambientOcclusion).to.equal(true);
-    expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(element[$scene].effectRenderer).to.be.instanceOf(LDEffectsComposer);
   });
 
   test('matches diffuse output when AO intensity is zero', async () => {

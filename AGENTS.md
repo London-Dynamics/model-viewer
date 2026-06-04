@@ -19,6 +19,20 @@ See the root `README.md` for all commands. Quick reference:
 - **Serve docs**: `npm run serve` (serves static files on port 8080; browse `/packages/modelviewer.dev/` for docs, `/packages/space-opera/editor/` for the editor)
 - **Lint**: `npm run lint` (currently a no-op — `.eslintignore` excludes all packages)
 
+### LD unified postprocessing (`ld-effects-composer`)
+
+LD bloom, ambient occlusion, and selection outline share one internal pipeline. **Do not** add per-feature `registerEffectComposer` calls in mixins or require hosts to import `@google/model-viewer-effects` for selection highlight.
+
+- **Location:** `packages/model-viewer/src/features/ld-effects-composer/`
+  - `ld-effects-composer.ts` — `LDEffectsComposer` (`EffectComposerInterface`); single owner of `scene.effectRenderer` when any LD effect flag is on
+  - `bloom-module.ts` — selective bloom passes and material darken/restore
+  - `ao-module.ts` — AO pass wiring (imports `AOPass` / `AOShader` from `three-components/postprocessing/ld-ambient-occlusion/`)
+  - `selection-outline-module.ts` — `OutlinePass` and `DEFAULT_SELECTION_*` constants
+  - `index.ts` — public exports and **`syncLDEffectsComposer(host)`**
+- **Mixin rule:** `ld-bloom`, `ld-ambient-occlusion`, and `ld-selection` call **`syncLDEffectsComposer(this)`** on attribute/selection changes; they must not call `registerEffectComposer` directly
+- **Simultaneous effects:** `bloom`, `ambient-occlusion`, and `highlight-selected` may all be enabled together
+- **Legacy:** Host `<effect-composer>` (MVE) is ignored when LD effect attributes are on; low-level AO shaders stay under `three-components/postprocessing/ld-ambient-occlusion/`
+
 ### Known issues at HEAD
 - `packages/model-viewer` has a **pre-existing build failure**: `src/features/ld-environment.ts` was deleted but still imported in `src/model-viewer.ts`. This prevents `tsc` from completing for this package. The other 4 packages (`model-viewer-effects`, `modelviewer.dev`, `render-fidelity-tools`, `space-opera`) build and test normally.
 - The `lib/` directory in `model-viewer` is committed with stale compiled output, so the web test runner can run some tests, but many fail because `lib/features/ld-environment.js` is missing.

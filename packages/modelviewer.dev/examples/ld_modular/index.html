@@ -55,12 +55,6 @@
       src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
     ></script>
 
-    <!-- Import the <model-viewer-effects> addon -->
-    <script
-      type="module"
-      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
-    ></script>
-
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
     <link
       type="text/css"
@@ -191,6 +185,7 @@
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     snapping-enabled
                     highlight-selected
+                    selection-highlight-color="#165dfc"
                     selection-scope="group"
                     measure
                     edit
@@ -229,13 +224,6 @@
                         </button>
                       </div>
                     </div>
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                      <color-grade-effect></color-grade-effect>
-                    </effect-composer>
                     <div
                       id="placeglb-transform-events"
                       class="absolute left-2 top-2 z-30 pointer-events-none rounded-md bg-black/70 px-3 py-2 text-xs text-white whitespace-pre font-mono"
@@ -1130,6 +1118,7 @@
                     edit
                     selection-scope="part"
                     highlight-selected
+                    selection-highlight-color="#165dfc"
                     edit
                     src-is-room
                     walls
@@ -1152,12 +1141,6 @@
                         </button>
                       </div>
                     </div>
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
                     <div class="absolute bottom-0 inset-x-0 p-2">
                       <div class="bg-white shadow-sm rounded-lg">
                         <div class="px-4 py-5">
@@ -1984,6 +1967,7 @@
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     snapping-enabled
                     highlight-selected
+                    selection-highlight-color="#165dfc"
                     selection-scope="group"
                     measure
                     edit

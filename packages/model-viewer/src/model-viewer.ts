@@ -36,9 +36,6 @@ import { LDMeasureMixin } from './features/ld-measure/index.js';
 import { LDModularMixin } from './features/ld-modular/index.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
 
-// Import custom effects to register them
-import './features/ld-selection/selection-outline-effect.js';
-
 import ModelViewerElementBase from './model-viewer-base.js';
 
 // Export these to allow lazy-loaded LottieLoader.js to find what it needs.

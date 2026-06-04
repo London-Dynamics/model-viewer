@@ -10,6 +10,7 @@ import {
   Texture
 } from 'three';
 
+import {LDEffectsComposer} from '../../features/ld-effects-composer/index.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {$scene} from '../../model-viewer-base.js';
 import {timePasses} from '../../utilities.js';
@@ -32,8 +33,11 @@ type BloomComposerInternals = {
   runWithShadowBloomState(callback: () => void): void;
 };
 
-const getComposer = (element: ModelViewerElement): BloomComposerInternals =>
-    element[$scene].effectRenderer as unknown as BloomComposerInternals;
+const getComposer = (element: ModelViewerElement): BloomComposerInternals => {
+  const renderer = element[$scene].effectRenderer;
+  expect(renderer).to.be.instanceOf(LDEffectsComposer);
+  return renderer as unknown as BloomComposerInternals;
+};
 
 const addCubeMesh = (element: ModelViewerElement, name: string):
     {mesh: Mesh, material: MeshStandardMaterial} => {

@@ -1,52 +1,20 @@
 import {property} from 'lit/decorators.js';
 
-import {
-  EffectComposerInterface,
-  $needsRender,
-  $scene,
-} from '../model-viewer-base.js';
+import {$needsRender} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
 import {Constructor} from '../utilities.js';
 
 import {
-  AmbientOcclusionOptions,
-  LDAmbientOcclusionComposer,
-} from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
-import {AOShader} from '../three-components/postprocessing/ld-ambient-occlusion/AOShader.js';
-import {AOPass} from '../three-components/postprocessing/ld-ambient-occlusion/AOPass.js';
-
-const AO_OUTPUT =
-    ((AOPass as unknown) as {OUTPUT: Record<string, number>}).OUTPUT ?? {
-      Default: 0,
-      Diffuse: 1,
-      Depth: 2,
-      Normal: 3,
-      AO: 4,
-      Denoise: 5,
-    };
+  getAoOptionsFromHost,
+  syncLDEffectsComposer,
+} from './ld-effects-composer/index.js';
+import {$ldEffectsComposer} from './ld-effects-composer/index.js';
+import type {LDEffectsComposer} from './ld-effects-composer/index.js';
+import type {LDEffectsHost} from './ld-effects-composer/types.js';
 
 export type AoAlgorithmName = 'ssao'|'sao'|'n8ao'|'hbao'|'gtao';
 export type AoOutputName =
     'default'|'diffuse'|'depth'|'normal'|'ao'|'denoise';
-
-const algorithmMap: Record<AoAlgorithmName, number> = {
-  ssao: AOShader.ALGORITHM.SSAO,
-  sao: AOShader.ALGORITHM.SAO,
-  n8ao: AOShader.ALGORITHM.N8AO,
-  hbao: AOShader.ALGORITHM.HBAO,
-  gtao: AOShader.ALGORITHM.GTAO,
-};
-
-const outputMap: Record<AoOutputName, number> = {
-  'default': AO_OUTPUT.Default,
-  'diffuse': AO_OUTPUT.Diffuse,
-  'depth': AO_OUTPUT.Depth,
-  'normal': AO_OUTPUT.Normal,
-  'ao': AO_OUTPUT.AO,
-  'denoise': AO_OUTPUT.Denoise,
-};
-
-const $aoComposer = Symbol('aoComposer');
 
 export declare interface LDAmbientOcclusionInterface {
   ambientOcclusion: boolean;
@@ -69,6 +37,27 @@ export declare interface LDAmbientOcclusionInterface {
   aoDenoiseDepthPhi: number;
   aoDenoiseNormalPhi: number;
 }
+
+const AO_KNOBS = [
+  'aoAlgorithm',
+  'aoRadius',
+  'aoIntensity',
+  'aoBias',
+  'aoThickness',
+  'aoDistanceExponent',
+  'aoDistanceFalloff',
+  'aoSamples',
+  'aoScreenSpaceRadius',
+  'aoNoise',
+  'aoOutput',
+  'aoDenoiseRadius',
+  'aoDenoiseRadiusExponent',
+  'aoDenoiseRings',
+  'aoDenoiseSamples',
+  'aoDenoiseLumaPhi',
+  'aoDenoiseDepthPhi',
+  'aoDenoiseNormalPhi',
+] as const;
 
 export const LDAmbientOcclusionMixin = <
   T extends Constructor<ModelViewerElementBase>
@@ -133,118 +122,22 @@ export const LDAmbientOcclusionMixin = <
     @property({type: Number, attribute: 'ao-denoise-normal-phi'})
     aoDenoiseNormalPhi = 3;
 
-    protected[$aoComposer]: EffectComposerInterface|null = null;
-
-    override connectedCallback() {
-      super.connectedCallback();
-      if (this.ambientOcclusion) {
-        this.setupAmbientOcclusion();
-      }
-    }
-
-    override disconnectedCallback() {
-      super.disconnectedCallback();
-      this.teardownAmbientOcclusion();
-    }
-
     override updated(changedProperties: Map<string|number|symbol, unknown>) {
       super.updated(changedProperties);
 
-      if (this.ambientOcclusion) {
-        if (this[$aoComposer] == null) {
-          this.setupAmbientOcclusion();
+      if (
+          changedProperties.has('ambientOcclusion') ||
+          AO_KNOBS.some((prop) => changedProperties.has(prop))
+      ) {
+        const composer =
+            (this as unknown as {[$ldEffectsComposer]?: LDEffectsComposer})
+                [$ldEffectsComposer];
+        if (composer != null && this.ambientOcclusion) {
+          composer.updateAoOptions(getAoOptionsFromHost(this as unknown as LDEffectsHost));
         }
-      } else if (this[$aoComposer] != null) {
-        this.teardownAmbientOcclusion();
-      }
-
-      const knobs = [
-        'aoAlgorithm',
-        'aoRadius',
-        'aoIntensity',
-        'aoBias',
-        'aoThickness',
-        'aoDistanceExponent',
-        'aoDistanceFalloff',
-        'aoSamples',
-        'aoScreenSpaceRadius',
-        'aoNoise',
-        'aoOutput',
-        'aoDenoiseRadius',
-        'aoDenoiseRadiusExponent',
-        'aoDenoiseRings',
-        'aoDenoiseSamples',
-        'aoDenoiseLumaPhi',
-        'aoDenoiseDepthPhi',
-        'aoDenoiseNormalPhi',
-      ];
-
-      if (knobs.some((prop) => changedProperties.has(prop))) {
-        const options = this.getComposerOptions();
-        if (this[$aoComposer] instanceof LDAmbientOcclusionComposer) {
-          this[$aoComposer].updateOptions(options);
-          (this as any)[$needsRender]();
-        }
-      }
-    }
-
-    private setupAmbientOcclusion() {
-      const currentEffect = (this as any)[$scene].effectRenderer;
-      if (currentEffect != null && currentEffect !== this[$aoComposer]) {
-        console.warn(
-            '[model-viewer] ambient-occlusion requires control over the effect composer. Please remove other custom composers before enabling.');
-        this.ambientOcclusion = false;
-        return;
-      }
-
-      if (!this[$aoComposer]) {
-        this[$aoComposer] =
-            new LDAmbientOcclusionComposer(this.getComposerOptions());
-      }
-      this.registerEffectComposer(this[$aoComposer]!);
-      (this as any)[$needsRender]();
-    }
-
-    private teardownAmbientOcclusion() {
-      if (this[$aoComposer]) {
-        if ((this as any)[$scene].effectRenderer === this[$aoComposer]) {
-          this.unregisterEffectComposer();
-        }
-        (this[$aoComposer] as LDAmbientOcclusionComposer).dispose();
-        this[$aoComposer] = null;
+        syncLDEffectsComposer(this);
         (this as any)[$needsRender]();
       }
-    }
-
-    private getComposerOptions(): AmbientOcclusionOptions {
-      const algorithm =
-          algorithmMap[this.aoAlgorithm] ?? AOShader.ALGORITHM.GTAO;
-      const output = outputMap[this.aoOutput] ?? AO_OUTPUT.Default;
-      const nvAligned = !(algorithm === AOShader.ALGORITHM.GTAO ||
-                          algorithm === AOShader.ALGORITHM.HBAO);
-
-      return {
-        algorithm,
-        radius: this.aoRadius,
-        distanceExponent: this.aoDistanceExponent,
-        thickness: this.aoThickness,
-        distanceFallOff: this.aoDistanceFalloff,
-        bias: this.aoBias,
-        scale: 1,
-        samples: Math.max(2, Math.floor(this.aoSamples)),
-        nvAlignedSamples: nvAligned,
-        screenSpaceRadius: this.aoScreenSpaceRadius,
-        aoNoiseType: this.aoNoise,
-        intensity: this.aoIntensity,
-        output,
-        pdLumaPhi: this.aoDenoiseLumaPhi,
-        pdDepthPhi: this.aoDenoiseDepthPhi,
-        pdNormalPhi: this.aoDenoiseNormalPhi,
-        pdRadius: this.aoDenoiseRadius,
-        pdRadiusExponent: this.aoDenoiseRadiusExponent,
-        pdRings: this.aoDenoiseRings,
-        pdSamples: Math.max(2, Math.floor(this.aoDenoiseSamples)),
-      };
     }
   }
 
@@ -252,4 +145,3 @@ export const LDAmbientOcclusionMixin = <
       LDAmbientOcclusionInterface> &
       T;
 };
-

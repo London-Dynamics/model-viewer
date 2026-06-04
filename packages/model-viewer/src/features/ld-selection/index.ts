@@ -96,8 +96,11 @@ import ModelViewerElementBase, {
 import { Constructor } from '../../utilities.js';
 import { Object3D, Vector2, Raycaster } from 'three';
 
-// Re-export the selection outline effect
-export { SelectionOutlineEffect } from './selection-outline-effect.js';
+import {
+  $ldEffectsSelectionMeshes,
+  DEFAULT_SELECTION_HIGHLIGHT_COLOR,
+  syncLDEffectsComposer,
+} from '../ld-effects-composer/index.js';
 
 export type SelectionScope = 'scene' | 'part' | 'group' | 'all';
 
@@ -115,6 +118,8 @@ export interface SelectionChangeDetail {
 }
 
 export interface LDSelectionInterface {
+  highlightSelected: boolean;
+  selectionHighlightColor: string;
   disableBaseModelSelection: boolean;
 }
 
@@ -140,6 +145,9 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'highlight-selected' })
     highlightSelected: boolean = false;
 
+    @property({ type: String, attribute: 'selection-highlight-color' })
+    selectionHighlightColor: string = DEFAULT_SELECTION_HIGHLIGHT_COLOR;
+
     @property({ type: Boolean, attribute: 'disable-base-model-selection' })
     disableBaseModelSelection: boolean = false;
 
@@ -155,6 +163,25 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _selectionMouseDownTime: number = 0;
     private _selectionMouseDownPosition: Vector2 = new Vector2();
     private _isDragging: boolean = false;
+
+    override updated(changedProperties: Map<string | number | symbol, unknown>) {
+      super.updated(changedProperties);
+      if (
+        changedProperties.has('highlightSelected') ||
+        changedProperties.has('selectionHighlightColor')
+      ) {
+        this._syncSelectionEffects();
+      }
+    }
+
+    private _syncSelectionEffects(): void {
+      syncLDEffectsComposer(this);
+      if (this.highlightSelected) {
+        this._updateHighlight();
+      }
+    }
+
+    [$ldEffectsSelectionMeshes] = (): Object3D[] => this.selectedObjects;
 
     /**
      * Return true when the node passes the scope & selectable checks
@@ -593,54 +620,10 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Update visual highlight for selected objects.
-     * Uses the outline-effect or ld-outline-effect component if present.
+     * Update visual highlight for selected objects via LDEffectsComposer.
      */
     protected _updateHighlight() {
-      // Find the effect-composer element
-      const effectComposer = (this as unknown as HTMLElement).querySelector(
-        'effect-composer'
-      );
-      if (!effectComposer) {
-        return;
-      }
-
-      // Find the outline effect element (supports outline-effect, ld-outline-effect, and selection-outline-effect)
-      const outlineEffect =
-        effectComposer.querySelector('selection-outline-effect') ||
-        effectComposer.querySelector('outline-effect') ||
-        effectComposer.querySelector('ld-outline-effect');
-
-      if (!outlineEffect) {
-        return;
-      }
-
-      if (this.selectedObjects.length > 0) {
-        // Collect all meshes from selected objects for the outline effect
-        const meshes: Object3D[] = [];
-        for (const obj of this.selectedObjects) {
-          obj.traverse((child: Object3D) => {
-            if ((child as any).isMesh) {
-              meshes.push(child);
-            }
-          });
-        }
-
-        // IMPORTANT: Set the selection FIRST, then enable the effect
-        // This ensures the selection is already set when updateEffects() rebuilds the passes
-        (outlineEffect as any).selection = meshes;
-
-        // Now enable the effect (this rebuilds effect passes with the selection already set)
-        outlineEffect.setAttribute('blend-mode', 'default');
-      } else {
-        // Clear the selection first, then disable
-        (outlineEffect as any).selection = [];
-
-        // Disable the effect by setting blend mode to skip
-        outlineEffect.setAttribute('blend-mode', 'skip');
-      }
-
-      // Queue a render to show the updated highlight
+      syncLDEffectsComposer(this);
       (this as any)[$needsRender]();
     }
 
@@ -648,21 +631,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Clear all visual highlights.
      */
     protected _clearHighlights() {
-      const effectComposer = (this as unknown as HTMLElement).querySelector(
-        'effect-composer'
-      );
-      if (!effectComposer) return;
-
-      const outlineEffect =
-        effectComposer.querySelector('selection-outline-effect') ||
-        effectComposer.querySelector('outline-effect') ||
-        effectComposer.querySelector('ld-outline-effect');
-
-      if (outlineEffect) {
-        (outlineEffect as any).selection = [];
-        // Disable the effect by setting blend mode to skip
-        outlineEffect.setAttribute('blend-mode', 'skip');
-      }
+      this._updateHighlight();
     }
 
     protected _dispatchSelectionChange(type: 'select' | 'deselect' | 'clear') {
