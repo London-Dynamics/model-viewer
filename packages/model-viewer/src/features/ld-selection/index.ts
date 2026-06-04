@@ -159,8 +159,17 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Return true when the node passes the scope & selectable checks
      */
+    protected _isInteractivePlacementActive(): boolean {
+      const session = (this as any)._activePlacementSession;
+      return (
+        !!session &&
+        (session.state === 'placing' || session.state === 'loading')
+      );
+    }
+
     protected _isNodeSelectable(node: any): boolean {
       if (!node) return false;
+      if (node.userData?.isPlacementPlaceholder === true) return false;
       if (node.selectable === false || node.userData?.selectable === false)
         return false;
 
@@ -384,6 +393,10 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       options?: { clearWhenNoHit?: boolean }
     ) {
       const clearWhenNoHit = options?.clearWhenNoHit !== false;
+      if (this._isInteractivePlacementActive()) {
+        this.clearSelection();
+        return;
+      }
       const rect = (this as unknown as HTMLElement).getBoundingClientRect();
       const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
@@ -432,6 +445,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         (hit) =>
           hit.object.visible &&
           !hit.object.userData?.noHit &&
+          hit.object.userData?.isPlacementPlaceholder !== true &&
           hit.object.userData?.selectable !== false
       );
 
@@ -511,7 +525,11 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
           break;
       }
 
-      if (objectToSelect && this._isNodeSelectable(objectToSelect)) {
+      if (
+        objectToSelect &&
+        objectToSelect.userData?.isPlacementPlaceholder !== true &&
+        this._isNodeSelectable(objectToSelect)
+      ) {
         this._selectObject(objectToSelect);
       } else {
         this.clearSelection();
@@ -539,6 +557,13 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     protected _selectObject(object: Object3D) {
+      if (object?.userData?.isPlacementPlaceholder === true) {
+        return;
+      }
+      if (this._isInteractivePlacementActive()) {
+        return;
+      }
+
       // Check if already selected
       if (
         this.selectedObjects.length === 1 &&
@@ -641,11 +666,13 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     protected _dispatchSelectionChange(type: 'select' | 'deselect' | 'clear') {
-      const selectedObjectSurfaceSnapState = this.selectedObjects.map((object) => ({
-        uuid: object.uuid,
-        name: object.name || '',
-        isSurfaceSnapped: this._isObjectSurfaceSnapped(object),
-      }));
+      const selectedObjectSurfaceSnapState = this.selectedObjects.map(
+        (object) => ({
+          uuid: object.uuid,
+          name: object.name || '',
+          isSurfaceSnapped: this._isObjectSurfaceSnapped(object),
+        })
+      );
       const detail: SelectionChangeDetail = {
         selectedObjects: [...this.selectedObjects],
         metadata: this.selectedObjects.map((object) => ({

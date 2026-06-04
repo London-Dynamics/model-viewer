@@ -147,6 +147,22 @@ function getPlacementSnapPoints(
   return options?.snapPoints ?? options?.part?.snapPoints;
 }
 
+/** Resolved selectable flag for committed placed objects (not placeholders). */
+function getPlacementSelectable(options?: PlacementOptions): boolean {
+  if (options?.selectable !== undefined) return options.selectable;
+  const partSelectable = (options?.part as { selectable?: boolean } | undefined)
+    ?.selectable;
+  if (partSelectable !== undefined) return partSelectable;
+  return true;
+}
+
+function markPlacementPlaceholderNonSelectable(placeholder: Object3D): void {
+  placeholder.traverse((child) => {
+    child.userData.isPlacementPlaceholder = true;
+    child.userData.selectable = false;
+  });
+}
+
 export type BulkPlacementItem = {
   id: string;
   part?: Partial<Part>;
@@ -633,11 +649,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             placeholder.name = options.name
               ? options.name + `_${+new Date()}`
               : session.id;
-            placeholder.userData = {
-              selectable: true,
-              ...(placeholder.userData || {}),
-              isPlacementPlaceholder: true,
-            };
+            markPlacementPlaceholderNonSelectable(placeholder);
             try {
               scene.target.add(placeholder);
             } catch (e) {
@@ -2828,12 +2840,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Ensure selection reflects the focused group (if any) so UI knows
-      // which group we're operating on.
+      // which group we're operating on. Skip during interactive placement so
+      // drop/commit does not select the placeholder or a half-placed group.
       if (focusGroup) {
-        try {
-          // Use _selectObject to properly update selection including highlighting
-          (this as any)._selectObject(focusGroup);
-        } catch (e) {}
+        const session = this._activePlacementSession;
+        const placementActive =
+          !!session &&
+          (session.state === 'placing' || session.state === 'loading');
+        if (!placementActive) {
+          try {
+            (this as any)._selectObject(focusGroup);
+          } catch (e) {}
+        }
       }
 
       try {
@@ -3565,6 +3583,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (hit: any) =>
           hit.object.visible &&
           !hit.object.userData?.noHit &&
+          hit.object.userData?.isPlacementPlaceholder !== true &&
           hit.object.userData?.selectable !== false
       );
       if (intersects.length === 0) return null;
@@ -3588,6 +3607,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         ) {
           intersectedObject = intersectedObject.parent as Object3D;
         }
+      }
+
+      if (intersectedObject?.userData?.isPlacementPlaceholder === true) {
+        return null;
       }
 
       let objectToSelect: Object3D | null = null;
@@ -5070,33 +5093,28 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Extends base clearSelection with puzzler-specific cleanup
      */
     clearSelection(): void {
-      // Early return if nothing to clear
-      if ((this as any).selectedObjects.length === 0) return;
+      const hadSelection = (this as any).selectedObjects.length > 0;
 
       try {
-        // Puzzler-specific: clear control strip
         (this as any)[$clearSelectedObject]();
-
-        // Hide break link slots
         this._breakLinkSlotsVisible = false;
         this.clearSlots(this._breakLinkSlots);
       } catch (e) {
         (this as any).error('[puzzler] clearSelection error:', e);
       }
 
-      // Parent selection mixin logic (inlined to avoid prototype chain issues)
       (this as any).selectedObjects = [];
       (this as any)._selectedGroups.clear();
 
-      // Clear highlight if enabled
       if ((this as any).highlightSelected) {
         (this as any)._updateHighlight();
       }
 
-      (this as any)._dispatchSelectionChange('clear');
-      (this as any)[$needsRender]();
+      if (hadSelection) {
+        (this as any)._dispatchSelectionChange('clear');
+      }
 
-      // Note: snapping points and break-link slots will be updated by _onSelectionChange handler
+      (this as any)[$needsRender]();
     }
 
     /**
@@ -5447,6 +5465,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return this._activePlacementSession;
       }
 
+      try {
+        (this as any).clearSelection?.();
+      } catch (e) {}
+
       const session = new PlacementSession(
         this,
         (this as any).log,
@@ -5465,15 +5487,16 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.updateSnappingPointSlots();
       } catch (e) {}
 
-      // When session transitions out of placing (commit/cancel), clear active session
-      const clearActive = () => {
-        if (this._activePlacementSession === session)
+      // Keep session through commit + follow-up click (state loading); clear on end.
+      const endPlacementSession = () => {
+        if (this._activePlacementSession === session) {
           this._activePlacementSession = null;
+        }
       };
 
-      session.addEventListener('loading-start', clearActive, { once: true });
-      session.addEventListener('cancel', clearActive, { once: true });
-      session.addEventListener('error', clearActive, { once: true });
+      session.addEventListener('loaded', endPlacementSession, { once: true });
+      session.addEventListener('cancel', endPlacementSession, { once: true });
+      session.addEventListener('error', endPlacementSession, { once: true });
 
       // Kick off loading of placeholder low-res GLB asynchronously
       session._loadPlaceholder();
@@ -5836,9 +5859,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (options?.mass !== undefined) {
         newObject.userData.mass = options.mass;
       }
-      if (options?.selectable !== undefined) {
-        newObject.userData.selectable = options.selectable;
-      }
+      newObject.userData.selectable = getPlacementSelectable(options);
       if (options?.editable !== undefined) {
         newObject.userData.editable = options.editable;
       }
@@ -6131,12 +6152,6 @@ class PlacementSession extends EventTarget {
       ? this._options.name + `_${+new Date()}`
       : this.id;
 
-    placeholder.userData = {
-      selectable: true,
-      ...(placeholder.userData || {}),
-    };
-    placeholder.userData.isPlacementPlaceholder = true;
-
     const placeholderSnapPoints = getPlacementSnapPoints(this._options);
     if (placeholderSnapPoints) {
       try {
@@ -6145,8 +6160,7 @@ class PlacementSession extends EventTarget {
         // ignore
       }
     }
-    if (typeof this._options?.selectable !== 'undefined')
-      placeholder.userData.selectable = this._options.selectable;
+    markPlacementPlaceholderNonSelectable(placeholder);
 
     try {
       scene.target.add(placeholder);
@@ -6171,11 +6185,7 @@ class PlacementSession extends EventTarget {
       ? this._options.name + `_${+new Date()}`
       : this.id;
 
-    placeholder.userData = {
-      selectable: true,
-      ...(placeholder.userData || {}),
-    };
-    placeholder.userData.isPlacementPlaceholder = true;
+    markPlacementPlaceholderNonSelectable(placeholder);
 
     const placeholderSnapPoints = getPlacementSnapPoints(this._options);
     if (placeholderSnapPoints) {
@@ -6184,9 +6194,6 @@ class PlacementSession extends EventTarget {
       } catch (e) {
         // ignore
       }
-    }
-    if (typeof this._options?.selectable !== 'undefined') {
-      placeholder.userData.selectable = this._options.selectable;
     }
 
     try {
@@ -6276,8 +6283,6 @@ class PlacementSession extends EventTarget {
         ? this._options.name + `_${+new Date()}`
         : this.id;
 
-      placeholder.userData = placeholder.userData || {};
-      placeholder.userData.isPlacementPlaceholder = true;
       // If the placement was started with snapPoints, attach them to
       // the placeholder so the snapping-point slot renderer and snapping
       // logic can discover and use them during interactive placement.
@@ -6289,8 +6294,7 @@ class PlacementSession extends EventTarget {
           // ignore
         }
       }
-      if (typeof this._options?.selectable !== 'undefined')
-        placeholder.userData.selectable = this._options.selectable;
+      markPlacementPlaceholderNonSelectable(placeholder);
 
       // Insert into scene target
       try {
@@ -6871,7 +6875,7 @@ class PlacementSession extends EventTarget {
       }
 
       gltf.scene.userData = {
-        selectable: true,
+        selectable: getPlacementSelectable(this._options),
         ...gltf.scene.userData,
         id: this._options?.id || this.id,
         name: this._options?.name || this.id,
@@ -6922,8 +6926,6 @@ class PlacementSession extends EventTarget {
         } catch (e) {}
       }
       gltf.scene.userData.isPlacedObject = true;
-      if (typeof this._options?.selectable !== 'undefined')
-        gltf.scene.userData.selectable = this._options.selectable;
 
       try {
         scene.target.add(gltf.scene);
@@ -7100,6 +7102,8 @@ class PlacementSession extends EventTarget {
 
   private _cleanupPlaceholder(element?: any) {
     if (!this.placeholder) return;
+    const el = element || this._element;
+    const placeholderRef = this.placeholder;
     try {
       if (this.placeholder.parent)
         this.placeholder.parent.remove(this.placeholder);
@@ -7114,8 +7118,19 @@ class PlacementSession extends EventTarget {
     }
     this.placeholder = null;
 
-    const el = element || this._element;
     if (el) {
+      try {
+        const selected = ((el as any).selectedObjects || []) as Object3D[];
+        if (
+          selected.some(
+            (obj) =>
+              obj === placeholderRef ||
+              obj?.userData?.isPlacementPlaceholder === true
+          )
+        ) {
+          (el as any).clearSelection?.();
+        }
+      } catch (e) {}
       (el as any)[$needsRender]();
     }
   }
