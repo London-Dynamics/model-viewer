@@ -620,22 +620,16 @@ export class RotationControlDisc extends Object3D {
   }
 }
 
-export function consumeQuantizedRotationDelta(
-  accumulatedDegrees: number,
+/** Snap a Y rotation (degrees) to the nearest multiple of stepDegrees. */
+export function snapRotationYToStepGrid(
+  angleDeg: number,
   stepDegrees: number
-): { consumedDelta: number; remaining: number } {
-  const normalizedStep = normalizeDegrees(stepDegrees);
-  if (normalizedStep <= 0) {
-    return { consumedDelta: accumulatedDegrees, remaining: 0 };
+): number {
+  const step = normalizeDegrees(stepDegrees);
+  if (step <= 0) {
+    return angleDeg;
   }
-  const magnitude = Math.abs(accumulatedDegrees);
-  const steps = Math.floor(magnitude / normalizedStep);
-  if (steps <= 0) {
-    return { consumedDelta: 0, remaining: accumulatedDegrees };
-  }
-  const consumedDelta = Math.sign(accumulatedDegrees) * steps * normalizedStep;
-  const remaining = accumulatedDegrees - consumedDelta;
-  return { consumedDelta, remaining };
+  return Math.round(angleDeg / step) * step;
 }
 
 export function normalizeSignedAngleDelta(deltaRad: number): number {

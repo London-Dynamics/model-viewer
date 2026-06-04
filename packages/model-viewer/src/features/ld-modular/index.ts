@@ -68,10 +68,10 @@ import {
 import { LogFunction, WarnFunction, ErrorFunction } from '../ld-debug.js';
 import { shouldIgnoreModularDeleteKeydown } from './modular-delete-keydown.js';
 import {
-  consumeQuantizedRotationDelta,
   normalizeSignedAngleDelta,
   ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY,
   RotationControlDisc,
+  snapRotationYToStepGrid,
 } from './rotation-control-disc.js';
 import {
   ActiveTransform,
@@ -2294,8 +2294,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _rotationGestureActive = false;
     private _rotationGesturePointerId: number | null = null;
     private _rotationGestureStartAngleRad = 0;
-    private _rotationGestureLastAngleRad = 0;
-    private _rotationGestureAccumulatedDeg = 0;
+    private _rotationGestureStartRotationY = 0;
     private _rotationGestureTarget: Object3D | null = null;
     private _rotationDiscSizeLockedUuid: string | null = null;
     private _transformSessions = new Map<
@@ -3858,8 +3857,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._rotationGestureActive = true;
       this._rotationGesturePointerId = e.pointerId;
       this._rotationGestureStartAngleRad = discHit.angleRad;
-      this._rotationGestureLastAngleRad = discHit.angleRad;
-      this._rotationGestureAccumulatedDeg = 0;
+      this._rotationGestureStartRotationY =
+        this._getRotationFromObject(target)[1];
       this._rotationGestureTarget = target;
       this._beginTransformSession(target, {
         source: 'rotation-disc-y',
@@ -3906,30 +3905,27 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (angleRad == null) {
         return true;
       }
-      const deltaRad = -normalizeSignedAngleDelta(
-        angleRad - this._rotationGestureLastAngleRad
-      );
-      this._rotationGestureLastAngleRad = angleRad;
       this._rotationControlDisc?.setDragArc(
         this._rotationGestureStartAngleRad,
         angleRad
       );
-      const deltaDeg = (deltaRad * 180) / Math.PI;
+      const cumulativeRad = -normalizeSignedAngleDelta(
+        angleRad - this._rotationGestureStartAngleRad
+      );
+      const cumulativeDeg = (cumulativeRad * 180) / Math.PI;
       const step = isRotationFineSnapModifierActive(e)
         ? Math.max(0, this.rotationControlsFineStep || 0)
         : Math.max(0, this.rotationControlsMajorStep || 0);
-      let applyDeltaDeg = deltaDeg;
-      if (step > 0) {
-        this._rotationGestureAccumulatedDeg += deltaDeg;
-        const quantized = consumeQuantizedRotationDelta(
-          this._rotationGestureAccumulatedDeg,
-          step
-        );
-        this._rotationGestureAccumulatedDeg = quantized.remaining;
-        applyDeltaDeg = quantized.consumedDelta;
-      }
+      const rawTargetY =
+        this._rotationGestureStartRotationY + cumulativeDeg;
+      const targetY =
+        step > 0
+          ? snapRotationYToStepGrid(rawTargetY, step)
+          : rawTargetY;
+      const target = this._rotationGestureTarget;
+      const currentY = this._getRotationFromObject(target)[1];
+      const applyDeltaDeg = targetY - currentY;
       if (Math.abs(applyDeltaDeg) > 1e-4) {
-        const target = this._rotationGestureTarget;
         this._applyRotationDeltaY(target, applyDeltaDeg);
         const session = this._transformSessions.get(target);
         if (session?.source === 'rotation-disc-y') {
@@ -3948,8 +3944,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._rotationGestureActive = false;
       this._rotationGesturePointerId = null;
       this._rotationGestureStartAngleRad = 0;
-      this._rotationGestureLastAngleRad = 0;
-      this._rotationGestureAccumulatedDeg = 0;
+      this._rotationGestureStartRotationY = 0;
       this._rotationGestureTarget = null;
       if (gestureTarget) {
         this._endTransformSession(gestureTarget);

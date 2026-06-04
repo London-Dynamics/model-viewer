@@ -4,9 +4,9 @@
 
 import {expect} from 'chai';
 import {
-  consumeQuantizedRotationDelta,
   normalizeSignedAngleDelta,
   resolveRotationDiscTickConfig,
+  snapRotationYToStepGrid,
 } from '../../features/ld-modular/rotation-control-disc.js';
 
 const deg = (degrees: number) => (degrees * Math.PI) / 180;
@@ -17,16 +17,25 @@ suite('ld-modular rotation control disc', () => {
     expect(nearWrap).to.be.closeTo(-Math.PI * 0.5, 1e-6);
   });
 
-  test('consumes quantized deltas for step mode', () => {
-    const result = consumeQuantizedRotationDelta(23, 10);
-    expect(result.consumedDelta).to.equal(20);
-    expect(result.remaining).to.equal(3);
+  test('snapRotationYToStepGrid snaps to absolute step multiples', () => {
+    expect(snapRotationYToStepGrid(45, 90)).to.equal(90);
+    expect(snapRotationYToStepGrid(45, 45)).to.equal(45);
+    expect(snapRotationYToStepGrid(47, 5)).to.equal(45);
+    expect(snapRotationYToStepGrid(3, 5)).to.equal(5);
+    expect(snapRotationYToStepGrid(90, 90)).to.equal(90);
   });
 
-  test('passes through continuous mode when step is zero', () => {
-    const result = consumeQuantizedRotationDelta(-7.25, 0);
-    expect(result.consumedDelta).to.equal(-7.25);
-    expect(result.remaining).to.equal(0);
+  test('snapRotationYToStepGrid passes through when step is zero', () => {
+    expect(snapRotationYToStepGrid(-7.25, 0)).to.equal(-7.25);
+  });
+
+  test('snapRotationYToStepGrid supports major/fine step changes on same cumulative angle', () => {
+    const startY = 0;
+    const cumulativeDeg = 90;
+    const rawTargetY = startY + cumulativeDeg;
+    expect(snapRotationYToStepGrid(rawTargetY, 90)).to.equal(90);
+    expect(snapRotationYToStepGrid(rawTargetY, 45)).to.equal(45);
+    expect(snapRotationYToStepGrid(rawTargetY, 90)).to.equal(90);
   });
 
   test('resolveRotationDiscTickConfig uses defaults when neither step is set', () => {
