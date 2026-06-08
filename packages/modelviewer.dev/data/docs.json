@@ -2322,6 +2322,15 @@
         "signature": "getScale(objectName: string): [number, number, number]"
       },
       {
+        "name": "getPart",
+        "htmlName": "getPart",
+        "description": "Look up a placed object in the scene by its Three.js UUID. Returns the matching <code>Object3D</code> or <code>null</code> if no object is found. Throws if <code>objectUuid</code> is missing or the scene is not available. Use <code>getPlacementTree()</code> to enumerate UUIDs, or capture <code>node.uuid</code> from <code>placeGlb()</code> / <code>hover-change</code> events.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "signature": "getPart(objectUuid: string): Object3D | null"
+      },
+      {
         "name": "getPlacementTree",
         "htmlName": "getPlacementTree",
         "description": "Returns a structured representation of the current scene's placed objects and groups, formatted as a tree. This includes object names, UUIDs, transforms, and group hierarchy, reflecting the logical assembly as seen by the user.",

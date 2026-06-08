@@ -326,6 +326,8 @@ export declare interface LDModularInterface {
     }
   ) => Promise<Array<{ id: string; node: Object3D }>>;
 
+  getPart: (objectUuid: string) => Object3D | null;
+
   replacePart: (
     objectUuid: string,
     src?: string,
@@ -5722,6 +5724,29 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (e) {}
 
       return session;
+    }
+
+    /**
+     * Look up a placed object in the scene by its Three.js UUID.
+     *
+     * @param objectUuid - The UUID of the object to retrieve
+     * @returns The Object3D if found, otherwise null
+     */
+    getPart(objectUuid: string): Object3D | null {
+      if (!objectUuid) {
+        throw new Error('objectUuid is required');
+      }
+
+      const scene = (this as any)[$scene];
+      if (!scene) {
+        throw new Error('Scene not available');
+      }
+
+      return (
+        (scene.getObjectByProperty('uuid', objectUuid) as
+          | Object3D
+          | undefined) ?? null
+      );
     }
 
     /**
