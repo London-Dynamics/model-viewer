@@ -859,7 +859,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             this._beginTransformSession(obj, {
               source: 'animation',
               components: ['rotation'],
-              axes: {rotation: ['x', 'y', 'z']},
+              axes: { rotation: ['x', 'y', 'z'] },
             });
           }
           this._emitTransformUpdate(obj);
@@ -1310,7 +1310,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       active: ActiveTransform | null
     ): TransformEventDetail {
       return {
-        target: {uuid: obj.uuid, name: obj.name},
+        target: { uuid: obj.uuid, name: obj.name },
         transform: this._cloneTransformValues(obj),
         active,
       };
@@ -1574,7 +1574,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const apiSessionOptions: BeginTransformSessionOptions = {
         source: 'api',
         components: ['rotation'],
-        axes: {rotation: rotationAxes},
+        axes: { rotation: rotationAxes },
       };
 
       const applyInstantRotation = () => {
@@ -1609,7 +1609,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._beginTransformSession(obj, {
             source: 'animation',
             components: ['rotation'],
-            axes: {rotation: ['x', 'y', 'z']},
+            axes: { rotation: ['x', 'y', 'z'] },
           });
         }
         this.requestShadowUpdate();
@@ -1838,14 +1838,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['position'],
-            axes: {position: ['x', 'y', 'z']},
+            axes: { position: ['x', 'y', 'z'] },
           },
           () => {
-            target.position.set(
-              targetValue[0],
-              targetValue[1],
-              targetValue[2]
-            );
+            target.position.set(targetValue[0], targetValue[1], targetValue[2]);
           }
         );
       }
@@ -1876,7 +1872,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['position'],
-            axes: {position: ['x']},
+            axes: { position: ['x'] },
           },
           () => {
             const pos = this._getPositionFromObject(target);
@@ -1907,7 +1903,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['position'],
-            axes: {position: ['y']},
+            axes: { position: ['y'] },
           },
           () => {
             const pos = this._getPositionFromObject(target);
@@ -1938,7 +1934,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['position'],
-            axes: {position: ['z']},
+            axes: { position: ['z'] },
           },
           () => {
             const pos = this._getPositionFromObject(target);
@@ -1984,7 +1980,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['scale'],
-            axes: {scale: ['x', 'y', 'z']},
+            axes: { scale: ['x', 'y', 'z'] },
           },
           () => {
             target.scale.set(targetValue[0], targetValue[1], targetValue[2]);
@@ -2018,7 +2014,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['scale'],
-            axes: {scale: ['x']},
+            axes: { scale: ['x'] },
           },
           () => {
             const s = this._getScaleFromObject(target);
@@ -2049,7 +2045,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['scale'],
-            axes: {scale: ['y']},
+            axes: { scale: ['y'] },
           },
           () => {
             const s = this._getScaleFromObject(target);
@@ -2080,7 +2076,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           {
             source: 'api',
             components: ['scale'],
-            axes: {scale: ['z']},
+            axes: { scale: ['z'] },
           },
           () => {
             const s = this._getScaleFromObject(target);
@@ -3894,7 +3890,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._beginTransformSession(target, {
         source: 'rotation-disc-y',
         components: ['rotation'],
-        axes: {rotation: ['y']},
+        axes: { rotation: ['y'] },
       });
       this._rotationControlDisc?.setDragArc(discHit.angleRad, discHit.angleRad);
       this._windowPointerMoveForRotationBound =
@@ -3947,12 +3943,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const step = isRotationFineSnapModifierActive(e)
         ? Math.max(0, this.rotationControlsFineStep || 0)
         : Math.max(0, this.rotationControlsMajorStep || 0);
-      const rawTargetY =
-        this._rotationGestureStartRotationY + cumulativeDeg;
+      const rawTargetY = this._rotationGestureStartRotationY + cumulativeDeg;
       const targetY =
-        step > 0
-          ? snapRotationYToStepGrid(rawTargetY, step)
-          : rawTargetY;
+        step > 0 ? snapRotationYToStepGrid(rawTargetY, step) : rawTargetY;
       const target = this._rotationGestureTarget;
       const currentY = this._getRotationFromObject(target)[1];
       const applyDeltaDeg = targetY - currentY;
@@ -4374,7 +4367,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._beginTransformSession(transformTarget, {
           source: 'pointer-drag',
           components: ['position'],
-          axes: {position: positionAxes},
+          axes: { position: positionAxes },
         });
       }
       this.dragStartMousePosition.copy(this.currentMousePosition);
