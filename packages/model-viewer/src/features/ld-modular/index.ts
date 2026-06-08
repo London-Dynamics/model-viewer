@@ -82,6 +82,7 @@ import {
   TransformEventDetail,
   TransformValues,
 } from './transform-events.js';
+import { Selection } from '@london-dynamics/types/puzzler';
 
 export type {
   ActiveTransform,
@@ -112,6 +113,7 @@ export type PlacementOptions = {
   name?: string;
   id?: string;
   part?: Partial<Part>;
+  selection?: Selection;
   selectable?: boolean;
   editable?: boolean;
   snapPoints?: SnapPoint[]; // Optional planner snap points relative to object center
@@ -128,6 +130,7 @@ export type PlacementGraphNode = {
   rotation: Euler;
   scale: Vector3;
   part: Partial<Part> | undefined;
+  selection?: Selection;
   snapPoints?: SnapPoint[];
   children?: PlacementGraphNode[];
 };
@@ -166,6 +169,7 @@ function markPlacementPlaceholderNonSelectable(placeholder: Object3D): void {
 export type BulkPlacementItem = {
   id: string;
   part?: Partial<Part>;
+  selection?: Selection;
   transform: {
     position: [number, number, number];
     // Rotation in radians (Three.js Euler order XYZ)
@@ -755,6 +759,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             position: transform.position,
             rotation: transform.rotation,
             scale: transform.scale,
+            selection: item.selection,
           };
 
           const placed = await this.placeGlb(highResSrc, placementOptions);
@@ -1110,6 +1115,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           rotation: this._getPlacementTreeRotationFromObject(obj),
           scale: obj.scale.clone(),
           part: obj.userData?.part,
+          selection: obj.userData?.selection,
           snapPoints: obj.userData?.snapPoints,
           ...(isGroup && {
             children: obj.children.map((child) => extractData(child)),
@@ -5873,6 +5879,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
+      if (options?.selection) {
+        newObject.userData.selection = options.selection;
+      }
+
       // Apply other options if provided
       if (options?.id !== undefined) {
         newObject.userData.id = options.id;
@@ -6901,6 +6911,7 @@ class PlacementSession extends EventTarget {
 
       gltf.scene.userData = {
         selectable: getPlacementSelectable(this._options),
+        selection: this._options?.selection || undefined,
         ...gltf.scene.userData,
         id: this._options?.id || this.id,
         name: this._options?.name || this.id,
