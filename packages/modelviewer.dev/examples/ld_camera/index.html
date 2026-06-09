@@ -525,6 +525,14 @@
                         >
                           Round-trip test
                         </button>
+                        <button
+                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          type="button"
+                          id="targetRoundTripButton"
+                          title="Pans the camera, then round-trips without controlsState"
+                        >
+                          Target round-trip test
+                        </button>
                       </div>
                       <div class="text-xs text-stone-500 mb-1">
                         Test data output:
@@ -533,13 +541,15 @@
                         id="camera-json-output"
                         class="block text-xs bg-stone-100 p-2 rounded overflow-auto max-h-48 min-h-[4rem]"
                       >
-                        Click "Get Camera JSON" or "Round-trip test".
+                        Click "Get Camera JSON", "Round-trip test", or "Target round-trip test".
                       </div>
                     </div>
                   </model-viewer>
 
                   <script type="module">
                     (() => {
+                      globalThis.MODEL_VIEWER_CAMERA_JSON_DEBUG = true;
+
                       const modelViewer = document.querySelector('#three-demo');
                       const output = document.querySelector(
                         '#camera-json-output'
@@ -617,6 +627,15 @@
                                 })
                                 .join(', ') +
                               ']'
+                            : '') +
+                          (obj.worldTarget
+                            ? '\nworldTarget: [' +
+                              obj.worldTarget
+                                .map(function (n) {
+                                  return Number(n).toFixed(4);
+                                })
+                                .join(', ') +
+                              ']'
                             : '')
                         );
                       }
@@ -624,6 +643,95 @@
                       function writeOut(text) {
                         output.textContent = text;
                         console.info('Camera JSON output', text);
+                      }
+
+                      function vec3Close(a, b, eps) {
+                        if (!Array.isArray(a) || !Array.isArray(b) || a.length < 3 || b.length < 3) {
+                          return false;
+                        }
+                        const tolerance = eps != null ? eps : 0.01;
+                        return (
+                          Math.abs(a[0] - b[0]) <= tolerance &&
+                          Math.abs(a[1] - b[1]) <= tolerance &&
+                          Math.abs(a[2] - b[2]) <= tolerance
+                        );
+                      }
+
+                      function formatVec3(v) {
+                        if (!Array.isArray(v) || v.length < 3) {
+                          return String(v);
+                        }
+                        return (
+                          '[' +
+                          v
+                            .map(function (n) {
+                              return Number(n).toFixed(4);
+                            })
+                            .join(', ') +
+                          ']'
+                        );
+                      }
+
+                      function waitFrames(count) {
+                        return new Promise((resolve) => {
+                          let remaining = count;
+                          const step = () => {
+                            remaining -= 1;
+                            if (remaining <= 0) {
+                              resolve();
+                              return;
+                            }
+                            requestAnimationFrame(step);
+                          };
+                          requestAnimationFrame(step);
+                        });
+                      }
+
+                      function logCameraState(label) {
+                        const meta = modelViewer.getCameraJSON();
+                        const sceneTarget = modelViewer.getCameraTarget();
+                        let ccTarget = null;
+                        try {
+                          if (meta?.object?.controlsState) {
+                            ccTarget = JSON.parse(meta.object.controlsState).target;
+                          }
+                        } catch (e) {
+                          ccTarget = null;
+                        }
+                        console.info('[camera-demo] ' + label, {
+                          objectPosition: meta?.object?.position,
+                          objectTarget: meta?.object?.target,
+                          objectWorldTarget: meta?.object?.worldTarget,
+                          objectFocalOffset: meta?.object?.focalOffset,
+                          objectControlsZoom: meta?.object?.controlsZoom,
+                          objectControlsPose: meta?.object?.controlsPose,
+                          getCameraTarget: [
+                            sceneTarget.x,
+                            sceneTarget.y,
+                            sceneTarget.z,
+                          ],
+                          controlsStateTargetWorld: ccTarget,
+                        });
+                      }
+
+                      /** Truck look-at via controlsState (simulates user pan). */
+                      async function panCameraViaControlsState() {
+                        const meta = modelViewer.getCameraJSON();
+                        if (!meta || !meta.object || !meta.object.controlsState) {
+                          return false;
+                        }
+                        const cc = JSON.parse(meta.object.controlsState);
+                        const offset = [1, 0.5, -0.5];
+                        cc.target = [
+                          cc.target[0] + offset[0],
+                          cc.target[1] + offset[1],
+                          cc.target[2] + offset[2],
+                        ];
+                        const panned = Object.assign({}, meta.object, {
+                          controlsState: JSON.stringify(cc),
+                        });
+                        await modelViewer.setCameraFromJSON(panned);
+                        return true;
                       }
 
                       let lastStoredJSON = null;
@@ -674,7 +782,7 @@
 
                       document
                         .getElementById('roundTripButton')
-                        .addEventListener('click', () => {
+                        .addEventListener('click', async () => {
                           const metaA = modelViewer.getCameraJSON();
                           if (!metaA) {
                             writeOut(
@@ -683,7 +791,9 @@
                             return;
                           }
                           const A = metaA.object != null ? metaA.object : metaA;
-                          modelViewer.setCameraFromJSON(A);
+                          logCameraState('round-trip before set');
+                          await modelViewer.setCameraFromJSON(A);
+                          logCameraState('round-trip after set');
                           const metaB = modelViewer.getCameraJSON();
                           if (!metaB) {
                             writeOut(
@@ -692,21 +802,161 @@
                             return;
                           }
                           const B = metaB.object != null ? metaB.object : metaB;
+                          logCameraState('round-trip after second get');
                           const strA = JSON.stringify(A);
                           const strB = JSON.stringify(B);
                           const match = strA === strB;
+                          const positionMatch = vec3Close(A.position, B.position);
                           const summaryA = summarize(A);
                           const summaryB = summarize(B);
                           writeOut(
                             'Round-trip: get -> set -> get\n' +
-                              'Match: ' +
+                              'Full JSON match: ' +
                               (match ? 'yes' : 'no') +
-                              '\n\n' +
+                              '\nposition match: ' +
+                              (positionMatch ? 'yes' : 'no') +
+                              '\n(see console for [ld-camera] / [camera-demo] logs)\n\n' +
                               'After get (A):\n' +
                               summaryA +
                               '\n\n' +
                               'After set(A) then get (B):\n' +
                               summaryB
+                          );
+                        });
+
+                      document
+                        .getElementById('targetRoundTripButton')
+                        .addEventListener('click', async () => {
+                          const panned = await panCameraViaControlsState();
+                          if (!panned) {
+                            writeOut(
+                              'Target round-trip: could not pan (no controlsState).'
+                            );
+                            return;
+                          }
+
+                          const metaA = modelViewer.getCameraJSON();
+                          if (!metaA || !metaA.object) {
+                            writeOut(
+                              'Target round-trip: getCameraJSON() returned null.'
+                            );
+                            return;
+                          }
+
+                          const A = Object.assign({}, metaA.object);
+                          const sceneTarget = modelViewer.getCameraTarget();
+                          const sceneTargetArr = [
+                            sceneTarget.x,
+                            sceneTarget.y,
+                            sceneTarget.z,
+                          ];
+                          let ccTargetWorld = null;
+                          try {
+                            ccTargetWorld = JSON.parse(A.controlsState).target;
+                          } catch (e) {
+                            ccTargetWorld = null;
+                          }
+
+                          const objectMatchesScenePivot = vec3Close(
+                            A.target,
+                            sceneTargetArr,
+                            0.001
+                          );
+
+                          // Disrupt the view, then restore like an external app
+                          // that only persists meta.object fields (no controlsState).
+                          logCameraState('target round-trip after pan (A)');
+                          await waitFrames(2);
+                          await modelViewer.resetCamera();
+                          await waitFrames(2);
+                          logCameraState('target round-trip after disrupt');
+                          await waitFrames(2);
+                          const partial = Object.assign({}, A);
+                          delete partial.controlsState;
+                          if (!partial.controlsSnapshot) {
+                            writeOut(
+                              'Target round-trip: missing controlsSnapshot on saved object.'
+                            );
+                            return;
+                          }
+                          await modelViewer.setCameraFromJSON(partial);
+                          await waitFrames(2);
+                          logCameraState('target round-trip after partial restore');
+
+                          const metaB = modelViewer.getCameraJSON();
+                          if (!metaB || !metaB.object) {
+                            writeOut(
+                              'Target round-trip: second getCameraJSON() returned null.'
+                            );
+                            return;
+                          }
+
+                          const B = metaB.object;
+                          const positionMatch = vec3Close(A.position, B.position);
+                          const targetMatch = vec3Close(A.target, B.target);
+                          const worldTargetMatch = vec3Close(
+                            A.worldTarget,
+                            B.worldTarget
+                          );
+                          const worldTargetMatchesControls =
+                            A.worldTarget &&
+                            ccTargetWorld &&
+                            vec3Close(A.worldTarget, ccTargetWorld);
+                          const fovMatch =
+                            A.fov == null ||
+                            B.fov == null ||
+                            Math.abs(A.fov - B.fov) <= 0.01;
+                          const aspectMatch =
+                            A.aspect == null ||
+                            B.aspect == null ||
+                            Math.abs(A.aspect - B.aspect) <= 0.001;
+                          const nearMatch =
+                            A.near == null ||
+                            B.near == null ||
+                            Math.abs(A.near - B.near) <= 0.0001;
+                          const restoreOk =
+                            positionMatch &&
+                            targetMatch &&
+                            worldTargetMatch &&
+                            fovMatch &&
+                            aspectMatch &&
+                            nearMatch;
+
+                          writeOut(
+                            'Target round-trip (pan → get → disrupt → set without controlsState → get)\n' +
+                              '\n--- Save snapshot (A) ---' +
+                              '\nobject.target (model):      ' +
+                              formatVec3(A.target) +
+                              '\nobject.worldTarget (world): ' +
+                              formatVec3(A.worldTarget) +
+                              '\ngetCameraTarget() (model):  ' +
+                              formatVec3(sceneTargetArr) +
+                              '\ncontrolsState.target (world): ' +
+                              formatVec3(ccTargetWorld) +
+                              '\nworldTarget matches controls: ' +
+                              (worldTargetMatchesControls ? 'yes' : 'no') +
+                              '\nobject.target matches scene pivot: ' +
+                              (objectMatchesScenePivot ? 'yes' : 'no') +
+                              ' (buggy when yes after pan — target not from look-at)' +
+                              '\n\n--- Restore without controlsState ---' +
+                              '\nposition match:      ' +
+                              (positionMatch ? 'yes' : 'no') +
+                              '\ntarget match:        ' +
+                              (targetMatch ? 'yes' : 'no') +
+                              '\nworldTarget match:   ' +
+                              (worldTargetMatch ? 'yes' : 'no') +
+                              '\nfov match:           ' +
+                              (fovMatch ? 'yes' : 'no') +
+                              '\naspect match:        ' +
+                              (aspectMatch ? 'yes' : 'no') +
+                              '\nnear match:          ' +
+                              (nearMatch ? 'yes' : 'no') +
+                              '\n\nRESULT: ' +
+                              (restoreOk ? 'PASS' : 'FAIL') +
+                              '\n\nA after pan:\n' +
+                              summarize(A) +
+                              '\n\nB after partial restore:\n' +
+                              summarize(B)
                           );
                         });
                     })();

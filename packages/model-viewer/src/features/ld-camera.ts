@@ -12,7 +12,7 @@ import ModelViewerElementBase, {
 import { $controls } from './controls.js';
 //import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
-import { MathUtils, Mesh, Matrix4, Vector3 } from 'three';
+import { MathUtils, Mesh, Matrix4, Quaternion, Vector3 } from 'three';
 
 import type { ViewportGizmoHandle } from './ld-controls/viewport-gizmo.js';
 
@@ -36,8 +36,477 @@ type CameraMeta = {
 
 export type CameraType = 'perspective' | 'orthographic';
 
+const CAMERA_JSON_DEBUG =
+  typeof globalThis !== 'undefined' &&
+  !!(globalThis as {MODEL_VIEWER_CAMERA_JSON_DEBUG?: boolean})
+    .MODEL_VIEWER_CAMERA_JSON_DEBUG;
+
+function debugCameraJSON(label: string, data?: unknown): void {
+  if (CAMERA_JSON_DEBUG) {
+    console.debug(`[ld-camera] ${label}`, data);
+  }
+}
+
+/** Convert a world-space look-at point to model (pivot) space. */
+function worldTargetToModelSpace(scene: any, worldTarget: Vector3): Vector3 {
+  const modelTarget = worldTarget.clone();
+  if (scene?.pivot && typeof scene.pivot.worldToLocal === 'function') {
+    scene.updateMatrixWorld(true);
+    scene.pivot.worldToLocal(modelTarget);
+  }
+  return modelTarget;
+}
+
+/** Convert a model-space orbit center to world space. */
+function modelTargetToWorldSpace(scene: any, modelTarget: Vector3): Vector3 {
+  const worldTarget = modelTarget.clone();
+  if (scene?.pivot && typeof scene.pivot.localToWorld === 'function') {
+    scene.updateMatrixWorld(true);
+    scene.pivot.localToWorld(worldTarget);
+  }
+  return worldTarget;
+}
+
+/** camera-controls fromJSON expects a JSON string; tolerate parsed objects. */
+function normalizeControlsState(state: unknown): string | null {
+  if (state == null) {
+    return null;
+  }
+  if (typeof state === 'string') {
+    return state;
+  }
+  if (typeof state === 'object') {
+    return JSON.stringify(state);
+  }
+  return null;
+}
+
+/** Align CameraControls with a camera pose when no explicit target is stored. */
+function syncControlsFromCameraPose(camera: any, controls: any): void {
+  const cc = controls?.thirdPartyControls;
+  if (!cc || typeof cc.setLookAt !== 'function') {
+    return;
+  }
+
+  const position = camera.position;
+  const forward = new Vector3();
+  camera.getWorldDirection(forward);
+  const lookAt = position.clone().add(forward);
+
+  cc.setLookAt(
+    position.x,
+    position.y,
+    position.z,
+    lookAt.x,
+    lookAt.y,
+    lookAt.z,
+    false
+  );
+  if (typeof cc.update === 'function') {
+    cc.update(1);
+  }
+}
+
+function isFiniteVector3(v: Vector3): boolean {
+  return (
+    Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
+  );
+}
+
+/** LDControls orbit look-at is on CameraControls, not ModelScene.setTarget. */
+function usesCameraControlsLookAt(controls: any): boolean {
+  return (
+    controls?.thirdPartyControls &&
+    typeof controls.thirdPartyControls.setLookAt === 'function'
+  );
+}
+
+function resolveSavedPosition(data: any): Vector3 | null {
+  if (Array.isArray(data.position) && data.position.length === 3) {
+    const position = new Vector3().fromArray(data.position);
+    return isFiniteVector3(position) ? position : null;
+  }
+  if (Array.isArray(data.matrix) && data.matrix.length === 16) {
+    const position = new Vector3();
+    const quaternion = new Quaternion();
+    const scale = new Vector3();
+    new Matrix4().fromArray(data.matrix).decompose(position, quaternion, scale);
+    return isFiniteVector3(position) ? position : null;
+  }
+  return null;
+}
+
+function resolveWorldLookAt(scene: any, data: any): Vector3 | null {
+  if (Array.isArray(data.worldTarget) && data.worldTarget.length === 3) {
+    const worldTarget = new Vector3().fromArray(data.worldTarget);
+    return isFiniteVector3(worldTarget) ? worldTarget : null;
+  }
+  if (Array.isArray(data.target) && data.target.length === 3) {
+    const modelTarget = new Vector3().fromArray(data.target);
+    return isFiniteVector3(modelTarget)
+      ? modelTargetToWorldSpace(scene, modelTarget)
+      : null;
+  }
+  return null;
+}
+
+const CONTROLS_POSE_KEYS = [
+  'position',
+  'target',
+  'focalOffset',
+  'zoom',
+  'target0',
+  'position0',
+  'focalOffset0',
+  'zoom0',
+] as const;
+
+type ControlsPoseSnapshot = Partial<
+  Record<(typeof CONTROLS_POSE_KEYS)[number], number[] | number>
+>;
+
+function applyControlsPoseToTemplate(
+  template: Record<string, unknown>,
+  pose: ControlsPoseSnapshot
+): void {
+  for (const key of CONTROLS_POSE_KEYS) {
+    const value = pose[key];
+    if (value != null) {
+      template[key] = value;
+    }
+  }
+}
+
+function parseControlsPose(
+  parsed: Record<string, unknown>
+): ControlsPoseSnapshot | null {
+  if (
+    !Array.isArray(parsed.position) ||
+    !Array.isArray(parsed.target) ||
+    parsed.position.length < 3 ||
+    parsed.target.length < 3
+  ) {
+    return null;
+  }
+
+  const pose: ControlsPoseSnapshot = {
+    position: parsed.position as number[],
+    target: parsed.target as number[],
+  };
+
+  if (Array.isArray(parsed.focalOffset)) {
+    pose.focalOffset = parsed.focalOffset as number[];
+  }
+  if (typeof parsed.zoom === 'number') {
+    pose.zoom = parsed.zoom;
+  }
+  if (Array.isArray(parsed.target0)) {
+    pose.target0 = parsed.target0 as number[];
+  }
+  if (Array.isArray(parsed.position0)) {
+    pose.position0 = parsed.position0 as number[];
+  }
+  if (Array.isArray(parsed.focalOffset0)) {
+    pose.focalOffset0 = parsed.focalOffset0 as number[];
+  }
+  if (typeof parsed.zoom0 === 'number') {
+    pose.zoom0 = parsed.zoom0;
+  }
+
+  return pose;
+}
+
+function applyProjectionFromData(
+  camera: any,
+  data: any,
+  scene?: any,
+  options?: {skipZoom?: boolean}
+): void {
+  if (typeof data.near === 'number' && Number.isFinite(data.near)) {
+    camera.near = data.near;
+  }
+  if (typeof data.far === 'number' && Number.isFinite(data.far)) {
+    camera.far = data.far;
+  }
+  if (
+    !options?.skipZoom &&
+    typeof data.zoom === 'number' &&
+    Number.isFinite(data.zoom)
+  ) {
+    camera.zoom = data.zoom;
+  }
+
+  if (camera.isPerspectiveCamera) {
+    if (typeof data.fov === 'number' && Number.isFinite(data.fov)) {
+      camera.fov = data.fov;
+    }
+    const viewportAspect = scene?.aspect;
+    if (typeof viewportAspect === 'number' && Number.isFinite(viewportAspect)) {
+      camera.aspect = viewportAspect;
+    } else if (typeof data.aspect === 'number' && Number.isFinite(data.aspect)) {
+      camera.aspect = data.aspect;
+    }
+    if (typeof data.focus === 'number' && Number.isFinite(data.focus)) {
+      camera.focus = data.focus;
+    }
+    if (typeof data.filmGauge === 'number' && Number.isFinite(data.filmGauge)) {
+      camera.filmGauge = data.filmGauge;
+    }
+    if (typeof data.filmOffset === 'number' && Number.isFinite(data.filmOffset)) {
+      camera.filmOffset = data.filmOffset;
+    }
+  }
+
+  if (camera.isOrthographicCamera) {
+    if (typeof data.left === 'number' && Number.isFinite(data.left)) {
+      camera.left = data.left;
+    }
+    if (typeof data.right === 'number' && Number.isFinite(data.right)) {
+      camera.right = data.right;
+    }
+    if (typeof data.top === 'number' && Number.isFinite(data.top)) {
+      camera.top = data.top;
+    }
+    if (typeof data.bottom === 'number' && Number.isFinite(data.bottom)) {
+      camera.bottom = data.bottom;
+    }
+  }
+}
+
+/**
+ * Force CameraControls to match the saved pose. Uses controlsSnapshot
+ * position/target (CC world space, without focal offset) because
+ * object.position includes focal offset applied by CC.update().
+ */
+function reconcileCameraControlsPose(
+  cc: any,
+  data: any,
+  scene: any
+): void {
+  if (!cc || typeof cc.setLookAt !== 'function') {
+    return;
+  }
+
+  const snapshot = data.controlsSnapshot as Record<string, unknown> | undefined;
+  const pose = data.controlsPose as ControlsPoseSnapshot | undefined;
+
+  let position: Vector3 | null = null;
+  let worldTarget: Vector3 | null = null;
+
+  if (
+    snapshot &&
+    Array.isArray(snapshot.position) &&
+    Array.isArray(snapshot.target)
+  ) {
+    position = new Vector3().fromArray(snapshot.position as number[]);
+    worldTarget = new Vector3().fromArray(snapshot.target as number[]);
+  } else if (
+    Array.isArray(pose?.position) &&
+    Array.isArray(pose?.target)
+  ) {
+    position = new Vector3().fromArray(pose.position);
+    worldTarget = new Vector3().fromArray(pose.target);
+  } else {
+    worldTarget = resolveWorldLookAt(scene, data);
+    position = resolveSavedPosition(data);
+  }
+
+  if (
+    !position ||
+    !worldTarget ||
+    !isFiniteVector3(position) ||
+    !isFiniteVector3(worldTarget)
+  ) {
+    return;
+  }
+
+  cc.stop();
+  cc.setLookAt(
+    position.x,
+    position.y,
+    position.z,
+    worldTarget.x,
+    worldTarget.y,
+    worldTarget.z,
+    false
+  );
+
+  const focalOffset = (snapshot?.focalOffset ??
+    pose?.focalOffset ??
+    data.focalOffset) as number[] | undefined;
+  if (Array.isArray(focalOffset) && focalOffset.length === 3) {
+    cc.setFocalOffset(focalOffset[0], focalOffset[1], focalOffset[2], false);
+  }
+
+  const controlsZoom = (snapshot?.zoom ??
+    pose?.zoom ??
+    data.controlsZoom) as number | undefined;
+  if (typeof controlsZoom === 'number' && Number.isFinite(controlsZoom)) {
+    cc.zoomTo(controlsZoom, false);
+  }
+
+  if (typeof cc.update === 'function') {
+    cc.update(0);
+  }
+}
+
+/** Apply a saved CameraControls JSON string (or controlsSnapshot object). */
+function restoreCameraFromControlsJSON(
+  controls: any,
+  camera: any,
+  data: any,
+  scene: any,
+  controlsStateJson: string,
+  debugLabel: string
+): boolean {
+  if (!controls || typeof controls.fromJSON !== 'function') {
+    return false;
+  }
+
+  const cc = controls.thirdPartyControls;
+  if (cc && typeof cc.stop === 'function') {
+    cc.stop();
+  }
+
+  // Projection first so CC collision / near-plane math uses the saved lens.
+  applyProjectionFromData(camera, data, scene, {skipZoom: true});
+  if (Array.isArray(data.up) && data.up.length === 3) {
+    camera.up.fromArray(data.up);
+  }
+  camera.updateProjectionMatrix();
+
+  try {
+    controls.fromJSON(controlsStateJson, false);
+  } catch {
+    return false;
+  }
+
+  reconcileCameraControlsPose(cc, data, scene);
+
+  camera.matrixAutoUpdate = true;
+  camera.updateMatrixWorld(true);
+
+  const restoredControlsTarget = new Vector3();
+  if (cc && typeof cc.getTarget === 'function') {
+    cc.getTarget(restoredControlsTarget);
+  }
+
+  debugCameraJSON(debugLabel, {
+    position: camera.position.toArray(),
+    controlsTarget: restoredControlsTarget.toArray(),
+    fov: camera.isPerspectiveCamera ? camera.fov : undefined,
+    aspect: camera.isPerspectiveCamera ? camera.aspect : undefined,
+    near: camera.near,
+    scenePivotTarget:
+      typeof scene.getTarget === 'function'
+        ? scene.getTarget().toArray()
+        : null,
+  });
+
+  return true;
+}
+
+/**
+ * Legacy fallback when only pose fields were persisted (no controlsSnapshot).
+ */
+function restoreCameraControlsFromPartial(
+  scene: any,
+  controls: any,
+  camera: any,
+  data: any
+): boolean {
+  if (
+    !usesCameraControlsLookAt(controls) ||
+    typeof controls.toJSON !== 'function' ||
+    typeof controls.fromJSON !== 'function'
+  ) {
+    return false;
+  }
+
+  const savedPose = data.controlsPose as ControlsPoseSnapshot | undefined;
+  const savedPosition = resolveSavedPosition(data);
+  const worldLookAt = resolveWorldLookAt(scene, data);
+
+  if (!savedPose && (!savedPosition || !worldLookAt)) {
+    return false;
+  }
+
+  let template: Record<string, unknown>;
+  try {
+    template = JSON.parse(controls.toJSON());
+  } catch {
+    return false;
+  }
+
+  if (savedPose) {
+    // Pose fields from the same controlsState snapshot as getCameraJSON().
+    applyControlsPoseToTemplate(template, savedPose);
+  } else {
+    template.position = savedPosition!.toArray();
+    template.target = worldLookAt!.toArray();
+
+    if (Array.isArray(data.focalOffset) && data.focalOffset.length === 3) {
+      template.focalOffset = data.focalOffset;
+    }
+    const controlsZoom =
+      typeof data.controlsZoom === 'number' &&
+      Number.isFinite(data.controlsZoom)
+        ? data.controlsZoom
+        : typeof data.zoom === 'number' && Number.isFinite(data.zoom)
+          ? data.zoom
+          : null;
+    if (controlsZoom != null) {
+      template.zoom = controlsZoom;
+    }
+  }
+
+  return restoreCameraFromControlsJSON(
+    controls,
+    camera,
+    data,
+    scene,
+    JSON.stringify(template),
+    'setCameraFromJSON CameraControls partial merge path'
+  );
+}
+
+function awaitCameraSettled(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+/** Apply a stored look-at to scene pivot (SmoothControls). */
+function applyStoredLookAt(
+  scene: any,
+  camera: any,
+  modelTarget: Vector3
+): void {
+  if (!isFiniteVector3(modelTarget)) {
+    return;
+  }
+
+  debugCameraJSON('applyStoredLookAt', {
+    modelTarget: modelTarget.toArray(),
+    cameraPosition: camera.position.toArray(),
+    scenePivotTarget:
+      typeof scene.getTarget === 'function'
+        ? scene.getTarget().toArray()
+        : null,
+  });
+
+  if (typeof scene.setTarget === 'function') {
+    scene.setTarget(modelTarget.x, modelTarget.y, modelTarget.z);
+    if (typeof scene.jumpToGoal === 'function') {
+      scene.jumpToGoal();
+    }
+  }
+}
+
 export declare interface LDCameraInterface {
-  resetCamera(): void;
+  resetCamera(): Promise<void>;
   rotateCamera(azimuth: number, polar: number, animate?: boolean): void;
 
   setCurrentAsDefaultCamera(): void;
@@ -98,9 +567,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    resetCamera() {
+    async resetCamera() {
       const controls = (this as any)[$controls];
-      controls.reset();
+      if (controls && typeof controls.reset === 'function') {
+        await controls.reset();
+      }
       this[$needsRender]();
     }
 
@@ -163,52 +634,45 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       // If this JSON came from our own getCameraJSON, prefer restoring the
       // CameraControls state directly for a perfect round-trip (no flips or
       // drift), and let CameraControls drive the three.js camera.
-      const embeddedControlsState =
+      const embeddedControlsState = normalizeControlsState(
         (data as any).controlsState ??
-        (json as any).controlsState ??
-        (json as any)?.metadata?.controlsState;
-
-      if (
-        embeddedControlsState &&
-        controls &&
-        typeof controls.fromJSON === 'function'
-      ) {
-        const cc = controls.thirdPartyControls;
-        if (cc && typeof cc.stop === 'function') {
-          cc.stop();
-        }
-
-        try {
-          controls.fromJSON(embeddedControlsState, false);
-        } catch {
-          // If this fails, fall back to manual application below.
-        }
-
-        // Ensure camera and scene are up to date with the restored controls.
-        const camera: any = scene.camera;
-        if (cc && typeof cc.update === 'function') {
-          cc.update(1);
-        }
-        if (camera) {
-          camera.matrixAutoUpdate = true;
-          camera.updateProjectionMatrix();
-          camera.updateMatrixWorld(true);
-        }
-
-        if (typeof scene.jumpToGoal === 'function') {
-          scene.jumpToGoal();
-        }
-
-        this[$needsRender]();
-        return;
-      }
+          (data as any).controlsSnapshot ??
+          (json as any).controlsState ??
+          (json as any)?.metadata?.controlsState
+      );
 
       const camera: any = scene.camera;
       if (!camera) {
         return;
       }
 
-      // 2. Apply transform from three.js-style camera JSON
+      if (
+        embeddedControlsState &&
+        restoreCameraFromControlsJSON(
+          controls,
+          camera,
+          data,
+          scene,
+          embeddedControlsState,
+          'setCameraFromJSON controlsState path'
+        )
+      ) {
+        this[$needsRender]();
+        await awaitCameraSettled();
+        return;
+      }
+
+      const cc = controls?.thirdPartyControls;
+
+      if (restoreCameraControlsFromPartial(scene, controls, camera, data)) {
+        this[$needsRender]();
+        await awaitCameraSettled();
+        return;
+      }
+
+      const savedPosition = resolveSavedPosition(data);
+
+      // Matrix-based restore (Blender exports, SmoothControls, partial JSON).
       if (Array.isArray(data.matrix) && data.matrix.length === 16) {
         const m = new Matrix4().fromArray(data.matrix);
         camera.matrixAutoUpdate = false;
@@ -219,8 +683,8 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           camera.scale
         );
       } else {
-        if (Array.isArray(data.position) && data.position.length === 3) {
-          camera.position.fromArray(data.position);
+        if (savedPosition) {
+          camera.position.copy(savedPosition);
         }
         if (Array.isArray(data.quaternion) && data.quaternion.length === 4) {
           camera.quaternion.fromArray(data.quaternion);
@@ -232,119 +696,23 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         camera.up.fromArray(data.up);
       }
 
-      // 3. Apply projection parameters (Perspective & Orthographic)
-      if (typeof data.near === 'number' && Number.isFinite(data.near)) {
-        camera.near = data.near;
-      }
-      if (typeof data.far === 'number' && Number.isFinite(data.far)) {
-        camera.far = data.far;
-      }
-      if (typeof data.zoom === 'number' && Number.isFinite(data.zoom)) {
-        camera.zoom = data.zoom;
-      }
-
-      if (camera.isPerspectiveCamera) {
-        if (typeof data.fov === 'number' && Number.isFinite(data.fov)) {
-          camera.fov = data.fov;
-        }
-        if (typeof data.aspect === 'number' && Number.isFinite(data.aspect)) {
-          camera.aspect = data.aspect;
-        }
-        if (typeof data.focus === 'number' && Number.isFinite(data.focus)) {
-          camera.focus = data.focus;
-        }
-        if (
-          typeof data.filmGauge === 'number' &&
-          Number.isFinite(data.filmGauge)
-        ) {
-          camera.filmGauge = data.filmGauge;
-        }
-        if (
-          typeof data.filmOffset === 'number' &&
-          Number.isFinite(data.filmOffset)
-        ) {
-          camera.filmOffset = data.filmOffset;
-        }
-      }
-
-      if (camera.isOrthographicCamera) {
-        if (typeof data.left === 'number' && Number.isFinite(data.left)) {
-          camera.left = data.left;
-        }
-        if (typeof data.right === 'number' && Number.isFinite(data.right)) {
-          camera.right = data.right;
-        }
-        if (typeof data.top === 'number' && Number.isFinite(data.top)) {
-          camera.top = data.top;
-        }
-        if (typeof data.bottom === 'number' && Number.isFinite(data.bottom)) {
-          camera.bottom = data.bottom;
-        }
-      }
-
+      applyProjectionFromData(camera, data, scene);
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld(true);
 
-      // 4. Sync orbit target and CameraControls so there is no residual interpolation (wobble).
-      // Stop any ongoing transition first, then set position/target, then re-enable camera updates.
-      const cc = controls?.thirdPartyControls;
       if (cc && typeof cc.stop === 'function') {
         cc.stop();
       }
 
-      // Stored target is in model (pivot) space so round-trip preserves the same center.
-      // When JSON has no target (e.g. Blender export), keep the scene's current orbit
-      // center so any GLB works and we don't assume origin or bbox center.
-      const modelTarget = new Vector3();
-      if (Array.isArray(data.target) && data.target.length === 3) {
-        modelTarget.fromArray(data.target);
-      } else if (scene && typeof scene.getTarget === 'function') {
-        modelTarget.copy(scene.getTarget());
-      } else if (
-        controls &&
-        controls.thirdPartyControls &&
-        typeof controls.thirdPartyControls.getTarget === 'function'
-      ) {
-        const oldWorld = new Vector3();
-        controls.thirdPartyControls.getTarget(oldWorld);
-        if (scene.pivot && typeof scene.pivot.worldToLocal === 'function') {
-          scene.updateMatrixWorld(true);
-          modelTarget.copy(oldWorld);
-          scene.pivot.worldToLocal(modelTarget);
-        } else {
-          modelTarget.copy(oldWorld);
-        }
-      }
+      const hasExplicitTarget =
+        Array.isArray(data.target) && data.target.length === 3;
 
-      if (
-        Number.isFinite(modelTarget.x) &&
-        Number.isFinite(modelTarget.y) &&
-        Number.isFinite(modelTarget.z)
-      ) {
-        if (typeof scene.setTarget === 'function') {
-          scene.setTarget(modelTarget.x, modelTarget.y, modelTarget.z);
-          if (typeof scene.jumpToGoal === 'function') {
-            scene.jumpToGoal();
-          }
-        }
-
-        // Read back target from scene (model space) and convert to world for controls
-        scene.updateMatrixWorld(true);
-        const worldTarget = new Vector3();
-        if (scene && typeof scene.getDynamicTarget === 'function') {
-          worldTarget.copy(scene.getDynamicTarget());
-        } else {
-          worldTarget.copy(modelTarget);
-        }
-        if (scene.pivot && typeof scene.pivot.localToWorld === 'function') {
-          scene.pivot.localToWorld(worldTarget);
-        }
-        if (
-          controls &&
-          controls.thirdPartyControls &&
-          typeof controls.thirdPartyControls.setLookAt === 'function'
-        ) {
-          controls.thirdPartyControls.setLookAt(
+      if (hasExplicitTarget) {
+        const modelTarget = new Vector3().fromArray(data.target);
+        applyStoredLookAt(scene, camera, modelTarget);
+        if (usesCameraControlsLookAt(controls)) {
+          const worldTarget = modelTargetToWorldSpace(scene, modelTarget);
+          cc.setLookAt(
             camera.position.x,
             camera.position.y,
             camera.position.z,
@@ -353,14 +721,13 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
             worldTarget.z,
             false
           );
-          // Force controls to apply state immediately (delta in seconds).
-          controls.thirdPartyControls.update(1);
+          cc.update(1);
         }
+      } else {
+        syncControlsFromCameraPose(camera, controls);
       }
 
-      // Let CameraControls drive the camera again on subsequent frames.
       camera.matrixAutoUpdate = true;
-
       this[$needsRender]();
     }
 
@@ -413,30 +780,30 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         object.bottom = camera.bottom;
       }
 
-      // Include the current orbit target in model (pivot) space so that
-      // round-trip restore keeps the same orbit center. Use the scene's target
-      // as the source of truth (model-viewer sets this on load for any GLB).
-      // Only fall back to bbox center when the scene does not provide a target.
-      if (scene && typeof scene.getTarget === 'function') {
-        const modelTarget = scene.getTarget();
-        object.target = [modelTarget.x, modelTarget.y, modelTarget.z];
-      }
+      // Include the current look-at in model (pivot) space. Prefer CameraControls
+      // (updated on pan/truck) over scene.getTarget() (only moves via attributes
+      // or tap-recenter in LDControls).
       if (
-        object.target == null &&
         controls &&
         controls.thirdPartyControls &&
         typeof controls.thirdPartyControls.getTarget === 'function'
       ) {
         const worldTarget = new Vector3();
         controls.thirdPartyControls.getTarget(worldTarget);
-        if (scene.pivot && typeof scene.pivot.worldToLocal === 'function') {
-          scene.updateMatrixWorld(true);
-          const modelTarget = worldTarget.clone();
-          scene.pivot.worldToLocal(modelTarget);
-          object.target = modelTarget.toArray();
-        } else {
-          object.target = worldTarget.toArray();
-        }
+        const modelTarget = worldTargetToModelSpace(scene, worldTarget);
+        object.worldTarget = worldTarget.toArray();
+        object.target = modelTarget.toArray();
+        debugCameraJSON('getCameraJSON target from CameraControls', {
+          worldTarget: object.worldTarget,
+          modelTarget: object.target,
+          scenePivotTarget:
+            typeof scene.getTarget === 'function'
+              ? scene.getTarget().toArray()
+              : null,
+        });
+      } else if (scene && typeof scene.getTarget === 'function') {
+        const modelTarget = scene.getTarget();
+        object.target = [modelTarget.x, modelTarget.y, modelTarget.z];
       }
       if (
         object.target == null &&
@@ -451,6 +818,18 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (controls && typeof controls.toJSON === 'function') {
         try {
           controlsState = controls.toJSON();
+          const parsedControls = JSON.parse(controlsState);
+          object.controlsSnapshot = parsedControls;
+          const controlsPose = parseControlsPose(parsedControls);
+          if (controlsPose) {
+            object.controlsPose = controlsPose;
+          }
+          if (Array.isArray(parsedControls.focalOffset)) {
+            object.focalOffset = parsedControls.focalOffset;
+          }
+          if (typeof parsedControls.zoom === 'number') {
+            object.controlsZoom = parsedControls.zoom;
+          }
         } catch {
           // If CameraControls serialization fails, continue without it.
         }

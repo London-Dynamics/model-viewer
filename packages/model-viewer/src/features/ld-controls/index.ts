@@ -937,8 +937,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     return this.thirdPartyControls.toJSON();
   }
 
-  fromJSON(json: any): void {
-    return this.thirdPartyControls.fromJSON(json);
+  fromJSON(json: any, enableTransition = false): void {
+    return this.thirdPartyControls.fromJSON(json, enableTransition);
   }
 
   reset(): Promise<void[]> {
