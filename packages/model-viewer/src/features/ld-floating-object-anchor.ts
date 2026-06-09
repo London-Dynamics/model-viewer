@@ -22,6 +22,7 @@ import ModelViewerElementBase, {
   $tick,
 } from '../model-viewer-base.js';
 import { Constructor } from '../utilities.js';
+import { getObjectDisplayName } from './ld-modular/transform-events.js';
 
 /** Scales the AABB-derived bounding sphere radius used for anchor placement. */
 const ANCHOR_SPHERE_RADIUS_MULTIPLIER = 0.9;
@@ -204,15 +205,28 @@ export const LDFloatingObjectAnchorMixin = <
         return;
       }
 
-      slot.dataset.objectName = this[$selectedObject].name || '';
-      slot.dataset.objectUuid = this[$selectedObject].uuid || '';
+      const selectedObject = this[$selectedObject];
+      const objectName = selectedObject.name || '';
+      const displayName = getObjectDisplayName(selectedObject);
+      slot.dataset.objectName = objectName;
+      slot.dataset.objectUuid = selectedObject.uuid || '';
+      if (displayName !== objectName) {
+        slot.dataset.displayName = displayName;
+      } else {
+        delete slot.dataset.displayName;
+      }
 
       const assigned = slot.assignedElements({ flatten: true });
       const target = assigned[0] as HTMLElement | undefined;
       if (target) {
         try {
-          target.dataset.objectName = this[$selectedObject].name || '';
-          target.dataset.objectUuid = this[$selectedObject].uuid || '';
+          target.dataset.objectName = objectName;
+          target.dataset.objectUuid = selectedObject.uuid || '';
+          if (displayName !== objectName) {
+            target.dataset.displayName = displayName;
+          } else {
+            delete target.dataset.displayName;
+          }
         } catch (_e) {
           // Leave attributes on the slot as a fallback.
         }

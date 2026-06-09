@@ -77,6 +77,7 @@ import {
   ActiveTransform,
   BeginTransformSessionOptions,
   computeTransformDelta,
+  getObjectDisplayName,
   inferRotationAxesFromParsed,
   TransformAxis,
   TransformEventDetail,
@@ -96,6 +97,7 @@ export type {
 } from './transform-events.js';
 export {
   computeTransformDelta,
+  getObjectDisplayName,
   inferRotationAxesFromParsed,
   normalizeAngleDeltaDeg,
   shortestAngleDeltaDeg,
@@ -124,7 +126,10 @@ export type PlacementOptions = {
 };
 
 export type PlacementGraphNode = {
+  /** Unique object key (`Object3D.name`), used for Three.js lookups. */
   name: string;
+  /** Human-readable label from `userData.name` or `userData.part.name`. */
+  displayName?: string;
   uuid: string;
   position: Vector3;
   rotation: Euler;
@@ -148,6 +153,39 @@ function getPlacementSnapPoints(
   options?: PlacementOptions
 ): SnapPoint[] | undefined {
   return options?.snapPoints ?? options?.part?.snapPoints;
+}
+
+/** Unique key for `Object3D.name` and snap/lookup APIs. */
+function getPlacementObjectKey(
+  sessionId: string,
+  options?: PlacementOptions
+): string {
+  return options?.id || sessionId;
+}
+
+/** Clean display label stored in `userData.name`. */
+function getPlacementDisplayName(
+  options?: PlacementOptions
+): string | undefined {
+  return (
+    options?.name ??
+    (options?.part as { name?: string } | undefined)?.name
+  );
+}
+
+function applyPlacementObjectIdentity(
+  object: Object3D,
+  sessionId: string,
+  options?: PlacementOptions
+): void {
+  const objectKey = getPlacementObjectKey(sessionId, options);
+  object.name = objectKey;
+  object.userData = object.userData || {};
+  object.userData.id = objectKey;
+  const displayName = getPlacementDisplayName(options);
+  if (displayName !== undefined) {
+    object.userData.name = displayName;
+  }
 }
 
 /** Resolved selectable flag for committed placed objects (not placeholders). */
@@ -652,9 +690,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             (options.position || options.rotation || options.scale)
           ) {
             placeholder = new Object3D();
-            placeholder.name = options.name
-              ? options.name + `_${+new Date()}`
-              : session.id;
+            applyPlacementObjectIdentity(placeholder, session.id, options);
             markPlacementPlaceholderNonSelectable(placeholder);
             try {
               scene.target.add(placeholder);
@@ -1108,8 +1144,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const extractData = (obj: Object3D): PlacementGraphNode => {
         const isGroup = !!obj.userData?.isSnappedGroup;
+        const displayName = getObjectDisplayName(obj);
         return {
           name: obj.name,
+          ...(displayName !== obj.name ? { displayName } : {}),
           uuid: obj.uuid,
           position: obj.position.clone(),
           rotation: this._getPlacementTreeRotationFromObject(obj),
@@ -1310,7 +1348,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       active: ActiveTransform | null
     ): TransformEventDetail {
       return {
-        target: { uuid: obj.uuid, name: obj.name },
+        target: { uuid: obj.uuid, name: getObjectDisplayName(obj) },
         transform: this._cloneTransformValues(obj),
         active,
       };
@@ -6176,9 +6214,7 @@ class PlacementSession extends EventTarget {
     const placeholder = new Object3D();
     placeholder.add(boxMesh);
 
-    placeholder.name = this._options?.name
-      ? this._options.name + `_${+new Date()}`
-      : this.id;
+    applyPlacementObjectIdentity(placeholder, this.id, this._options);
 
     const placeholderSnapPoints = getPlacementSnapPoints(this._options);
     if (placeholderSnapPoints) {
@@ -6209,9 +6245,7 @@ class PlacementSession extends EventTarget {
 
   private _createPlaceholderAnchor(scene: any, element: any): Object3D {
     const placeholder = new Object3D();
-    placeholder.name = this._options?.name
-      ? this._options.name + `_${+new Date()}`
-      : this.id;
+    applyPlacementObjectIdentity(placeholder, this.id, this._options);
 
     markPlacementPlaceholderNonSelectable(placeholder);
 
@@ -6307,9 +6341,7 @@ class PlacementSession extends EventTarget {
       if (!placeholder) return;
 
       this.placeholder = placeholder;
-      placeholder.name = this._options?.name
-        ? this._options.name + `_${+new Date()}`
-        : this.id;
+      applyPlacementObjectIdentity(placeholder, this.id, this._options);
 
       // If the placement was started with snapPoints, attach them to
       // the placeholder so the snapping-point slot renderer and snapping
@@ -6827,14 +6859,14 @@ class PlacementSession extends EventTarget {
         throw new Error('Loaded GLTF missing scene');
       }
 
+      const objectKey = getPlacementObjectKey(this.id, this._options);
+
       if (this.placeholder) {
         gltf.scene.quaternion.copy(this.placeholder.quaternion);
         gltf.scene.scale.copy(this.placeholder.scale);
-        gltf.scene.name = this.placeholder.name;
+        gltf.scene.name = this.placeholder.name || objectKey;
       } else {
-        gltf.scene.name = this._options?.name
-          ? this._options.name + `_${+new Date()}`
-          : this.id;
+        gltf.scene.name = objectKey;
       }
 
       const hasSurfaceSnappedPlaceholder =
@@ -6906,8 +6938,8 @@ class PlacementSession extends EventTarget {
         selectable: getPlacementSelectable(this._options),
         selection: this._options?.selection || undefined,
         ...gltf.scene.userData,
-        id: this._options?.id || this.id,
-        name: this._options?.name || this.id,
+        id: objectKey,
+        name: getPlacementDisplayName(this._options) ?? objectKey,
         part: this._options?.part,
       };
       gltf.scene.userData.isSurfaceSnapped =
@@ -7099,7 +7131,7 @@ class PlacementSession extends EventTarget {
       this.state = 'ended';
       const detail = { sessionId: this.id, placedNode: gltf.scene };
       (this as any).dispatchEvent(new CustomEvent('loaded', { detail }));
-      return { id: this.id, node: gltf.scene };
+      return { id: objectKey, node: gltf.scene };
     } catch (error) {
       this._cleanupPlaceholder(element);
       this.state = 'cancelled';

@@ -12,7 +12,17 @@ export type TransformValues = {
   scale: [number, number, number];
 };
 
+/** Human-readable label; falls back to `Object3D.name` when unset. */
 export type TransformTarget = {uuid: string; name: string};
+
+export function getObjectDisplayName(object: {
+  name: string;
+  userData?: {name?: string; part?: {name?: string}};
+}): string {
+  return (
+    object.userData?.name ?? object.userData?.part?.name ?? object.name
+  );
+}
 
 export type ActiveTransform = {
   source: TransformSource;

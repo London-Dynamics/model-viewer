@@ -5,6 +5,7 @@
 import {expect} from 'chai';
 import {
   computeTransformDelta,
+  getObjectDisplayName,
   inferRotationAxesFromParsed,
   normalizeAngleDeltaDeg,
   shortestAngleDeltaDeg,
@@ -34,6 +35,25 @@ suite('ld-modular transform events', () => {
       [0, 0, 0]
     );
     expect(axes).to.deep.equal(['x', 'y', 'z']);
+  });
+
+  test('getObjectDisplayName prefers userData.name over object key', () => {
+    expect(
+      getObjectDisplayName({
+        name: '1717940000000_4821',
+        userData: {name: 'Aspire Treadmill'},
+      })
+    ).to.equal('Aspire Treadmill');
+  });
+
+  test('getObjectDisplayName falls back to part.name then object key', () => {
+    expect(
+      getObjectDisplayName({
+        name: '1717940000000_4821',
+        userData: {part: {name: 'Elliptical'}},
+      })
+    ).to.equal('Elliptical');
+    expect(getObjectDisplayName({name: 'Scene'})).to.equal('Scene');
   });
 
   test('transformend detail clears active', () => {
