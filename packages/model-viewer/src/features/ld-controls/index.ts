@@ -400,6 +400,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.update(0);
     camera.updateMatrix();
     camera.updateMatrixWorld(true);
+    this.thirdPartyControls.saveState();
 
     // Final validation - if still invalid, reset to absolute safe defaults
     const matrixValid = camera.matrixWorld.elements.every(
@@ -1751,6 +1752,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       controls.changeSource = ChangeSource.NONE;
       controls.setOrbit(style[0], style[1], style[2]);
+      if (!this[$userHasInteracted]) {
+        controls.saveState();
+      }
       this[$cancelPrompts]();
     }
 

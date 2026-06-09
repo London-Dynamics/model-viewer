@@ -173,10 +173,11 @@
               <div class="heading">
                 <h2 class="demo-title">Capture with camera pose</h2>
                 <h4>
-                  Pass a camera state (e.g. from <code>getCameraJSON()</code>)
-                  into <code>captureImage({ camera })</code>. The view is
-                  updated to that pose, one frame is rendered, then the image is
-                  captured.
+                  Pass <code>getCameraJSON().object</code> into
+                  <code>captureImage({ camera })</code> (include
+                  <code>controlsSnapshot</code> if the saved view was panned).
+                  The pose is applied for one render, then the on-screen camera
+                  is restored.
                 </h4>
               </div>
               <example-snippet
@@ -391,9 +392,9 @@
                 <h4>
                   Use <code>setCameraType('orthographic')</code> and
                   <code>rotateCamera(azimuth, polar, false)</code> to set each
-                  view, then <code>getCameraJSON()</code> to get the camera
-                  state. Pass that into <code>captureImage({ camera })</code> to
-                  capture without changing the visible view. Click “Prepare
+                  view, then <code>getCameraJSON().object</code> for each pose.
+                  Pass those objects into <code>captureImage({ camera })</code>
+                  to capture without changing the visible view. Click “Prepare
                   views” once, then capture from above, front, or side.
                 </h4>
               </div>

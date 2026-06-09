@@ -342,6 +342,55 @@ function reconcileCameraControlsPose(
   if (typeof cc.update === 'function') {
     cc.update(0);
   }
+
+  if (typeof cc.stop === 'function') {
+    cc.stop();
+  }
+  if (typeof cc.update === 'function') {
+    cc.update(0);
+  }
+}
+
+/** camera-controls stop() snaps pose but leaves smoothDamp velocities intact. */
+function zeroCameraControlsVelocities(cc: any): void {
+  if (!cc) {
+    return;
+  }
+  if (cc._thetaVelocity) {
+    cc._thetaVelocity.value = 0;
+  }
+  if (cc._phiVelocity) {
+    cc._phiVelocity.value = 0;
+  }
+  if (cc._radiusVelocity) {
+    cc._radiusVelocity.value = 0;
+  }
+  if (cc._zoomVelocity) {
+    cc._zoomVelocity.value = 0;
+  }
+  if (cc._targetVelocity?.set) {
+    cc._targetVelocity.set(0, 0, 0);
+  }
+  if (cc._focalOffsetVelocity?.set) {
+    cc._focalOffsetVelocity.set(0, 0, 0);
+  }
+}
+
+/** Snap CameraControls and flush pending smoothTime interpolation. */
+function settleCameraControls(cc: any): void {
+  if (!cc) {
+    return;
+  }
+  if (typeof cc.stop === 'function') {
+    cc.stop();
+  }
+  zeroCameraControlsVelocities(cc);
+  if (typeof cc.update === 'function') {
+    for (let i = 0; i < 3; ++i) {
+      cc.update(0);
+    }
+  }
+  cc._needsUpdate = false;
 }
 
 /** Apply a saved CameraControls JSON string (or controlsSnapshot object). */
@@ -369,13 +418,27 @@ function restoreCameraFromControlsJSON(
   }
   camera.updateProjectionMatrix();
 
-  try {
-    controls.fromJSON(controlsStateJson, false);
-  } catch {
-    return false;
+  const hasSnapshotObject =
+    data.controlsSnapshot != null &&
+    typeof data.controlsSnapshot === 'object';
+
+  // fromJSON uses moveTo/rotateTo/dollyTo which leave smoothDamp velocities
+  // running; reconcile setLookAt then looks correct for one frame before the
+  // render loop drifts back. Legacy strings still need fromJSON.
+  if (!hasSnapshotObject) {
+    try {
+      controls.fromJSON(controlsStateJson, false);
+    } catch {
+      return false;
+    }
   }
 
   reconcileCameraControlsPose(cc, data, scene);
+  settleCameraControls(cc);
+
+  if (cc && typeof cc.saveState === 'function') {
+    cc.saveState();
+  }
 
   camera.matrixAutoUpdate = true;
   camera.updateMatrixWorld(true);
@@ -433,7 +496,7 @@ function restoreCameraControlsFromPartial(
   }
 
   if (savedPose) {
-    // Pose fields from the same controlsState snapshot as getCameraJSON().
+    // Pose fields from the same controls snapshot as getCameraJSON().
     applyControlsPoseToTemplate(template, savedPose);
   } else {
     template.position = savedPosition!.toArray();
@@ -464,11 +527,21 @@ function restoreCameraControlsFromPartial(
   );
 }
 
-function awaitCameraSettled(): Promise<void> {
+function awaitCameraSettled(cc?: any): Promise<void> {
   return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
-    });
+    let frames = 0;
+    const step = () => {
+      if (cc) {
+        settleCameraControls(cc);
+      }
+      frames += 1;
+      if (frames >= 4) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   });
 }
 
@@ -507,6 +580,7 @@ export declare interface LDCameraInterface {
 
   setCameraFromJSON(json: CameraMeta['object']): Promise<void>;
   getCameraJSON(): CameraMeta | null;
+  truckCamera(x: number, y: number, z?: number): void;
 
   setCameraType(type: CameraType): void;
   getCameraType(): CameraType;
@@ -576,8 +650,36 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     async resetCamera() {
       const controls = (this as any)[$controls];
+      const cc = controls?.thirdPartyControls;
+      if (cc && typeof cc.stop === 'function') {
+        cc.stop();
+      }
       if (controls && typeof controls.reset === 'function') {
         await controls.reset();
+      }
+      settleCameraControls(cc);
+      this[$needsRender]();
+    }
+
+    /** Truck the CameraControls look-at (simulates user pan). */
+    truckCamera(x: number, y: number, z: number = 0) {
+      const controls = (this as any)[$controls];
+      const cc = controls?.thirdPartyControls;
+      if (!cc) {
+        return;
+      }
+
+      if (typeof cc.stop === 'function') {
+        cc.stop();
+      }
+      if (typeof cc.truck === 'function') {
+        cc.truck(x, y, false);
+      }
+      if (z !== 0 && typeof cc.forward === 'function') {
+        cc.forward(z, false);
+      }
+      if (typeof cc.update === 'function') {
+        cc.update(0);
       }
       this[$needsRender]();
     }
@@ -638,13 +740,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.setCameraType(desiredType);
       }
 
-      // If this JSON came from our own getCameraJSON, prefer restoring the
-      // CameraControls state directly for a perfect round-trip (no flips or
-      // drift), and let CameraControls drive the three.js camera.
+      // Prefer controlsSnapshot (parsed object persisted by the host). Legacy
+      // controlsState strings are still accepted for older saved data.
       const embeddedControlsState = normalizeControlsState(
-        (data as any).controlsState ??
-          (data as any).controlsSnapshot ??
-          (json as any).controlsState ??
+        (data as any).controlsSnapshot ??
+          (data as any).controlsState ??
           (json as any)?.metadata?.controlsState
       );
 
@@ -661,11 +761,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           data,
           scene,
           embeddedControlsState,
-          'setCameraFromJSON controlsState path'
+          'setCameraFromJSON controlsSnapshot path'
         )
       ) {
         this[$needsRender]();
-        await awaitCameraSettled();
+        await awaitCameraSettled(controls?.thirdPartyControls);
         return;
       }
 
@@ -673,7 +773,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (restoreCameraControlsFromPartial(scene, controls, camera, data)) {
         this[$needsRender]();
-        await awaitCameraSettled();
+        await awaitCameraSettled(cc);
         return;
       }
 
@@ -715,20 +815,23 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         Array.isArray(data.target) && data.target.length === 3;
 
       if (hasExplicitTarget) {
-        const modelTarget = new Vector3().fromArray(data.target);
-        applyStoredLookAt(scene, camera, modelTarget);
         if (usesCameraControlsLookAt(controls)) {
-          const worldTarget = modelTargetToWorldSpace(scene, modelTarget);
-          cc.setLookAt(
-            camera.position.x,
-            camera.position.y,
-            camera.position.z,
-            worldTarget.x,
-            worldTarget.y,
-            worldTarget.z,
-            false
-          );
-          cc.update(1);
+          const worldTarget = resolveWorldLookAt(scene, data);
+          if (worldTarget) {
+            cc.setLookAt(
+              camera.position.x,
+              camera.position.y,
+              camera.position.z,
+              worldTarget.x,
+              worldTarget.y,
+              worldTarget.z,
+              false
+            );
+            cc.update(0);
+          }
+        } else {
+          const modelTarget = new Vector3().fromArray(data.target);
+          applyStoredLookAt(scene, camera, modelTarget);
         }
       } else {
         syncControlsFromCameraPose(camera, controls);
@@ -821,11 +924,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         object.target = [center.x, center.y, center.z];
       }
 
-      let controlsState: any = undefined;
+      // Persist CameraControls as a parsed snapshot (host-friendly object).
+      // Do not emit controlsState (JSON string); restore uses controlsSnapshot.
       if (controls && typeof controls.toJSON === 'function') {
         try {
-          controlsState = controls.toJSON();
-          const parsedControls = JSON.parse(controlsState);
+          const parsedControls = JSON.parse(controls.toJSON());
           object.controlsSnapshot = parsedControls;
           const controlsPose = parseControlsPose(parsedControls);
           if (controlsPose) {
@@ -842,18 +945,10 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      // For internal round-trips (UI presets, captureImage, etc), also embed
-      // the CameraControls state directly on the object so that consumers that
-      // only persist meta.object still get a perfect restore path.
-      if (controlsState != null) {
-        object.controlsState = controlsState;
-      }
-
       const meta: CameraMeta = {
         metadata: {
           version: 1,
           generator: '@london-dynamics/model-viewer LDCamera',
-          controlsState,
         },
         object,
       };

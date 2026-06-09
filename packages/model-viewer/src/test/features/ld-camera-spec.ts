@@ -16,6 +16,16 @@ function worldTargetToModel(scene: any, worldTarget: Vector3): Vector3 {
   return modelTarget;
 }
 
+/** Mirror what the host persists: Blender fields + controlsSnapshot. */
+function toHostCameraPayload(object: Record<string, unknown>) {
+  const host = {...object};
+  delete host.controlsState;
+  delete host.controlsPose;
+  delete host.focalOffset;
+  delete host.controlsZoom;
+  return host;
+}
+
 suite('LD Camera JSON', () => {
   let element: ModelViewerElement;
 
@@ -61,7 +71,8 @@ suite('LD Camera JSON', () => {
     expect(meta!.object.target).to.not.be.undefined;
     expect(meta!.object.worldTarget).to.not.be.undefined;
     expect(meta!.object.controlsSnapshot).to.not.be.undefined;
-    expect(meta!.object.controlsPose).to.not.be.undefined;
+    expect(meta!.object.controlsState).to.be.undefined;
+    expect((meta!.metadata as any).controlsState).to.be.undefined;
 
     for (let i = 0; i < 3; ++i) {
       expect(meta!.object.target[i])
@@ -76,7 +87,7 @@ suite('LD Camera JSON', () => {
     expect(scene.getTarget().z).to.be.closeTo(sceneTargetBeforePan.z, 0.001);
   });
 
-  test('setCameraFromJSON restores target without controlsState after reset', async () => {
+  test('setCameraFromJSON restores host payload after reset', async () => {
     const scene = element[$scene];
     const controls = (element as any)[$controls];
     const cc = controls.thirdPartyControls;
@@ -95,9 +106,9 @@ suite('LD Camera JSON', () => {
     const source = element.getCameraJSON();
     expect(source).to.not.be.null;
 
-    const saved = {...source!.object};
-    delete saved.controlsState;
+    const saved = toHostCameraPayload(source!.object);
     expect(saved.controlsSnapshot).to.not.be.undefined;
+    expect(saved.controlsState).to.be.undefined;
 
     await element.resetCamera();
     await timePasses();
@@ -120,7 +131,42 @@ suite('LD Camera JSON', () => {
     expect(restored!.object.near).to.be.closeTo(source!.object.near, 0.0001);
   });
 
-  test('setCameraFromJSON restores view from controlsState', async () => {
+  test('setCameraFromJSON accepts legacy controlsState string', async () => {
+    const scene = element[$scene];
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+
+    const position = scene.camera.position.clone();
+    await cc.setLookAt(
+        position.x,
+        position.y,
+        position.z,
+        position.x + 0.5,
+        position.y,
+        position.z - 0.25,
+        false);
+    cc.update(1);
+
+    const source = element.getCameraJSON();
+    expect(source).to.not.be.null;
+
+    const legacy = {...source!.object};
+    legacy.controlsState = JSON.stringify(legacy.controlsSnapshot);
+    delete legacy.controlsSnapshot;
+
+    await cc.setLookAt(0, 0, 5, 0, 0, 0, false);
+    cc.update(1);
+
+    await element.setCameraFromJSON(legacy);
+    await timePasses();
+
+    const restored = element.getCameraJSON();
+    expect(restored).to.not.be.null;
+    expect(restored!.object.position[0])
+        .to.be.closeTo(source!.object.position[0], 0.001);
+  });
+
+  test('setCameraFromJSON restores view from controlsSnapshot', async () => {
     const scene = element[$scene];
     const controls = (element as any)[$controls];
     const cc = controls.thirdPartyControls;
