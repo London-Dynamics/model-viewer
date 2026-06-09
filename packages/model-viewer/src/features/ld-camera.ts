@@ -1,16 +1,10 @@
-//import { Spherical, Vector3 } from 'three';
-//import { PerspectiveCamera } from 'three';
-//import {PerspectiveCamera} from 'three';
 import ModelViewerElementBase, {
-  //$needsRender,
   $scene,
-  // $userInputElement,
   $onModelLoad,
   $needsRender,
 } from '../model-viewer-base.js';
 
 import { $controls } from './controls.js';
-//import {SmoothControls} from '../three-components/SmoothControls.js';
 import { Constructor } from '../utilities.js';
 import { MathUtils, Mesh, Matrix4, Quaternion, Vector3 } from 'three';
 
@@ -511,7 +505,7 @@ export declare interface LDCameraInterface {
 
   setCurrentAsDefaultCamera(): void;
 
-  setCameraFromJSON(json: CameraMeta['object']): void;
+  setCameraFromJSON(json: CameraMeta['object']): Promise<void>;
   getCameraJSON(): CameraMeta | null;
 
   setCameraType(type: CameraType): void;
@@ -525,6 +519,19 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
   class LDCameraModelViewerElement extends ModelViewerElement {
     private _pointerDwn = [0, 0];
     private _pointerUp = [0, 0];
+    private _interactionListenersAttached = false;
+
+    private _onPointerDown = (event: PointerEvent) => {
+      this._pointerDwn = [event.offsetX, event.offsetY];
+    };
+
+    private _onPointerUp = (event: PointerEvent) => {
+      this._pointerUp = [event.offsetX, event.offsetY];
+    };
+
+    private _onClick = (event: MouseEvent) => {
+      this.handleClick(event);
+    };
 
     handleClick(event: MouseEvent) {
       const { _pointerDwn, _pointerUp } = this;
@@ -964,18 +971,14 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$onModelLoad]() {
       super[$onModelLoad]();
 
-      const { currentGLTF } = this[$scene];
-
-      if (currentGLTF != null) {
+      // $onModelLoad fires on every src change; attach interaction listeners
+      // once so reloading a model does not stack duplicate handlers.
+      if (!this._interactionListenersAttached) {
+        this._interactionListenersAttached = true;
+        this.addEventListener('pointerdown', this._onPointerDown);
+        this.addEventListener('pointerup', this._onPointerUp);
+        this.addEventListener('click', this._onClick);
       }
-
-      this.addEventListener('pointerdown', (e) => {
-        this._pointerDwn = [e.offsetX, e.offsetY];
-      });
-      this.addEventListener('pointerup', (e) => {
-        this._pointerUp = [e.offsetX, e.offsetY];
-      });
-      this.addEventListener('click', this.handleClick);
     }
   }
   // @ts-ignore
