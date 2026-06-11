@@ -1445,6 +1445,16 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$userInputElement].dispatchEvent(event);
     }
 
+    /** Disables orbit/pan pointer drags while keeping wheel and pinch zoom. */
+    disableCameraDrag() {
+      this[$controls].disableDragInteraction();
+    }
+
+    /** Restores orbit/pan pointer drags after {@link disableCameraDrag}. */
+    enableCameraDrag() {
+      this[$controls].enableDragInteraction();
+    }
+
     connectedCallback() {
       super.connectedCallback();
 

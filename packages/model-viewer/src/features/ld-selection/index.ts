@@ -97,12 +97,16 @@ import ModelViewerElementBase, {
   $scene,
 } from '../../model-viewer-base.js';
 import {Constructor} from '../../utilities.js';
-import {Object3D, Vector2, Raycaster} from 'three';
+import {Object3D, Vector2, Raycaster, Box3, Vector3, Camera} from 'three';
 
 // Re-export the selection outline effect
 export {SelectionOutlineEffect} from './selection-outline-effect.js';
 
 const MULTI_SELECT_MODIFIER_KEY = 'Shift' as const;
+
+const RECT_PROJECTION_BOX = new Box3();
+const RECT_PROJECTION_CORNER = new Vector3();
+const RECT_PROJECTION_VIEW = new Vector3();
 
 export type SelectionScope = 'scene' | 'part' | 'group' | 'all';
 
@@ -763,15 +767,111 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    protected _isRectangleSelectionReady(rect: DomRectLike): boolean {
+      if (rect.right <= rect.left || rect.bottom <= rect.top) {
+        return false;
+      }
+
+      const scene = (this as any)[$scene];
+      if (!scene) return false;
+
+      const camera = scene.getCamera ? scene.getCamera() : scene.camera;
+      if (!camera) return false;
+
+      if (scene.width <= 0 || scene.height <= 0) return false;
+
+      return true;
+    }
+
+    /**
+     * Inverse of ModelScene.getNDC — maps projected NDC to client/viewport coords.
+     */
+    protected _ndcToClient(
+      ndcX: number,
+      ndcY: number,
+      elementRect: DOMRect,
+      viewportWidth: number,
+      viewportHeight: number
+    ): {clientX: number; clientY: number} {
+      return {
+        clientX: elementRect.left + (ndcX * 0.5 + 0.5) * viewportWidth,
+        clientY: elementRect.top + (-ndcY * 0.5 + 0.5) * viewportHeight,
+      };
+    }
+
+    protected _projectObjectBoundsToDomRect(
+      object: Object3D,
+      camera: Camera,
+      elementRect: DOMRect,
+      viewportWidth: number,
+      viewportHeight: number
+    ): DomRectLike | null {
+      object.updateMatrixWorld(true);
+      camera.updateMatrixWorld(true);
+      RECT_PROJECTION_BOX.setFromObject(object);
+      if (RECT_PROJECTION_BOX.isEmpty()) return null;
+
+      const {min, max} = RECT_PROJECTION_BOX;
+      let left = Infinity;
+      let top = Infinity;
+      let right = -Infinity;
+      let bottom = -Infinity;
+      let anyVisible = false;
+
+      for (let xi = 0; xi < 2; xi++) {
+        for (let yi = 0; yi < 2; yi++) {
+          for (let zi = 0; zi < 2; zi++) {
+            RECT_PROJECTION_CORNER.set(
+              xi ? max.x : min.x,
+              yi ? max.y : min.y,
+              zi ? max.z : min.z
+            );
+            // Skip corners behind the camera (view-space +Z is behind).
+            RECT_PROJECTION_VIEW.copy(RECT_PROJECTION_CORNER).applyMatrix4(
+              camera.matrixWorldInverse
+            );
+            if (RECT_PROJECTION_VIEW.z >= 0) continue;
+
+            RECT_PROJECTION_CORNER.project(camera);
+            if (RECT_PROJECTION_CORNER.z >= 1) continue;
+
+            // Clamp NDC to the viewport. Unclamped off-screen corners inflate the
+            // screen AABB (false hits when siblings are off-screen); clamping also
+            // keeps zoomed-in objects selectable when their bbox exceeds the frustum.
+            const ndcX = Math.max(
+              -1,
+              Math.min(1, RECT_PROJECTION_CORNER.x)
+            );
+            const ndcY = Math.max(
+              -1,
+              Math.min(1, RECT_PROJECTION_CORNER.y)
+            );
+
+            anyVisible = true;
+            const {clientX, clientY} = this._ndcToClient(
+              ndcX,
+              ndcY,
+              elementRect,
+              viewportWidth,
+              viewportHeight
+            );
+            left = Math.min(left, clientX);
+            right = Math.max(right, clientX);
+            top = Math.min(top, clientY);
+            bottom = Math.max(bottom, clientY);
+          }
+        }
+      }
+
+      if (!anyVisible) return null;
+      return {left, top, right, bottom};
+    }
+
     /**
      * Projects selectable object bounds to DOM coords and tests rect intersection.
      * Host marquee UI calls applyRectangleSelection at high frequency.
      */
     protected _querySelectableObjectsInDomRect(rect: DomRectLike): Object3D[] {
-      if (rect.right <= rect.left || rect.bottom <= rect.top) {
-        return [];
-      }
-
       const scene = (this as any)[$scene];
       if (!scene) return [];
 
@@ -779,21 +879,22 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!camera) return [];
 
       const element = this as unknown as HTMLElement;
-      const domRect = element.getBoundingClientRect();
-      if (domRect.width <= 0 || domRect.height <= 0) return [];
-
-      const projectToDom = (this as any)._projectObjectBoundsToDomRect as
-        | ((object: Object3D) => DomRectLike | null)
-        | undefined;
-      if (typeof projectToDom !== 'function') {
-        return [];
-      }
+      const elementRect = element.getBoundingClientRect();
+      const viewportWidth = scene.width;
+      const viewportHeight = scene.height;
+      if (viewportWidth <= 0 || viewportHeight <= 0) return [];
 
       const candidates = this._enumerateSelectableObjects();
       const hits: Object3D[] = [];
 
       for (const obj of candidates) {
-        const bounds = projectToDom.call(this, obj);
+        const bounds = this._projectObjectBoundsToDomRect(
+          obj,
+          camera,
+          elementRect,
+          viewportWidth,
+          viewportHeight
+        );
         if (!bounds) continue;
         const intersects =
           bounds.right >= rect.left &&
@@ -880,6 +981,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       rect: DomRectLike,
       options?: {mode?: RectangleSelectionMode}
     ): void {
+      if (!this._isRectangleSelectionReady(rect)) return;
       const hits = this._querySelectableObjectsInDomRect(rect);
       this._applySelectionFromObjects(hits, options?.mode ?? 'replace');
     }

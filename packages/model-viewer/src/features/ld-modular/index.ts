@@ -4502,10 +4502,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._dispatchHoverChange(hoveredObject);
         try {
           if (overSelectable) {
-            (this as any)[$controls].disableDragInteraction?.();
+            (this as any)[$controls]?.disableDragInteraction?.();
             this._cameraDisabledForPointer = true;
           } else if (this._cameraDisabledForPointer) {
-            (this as any)[$controls].enableDragInteraction?.();
+            (this as any)[$controls]?.enableDragInteraction?.();
             this._cameraDisabledForPointer = false;
           }
         } catch (_) {}
@@ -4531,7 +4531,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       if (!overSelectable) return;
       try {
-        (this as any)[$controls].disableDragInteraction?.();
+        (this as any)[$controls]?.disableDragInteraction?.();
         this._cameraDisabledForPointer = true;
       } catch (_) {}
     }
@@ -4557,9 +4557,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (hoveredObject) return;
       this._cameraDisabledForPointer = false;
       try {
-        if ((this as any)[$controls]) {
-          (this as any)[$controls].enableDragInteraction?.();
-        }
+        (this as any)[$controls]?.enableDragInteraction?.();
       } catch (_) {}
     }
 

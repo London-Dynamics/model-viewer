@@ -808,6 +808,16 @@
         "description": "Changes the camera to its last configured goal state immediately on the next update instead of interpolating the motion over time."
       },
       {
+        "name": "disableCameraDrag()",
+        "htmlName": "disableCameraDrag",
+        "description": "Temporarily disables orbit and pan pointer drags while keeping wheel and pinch zoom enabled. Requires <span class='attribute'>camera-controls</span> or <span class='attribute'>interaction-mode=\"pan\"</span>. Pair with <span class='attribute'>enableCameraDrag()</span> to restore drag interactions."
+      },
+      {
+        "name": "enableCameraDrag()",
+        "htmlName": "enableCameraDrag",
+        "description": "Restores orbit and pan pointer drags after a call to <span class='attribute'>disableCameraDrag()</span>."
+      },
+      {
         "name": "updateFraming()",
         "htmlName": "updateFraming",
         "description": "Recalculates the camera defaults in case the model has been changed, for instance by the orientation or scale attributes.",
@@ -2430,9 +2440,9 @@
       {
         "name": "applyRectangleSelection",
         "htmlName": "applyRectangleSelection",
-        "description": "Programmatic marquee selection in DOM coordinates. Pass a rectangle <code>{ left, top, right, bottom }</code> and optional <code>mode</code> (<code>replace</code>, <code>add</code>, <code>remove</code>, <code>toggle</code>). Intended for host-implemented marquee UI; safe to call repeatedly while dragging a selection box.",
+        "description": "Programmatic marquee selection in client/viewport coordinates (<code>getBoundingClientRect()</code> style). Pass a rectangle <code>{ left, top, right, bottom }</code> and optional <code>mode</code> (<code>replace</code> default, <code>add</code>, <code>remove</code>, <code>toggle</code>). Projects selectable object bounds to the screen and selects those that intersect the rect. Intended for host-implemented marquee UI; safe to call repeatedly while dragging a selection box.",
         "links": [
-          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+          "<a href=\"../examples/ld_modular/#multi-select\">Related examples</a>"
         ]
       }
     ],

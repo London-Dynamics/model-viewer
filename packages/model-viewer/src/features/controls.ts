@@ -314,6 +314,8 @@ export declare interface ControlsInterface {
   updateFraming(): Promise<void>;
   resetInteractionPrompt(): void;
   zoom(keyPresses: number): void;
+  disableCameraDrag(): void;
+  enableCameraDrag(): void;
   interact(duration: number, finger0: Finger, finger1?: Finger): void;
   inputSensitivity: number;
 }
@@ -540,6 +542,10 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const event = new WheelEvent('wheel', { deltaY: -30 * keyPresses });
       this[$userInputElement].dispatchEvent(event);
     }
+
+    disableCameraDrag() {}
+
+    enableCameraDrag() {}
 
     connectedCallback() {
       super.connectedCallback();
