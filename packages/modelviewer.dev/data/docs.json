@@ -1751,7 +1751,7 @@
       {
         "name": "measure",
         "htmlName": "measure",
-        "description": "Show or hide dimension lines and labels on the model.",
+        "description": "Show or hide dimension lines and labels on the model. For a single selected object, dimensions use object-local oriented bounds so rotated parts keep correct width, depth, and height. With multiple selected objects, lines are drawn in a shared measurement frame aligned to the first root's Y rotation; group rotate and drag keep lines in sync. When selected roots have very different Y rotations (more than 45° apart), dimensions fall back to a world-axis-aligned union box at the selection pivot.",
         "links": [
           "<a href=\"../examples/ld_measure/#measure\">Related examples</a>"
         ]

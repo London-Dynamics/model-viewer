@@ -26,8 +26,15 @@ import {
 } from './grid-shapes.js';
 import {
   clearMeasurements as clearMeasurementsImpl,
+  getViewOctantLabelInSpace,
   measureObject as measureObjectImpl,
+  measureObjects as measureObjectsImpl,
+  syncMeasurementTransform as syncMeasurementTransformImpl,
 } from './measurement-lines.js';
+import {
+  SELECTION_TRANSFORM_PIVOT_UUID,
+  type TransformEventDetail,
+} from '../ld-modular/transform-events.js';
 
 import { Constructor } from '../../utilities.js';
 import { SelectionChangeDetail, SelectionScope } from '../ld-selection/index.js';
@@ -124,9 +131,15 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _lineGroups: LineGroup[] = [];
     private _gridShapeGroupsById: Map<string, Object3D> = new Map();
-    private _lastClickedObject: Object3D | null = null;
+    protected _measuredObjects: Object3D[] = [];
+    protected _measuredSelectionKey: string = '';
+    protected _measurementFrame: Object3D | null = null;
+    protected _measurementSpace: Object3D | null = null;
+    protected _measurementUsesWorldAabbFallback: boolean = false;
+    protected _measurementFrameBaseRotationY: number = 0;
     private _lastCameraAngle: string = '';
     private _extensionLineLength: number = 0.2;
+    private _cameraWorldPosition: Vector3 = new Vector3();
 
     private _boundSelectionChangeHandler?: (event: Event) => void;
 
@@ -140,6 +153,40 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         x: (vector.x * 0.5 + 0.5) * width,
         y: (vector.y * -0.5 + 0.5) * height,
       };
+    }
+
+    protected _getMeasureFloorY(target: Object3D): number {
+      const originalFloorY = (this as {originalFloorY?: number}).originalFloorY;
+      if (originalFloorY !== undefined) {
+        return originalFloorY;
+      }
+      return target.userData?.isSnappedGroup === true ? target.position.y : 0;
+    }
+
+    protected _refreshMeasurementVisibility() {
+      this._updateViewOctant();
+      if (this._lineGroups.length && this._lastCameraAngle.length) {
+        this._updateMarkerVisibility();
+      }
+    }
+
+    private _updateViewOctant() {
+      const scene = this[$scene];
+      scene.camera.getWorldPosition(this._cameraWorldPosition);
+
+      if (this._measurementSpace) {
+        this._lastCameraAngle = getViewOctantLabelInSpace(
+          this._measurementSpace,
+          this._cameraWorldPosition
+        );
+        return;
+      }
+
+      /* @ts-ignore */
+      const {theta} = this.getCameraOrbit();
+      const azimuthalOctant =
+        (8 + Math.floor(((theta % TAU) + QUARTER_PI / 2) / (HALF_PI / 2))) % 8;
+      this._lastCameraAngle = AZIMUTHAL_OCTANT_LABELS[azimuthalOctant];
     }
 
     private _updateMarkerVisibility() {
@@ -916,27 +963,138 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       measureObjectImpl(this, { sceneSymbol: $scene }, object, skipLastClickCheck);
     }
 
+    private _measureObjects(
+      objects: Object3D[],
+      skipLastClickCheck?: boolean
+    ) {
+      measureObjectsImpl(
+        this,
+        {sceneSymbol: $scene},
+        objects,
+        skipLastClickCheck
+      );
+    }
+
+    private _getMeasureRoots(): Object3D[] {
+      const getRoots = (this as any)._getSelectedRootObjects as
+        | (() => Object3D[])
+        | undefined;
+      if (typeof getRoots === 'function') {
+        return getRoots.call(this);
+      }
+      const selected = (this as any).getSelectedObjects?.() || [];
+      if (selected.length === 0) return [];
+      const selectedSet = new Set<Object3D>(selected);
+      return selected.filter((node: Object3D) => {
+        let parent: Object3D | null = node.parent;
+        while (parent) {
+          if (selectedSet.has(parent)) return false;
+          parent = parent.parent;
+        }
+        return true;
+      });
+    }
+
+    private _measureSelection(skipLastClickCheck?: boolean) {
+      const roots = this._getMeasureRoots();
+      if (roots.length === 0) {
+        this._clearMeasurements(true);
+        return;
+      }
+      this._measureObjects(roots, skipLastClickCheck);
+    }
+
     private _measureScene() {
       this._measureObject(this[$scene], true);
     }
 
+    private _isObjectInMeasuredSet(object: Object3D): boolean {
+      if (this._measuredObjects.length === 0) return false;
+      for (const measured of this._measuredObjects) {
+        if (measured === object) return true;
+        let node: Object3D | null = object;
+        while (node) {
+          if (node === measured) return true;
+          node = node.parent;
+        }
+      }
+      return false;
+    }
+
     private _handleCameraChange() {
-      /* @ts-ignore */
-      const { theta, phi } = this.getCameraOrbit();
+      const previousAngle = this._lastCameraAngle;
+      this._updateViewOctant();
 
-      const azimuthalOctant =
-        (8 + Math.floor(((theta % TAU) + QUARTER_PI / 2) / (HALF_PI / 2))) % 8;
-
-      const azimuthalOctantLabel = AZIMUTHAL_OCTANT_LABELS[azimuthalOctant];
-
-      if (this._lastCameraAngle !== azimuthalOctantLabel) {
-        this._lastCameraAngle = azimuthalOctantLabel;
-
+      if (previousAngle !== this._lastCameraAngle) {
         this._updateMarkerVisibility();
+      } else {
+        this._updateMarkerPosition();
+      }
+    }
+
+    private _resolveTransformTargets(
+      detail: TransformEventDetail
+    ): Object3D[] {
+      if (detail.targets?.length) {
+        const uuids = new Set(detail.targets.map((t) => t.uuid));
+        return this._measuredObjects.filter((obj) => uuids.has(obj.uuid));
+      }
+      if (detail.target.uuid === SELECTION_TRANSFORM_PIVOT_UUID) {
+        return this._measuredObjects.length > 1 ? [...this._measuredObjects] : [];
+      }
+      const match = this._measuredObjects.find(
+        (obj) => obj.uuid === detail.target.uuid
+      );
+      return match ? [match] : [];
+    }
+
+    private _doesTransformAffectMeasuredRoots(
+      detail: TransformEventDetail
+    ): boolean {
+      if (this._measuredObjects.length === 0) {
+        return false;
       }
 
-      this._updateMarkerPosition();
+      if (detail.target.uuid === SELECTION_TRANSFORM_PIVOT_UUID) {
+        if (!detail.targets?.length) {
+          // transformend clears the session before building detail.targets
+          return this._measuredObjects.length > 1;
+        }
+        const uuids = new Set(detail.targets.map((t) => t.uuid));
+        return this._measuredObjects.some((obj) => uuids.has(obj.uuid));
+      }
+
+      return this._resolveTransformTargets(detail).length > 0;
     }
+
+    private _onTransform = (event: Event) => {
+      if (!this.measure || this._measuredObjects.length === 0) {
+        return;
+      }
+
+      const detail = (event as CustomEvent<TransformEventDetail>).detail;
+      if (!this._doesTransformAffectMeasuredRoots(detail)) {
+        return;
+      }
+
+      // Multi-select: rebuild lines each transform (same approach as object-drag).
+      if (this._measuredObjects.length > 1) {
+        this._measureSelection(true);
+        return;
+      }
+
+      const targets = this._resolveTransformTargets(detail);
+      if (targets.length === 0) {
+        return;
+      }
+
+      if (event.type === 'transformend') {
+        this._measureSelection(true);
+        return;
+      }
+
+      syncMeasurementTransformImpl(this, targets, detail);
+    };
 
     private _onSelectionChangeForMeasure = (event: Event) => {
       const customEvent = event as CustomEvent<SelectionChangeDetail>;
@@ -958,15 +1116,14 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      // Measure the first selected object
-      if (selectedObjects.length > 0) {
-        this._measureObject(selectedObjects[0], true);
-      }
+      this._measureSelection(true);
     };
 
     private _onObjectDrag = (event: Event) => {
-      // Update measurements when the object being measured is dragged
-      if (!this.measure || !this._lastClickedObject) {
+      if (
+        !this.measure ||
+        (this._measuredObjects.length === 0 && !this._measuredSelectionKey)
+      ) {
         return;
       }
 
@@ -974,23 +1131,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         object: Object3D;
         position: Vector3;
       }>;
-      const { object } = customEvent.detail;
+      const {object} = customEvent.detail;
 
-      // Check if the dragged object is the one we're measuring, or if it's a parent/child
-      const scene = this[$scene];
-      const measuredObject = this._lastClickedObject;
-
-      // Update if we're measuring the dragged object, its parent group, or the scene
-      const shouldUpdate =
-        measuredObject === object ||
-        measuredObject === scene ||
-        object.parent === measuredObject ||
-        measuredObject.parent === object;
-
-      if (shouldUpdate) {
-        // Re-measure the object to update line positions
-        // Since lines are attached to scene, we need to recreate them at new positions
-        this._measureObject(measuredObject, true);
+      if (this._isObjectInMeasuredSet(object)) {
+        this._measureSelection(true);
       }
     };
 
@@ -1029,12 +1173,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (scope === 'scene') {
           this._measureScene();
         } else {
-          // For part/group/all modes, measure whatever is currently selected
-          const selectedObjects = (this as any).getSelectedObjects?.() || [];
-          if (selectedObjects.length > 0) {
-            this._measureObject(selectedObjects[0], true);
-          }
-          // If nothing is selected, wait for user to click (selection will trigger _onSelectionChangeForMeasure)
+          this._measureSelection(true);
         }
       }
     }
@@ -1092,6 +1231,8 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       this.addEventListener('object-drag', this._onObjectDrag as EventListener);
+      this.addEventListener('transform', this._onTransform as EventListener);
+      this.addEventListener('transformend', this._onTransform as EventListener);
 
       const shadowRoot = this.shadowRoot;
 
@@ -1152,6 +1293,11 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.removeEventListener(
         'object-drag',
         this._onObjectDrag as EventListener
+      );
+      this.removeEventListener('transform', this._onTransform as EventListener);
+      this.removeEventListener(
+        'transformend',
+        this._onTransform as EventListener
       );
 
       this._clearGrid();
