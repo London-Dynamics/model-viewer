@@ -458,6 +458,10 @@
         "name": "Modular scenes"
       },
       {
+        "htmlId": "multi-select",
+        "name": "Multi-select"
+      },
+      {
         "htmlId": "room-surface-snap",
         "name": "Room surface snap (walls)"
       },

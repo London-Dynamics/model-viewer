@@ -79,8 +79,13 @@ import {
   computeTransformDelta,
   getObjectDisplayName,
   inferRotationAxesFromParsed,
+  normalizeAngleDeltaDeg,
+  SELECTION_TRANSFORM_PIVOT_NAME,
+  SELECTION_TRANSFORM_PIVOT_UUID,
   TransformAxis,
+  TransformComponent,
   TransformEventDetail,
+  TransformSource,
   TransformValues,
 } from './transform-events.js';
 import { Selection } from '@london-dynamics/types/puzzler';
@@ -100,6 +105,8 @@ export {
   getObjectDisplayName,
   inferRotationAxesFromParsed,
   normalizeAngleDeltaDeg,
+  SELECTION_TRANSFORM_PIVOT_NAME,
+  SELECTION_TRANSFORM_PIVOT_UUID,
   shortestAngleDeltaDeg,
 } from './transform-events.js';
 
@@ -380,8 +387,15 @@ export declare interface LDModularInterface {
 
   // Higher-level API functions
   getSelectedObject: () => Object3D | null;
+  getSelectedObjects?: () => Object3D[];
   selectPart?: (node: Object3D) => boolean;
   selectGroup?: (node: Object3D) => boolean;
+  selectAll?: () => void;
+  deselectAll?: () => void;
+  applyRectangleSelection?: (
+    rect: {left: number; top: number; right: number; bottom: number},
+    options?: {mode?: 'replace' | 'add' | 'remove' | 'toggle'}
+  ) => void;
   ungroupSelectedObject?: () => boolean;
   clearSelection?: () => void;
 
@@ -1410,6 +1424,214 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
     }
 
+    private _emptyTransformValues(): TransformValues {
+      return {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      };
+    }
+
+    private _computeSelectionPivotFromTargets(
+      targets: Object3D[],
+      out: Vector3
+    ): Vector3 {
+      if (this._rotationPivotOverride) {
+        return out.copy(this._rotationPivotOverride);
+      }
+      const box = new Box3();
+      for (const target of targets) {
+        target.updateMatrixWorld(true);
+        box.expandByObject(target);
+      }
+      if (
+        !Number.isFinite(box.min.x) ||
+        !Number.isFinite(box.max.x) ||
+        targets.length === 0
+      ) {
+        return out.set(0, this.originalFloorY ?? 0, 0);
+      }
+      const floorY = this.originalFloorY ?? 0;
+      out.set(
+        (box.min.x + box.max.x) * 0.5,
+        floorY,
+        (box.min.z + box.max.z) * 0.5
+      );
+      return out;
+    }
+
+    private _updateRotationPivotFromSelection() {
+      const targets = this._getRotationDiscTargets();
+      this._computeSelectionPivotFromTargets(targets, this._rotationPivotWorld);
+    }
+
+    private _getSelectionPivotTransformValues(): TransformValues {
+      const session = this._selectionTransformSession;
+      const pivot = this._rotationPivotWorld;
+      const rotationY =
+        (session?.startPivotRotationY ?? 0) +
+        (session?.gestureRotationYDelta ?? 0);
+      const pos = session
+        ? [
+            session.startPivotPosition.x +
+              (session.gestureDelta.position[0] ?? 0),
+            session.startPivotPosition.y +
+              (session.gestureDelta.position[1] ?? 0),
+            session.startPivotPosition.z +
+              (session.gestureDelta.position[2] ?? 0),
+          ]
+        : [pivot.x, pivot.y, pivot.z];
+      return {
+        position: pos as [number, number, number],
+        rotation: [0, normalizeAngleDeltaDeg(rotationY), 0],
+        scale: [1, 1, 1],
+      };
+    }
+
+    private _buildSelectionTransformEventDetail(
+      active: ActiveTransform | null
+    ): TransformEventDetail {
+      const session = this._selectionTransformSession;
+      const targets = session?.targets ?? [];
+      return {
+        target: {
+          uuid: SELECTION_TRANSFORM_PIVOT_UUID,
+          name: SELECTION_TRANSFORM_PIVOT_NAME,
+        },
+        targets: targets.map((obj) => ({
+          uuid: obj.uuid,
+          name: getObjectDisplayName(obj),
+        })),
+        transform: this._getSelectionPivotTransformValues(),
+        active,
+      };
+    }
+
+    private _buildActiveSelectionTransform(): ActiveTransform | null {
+      const session = this._selectionTransformSession;
+      if (!session) return null;
+      return {
+        source: session.source,
+        components: session.components,
+        axes: session.axes,
+        delta: {
+          position: [...session.gestureDelta.position] as [
+            number,
+            number,
+            number,
+          ],
+          rotation: [...session.gestureDelta.rotation] as [
+            number,
+            number,
+            number,
+          ],
+          scale: [...session.gestureDelta.scale] as [number, number, number],
+        },
+      };
+    }
+
+    private _beginSelectionTransformSession(
+      targets: Object3D[],
+      options: BeginTransformSessionOptions
+    ) {
+      if (targets.length < 2 || this._selectionTransformSession) {
+        return;
+      }
+      this._updateRotationPivotFromSelection();
+      const startSnapshots = new Map<string, TransformValues>();
+      for (const obj of targets) {
+        startSnapshots.set(obj.uuid, this._cloneTransformValues(obj));
+      }
+      const startPivotPosition = this._rotationPivotWorld.clone();
+      this._selectionTransformSession = {
+        targets: [...targets],
+        source: options.source,
+        components: options.components,
+        axes: options.axes ?? {},
+        startSnapshots,
+        startPivotPosition,
+        startPivotRotationY: 0,
+        gestureDelta: this._emptyTransformValues(),
+        gestureRotationYDelta: 0,
+      };
+      this._dispatchTransformEvent(
+        'transformstart',
+        targets[0],
+        this._buildSelectionTransformEventDetail(
+          this._buildActiveSelectionTransform()
+        )
+      );
+    }
+
+    private _emitSelectionTransformUpdate() {
+      if (!this._selectionTransformSession) return;
+      this._dispatchTransformEvent(
+        'transform',
+        this._selectionTransformSession.targets[0],
+        this._buildSelectionTransformEventDetail(
+          this._buildActiveSelectionTransform()
+        )
+      );
+    }
+
+    private _endSelectionTransformSession() {
+      if (!this._selectionTransformSession) return;
+      const first = this._selectionTransformSession.targets[0];
+      this._selectionTransformSession = null;
+      this._dispatchTransformEvent(
+        'transformend',
+        first,
+        this._buildSelectionTransformEventDetail(null)
+      );
+    }
+
+    private _applyRotationDeltaYAroundPivot(
+      targets: Object3D[],
+      pivot: Vector3,
+      deltaDeg: number
+    ) {
+      if (Math.abs(deltaDeg) <= 1e-4) return;
+      const deltaRad = (deltaDeg * Math.PI) / 180;
+      const cos = Math.cos(deltaRad);
+      const sin = Math.sin(deltaRad);
+      const tmp = new Vector3();
+
+      for (const target of targets) {
+        target.updateMatrixWorld(true);
+        target.getWorldPosition(tmp);
+        const dx = tmp.x - pivot.x;
+        const dz = tmp.z - pivot.z;
+        // Match Three.js positive Y rotation (same handedness as euler Y below).
+        const rx = dx * cos + dz * sin;
+        const rz = -dx * sin + dz * cos;
+        tmp.x = pivot.x + rx;
+        tmp.z = pivot.z + rz;
+        if (target.parent) {
+          target.parent.worldToLocal(tmp);
+        }
+        target.position.copy(tmp);
+
+        const current = this._getRotationFromObject(target);
+        const finalDegs: [number, number, number] = [
+          current[0],
+          current[1] + deltaDeg,
+          current[2],
+        ];
+        this._setLogicalRotationOnObject(target, finalDegs);
+        const order = target.rotation.order;
+        target.rotation.copy(
+          new Euler(
+            finalDegs[0] * (Math.PI / 180),
+            finalDegs[1] * (Math.PI / 180),
+            finalDegs[2] * (Math.PI / 180),
+            order
+          )
+        );
+      }
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
+    }
+
     private _runApiTransformOneShot(
       obj: Object3D,
       options: BeginTransformSessionOptions,
@@ -2260,10 +2482,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Update floating control strip when exactly one object is selected
-      if (type === 'select' && selectedObjects.length === 1) {
+      if (type !== 'clear' && selectedObjects.length === 1) {
         const selected = selectedObjects[0];
         try {
-          // Access symbol methods via any cast (they're available via the mixin chain)
           const selectFn = (this as any)[$selectObjectForControls];
           if (typeof selectFn === 'function') {
             selectFn.call(this, selected);
@@ -2291,22 +2512,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      // Update break-link slots when a group is selected
-      if (type === 'select' && selectedObjects.length > 0) {
-        const selected = selectedObjects[0];
-        if (selected.userData?.isSnappedGroup) {
-          this._breakLinkSlotsVisible = true;
-          try {
-            this.updateBreakLinkSlots();
-          } catch (e) {
-            (this as any).error(
-              '[puzzler] Failed to update break-link slots:',
-              e
-            );
-          }
-        } else {
-          this._breakLinkSlotsVisible = false;
-          this.clearSlots(this._breakLinkSlots);
+      // Update break-link slots when exactly one snapped group is selected
+      const singleGroup =
+        selectedObjects.length === 1 &&
+        selectedObjects[0].userData?.isSnappedGroup
+          ? selectedObjects[0]
+          : null;
+      if (type !== 'clear' && singleGroup && selectedObjects.length === 1) {
+        this._breakLinkSlotsVisible = true;
+        try {
+          this.updateBreakLinkSlots();
+        } catch (e) {
+          (this as any).error(
+            '[puzzler] Failed to update break-link slots:',
+            e
+          );
         }
       } else {
         this._breakLinkSlotsVisible = false;
@@ -2316,9 +2536,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._syncRotationControlDiscLifecycle();
       (this as any)[$needsRender]();
     }
-
-    // When dragging, prefer to move the enclosing group (if any).
-    private _currentDragTarget: Object3D | null = null;
 
     /** Set when we disabled camera on pointer down over a selectable; re-enable on pointer up. */
     private _cameraDisabledForPointer: boolean = false;
@@ -2349,7 +2566,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _rotationGesturePointerId: number | null = null;
     private _rotationGestureStartAngleRad = 0;
     private _rotationGestureStartRotationY = 0;
-    private _rotationGestureTarget: Object3D | null = null;
+    private _rotationGestureTargets: Object3D[] = [];
+    /** Skips the next selection pointerup after a rotation-disc gesture ends. */
+    private _suppressSelectionPointerUp = false;
     private _rotationDiscSizeLockedUuid: string | null = null;
     private _transformSessions = new Map<
       Object3D,
@@ -2359,6 +2578,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         gestureRotationYDelta: number;
       }
     >();
+
+    private _selectionTransformSession: {
+      targets: Object3D[];
+      source: TransformSource;
+      components: TransformComponent[];
+      axes: Partial<Record<TransformComponent, TransformAxis[]>>;
+      startSnapshots: Map<string, TransformValues>;
+      startPivotPosition: Vector3;
+      startPivotRotationY: number;
+      gestureDelta: TransformValues;
+      gestureRotationYDelta: number;
+    } | null = null;
+
+    private _rotationPivotWorld = new Vector3();
+    private _rotationPivotOverride: Vector3 | null = null;
+
+    private _dragTargets: Object3D[] = [];
+    private _dragStartPositions = new Map<string, Vector3>();
+    private _dragOffsets = new Map<string, Vector3>();
 
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -2525,8 +2763,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private dragOffset: Vector3 = new Vector3();
     private floorPlane: Plane = new Plane(new Vector3(0, 1, 0), 0);
     private originalFloorY: number | undefined = undefined;
-    private _dragSurfaceSnapValid: boolean = true;
-
     /**
      * Public API: ungroup the currently selected group object (if any).
      * Returns true if a group was ungrouped.
@@ -3207,7 +3443,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private updateBreakLinkSlots() {
       if (
         !this._breakLinkSlotsVisible ||
-        (this as any).selectedObjects.length === 0
+        (this as any).selectedObjects.length !== 1
       ) {
         this._breakLinkSlots.forEach((slot) => {
           slot.style.display = 'none';
@@ -3226,7 +3462,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       // the newer isSnappedGroup marker. Normalize to the actual group
       // object that contains snapConnections.
       let selectedGroup: Object3D | null = null;
-      if ((this as any).selectedObjects.length > 0) {
+      {
         const sel = (this as any).selectedObjects[0];
         // If the selected object is the snapped-group itself
         if (sel?.userData?.isSnappedGroup) {
@@ -3751,10 +3987,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return this.rotationControls && !this.disableYRotationControls;
     }
 
-    private _getRotationDiscTarget(): Object3D | null {
-      const selected = ((this as any).selectedObjects || []) as Object3D[];
-      if (selected.length !== 1) return null;
-      return selected[0];
+    private _getRotationDiscTargets(): Object3D[] {
+      return this._getSelectedRootObjects();
     }
 
     private _getRotationDiscFloorY(target: Object3D): number {
@@ -3770,25 +4004,29 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._disposeRotationControlDisc();
         return;
       }
-      const target = this._getRotationDiscTarget();
-      if (!target) {
+      const targets = this._getRotationDiscTargets();
+      if (targets.length === 0) {
         this._stopRotationGesture();
         this._disposeRotationControlDisc();
         return;
       }
+      this._updateRotationPivotFromSelection();
       this._ensureRotationControlDisc();
-      const lockSize = this._rotationDiscSizeLockedUuid !== target.uuid;
+      const lockKey = targets.map((t) => t.uuid).join(',');
+      const lockSize = this._rotationDiscSizeLockedUuid !== lockKey;
       if (lockSize) {
-        this._rotationDiscSizeLockedUuid = target.uuid;
+        this._rotationDiscSizeLockedUuid = lockKey;
       }
+      const floorY = this._getRotationDiscFloorY(targets[0]);
       this._rotationControlDisc?.update({
-        selectedObject: target,
+        selectedObjects: targets,
+        pivotWorld: this._rotationPivotWorld,
         camera: (this as any)[$scene].getCamera
           ? (this as any)[$scene].getCamera()
           : (this as any)[$scene].camera,
         viewportWidth: (this as any)[$scene].width,
         viewportHeight: (this as any)[$scene].height,
-        floorY: this._getRotationDiscFloorY(target),
+        floorY,
         highlightColor: this.rotationControlsHighlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
@@ -3818,21 +4056,23 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _updateRotationControlDisc() {
       if (!this._rotationControlDisc) return;
-      const target = this._getRotationDiscTarget();
-      if (!target || !this._canShowYRotationControl()) {
+      const targets = this._getRotationDiscTargets();
+      if (targets.length === 0 || !this._canShowYRotationControl()) {
         this._stopRotationGesture();
         this._disposeRotationControlDisc();
         return;
       }
+      this._updateRotationPivotFromSelection();
       const scene = (this as any)[$scene];
       const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
       if (!camera) return;
       this._rotationControlDisc.update({
-        selectedObject: target,
+        selectedObjects: targets,
+        pivotWorld: this._rotationPivotWorld,
         camera,
         viewportWidth: scene.width,
         viewportHeight: scene.height,
-        floorY: this._getRotationDiscFloorY(target),
+        floorY: this._getRotationDiscFloorY(targets[0]),
         highlightColor: this.rotationControlsHighlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
@@ -3875,6 +4115,43 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
     }
 
+    /**
+     * Called from the selection mixin so rotation-disc interaction does not
+     * clear or replace the current selection on pointerup/pointerdown.
+     */
+    protected _shouldSkipSelectionPointerEvent(
+      e: PointerEvent | MouseEvent
+    ): boolean {
+      if (
+        this._suppressSelectionPointerUp &&
+        (e.type === 'pointerup' || e.type === 'click')
+      ) {
+        return true;
+      }
+      if (
+        this._rotationGestureActive &&
+        'pointerId' in e &&
+        this._rotationGesturePointerId === (e as PointerEvent).pointerId
+      ) {
+        return true;
+      }
+      if (!this._canShowYRotationControl()) {
+        return false;
+      }
+      return (
+        this._intersectRotationControlFromClientPoint(
+          e.clientX,
+          e.clientY
+        ) != null
+      );
+    }
+
+    protected _consumeSelectionPointerSuppression(
+      _e: PointerEvent | MouseEvent
+    ): void {
+      this._suppressSelectionPointerUp = false;
+    }
+
     private _intersectRotationControlFromClientPoint(
       clientX: number,
       clientY: number
@@ -3912,8 +4189,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _startRotationGesture(e: PointerEvent): boolean {
-      const target = this._getRotationDiscTarget();
-      if (!target) return false;
+      const targets = this._getRotationDiscTargets();
+      if (targets.length === 0) return false;
       const discHit = this._intersectRotationControlFromClientPoint(
         e.clientX,
         e.clientY
@@ -3922,14 +4199,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._rotationGestureActive = true;
       this._rotationGesturePointerId = e.pointerId;
       this._rotationGestureStartAngleRad = discHit.angleRad;
-      this._rotationGestureStartRotationY =
-        this._getRotationFromObject(target)[1];
-      this._rotationGestureTarget = target;
-      this._beginTransformSession(target, {
-        source: 'rotation-disc-y',
-        components: ['rotation'],
-        axes: { rotation: ['y'] },
-      });
+      this._rotationGestureTargets = targets;
+      this._updateRotationPivotFromSelection();
+      if (targets.length > 1) {
+        this._rotationGestureStartRotationY = 0;
+        this._beginSelectionTransformSession(targets, {
+          source: 'rotation-disc-y',
+          components: ['rotation'],
+          axes: { rotation: ['y'] },
+        });
+      } else {
+        const target = targets[0];
+        this._rotationGestureStartRotationY =
+          this._getRotationFromObject(target)[1];
+        this._beginTransformSession(target, {
+          source: 'rotation-disc-y',
+          components: ['rotation'],
+          axes: { rotation: ['y'] },
+        });
+      }
       this._rotationControlDisc?.setDragArc(discHit.angleRad, discHit.angleRad);
       this._windowPointerMoveForRotationBound =
         this._onWindowPointerMoveForRotation.bind(this);
@@ -3953,6 +4241,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         (this as any)[$controls]?.disableDragInteraction?.();
       } catch (_) {}
+      // Treat rotation drag like camera drag so selection pointerup is ignored
+      // if it still runs after the gesture ends.
+      (this as any)._isDragging = true;
       e.preventDefault();
       e.stopImmediatePropagation();
       return true;
@@ -3962,7 +4253,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (
         !this._rotationGestureActive ||
         this._rotationGesturePointerId !== e.pointerId ||
-        !this._rotationGestureTarget
+        this._rotationGestureTargets.length === 0
       ) {
         return false;
       }
@@ -3984,16 +4275,35 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const rawTargetY = this._rotationGestureStartRotationY + cumulativeDeg;
       const targetY =
         step > 0 ? snapRotationYToStepGrid(rawTargetY, step) : rawTargetY;
-      const target = this._rotationGestureTarget;
-      const currentY = this._getRotationFromObject(target)[1];
-      const applyDeltaDeg = targetY - currentY;
-      if (Math.abs(applyDeltaDeg) > 1e-4) {
-        this._applyRotationDeltaY(target, applyDeltaDeg);
-        const session = this._transformSessions.get(target);
+
+      const targets = this._rotationGestureTargets;
+      if (targets.length > 1) {
+        const session = this._selectionTransformSession;
         if (session?.source === 'rotation-disc-y') {
-          session.gestureRotationYDelta += applyDeltaDeg;
+          const applyDeltaDeg = targetY - session.gestureRotationYDelta;
+          if (Math.abs(applyDeltaDeg) > 1e-4) {
+            session.gestureRotationYDelta = targetY;
+            session.gestureDelta.rotation[1] = normalizeAngleDeltaDeg(targetY);
+            this._applyRotationDeltaYAroundPivot(
+              targets,
+              this._rotationPivotWorld,
+              applyDeltaDeg
+            );
+            this._emitSelectionTransformUpdate();
+          }
         }
-        this._emitTransformUpdate(target);
+      } else {
+        const target = targets[0];
+        const currentY = this._getRotationFromObject(target)[1];
+        const applyDeltaDeg = targetY - currentY;
+        if (Math.abs(applyDeltaDeg) > 1e-4) {
+          this._applyRotationDeltaY(target, applyDeltaDeg);
+          const session = this._transformSessions.get(target);
+          if (session?.source === 'rotation-disc-y') {
+            session.gestureRotationYDelta += applyDeltaDeg;
+          }
+          this._emitTransformUpdate(target);
+        }
       }
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -4002,14 +4312,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _stopRotationGesture() {
       if (!this._rotationGestureActive) return;
-      const gestureTarget = this._rotationGestureTarget;
+      const targets = this._rotationGestureTargets;
+      this._suppressSelectionPointerUp = true;
       this._rotationGestureActive = false;
       this._rotationGesturePointerId = null;
       this._rotationGestureStartAngleRad = 0;
       this._rotationGestureStartRotationY = 0;
-      this._rotationGestureTarget = null;
-      if (gestureTarget) {
-        this._endTransformSession(gestureTarget);
+      this._rotationGestureTargets = [];
+      if (targets.length > 1) {
+        this._endSelectionTransformSession();
+      } else if (targets.length === 1) {
+        this._endTransformSession(targets[0]);
       }
       this._rotationControlDisc?.clearDragArc();
       if (this._windowPointerMoveForRotationBound) {
@@ -4036,6 +4349,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         (this as any)[$controls]?.enableDragInteraction?.();
       } catch (_) {}
+      (this as any)._isDragging = false;
+      queueMicrotask(() => {
+        this._suppressSelectionPointerUp = false;
+      });
     }
 
     private _onWindowPointerMoveForRotation(e: PointerEvent) {
@@ -4047,6 +4364,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._rotationGestureActive &&
         this._rotationGesturePointerId === e.pointerId
       ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         this._stopRotationGesture();
       }
     }
@@ -4378,52 +4697,64 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return validIntersects.length > 0;
     }
 
+    private _resolveDragRoots(): Object3D[] {
+      const selected = (
+        ((this as any).selectedObjects || []) as Object3D[]
+      ).filter(Boolean);
+      if (selected.length === 0) return [];
+
+      if ((this as any).selectionScope === 'part') {
+        return this._getSelectedRootObjects();
+      }
+
+      const roots: Object3D[] = [];
+      const seen = new Set<string>();
+      for (const obj of selected) {
+        const root =
+          (this as any)._findEnclosingGroup(obj) || obj;
+        if (!seen.has(root.uuid)) {
+          seen.add(root.uuid);
+          roots.push(root);
+        }
+      }
+      return roots;
+    }
+
     private startDragging(_event?: MouseEvent | TouchEvent) {
       if (!(this as any).selectedObjects.length) {
         return;
       }
 
-      // Determine drag target based on selection scope:
-      // - 'part': drag the selected object directly (don't look for enclosing group)
-      // - 'group': drag the enclosing group so grouped objects move together
-      if ((this as any).selectionScope === 'part') {
-        this._currentDragTarget = (this as any).selectedObjects[0];
-      } else {
-        this._currentDragTarget =
-          (this as any)._findEnclosingGroup((this as any).selectedObjects[0]) ||
-          (this as any).selectedObjects[0];
-      }
+      const roots = this._resolveDragRoots();
+      if (roots.length === 0) return;
+
+      this._dragTargets = roots;
+      this._dragStartPositions.clear();
+      this._dragOffsets.clear();
 
       (this as any).isDragging = true;
-      this._dragSurfaceSnapValid = true;
-      if (this._currentDragTarget || (this as any).selectedObjects?.[0]) {
-        const transformTarget =
-          this._currentDragTarget || (this as any).selectedObjects[0];
-        const positionAxes = requiresSurfaceSnap(transformTarget)
-          ? (['x', 'y', 'z'] as TransformAxis[])
-          : (['x', 'z'] as TransformAxis[]);
-        this._beginTransformSession(transformTarget, {
+
+      const anySurfaceSnap = roots.some((obj) => requiresSurfaceSnap(obj));
+      const positionAxes: TransformAxis[] = anySurfaceSnap
+        ? ['x', 'y', 'z']
+        : ['x', 'z'];
+
+      if (roots.length > 1) {
+        this._beginSelectionTransformSession(roots, {
+          source: 'pointer-drag',
+          components: ['position'],
+          axes: { position: positionAxes },
+        });
+      } else {
+        this._beginTransformSession(roots[0], {
           source: 'pointer-drag',
           components: ['position'],
           axes: { position: positionAxes },
         });
       }
+
       this.dragStartMousePosition.copy(this.currentMousePosition);
-      try {
-        if (this._currentDragTarget) {
-          this.dragStartPosition.copy(this._currentDragTarget.position);
-        } else if ((this as any).selectedObjects?.[0]) {
-          this.dragStartPosition.copy(
-            (this as any).selectedObjects[0].position
-          );
-        }
-      } catch (e) {
-        if ((this as any).selectedObjects?.[0]) {
-          this.dragStartPosition.copy(
-            (this as any).selectedObjects[0].position
-          );
-        }
-      }
+      this.dragStartPosition.copy(roots[0].position);
 
       (this as any).raycaster.setFromCamera(
         this.currentMousePosition,
@@ -4435,19 +4766,29 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       const clickPoint = new Vector3();
-      if (
-        (this as any).raycaster.ray.intersectPlane(this.floorPlane, clickPoint)
-      ) {
-        const offsetTarget =
-          this._currentDragTarget || (this as any).selectedObjects[0];
-        this.dragOffset.set(
-          offsetTarget.position.x - clickPoint.x,
-          0,
-          offsetTarget.position.z - clickPoint.z
-        );
-      } else {
-        this.dragOffset.set(0, 0, 0);
+      const hasFloorHit = (this as any).raycaster.ray.intersectPlane(
+        this.floorPlane,
+        clickPoint
+      );
+
+      for (const target of roots) {
+        this._dragStartPositions.set(target.uuid, target.position.clone());
+        if (hasFloorHit) {
+          this._dragOffsets.set(
+            target.uuid,
+            new Vector3(
+              target.position.x - clickPoint.x,
+              0,
+              target.position.z - clickPoint.z
+            )
+          );
+        } else {
+          this._dragOffsets.set(target.uuid, new Vector3(0, 0, 0));
+        }
       }
+
+      const primaryOffset = this._dragOffsets.get(roots[0].uuid);
+      this.dragOffset.copy(primaryOffset ?? new Vector3(0, 0, 0));
 
       if ((this as any)[$controls]) {
         try {
@@ -4509,10 +4850,24 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
     }
 
+    private _updateSelectionDragGestureDelta() {
+      const session = this._selectionTransformSession;
+      if (!session) return;
+      this._updateRotationPivotFromSelection();
+      session.gestureDelta.position[0] =
+        this._rotationPivotWorld.x - session.startPivotPosition.x;
+      session.gestureDelta.position[1] =
+        this._rotationPivotWorld.y - session.startPivotPosition.y;
+      session.gestureDelta.position[2] =
+        this._rotationPivotWorld.z - session.startPivotPosition.z;
+      this._emitSelectionTransformUpdate();
+    }
+
     private updateDragPosition() {
       if (
         !(this as any).isDragging ||
-        (this as any).selectedObjects.length === 0
+        (this as any).selectedObjects.length === 0 ||
+        this._dragTargets.length === 0
       )
         return;
 
@@ -4521,79 +4876,60 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any)[$scene].camera
       );
 
-      const object =
-        this._currentDragTarget || (this as any).selectedObjects[0];
+      const intersectionPoint = new Vector3();
+      const hasFloorHit = (this as any).raycaster.ray.intersectPlane(
+        this.floorPlane,
+        intersectionPoint
+      );
 
-      const isSurfaceSnapObject = requiresSurfaceSnap(object);
-      if (isSurfaceSnapObject) {
-        this._dragSurfaceSnapValid =
-          this._applySurfaceSnapForCurrentMouse(object);
-        if (!this._dragSurfaceSnapValid) {
-          return;
+      let allSurfaceSnapValid = true;
+
+      for (const object of this._dragTargets) {
+        const isSurfaceSnapObject = requiresSurfaceSnap(object);
+        if (isSurfaceSnapObject) {
+          const valid = this._applySurfaceSnapForCurrentMouse(object);
+          if (!valid) {
+            allSurfaceSnapValid = false;
+            continue;
+          }
+          if (this._dragTargets.length === 1) {
+            this._emitTransformUpdate(object);
+          }
+          (this as any).dispatchEvent(
+            new CustomEvent('object-drag', {
+              detail: {
+                object,
+                position: object.position.clone(),
+              },
+              bubbles: true,
+              composed: true,
+            })
+          );
+          continue;
         }
 
-        this.requestShadowUpdate();
-        (this as any)[$needsRender]();
-        try {
-          this.updateSnappingPointSlots();
-        } catch (e) {}
+        if (!hasFloorHit) continue;
 
-        this._emitTransformUpdate(object);
-        (this as any).dispatchEvent(
-          new CustomEvent('object-drag', {
-            detail: {
-              object,
-              position: object.position.clone(),
-            },
-            bubbles: true,
-            composed: true,
-          })
-        );
-        return;
-      }
-
-      const intersectionPoint = new Vector3();
-      if (
-        (this as any).raycaster.ray.intersectPlane(
-          this.floorPlane,
-          intersectionPoint
-        )
-      ) {
-        const desiredX = intersectionPoint.x + this.dragOffset.x;
-        const desiredZ = intersectionPoint.z + this.dragOffset.z;
+        const offset =
+          this._dragOffsets.get(object.uuid) ?? this.dragOffset;
+        const desiredX = intersectionPoint.x + offset.x;
+        const desiredZ = intersectionPoint.z + offset.z;
         const desiredY =
           object.userData?.isSnappedGroup === true
             ? object.position.y
             : this.originalFloorY || 0;
 
         object.position.set(desiredX, desiredY, desiredZ);
-        try {
-          (this as any).log('[puzzler] updateDragPosition', {
-            target: object.name || object.uuid,
-            pos: { x: desiredX, y: desiredY, z: desiredZ },
-            dragTarget:
-              this._currentDragTarget?.name || this._currentDragTarget?.uuid,
-          });
-        } catch (e) {}
 
-        // clear any previous pending connection and then check again
         this._setPendingSnapConnection(null);
-        try {
-          // debug removed
-        } catch (e) {}
         if (this.snappingEnabled) {
           this.checkAndApplySnapping(object, intersectionPoint);
         }
 
-        this.requestShadowUpdate();
-        (this as any)[$needsRender]();
-        try {
-          this.updateSnappingPointSlots();
-        } catch (e) {}
+        if (this._dragTargets.length === 1) {
+          this._emitTransformUpdate(object);
+        }
 
-        this._emitTransformUpdate(object);
-
-        // Dispatch event so other mixins (like measure) can update
         (this as any).dispatchEvent(
           new CustomEvent('object-drag', {
             detail: {
@@ -4605,6 +4941,20 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           })
         );
       }
+
+      if (!allSurfaceSnapValid) {
+        return;
+      }
+
+      if (this._dragTargets.length > 1) {
+        this._updateSelectionDragGestureDelta();
+      }
+
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
+      try {
+        this.updateSnappingPointSlots();
+      } catch (e) {}
     }
 
     private stopDragging() {
@@ -4612,63 +4962,56 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      const dragTarget =
-        this._currentDragTarget || (this as any).selectedObjects?.[0];
+      const dragTargets = [...this._dragTargets];
       this._removeWindowDragListeners();
       (this as any).isDragging = false;
 
-      // Ensure dragged individual parts maintain their placement status
-      if ((this as any).selectionScope === 'part' && this._currentDragTarget) {
-        try {
-          // If we dragged an individual part, ensure it's properly parented and marked as placed
-          const draggedObject = this._currentDragTarget;
-          if (draggedObject && !draggedObject.userData?.isSnappedGroup) {
-            // Ensure it's marked as a placed object for selection
-            draggedObject.userData = draggedObject.userData || {};
-            draggedObject.userData.isPlacedObject = true;
+      if ((this as any).selectionScope === 'part') {
+        for (const draggedObject of dragTargets) {
+          try {
+            if (draggedObject && !draggedObject.userData?.isSnappedGroup) {
+              draggedObject.userData = draggedObject.userData || {};
+              draggedObject.userData.isPlacedObject = true;
 
-            // Only re-parent to scene if the object is NOT part of a group
-            // Re-parenting objects that are part of groups breaks the group structure
-            const isPartOfGroup =
-              draggedObject.parent?.userData?.isSnappedGroup === true;
+              const isPartOfGroup =
+                draggedObject.parent?.userData?.isSnappedGroup === true;
 
-            if (!isPartOfGroup) {
-              // Ensure it's properly parented to the scene
-              const scene = (this as any)[$scene];
-              if (
-                scene &&
-                draggedObject.parent !== scene.target &&
-                draggedObject.parent !== scene
-              ) {
-                try {
-                  if (draggedObject.parent)
-                    draggedObject.parent.remove(draggedObject);
-                  scene.target
-                    ? scene.target.add(draggedObject)
-                    : scene.add(draggedObject);
-                } catch (e) {
-                  (this as any).log(
-                    '[puzzler] failed to re-parent dragged part',
-                    {
-                      e,
-                    }
-                  );
+              if (!isPartOfGroup) {
+                const scene = (this as any)[$scene];
+                if (
+                  scene &&
+                  draggedObject.parent !== scene.target &&
+                  draggedObject.parent !== scene
+                ) {
+                  try {
+                    if (draggedObject.parent)
+                      draggedObject.parent.remove(draggedObject);
+                    scene.target
+                      ? scene.target.add(draggedObject)
+                      : scene.add(draggedObject);
+                  } catch (e) {
+                    (this as any).log(
+                      '[puzzler] failed to re-parent dragged part',
+                      { e }
+                    );
+                  }
                 }
               }
             }
+          } catch (e) {
+            (this as any).log(
+              '[puzzler] error ensuring part placement status',
+              { e }
+            );
           }
-        } catch (e) {
-          (this as any).log('[puzzler] error ensuring part placement status', {
-            e,
-          });
         }
       }
 
-      // Clear recently disconnected pairs when drag ends - allow normal snapping again
       this._recentlyDisconnectedPairs.clear();
 
-      this._currentDragTarget = null;
-      this._dragSurfaceSnapValid = true;
+      this._dragTargets = [];
+      this._dragStartPositions.clear();
+      this._dragOffsets.clear();
 
       if (this.pendingSnapConnection) {
         try {
@@ -4677,8 +5020,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.pendingSnapConnection = null;
       }
 
-      if (dragTarget) {
-        this._endTransformSession(dragTarget);
+      if (dragTargets.length > 1) {
+        this._endSelectionTransformSession();
+      } else if (dragTargets.length === 1) {
+        this._endTransformSession(dragTargets[0]);
+      }
+
+      for (const dragTarget of dragTargets) {
         if (dragTarget.userData?.isPlacedObject === true) {
           this._markRoomWallVisibilityCacheDirty();
         }
@@ -5159,20 +5507,37 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Delete a specific node
      */
+    private _purgeSelectionForDeletedNode(node: Object3D) {
+      const selected = (
+        ((this as any).selectedObjects || []) as Object3D[]
+      ).filter(Boolean);
+      for (const sel of selected) {
+        if (sel === node) {
+          (this as any)._removeFromSelection(sel);
+          continue;
+        }
+        let parent: Object3D | null = sel.parent;
+        while (parent) {
+          if (parent === node) {
+            (this as any)._removeFromSelection(sel);
+            break;
+          }
+          parent = parent.parent;
+        }
+      }
+    }
+
     deleteNode(node: Object3D): boolean {
       if (!node) return false;
       try {
+        this._purgeSelectionForDeletedNode(node);
+
         // Fire events for individual parts before deletion
         this._firePartsStateEvents(node, 'delete', {});
 
         if (node.parent) {
           this._dispatchObjectRemoveEvent(node);
           node.parent.remove(node);
-        }
-
-        // Clear selection if this was the selected node
-        if ((this as any).selectedObjects.includes(node)) {
-          (this as any).clearSelection();
         }
 
         (this as any)[$needsRender]();
@@ -5198,20 +5563,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         const group = (this as any)._findEnclosingGroup(obj);
 
         // Deselect logic
-        if (group) {
-          // If the group is selected, clear selection
-          if (
-            (this as any).selectedObjects.length > 0 &&
-            (this as any).selectedObjects[0] === group
-          ) {
-            (this as any).clearSelection();
-          }
-        } else {
-          // If the object itself is selected, clear selection
-          if ((this as any).selectedObjects.includes(obj)) {
-            (this as any).clearSelection();
-          }
+        if (group && (this as any).selectedObjects.includes(group)) {
+          (this as any)._removeFromSelection(group);
+        } else if ((this as any).selectedObjects.includes(obj)) {
+          (this as any)._removeFromSelection(obj);
         }
+        this._purgeSelectionForDeletedNode(obj);
 
         // Break connections in group metadata so the group no longer references this object
         if (
@@ -5301,6 +5658,62 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._removeSelectedMergedOptions.animate = true;
     }
 
+    private _normalizeDeletionRoots(selected: Object3D[]): Object3D[] {
+      const selectedSet = new Set<Object3D>(selected);
+      let nodes = [...selected];
+
+      if ((this as any).selectionScope === 'part') {
+        const groupsToPromote = new Set<Object3D>();
+        const targetObject = (this as any)._findTargetObject?.() as
+          | Object3D
+          | null;
+        if (targetObject) {
+          targetObject.traverse((child: any) => {
+            if (child.userData?.isSnappedGroup !== true) return;
+            const parts: Object3D[] = [];
+            child.traverse((part: any) => {
+              if (part !== child && part.userData?.isPlacedObject === true) {
+                parts.push(part);
+              }
+            });
+            if (
+              parts.length > 0 &&
+              parts.every((part) => selectedSet.has(part))
+            ) {
+              groupsToPromote.add(child);
+            }
+          });
+        }
+
+        if (groupsToPromote.size > 0) {
+          nodes = nodes.filter((node) => {
+            if (groupsToPromote.has(node)) return true;
+            let parent: Object3D | null = node.parent;
+            while (parent) {
+              if (groupsToPromote.has(parent)) return false;
+              parent = parent.parent;
+            }
+            return true;
+          });
+          for (const group of groupsToPromote) {
+            if (!nodes.includes(group)) {
+              nodes.push(group);
+            }
+          }
+        }
+      }
+
+      const nodeSet = new Set<Object3D>(nodes);
+      return nodes.filter((node) => {
+        let parent: Object3D | null = node.parent as Object3D | null;
+        while (parent) {
+          if (nodeSet.has(parent)) return false;
+          parent = parent.parent as Object3D | null;
+        }
+        return true;
+      });
+    }
+
     private _flushRemoveSelectedObjects(options?: { animate?: boolean }) {
       try {
         const selected = (
@@ -5308,15 +5721,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         ).filter(Boolean);
         if (selected.length === 0) return;
 
-        const selectedSet = new Set<Object3D>(selected);
-        const roots = selected.filter((node) => {
-          let parent: Object3D | null = node.parent as Object3D | null;
-          while (parent) {
-            if (selectedSet.has(parent)) return false;
-            parent = parent.parent as Object3D | null;
-          }
-          return true;
-        });
+        const roots = this._normalizeDeletionRoots(selected);
 
         // Clear selection first so controls/UI do not hold stale references.
         (this as any).clearSelection();

@@ -77,6 +77,9 @@
  * - 'group': Select groups (or individual objects as single-object groups)
  * - 'all': Allow any scene node to be selected
  *
+ * MULTI-SELECT:
+ * Hold Shift while clicking to add/remove items from the selection.
+ *
  * EVENTS:
  * The mixin dispatches 'selection-change' events with the following detail:
  * ```typescript
@@ -88,18 +91,29 @@
  * ```
  */
 
-import { property } from 'lit/decorators.js';
+import {property} from 'lit/decorators.js';
 import ModelViewerElementBase, {
   $needsRender,
   $scene,
 } from '../../model-viewer-base.js';
-import { Constructor } from '../../utilities.js';
-import { Object3D, Vector2, Raycaster } from 'three';
+import {Constructor} from '../../utilities.js';
+import {Object3D, Vector2, Raycaster} from 'three';
 
 // Re-export the selection outline effect
-export { SelectionOutlineEffect } from './selection-outline-effect.js';
+export {SelectionOutlineEffect} from './selection-outline-effect.js';
+
+const MULTI_SELECT_MODIFIER_KEY = 'Shift' as const;
 
 export type SelectionScope = 'scene' | 'part' | 'group' | 'all';
+
+export type DomRectLike = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+export type RectangleSelectionMode = 'replace' | 'add' | 'remove' | 'toggle';
 
 export interface SelectionChangeDetail {
   selectedObjects: Object3D[];
@@ -116,6 +130,12 @@ export interface SelectionChangeDetail {
 
 export interface LDSelectionInterface {
   disableBaseModelSelection: boolean;
+  selectAll(): void;
+  deselectAll(): void;
+  applyRectangleSelection(
+    rect: DomRectLike,
+    options?: {mode?: RectangleSelectionMode}
+  ): void;
 }
 
 /**
@@ -134,13 +154,13 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * - 'scene': don't select anything
      * - 'all': allow any scene node to be selected
      */
-    @property({ type: String, attribute: 'selection-scope' })
+    @property({type: String, attribute: 'selection-scope'})
     selectionScope: SelectionScope = 'scene';
 
-    @property({ type: Boolean, attribute: 'highlight-selected' })
+    @property({type: Boolean, attribute: 'highlight-selected'})
     highlightSelected: boolean = false;
 
-    @property({ type: Boolean, attribute: 'disable-base-model-selection' })
+    @property({type: Boolean, attribute: 'disable-base-model-selection'})
     disableBaseModelSelection: boolean = false;
 
     // Track selected objects
@@ -165,6 +185,10 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         !!session &&
         (session.state === 'placing' || session.state === 'loading')
       );
+    }
+
+    protected _isMultiSelectModifierActive(e: PointerEvent | MouseEvent): boolean {
+      return e.getModifierState(MULTI_SELECT_MODIFIER_KEY);
     }
 
     protected _isNodeSelectable(node: any): boolean {
@@ -285,6 +309,21 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       const element = target as HTMLElement;
       if (!element) return false;
 
+      const host = this as unknown as HTMLElement;
+
+      // Light DOM controls (slotted overlays, buttons, panels) live outside the
+      // shadow canvas and must not drive scene selection raycasts.
+      if (
+        element !== host &&
+        typeof host.contains === 'function' &&
+        host.contains(element)
+      ) {
+        const root = host.shadowRoot;
+        if (!root || !root.contains(element as Node)) {
+          return true;
+        }
+      }
+
       // Check if target has slot attribute or is within a slotted element
       if (element.hasAttribute?.('slot') || element.closest?.('[slot]')) {
         return true;
@@ -302,12 +341,29 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Select on pointer down (capture phase) so that click-and-drag selects and moves in one gesture.
      * Runs before other handlers so the object is selected before modular's mousedown considers drag.
      */
+    protected _shouldDeferSelectionPointer(e: PointerEvent | MouseEvent): boolean {
+      const skip = (this as any)._shouldSkipSelectionPointerEvent;
+      if (typeof skip !== 'function' || !skip.call(this, e)) {
+        return false;
+      }
+      const consume = (this as any)._consumeSelectionPointerSuppression;
+      if (typeof consume === 'function') {
+        consume.call(this, e);
+      }
+      return true;
+    }
+
     protected _onPointerDownForSelection = (e: PointerEvent | MouseEvent) => {
       const btn = (e as any).button;
       if (btn !== 0) return;
       if (this._isUIElement(e.target)) return;
+      if (this._shouldDeferSelectionPointer(e)) return;
+      if (this._isMultiSelectModifierActive(e)) return;
       try {
-        this._performSelectionRaycast(e, { clearWhenNoHit: false });
+        this._performSelectionRaycast(e, {
+          clearWhenNoHit: false,
+          phase: 'pointerdown',
+        });
       } catch (error) {
         console.error('[selection]: raycast error on pointerdown', error);
       }
@@ -350,6 +406,11 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     };
 
     protected _onPointerEvent = (e: PointerEvent | MouseEvent) => {
+      // pointerup and click both fire for the same gesture; handle once.
+      if (e.type === 'click' && typeof window.PointerEvent !== 'undefined') {
+        return;
+      }
+
       // Avoid reacting to non-primary buttons or events with undefined button
       const btn = (e as any).button;
       if (btn !== 0) {
@@ -358,6 +419,8 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       // Skip selection if dragging occurred (camera movement, not a click)
       if (this._isDragging) {
+        this._selectionMouseDownTime = 0;
+        this._isDragging = false;
         return;
       }
 
@@ -376,11 +439,20 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
+      if (this._shouldDeferSelectionPointer(e)) {
+        this._selectionMouseDownTime = 0;
+        this._isDragging = false;
+        return;
+      }
+
       try {
-        this._performSelectionRaycast(e);
+        this._performSelectionRaycast(e, {phase: 'pointerup'});
       } catch (error) {
         console.error('[selection]: raycast error', error);
       }
+
+      this._selectionMouseDownTime = 0;
+      this._isDragging = false;
     };
 
     /**
@@ -390,13 +462,50 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     protected _performSelectionRaycast(
       e: PointerEvent | MouseEvent,
-      options?: { clearWhenNoHit?: boolean }
+      options?: {
+        clearWhenNoHit?: boolean;
+        phase?: 'pointerdown' | 'pointerup';
+      }
     ) {
       const clearWhenNoHit = options?.clearWhenNoHit !== false;
+      const phase = options?.phase ?? 'pointerup';
+      const multiSelect = this._isMultiSelectModifierActive(e);
+
       if (this._isInteractivePlacementActive()) {
         this.clearSelection();
         return;
       }
+
+      const objectToSelect = this._resolveObjectFromRaycast(e);
+
+      if (!objectToSelect) {
+        if (clearWhenNoHit && !multiSelect) {
+          this.clearSelection();
+        }
+        return;
+      }
+
+      if (phase === 'pointerdown') {
+        if (multiSelect) return;
+        if (this.isSelected(objectToSelect)) return;
+        this._replaceSelection([objectToSelect]);
+        return;
+      }
+
+      // pointerup / click
+      if (multiSelect) {
+        this._toggleInSelection(objectToSelect);
+        return;
+      }
+
+      if (!this.isSelected(objectToSelect)) {
+        this._replaceSelection([objectToSelect]);
+      }
+    }
+
+    protected _resolveObjectFromRaycast(
+      e: PointerEvent | MouseEvent
+    ): Object3D | null {
       const rect = (this as unknown as HTMLElement).getBoundingClientRect();
       const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       const mouseY = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
@@ -405,23 +514,21 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const scene = (this as any)[$scene];
       if (!scene) {
-        return;
+        return null;
       }
 
       const camera = scene.getCamera ? scene.getCamera() : scene.camera;
       if (!camera) {
-        return;
+        return null;
       }
 
       this.raycaster.setFromCamera(this.currentMousePosition, camera);
 
-      // Find the target object (scene.target or scene root)
       const targetObject = this._findTargetObject();
       if (!targetObject) {
-        return;
+        return null;
       }
 
-      // Collect all placed objects for raycasting
       const allPlacedObjects: Object3D[] = [];
       targetObject.traverse((child: any) => {
         if (child.userData?.isPlacedObject === true) {
@@ -429,18 +536,14 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       });
 
-      // If no placed objects, use the entire target object tree (for regular models)
       const objectsToRaycast =
         allPlacedObjects.length > 0 ? allPlacedObjects : [targetObject];
 
-      // Perform raycast
       const allIntersects = this.raycaster.intersectObjects(
         objectsToRaycast,
         true
       );
 
-      // Filter out objects marked as noHit (e.g., measurement lines, helpers)
-      // and objects marked as not selectable
       const intersects = allIntersects.filter(
         (hit) =>
           hit.object.visible &&
@@ -450,22 +553,14 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       if (intersects.length === 0) {
-        if (clearWhenNoHit) {
-          this.clearSelection();
-        }
-        return;
+        return null;
       }
 
-      // Find the appropriate object based on selection scope
       let objectToSelect: Object3D | null = null;
       let intersectedObject = intersects[0].object;
-
-      // Walk up the hierarchy to find a placed object (if working with placed objects)
-      // or a meaningful model node (if working with regular models)
       const hasPlacedObjects = allPlacedObjects.length > 0;
 
       if (hasPlacedObjects) {
-        // Walk up to find placed object
         while (
           intersectedObject &&
           intersectedObject.parent &&
@@ -474,7 +569,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
           intersectedObject = intersectedObject.parent as Object3D;
         }
       } else {
-        // For regular models, walk up to find a named node or mesh
         while (
           intersectedObject &&
           intersectedObject.parent &&
@@ -485,10 +579,8 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      // Apply selection scope logic
       switch (this.selectionScope) {
         case 'part':
-          // Select the intersected object directly (placed object or model part)
           if (hasPlacedObjects) {
             if (
               intersectedObject &&
@@ -502,7 +594,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
           break;
 
         case 'group':
-          // Find the enclosing group, or the object itself if not in a group
           if (hasPlacedObjects) {
             if (
               intersectedObject &&
@@ -512,7 +603,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
               objectToSelect = group || intersectedObject;
             }
           } else {
-            // For regular models, select the parent node or the object itself
             objectToSelect = intersectedObject?.parent?.name
               ? intersectedObject.parent
               : intersectedObject;
@@ -520,7 +610,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
           break;
 
         case 'all':
-          // Select whatever was hit
           objectToSelect = intersectedObject;
           break;
       }
@@ -530,24 +619,26 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         objectToSelect.userData?.isPlacementPlaceholder !== true &&
         this._isNodeSelectable(objectToSelect)
       ) {
-        this._selectObject(objectToSelect);
-      } else {
-        this.clearSelection();
+        return objectToSelect;
       }
+
+      return null;
     }
 
     protected _findEnclosingGroup(obj: Object3D | null): Object3D | null {
       let node = obj;
       while (node) {
-        // Support both legacy `isGroup` marker and newer `isSnappedGroup` marker
         if (node.userData?.isSnappedGroup === true) return node;
         node = node.parent as Object3D | null;
       }
       return null;
     }
 
+    protected _isInsideSnappedGroup(obj: Object3D): boolean {
+      return this._findEnclosingGroup(obj) !== null;
+    }
+
     protected _findTargetObject(): Object3D | null {
-      // Prefer scene.target if present, otherwise the scene root
       const scene = (this as any)[$scene];
       try {
         return scene?.target || scene?.model || null;
@@ -556,40 +647,241 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    protected _selectObject(object: Object3D) {
-      if (object?.userData?.isPlacementPlaceholder === true) {
-        return;
-      }
-      if (this._isInteractivePlacementActive()) {
-        return;
-      }
-
-      // Check if already selected
-      if (
-        this.selectedObjects.length === 1 &&
-        this.selectedObjects[0] === object
-      ) {
-        return;
-      }
-
-      // Clear previous selection
-      this.selectedObjects = [object];
-
-      // Update groups set
-      this._selectedGroups.clear();
+    protected _trackGroupInSelection(object: Object3D) {
       if (object.userData?.isSnappedGroup === true) {
         this._selectedGroups.add(object);
       }
+    }
 
-      // Update highlight if enabled
+    protected _untrackGroupInSelection(object: Object3D) {
+      if (object.userData?.isSnappedGroup === true) {
+        this._selectedGroups.delete(object);
+      }
+    }
+
+    protected _addToSelection(object: Object3D) {
+      if (object?.userData?.isPlacementPlaceholder === true) return;
+      if (this._isInteractivePlacementActive()) return;
+      if (this.isSelected(object)) return;
+
+      this.selectedObjects.push(object);
+      this._trackGroupInSelection(object);
+
       if (this.highlightSelected) {
         this._updateHighlight();
       }
 
-      // Dispatch selection-change event
       this._dispatchSelectionChange('select');
-
       (this as any)[$needsRender]();
+    }
+
+    protected _removeFromSelection(object: Object3D) {
+      if (!this.isSelected(object)) return;
+
+      this.selectedObjects = this.selectedObjects.filter((o) => o !== object);
+      this._untrackGroupInSelection(object);
+
+      if (this.highlightSelected) {
+        this._updateHighlight();
+      }
+
+      if (this.selectedObjects.length === 0) {
+        this._dispatchSelectionChange('clear');
+      } else {
+        this._dispatchSelectionChange('deselect');
+      }
+      (this as any)[$needsRender]();
+    }
+
+    protected _toggleInSelection(object: Object3D) {
+      if (this.isSelected(object)) {
+        this._removeFromSelection(object);
+      } else {
+        this._addToSelection(object);
+      }
+    }
+
+    protected _replaceSelection(objects: Object3D[]) {
+      const valid = objects.filter(
+        (o) =>
+          o &&
+          o.userData?.isPlacementPlaceholder !== true &&
+          !this._isInteractivePlacementActive()
+      );
+      if (valid.length === 0) {
+        this.clearSelection();
+        return;
+      }
+
+      const sameSelection =
+        valid.length === this.selectedObjects.length &&
+        valid.every((o, i) => this.selectedObjects[i] === o);
+      if (sameSelection) return;
+
+      this.selectedObjects = [...valid];
+      this._selectedGroups.clear();
+      for (const obj of this.selectedObjects) {
+        this._trackGroupInSelection(obj);
+      }
+
+      if (this.highlightSelected) {
+        this._updateHighlight();
+      }
+
+      this._dispatchSelectionChange('select');
+      (this as any)[$needsRender]();
+    }
+
+    protected _selectObject(object: Object3D) {
+      this._replaceSelection([object]);
+    }
+
+    protected _applySelectionFromObjects(
+      objects: Object3D[],
+      mode: RectangleSelectionMode = 'replace'
+    ) {
+      const selectable = objects.filter((o) => this._isNodeSelectable(o));
+      switch (mode) {
+        case 'replace':
+          this._replaceSelection(selectable);
+          break;
+        case 'add':
+          for (const obj of selectable) {
+            this._addToSelection(obj);
+          }
+          break;
+        case 'remove':
+          for (const obj of selectable) {
+            this._removeFromSelection(obj);
+          }
+          break;
+        case 'toggle':
+          for (const obj of selectable) {
+            this._toggleInSelection(obj);
+          }
+          break;
+      }
+    }
+
+    /**
+     * Projects selectable object bounds to DOM coords and tests rect intersection.
+     * Host marquee UI calls applyRectangleSelection at high frequency.
+     */
+    protected _querySelectableObjectsInDomRect(rect: DomRectLike): Object3D[] {
+      if (rect.right <= rect.left || rect.bottom <= rect.top) {
+        return [];
+      }
+
+      const scene = (this as any)[$scene];
+      if (!scene) return [];
+
+      const camera = scene.getCamera ? scene.getCamera() : scene.camera;
+      if (!camera) return [];
+
+      const element = this as unknown as HTMLElement;
+      const domRect = element.getBoundingClientRect();
+      if (domRect.width <= 0 || domRect.height <= 0) return [];
+
+      const projectToDom = (this as any)._projectObjectBoundsToDomRect as
+        | ((object: Object3D) => DomRectLike | null)
+        | undefined;
+      if (typeof projectToDom !== 'function') {
+        return [];
+      }
+
+      const candidates = this._enumerateSelectableObjects();
+      const hits: Object3D[] = [];
+
+      for (const obj of candidates) {
+        const bounds = projectToDom.call(this, obj);
+        if (!bounds) continue;
+        const intersects =
+          bounds.right >= rect.left &&
+          bounds.left <= rect.right &&
+          bounds.bottom >= rect.top &&
+          bounds.top <= rect.bottom;
+        if (intersects) {
+          hits.push(obj);
+        }
+      }
+
+      return hits;
+    }
+
+    protected _enumerateSelectableObjects(): Object3D[] {
+      const targetObject = this._findTargetObject();
+      if (!targetObject) return [];
+
+      if (this.selectionScope === 'scene') {
+        return [];
+      }
+
+      const results: Object3D[] = [];
+      const seen = new Set<string>();
+
+      const addUnique = (node: Object3D) => {
+        if (!node || seen.has(node.uuid)) return;
+        if (!this._isNodeSelectable(node)) return;
+        seen.add(node.uuid);
+        results.push(node);
+      };
+
+      switch (this.selectionScope) {
+        case 'part':
+          targetObject.traverse((child: any) => {
+            if (child.userData?.isPlacedObject === true) {
+              addUnique(child);
+            }
+          });
+          break;
+
+        case 'group': {
+          targetObject.traverse((child: any) => {
+            if (
+              child.userData?.isSnappedGroup === true ||
+              child.name === 'PuzzlerRoot'
+            ) {
+              addUnique(child);
+            }
+          });
+          targetObject.traverse((child: any) => {
+            if (
+              child.userData?.isPlacedObject === true &&
+              !this._isInsideSnappedGroup(child)
+            ) {
+              addUnique(child);
+            }
+          });
+          break;
+        }
+
+        case 'all':
+          targetObject.traverse((child: any) => {
+            addUnique(child);
+          });
+          break;
+      }
+
+      return results;
+    }
+
+    selectAll(): void {
+      if (this.selectionScope === 'scene') return;
+      const objects = this._enumerateSelectableObjects();
+      if (objects.length === 0) return;
+      this._replaceSelection(objects);
+    }
+
+    deselectAll(): void {
+      this.clearSelection();
+    }
+
+    applyRectangleSelection(
+      rect: DomRectLike,
+      options?: {mode?: RectangleSelectionMode}
+    ): void {
+      const hits = this._querySelectableObjectsInDomRect(rect);
+      this._applySelectionFromObjects(hits, options?.mode ?? 'replace');
     }
 
     /**
@@ -597,7 +889,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Uses the outline-effect or ld-outline-effect component if present.
      */
     protected _updateHighlight() {
-      // Find the effect-composer element
       const effectComposer = (this as unknown as HTMLElement).querySelector(
         'effect-composer'
       );
@@ -605,7 +896,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
 
-      // Find the outline effect element (supports outline-effect, ld-outline-effect, and selection-outline-effect)
       const outlineEffect =
         effectComposer.querySelector('selection-outline-effect') ||
         effectComposer.querySelector('outline-effect') ||
@@ -616,7 +906,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (this.selectedObjects.length > 0) {
-        // Collect all meshes from selected objects for the outline effect
         const meshes: Object3D[] = [];
         for (const obj of this.selectedObjects) {
           obj.traverse((child: Object3D) => {
@@ -626,21 +915,13 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
           });
         }
 
-        // IMPORTANT: Set the selection FIRST, then enable the effect
-        // This ensures the selection is already set when updateEffects() rebuilds the passes
         (outlineEffect as any).selection = meshes;
-
-        // Now enable the effect (this rebuilds effect passes with the selection already set)
         outlineEffect.setAttribute('blend-mode', 'default');
       } else {
-        // Clear the selection first, then disable
         (outlineEffect as any).selection = [];
-
-        // Disable the effect by setting blend mode to skip
         outlineEffect.setAttribute('blend-mode', 'skip');
       }
 
-      // Queue a render to show the updated highlight
       (this as any)[$needsRender]();
     }
 
@@ -660,7 +941,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (outlineEffect) {
         (outlineEffect as any).selection = [];
-        // Disable the effect by setting blend mode to skip
         outlineEffect.setAttribute('blend-mode', 'skip');
       }
     }
@@ -771,7 +1051,6 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.selectedObjects = [];
       this._selectedGroups.clear();
 
-      // Clear highlight if enabled
       if (this.highlightSelected) {
         this._updateHighlight();
       }
@@ -790,7 +1069,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Update mouse position from event
      */
-    protected updateMousePosition(event: { clientX: number; clientY: number }) {
+    protected updateMousePosition(event: {clientX: number; clientY: number}) {
       const rect = (this as unknown as HTMLElement).getBoundingClientRect();
       this.currentMousePosition.x =
         ((event.clientX - rect.left) / rect.width) * 2 - 1;

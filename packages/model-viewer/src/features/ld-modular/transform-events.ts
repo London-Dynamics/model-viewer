@@ -84,9 +84,15 @@ export function computeTransformDelta(
 
 export type TransformEventDetail = {
   target: TransformTarget;
+  /** Present when a gesture affects two or more roots (multi-select). */
+  targets?: TransformTarget[];
   transform: TransformValues;
   active: ActiveTransform | null;
 };
+
+/** Stable pivot proxy id for multi-select transform sessions. */
+export const SELECTION_TRANSFORM_PIVOT_UUID = 'ld-selection-pivot';
+export const SELECTION_TRANSFORM_PIVOT_NAME = 'selection';
 
 export type BeginTransformSessionOptions = {
   source: TransformSource;

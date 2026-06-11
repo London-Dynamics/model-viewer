@@ -79,7 +79,6 @@ const tmpEdge = new Vector3();
 const tmpIntersection = new Vector3();
 const tmpLocalCenter = new Vector3();
 const tmpFloorWorld = new Vector3();
-const tmpObjectWorldPos = new Vector3();
 const tmpObjectWorldDelta = new Vector3();
 
 function glslFloat(value: number): string {
@@ -150,7 +149,8 @@ export type RotationDiscTickConfig = {
 };
 
 export type RotationDiscUpdateArgs = {
-  selectedObject: Object3D;
+  selectedObjects: Object3D[];
+  pivotWorld: Vector3;
   camera: Camera;
   viewportWidth: number;
   viewportHeight: number;
@@ -222,8 +222,9 @@ export class RotationControlDisc extends Object3D {
   private readonly _plane: Plane = new Plane(planeNormal.clone(), 0);
   private readonly _centerWorld: Vector3 = new Vector3();
   private readonly _lockedCenterWorld: Vector3 = new Vector3();
-  private readonly _lockedObjectWorldPosition: Vector3 = new Vector3();
-  private _anchorObject: Object3D | null = null;
+  private readonly _lockedPivotWorldPosition: Vector3 = new Vector3();
+  private _anchorKey: string | null = null;
+  /** Floor height in the disc parent's local space (transformed to world each frame). */
   private _floorYLocal = 0;
   private _lockedInnerRadiusWorld: number | null = null;
   private _outerRadiusWorld = 0;
@@ -410,12 +411,40 @@ export class RotationControlDisc extends Object3D {
     this.visible = false;
   }
 
-  lockSizeFromObject(selectedObject: Object3D, floorY: number): void {
-    selectedObject.updateMatrixWorld(true);
-    tmpBox.setFromObject(selectedObject);
+  private _resolveFloorWorldY(
+    floorYLocal: number,
+    selectedObjects: Object3D[]
+  ): number {
+    tmpFloorWorld.set(0, floorYLocal, 0);
+    const floorParent =
+      this.parent ??
+      selectedObjects[0]?.parent ??
+      null;
+    if (floorParent) {
+      floorParent.updateMatrixWorld(true);
+      floorParent.localToWorld(tmpFloorWorld);
+    }
+    return tmpFloorWorld.y;
+  }
+
+  lockSizeFromObjects(
+    selectedObjects: Object3D[],
+    floorY: number,
+    pivotWorld: Vector3
+  ): void {
+    if (selectedObjects.length === 0) {
+      this._lockedInnerRadiusWorld = null;
+      this._anchorKey = null;
+      return;
+    }
+    tmpBox.makeEmpty();
+    for (const obj of selectedObjects) {
+      obj.updateMatrixWorld(true);
+      tmpBox.expandByObject(obj);
+    }
     if (!Number.isFinite(tmpBox.min.x) || !Number.isFinite(tmpBox.max.x)) {
       this._lockedInnerRadiusWorld = null;
-      this._anchorObject = null;
+      this._anchorKey = null;
       return;
     }
     tmpBox.getBoundingSphere(tmpSphere);
@@ -423,28 +452,22 @@ export class RotationControlDisc extends Object3D {
       tmpSphere.radius * innerRadiusFromBoundingSphere,
       0.001
     );
-    this._anchorObject = selectedObject;
+    this._anchorKey = selectedObjects.map((o) => o.uuid).join(',');
     this._floorYLocal = floorY;
-    tmpFloorWorld.set(0, floorY, 0);
-    if (selectedObject.parent) {
-      selectedObject.parent.localToWorld(tmpFloorWorld);
-    }
-    this._lockedCenterWorld.set(
-      tmpSphere.center.x,
-      tmpFloorWorld.y,
-      tmpSphere.center.z
-    );
-    selectedObject.getWorldPosition(this._lockedObjectWorldPosition);
+    const floorWorldY = this._resolveFloorWorldY(floorY, selectedObjects);
+    this._lockedCenterWorld.set(pivotWorld.x, floorWorldY, pivotWorld.z);
+    this._lockedPivotWorldPosition.copy(pivotWorld);
   }
 
   clearLockedSize(): void {
     this._lockedInnerRadiusWorld = null;
-    this._anchorObject = null;
+    this._anchorKey = null;
   }
 
   update(args: RotationDiscUpdateArgs): void {
     const {
-      selectedObject,
+      selectedObjects,
+      pivotWorld,
       camera,
       viewportWidth,
       viewportHeight,
@@ -455,29 +478,26 @@ export class RotationControlDisc extends Object3D {
       lockSize,
     } = args;
 
+    const anchorKey = selectedObjects.map((o) => o.uuid).join(',');
     if (
       lockSize ||
       this._lockedInnerRadiusWorld == null ||
-      this._anchorObject !== selectedObject
+      this._anchorKey !== anchorKey
     ) {
-      this.lockSizeFromObject(selectedObject, floorY);
+      this.lockSizeFromObjects(selectedObjects, floorY, pivotWorld);
     }
-    if (this._lockedInnerRadiusWorld == null || !this._anchorObject) {
+    if (this._lockedInnerRadiusWorld == null || !this._anchorKey) {
       this.visible = false;
       return;
     }
 
-    this._anchorObject.updateMatrixWorld(true);
-    this._anchorObject.getWorldPosition(tmpObjectWorldPos);
-    tmpObjectWorldDelta
-      .copy(tmpObjectWorldPos)
-      .sub(this._lockedObjectWorldPosition);
+    tmpObjectWorldDelta.copy(pivotWorld).sub(this._lockedPivotWorldPosition);
     this._centerWorld.copy(this._lockedCenterWorld).add(tmpObjectWorldDelta);
-    tmpFloorWorld.set(0, this._floorYLocal, 0);
-    if (this._anchorObject.parent) {
-      this._anchorObject.parent.localToWorld(tmpFloorWorld);
-    }
-    this._centerWorld.y = tmpFloorWorld.y + discSurfaceOffsetM;
+    const floorWorldY = this._resolveFloorWorldY(
+      this._floorYLocal,
+      selectedObjects
+    );
+    this._centerWorld.y = floorWorldY + discSurfaceOffsetM;
     this._plane.constant = -this._centerWorld.y;
 
     const cameraWorld = camera.getWorldPosition(tmpEdge);

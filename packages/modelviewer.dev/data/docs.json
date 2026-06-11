@@ -2350,7 +2350,7 @@
       {
         "name": "transformstart",
         "htmlName": "transformstart",
-        "description": "Dispatched when a transform operation begins (pointer drag, rotation disc, or API). <code>event.detail</code> is a <code>TransformEventDetail</code>: <code>target</code> ({ uuid, name }), <code>transform</code> ({ position, rotation, scale } — current authoritative values), and <code>active</code> ({ source, components, axes, delta }) describing the in-progress gesture. <code>active.delta</code> is the change since gesture start; rotation components are wrapped to <code>[-180, 180)</code> degrees (rotation-disc Y uses accumulated applied degrees, then wrapped). <code>source</code> is one of <code>pointer-drag</code>, <code>rotation-disc-y</code>, <code>api</code>, or <code>animation</code>.",
+        "description": "Dispatched when a transform operation begins (pointer drag, rotation disc, or API). <code>event.detail</code> is a <code>TransformEventDetail</code>: <code>target</code> ({ uuid, name }), optional <code>targets</code> (array when a multi-select gesture affects 2+ roots), <code>transform</code> (current values; pivot for multi-select), and <code>active</code> ({ source, components, axes, delta }). For multi-select drag/rotate, one event stream is emitted for the whole selection; <code>active.delta</code> is the uniform gesture delta (e.g. 45° rotation or pivot translation). Single-selection gestures omit <code>targets</code>. Rotation deltas are wrapped to <code>[-180, 180)</code> degrees.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ]
@@ -2410,11 +2410,37 @@
         }
       }
     ],
+    "Methods": [
+      {
+        "name": "selectAll",
+        "htmlName": "selectAll",
+        "description": "Select every object allowed by the current <code>selection-scope</code>: all placed parts (<code>part</code>), all groups plus ungrouped parts (<code>group</code>), or all selectable nodes (<code>all</code>). No-op when scope is <code>scene</code>.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#multi-select\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "deselectAll",
+        "htmlName": "deselectAll",
+        "description": "Clear the current selection (alias of <code>clearSelection()</code>).",
+        "links": [
+          "<a href=\"../examples/ld_modular/#multi-select\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "applyRectangleSelection",
+        "htmlName": "applyRectangleSelection",
+        "description": "Programmatic marquee selection in DOM coordinates. Pass a rectangle <code>{ left, top, right, bottom }</code> and optional <code>mode</code> (<code>replace</code>, <code>add</code>, <code>remove</code>, <code>toggle</code>). Intended for host-implemented marquee UI; safe to call repeatedly while dragging a selection box.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ]
+      }
+    ],
     "Events": [
       {
         "name": "selection-change",
         "htmlName": "selectionChange",
-        "description": "Dispatched when the selection state changes. The event.detail contains: selectedObjects (array of selected Object3D instances), metadata (array aligned with selectedObjects where each entry mirrors that object's userData), scope (current selection scope: 'part', 'group', or 'all'), and type (event type: 'select', 'deselect', or 'clear'). It also includes isSurfaceSnapped (boolean for single-selection convenience) and selectedObjectSurfaceSnapState (array of { uuid, name, isSurfaceSnapped }) so you can detect surface-snapped selections."
+        "description": "Dispatched when the selection state changes—once per item added (<code>select</code>) or removed (<code>deselect</code>), or when cleared (<code>clear</code>). Hold <b>Shift</b> while clicking to toggle items in multi-select. detail: selectedObjects, metadata, scope, type, isSurfaceSnapped, selectedObjectSurfaceSnapState."
       }
     ]
   },

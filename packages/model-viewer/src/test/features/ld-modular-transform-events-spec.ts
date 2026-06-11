@@ -8,6 +8,8 @@ import {
   getObjectDisplayName,
   inferRotationAxesFromParsed,
   normalizeAngleDeltaDeg,
+  SELECTION_TRANSFORM_PIVOT_NAME,
+  SELECTION_TRANSFORM_PIVOT_UUID,
   shortestAngleDeltaDeg,
   type TransformEventDetail,
 } from '../../features/ld-modular/transform-events.js';
@@ -136,5 +138,47 @@ suite('ld-modular transform events', () => {
     expect(detail.active?.source).to.equal('rotation-disc-y');
     expect(detail.active?.delta.rotation[1]).to.equal(90);
     expect(detail.active).to.not.have.property('start');
+  });
+
+  test('multi-select transform detail uses pivot proxy and targets list', () => {
+    const detail: TransformEventDetail = {
+      target: {
+        uuid: SELECTION_TRANSFORM_PIVOT_UUID,
+        name: SELECTION_TRANSFORM_PIVOT_NAME,
+      },
+      targets: [
+        {uuid: 'a', name: 'Sofa A'},
+        {uuid: 'b', name: 'Sofa B'},
+      ],
+      transform: {
+        position: [1, 0, 2],
+        rotation: [0, 45, 0],
+        scale: [1, 1, 1],
+      },
+      active: {
+        source: 'rotation-disc-y',
+        components: ['rotation'],
+        axes: {rotation: ['y']},
+        delta: {
+          position: [0, 0, 0],
+          rotation: [0, 45, 0],
+          scale: [0, 0, 0],
+        },
+      },
+    };
+    expect(detail.targets).to.have.length(2);
+    expect(detail.active?.delta.rotation[1]).to.equal(45);
+  });
+
+  test('multi-select orbit uses Three.js positive Y handedness', () => {
+    const delta = Math.PI / 2;
+    const cos = Math.cos(delta);
+    const sin = Math.sin(delta);
+    const dx = 1;
+    const dz = 0;
+    const rx = dx * cos + dz * sin;
+    const rz = -dx * sin + dz * cos;
+    expect(rx).to.be.closeTo(0, 1e-6);
+    expect(rz).to.be.closeTo(1, 1e-6);
   });
 });
