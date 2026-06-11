@@ -98,7 +98,7 @@ function linearLumaFromHex(hex: string): number {
   return linearLumaFromColor(tmpContrastColor);
 }
 
-/** Pick tick stroke colour that contrasts with the highlight arc fill. */
+/** Pick stroke colour that contrasts with the highlight arc fill (ticks and ring). */
 function updateTickHighlightContrastUniforms(
   uniforms: ShaderMaterial['uniforms'],
   highlightColorHex: string
@@ -373,17 +373,22 @@ export class RotationControlDisc extends Object3D {
           float baseArcAlpha = baseArcBand * uBaseArcOpacity;
           float arcMask = uArcActive * (1.0 - smoothstep(uArcSweepRad, uArcSweepRad + ${glslFloat(highlightArcSweepEdgeSoftness)}, arcDistance)) * arcBand;
           float highlightArcAlpha = arcMask * uHighlightArcOpacity;
-          float highlightOverTick = clamp(arcMask * uHighlightArcOpacity * 5.0, 0.0, 1.0) * tickMask;
+          float highlightContrast = clamp(arcMask * uHighlightArcOpacity * 5.0, 0.0, 1.0) * uTickHighlightContrastAmount;
           tickRgb = mix(
             tickRgb,
             uTickHighlightContrastTarget,
-            highlightOverTick * uTickHighlightContrastAmount
+            highlightContrast * tickMask
+          );
+          vec3 ringRgb = mix(
+            uRingColor,
+            uTickHighlightContrastTarget,
+            highlightContrast * outerStroke
           );
 
           vec4 layer = vec4(0.0);
           layer = overLayer(layer, uBaseArcColor, baseArcAlpha);
           layer = overLayer(layer, uHighlightColor, highlightArcAlpha);
-          layer = overLayer(layer, uRingColor, ringAlpha);
+          layer = overLayer(layer, ringRgb, ringAlpha);
           layer = overLayer(layer, tickRgb, tickAlpha);
           if (layer.a <= 0.001) discard;
           gl_FragColor = vec4(layer.rgb, layer.a * uOpacity);
