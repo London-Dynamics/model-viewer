@@ -3,15 +3,21 @@ import {
   Camera,
   Color,
   ColorRepresentation,
+  DepthTexture,
+  HalfFloatType,
+  LinearSRGBColorSpace,
   Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NoToneMapping,
   Object3D,
   ShaderMaterial,
+  SRGBColorSpace,
   Texture,
   ToneMapping,
   Vector2,
+  WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
 import { BloomPass } from 'three/examples/jsm/postprocessing/BloomPass.js';
@@ -28,6 +34,10 @@ import ModelViewerElementBase, {
   EffectComposerInterface,
 } from '../model-viewer-base.js';
 import { ModelScene } from '../three-components/ModelScene.js';
+import { AOPass } from '../three-components/postprocessing/ld-ambient-occlusion/AOPass.js';
+import {
+  AmbientOcclusionOptions,
+} from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 import { Constructor } from '../utilities.js';
 
 export type LDBloomMode = 'unreal' | 'classic';
@@ -40,6 +50,18 @@ export interface LDBloomTarget {
   color?: string;
   intensity?: number;
   enabled?: boolean;
+}
+
+export interface LDBloomOptions {
+  enabled: boolean;
+  targets: LDBloomTarget[];
+  mode: LDBloomMode;
+  strength: number;
+  radius: number;
+  threshold: number;
+  quality: LDBloomQualityMode;
+  msaa: number;
+  softShadow: boolean;
 }
 
 export declare interface LDBloomInterface {
@@ -60,6 +82,7 @@ export declare interface LDBloomInterface {
     enabled: boolean
   ): void;
   getSceneNames(): { objects: string[]; materials: string[] };
+  getBloomOptions(): LDBloomOptions;
 }
 
 const DEFAULT_BLOOM_STRENGTH = 0.6;
@@ -68,6 +91,27 @@ const DEFAULT_BLOOM_THRESHOLD = 0.05;
 const DEFAULT_BLOOM_MSAA = 4;
 const SMART_IDLE_MS = 250;
 const MIN_SHADOW_BLOOM_SCALE = 3;
+const AO_OPTION_PROPERTIES = [
+  'ambientOcclusion',
+  'aoAlgorithm',
+  'aoRadius',
+  'aoIntensity',
+  'aoBias',
+  'aoThickness',
+  'aoDistanceExponent',
+  'aoDistanceFalloff',
+  'aoSamples',
+  'aoScreenSpaceRadius',
+  'aoNoise',
+  'aoOutput',
+  'aoDenoiseRadius',
+  'aoDenoiseRadiusExponent',
+  'aoDenoiseRings',
+  'aoDenoiseSamples',
+  'aoDenoiseLumaPhi',
+  'aoDenoiseDepthPhi',
+  'aoDenoiseNormalPhi',
+] as const;
 
 const $composer = Symbol('composer');
 const $targets = Symbol('targets');
@@ -77,12 +121,27 @@ const $parseTargets = Symbol('parseTargets');
 const $syncBloom = Symbol('syncBloom');
 const $ensureComposer = Symbol('ensureComposer');
 
-class LDBloomComposer implements EffectComposerInterface {
+type AmbientOcclusionHost = {
+  ambientOcclusion?: boolean;
+  getAmbientOcclusionOptions?: () => AmbientOcclusionOptions;
+};
+
+type RenderPipelineHost = {
+  ldRenderPipelineActive?: boolean;
+};
+
+type LDBloomHost = LDBloomInterface & ModelViewerElementBase &
+  AmbientOcclusionHost & RenderPipelineHost;
+
+export class LDBloomComposer implements EffectComposerInterface {
   private bloomComposer?: EffectComposer;
   private finalComposer?: EffectComposer;
   private bloomPass?: UnrealBloomPass | BloomPass;
   private blendPass?: ShaderPass;
   private outputPass?: OutputPass;
+  private aoPass?: AOPass;
+  private finalRenderTarget?: WebGLRenderTarget;
+  private finalDepthTexture?: DepthTexture;
   private renderer?: WebGLRenderer;
   private scene?: ModelScene;
   private camera?: Camera;
@@ -111,9 +170,7 @@ class LDBloomComposer implements EffectComposerInterface {
   // scene, permanently blanking the skybox.
   private hasDarkenedState = false;
 
-  constructor(
-    private readonly host: LDBloomInterface & ModelViewerElementBase
-  ) {}
+  constructor(private readonly host: LDBloomHost) {}
 
   setTargets(targets: LDBloomTarget[]): void {
     this.targets = targets;
@@ -137,6 +194,8 @@ class LDBloomComposer implements EffectComposerInterface {
   setSize(width: number, height: number): void {
     this.bloomComposer?.setSize(width, height);
     this.finalComposer?.setSize(width, height);
+    this.finalRenderTarget?.setSize(width, height);
+    this.aoPass?.setSize(width, height);
     this.bloomPass?.setSize(width, height);
   }
 
@@ -175,7 +234,19 @@ class LDBloomComposer implements EffectComposerInterface {
 
     const renderFinalComposite = () => {
       this.updateBlendPassParams();
+      if (this.aoPass == null) {
+        this.finalComposer!.render(deltaTime);
+        return;
+      }
+
+      const previousAutoClear = this.renderer!.autoClear;
+      const previousOutputColorSpace = this.renderer!.outputColorSpace;
+      this.renderer!.autoClear = false;
+      this.renderer!.toneMapping = NoToneMapping;
+      this.renderer!.outputColorSpace = LinearSRGBColorSpace;
       this.finalComposer!.render(deltaTime);
+      this.renderer!.autoClear = previousAutoClear;
+      this.renderer!.outputColorSpace = previousOutputColorSpace;
     };
 
     const shadow = this.scene.shadow;
@@ -206,24 +277,31 @@ class LDBloomComposer implements EffectComposerInterface {
   }
 
   setActiveMsaa(msaa: number): void {
-    if (this.activeMsaa === msaa) {
+    const effectiveMsaa = this.host.ambientOcclusion ? 0 : msaa;
+    if (this.activeMsaa === effectiveMsaa) {
       return;
     }
-    this.activeMsaa = msaa;
+    this.activeMsaa = effectiveMsaa;
     this.rebuild();
   }
 
   dispose(): void {
     this.restoreNonTargeted();
     this.bloomPass?.dispose();
+    this.aoPass?.dispose();
     this.outputPass?.dispose();
     this.bloomComposer?.dispose();
     this.finalComposer?.dispose();
+    this.finalRenderTarget?.dispose();
+    this.finalDepthTexture?.dispose?.();
     this.bloomPass = undefined;
     this.blendPass = undefined;
     this.outputPass = undefined;
+    this.aoPass = undefined;
     this.bloomComposer = undefined;
     this.finalComposer = undefined;
+    this.finalRenderTarget = undefined;
+    this.finalDepthTexture = undefined;
   }
 
   runWithShadowBloomState(callback: () => void): void {
@@ -465,23 +543,149 @@ class LDBloomComposer implements EffectComposerInterface {
     );
     this.blendPass.needsSwap = true;
 
-    // Final composer: renders the full scene, additively blends bloom, then
-    // tone-maps + sRGB-converts to the canvas via OutputPass.
+    // Final composer: renders the full scene, optionally applies AO,
+    // additively blends bloom, then tone-maps + sRGB-converts to the canvas via
+    // OutputPass.
     //
     // The intermediate render targets are linear / unmapped, so we MUST end
     // with OutputPass — otherwise renderer.toneMappingExposure (driven by the
     // model-viewer `exposure` property) is never read and the exposure
     // control silently does nothing whenever bloom is enabled.
     this.outputPass = new OutputPass();
-    this.finalComposer = new EffectComposer(this.renderer);
+    const outputPassRender = this.outputPass.render.bind(this.outputPass);
+    this.outputPass.render = (
+      renderer: WebGLRenderer,
+      writeBuffer: WebGLRenderTarget,
+      readBuffer: WebGLRenderTarget,
+      deltaTime?: number,
+      maskActive?: boolean
+    ) => {
+      const previousToneMapping = renderer.toneMapping;
+      const previousOutputColorSpace = renderer.outputColorSpace;
+      renderer.toneMapping = this.scene?.toneMapping ?? previousToneMapping;
+      renderer.outputColorSpace = SRGBColorSpace;
+      outputPassRender(
+        renderer,
+        writeBuffer,
+        readBuffer,
+        deltaTime ?? 0,
+        maskActive ?? false
+      );
+      renderer.toneMapping = previousToneMapping;
+      renderer.outputColorSpace = previousOutputColorSpace;
+    };
+    const ambientOcclusionOptions = this.getAmbientOcclusionOptions();
+    if (ambientOcclusionOptions != null) {
+      this.finalDepthTexture = new DepthTexture(
+        this.scene.width,
+        this.scene.height
+      );
+      this.finalRenderTarget = new WebGLRenderTarget(
+        this.scene.width,
+        this.scene.height,
+        {
+          depthTexture: this.finalDepthTexture,
+          type: HalfFloatType,
+          // AOPass reads the render target depth texture directly. Multisampled
+          // depth is resolved separately by WebGL, so keep the AO base target
+          // single-sampled even when bloom smart quality returns to idle MSAA.
+          samples: 0,
+        }
+      );
+      this.finalRenderTarget.texture.colorSpace = LinearSRGBColorSpace;
+      this.finalComposer =
+        new EffectComposer(this.renderer, this.finalRenderTarget);
+    } else {
+      this.finalComposer = new EffectComposer(this.renderer);
+    }
     this.finalComposer.setPixelRatio(1);
     this.finalComposer.addPass(renderPass);
+    if (ambientOcclusionOptions != null && this.finalDepthTexture != null) {
+      this.aoPass = new AOPass(
+        this.scene,
+        this.camera,
+        this.scene.width,
+        this.scene.height,
+        undefined,
+        undefined,
+        undefined
+      );
+      this.aoPass.setGBuffer(this.finalDepthTexture, undefined);
+      this.finalComposer.addPass(this.aoPass);
+      this.updateAmbientOcclusionPass(ambientOcclusionOptions);
+    }
     this.finalComposer.addPass(this.blendPass);
     this.finalComposer.addPass(this.outputPass);
     this.updateBlendPassParams();
 
     const dpr = window.devicePixelRatio || 1;
     this.setSize(this.scene.width * dpr, this.scene.height * dpr);
+    this.disableAmbientOcclusionMultisampling();
+  }
+
+  private disableAmbientOcclusionMultisampling(): void {
+    if (this.aoPass == null || this.finalRenderTarget == null) {
+      return;
+    }
+
+    this.finalRenderTarget.samples = 0;
+    if (this.finalComposer != null) {
+      this.finalComposer.renderTarget1.samples = 0;
+      this.finalComposer.renderTarget2.samples = 0;
+    }
+  }
+
+  private getAmbientOcclusionOptions(): AmbientOcclusionOptions | null {
+    if (
+      !this.host.ambientOcclusion ||
+      typeof this.host.getAmbientOcclusionOptions !== 'function'
+    ) {
+      return null;
+    }
+
+    return this.host.getAmbientOcclusionOptions();
+  }
+
+  private updateAmbientOcclusionPass(options: AmbientOcclusionOptions): void {
+    if (this.aoPass == null) {
+      return;
+    }
+
+    const sceneRadius = this.scene?.boundingSphere?.radius ?? 1.0;
+    const radiusScale = 1.0 / Math.max(sceneRadius, 0.5);
+    const fineTuneFactor = 0.1;
+    const scaledRadius = options.radius * radiusScale * fineTuneFactor;
+    const scaledThickness = options.thickness * radiusScale * fineTuneFactor;
+
+    const aoPass = this.aoPass as AOPass & {
+      intensity: number;
+      output: number;
+    };
+
+    aoPass.intensity = options.intensity;
+    aoPass.output = options.output;
+    aoPass.updateAoMaterial({
+      algorithm: options.algorithm,
+      radius: scaledRadius,
+      distanceExponent: options.distanceExponent,
+      thickness: scaledThickness,
+      distanceFallOff: options.distanceFallOff,
+      bias: options.bias,
+      scale: options.scale,
+      samples: options.samples,
+      nvAlignedSamples: options.nvAlignedSamples ? 1 : 0,
+      screenSpaceRadius: options.screenSpaceRadius ? 1 : 0,
+      aoNoiseType: options.aoNoiseType,
+    });
+    aoPass.updatePdMaterial({
+      lumaPhi: options.pdLumaPhi,
+      depthPhi: options.pdDepthPhi,
+      normalPhi: options.pdNormalPhi,
+      radius: options.pdRadius,
+      radiusExponent: options.pdRadiusExponent,
+      rings: options.pdRings,
+      samples: options.pdSamples,
+    });
   }
 
   private updateBloomParams(): void {
@@ -642,6 +846,22 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       return cloneTargets(this[$targets]);
     }
 
+    getBloomOptions(): LDBloomOptions {
+      return {
+        enabled: this.bloom,
+        targets: this[$targets].filter(
+          (target) => !!(target.material || target.mesh)
+        ),
+        mode: this.bloomMode,
+        strength: this.bloomStrength,
+        radius: this.bloomRadius,
+        threshold: this.bloomThreshold,
+        quality: this.bloomQuality,
+        msaa: this.bloomMsaa,
+        softShadow: this.bloomSoftShadow,
+      };
+    }
+
     getSceneNames(): { objects: string[]; materials: string[] } {
       const objects = new Set<string>();
       const materials = new Set<string>();
@@ -688,7 +908,8 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
         changedProperties.has('bloomStrength') ||
         changedProperties.has('bloomRadius') ||
         changedProperties.has('bloomThreshold') ||
-        changedProperties.has('bloomMsaa')
+        changedProperties.has('bloomMsaa') ||
+        AO_OPTION_PROPERTIES.some((prop) => changedProperties.has(prop))
       ) {
         this[$composer]?.updatePass();
       }
@@ -701,7 +922,8 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
         changedProperties.has('bloomRadius') ||
         changedProperties.has('bloomThreshold') ||
         changedProperties.has('bloomMsaa') ||
-        changedProperties.has('bloomSoftShadow')
+        changedProperties.has('bloomSoftShadow') ||
+        AO_OPTION_PROPERTIES.some((prop) => changedProperties.has(prop))
       ) {
         this[$syncBloom]();
       }
@@ -716,7 +938,8 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (
         !this.bloom ||
         this.bloomQuality !== 'smart' ||
-        this.bloomMode !== 'unreal'
+        this.bloomMode !== 'unreal' ||
+        this.shouldDisableBloomMsaa()
       ) {
         return;
       }
@@ -727,7 +950,7 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       this[$qualityTimer] = window.setTimeout(() => {
         this[$qualityTimer] = null;
-        this[$composer]?.setActiveMsaa(this.bloomMsaa);
+        this[$composer]?.setActiveMsaa(this.getEffectiveBloomMsaa());
         this[$scene].queueRender();
       }, SMART_IDLE_MS);
     };
@@ -751,10 +974,24 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this[$composer] == null) {
         this[$composer] = new LDBloomComposer(this);
       }
-      this[$composer].setActiveMsaa(
-        this.bloomQuality === 'performance' ? 0 : this.bloomMsaa
-      );
+      this[$composer].setActiveMsaa(this.getEffectiveBloomMsaa());
       this.registerEffectComposer(this[$composer]);
+    }
+
+    private getEffectiveBloomMsaa(): number {
+      if (this.bloomQuality === 'performance' || this.shouldDisableBloomMsaa()) {
+        return 0;
+      }
+
+      return this.bloomMsaa;
+    }
+
+    private shouldDisableBloomMsaa(): boolean {
+      return Boolean((this as AmbientOcclusionHost).ambientOcclusion);
+    }
+
+    private shouldDeferToRenderPipeline(): boolean {
+      return Boolean((this as RenderPipelineHost).ldRenderPipelineActive);
     }
 
     private [$syncBloom](): void {
@@ -773,6 +1010,13 @@ export const LDBloomMixin = <T extends Constructor<ModelViewerElementBase>>(
       const namedTargets = this[$targets].filter(
         (t) => !!(t.material || t.mesh)
       );
+
+      if (this.shouldDeferToRenderPipeline()) {
+        this[$composer]?.setTargets(namedTargets);
+        this[$scene].queueRender();
+        this[$needsRender]();
+        return;
+      }
 
       this[$ensureComposer]();
       this[$composer]!.setTargets(namedTargets);

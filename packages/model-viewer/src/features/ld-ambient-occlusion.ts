@@ -1,16 +1,13 @@
 import {property} from 'lit/decorators.js';
 
 import {
-  EffectComposerInterface,
   $needsRender,
-  $scene,
 } from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
 import {Constructor} from '../utilities.js';
 
 import {
   AmbientOcclusionOptions,
-  LDAmbientOcclusionComposer,
 } from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 import {AOShader} from '../three-components/postprocessing/ld-ambient-occlusion/AOShader.js';
 import {AOPass} from '../three-components/postprocessing/ld-ambient-occlusion/AOPass.js';
@@ -46,8 +43,6 @@ const outputMap: Record<AoOutputName, number> = {
   'denoise': AO_OUTPUT.Denoise,
 };
 
-const $aoComposer = Symbol('aoComposer');
-
 export declare interface LDAmbientOcclusionInterface {
   ambientOcclusion: boolean;
   aoAlgorithm: AoAlgorithmName;
@@ -68,6 +63,7 @@ export declare interface LDAmbientOcclusionInterface {
   aoDenoiseLumaPhi: number;
   aoDenoiseDepthPhi: number;
   aoDenoiseNormalPhi: number;
+  getAmbientOcclusionOptions(): AmbientOcclusionOptions;
 }
 
 export const LDAmbientOcclusionMixin = <
@@ -133,32 +129,22 @@ export const LDAmbientOcclusionMixin = <
     @property({type: Number, attribute: 'ao-denoise-normal-phi'})
     aoDenoiseNormalPhi = 3;
 
-    protected[$aoComposer]: EffectComposerInterface|null = null;
-
     override connectedCallback() {
       super.connectedCallback();
       if (this.ambientOcclusion) {
-        this.setupAmbientOcclusion();
+        (this as any)[$needsRender]();
       }
     }
 
     override disconnectedCallback() {
       super.disconnectedCallback();
-      this.teardownAmbientOcclusion();
     }
 
     override updated(changedProperties: Map<string|number|symbol, unknown>) {
       super.updated(changedProperties);
 
-      if (this.ambientOcclusion) {
-        if (this[$aoComposer] == null) {
-          this.setupAmbientOcclusion();
-        }
-      } else if (this[$aoComposer] != null) {
-        this.teardownAmbientOcclusion();
-      }
-
       const knobs = [
+        'ambientOcclusion',
         'aoAlgorithm',
         'aoRadius',
         'aoIntensity',
@@ -180,43 +166,11 @@ export const LDAmbientOcclusionMixin = <
       ];
 
       if (knobs.some((prop) => changedProperties.has(prop))) {
-        const options = this.getComposerOptions();
-        if (this[$aoComposer] instanceof LDAmbientOcclusionComposer) {
-          this[$aoComposer].updateOptions(options);
-          (this as any)[$needsRender]();
-        }
-      }
-    }
-
-    private setupAmbientOcclusion() {
-      const currentEffect = (this as any)[$scene].effectRenderer;
-      if (currentEffect != null && currentEffect !== this[$aoComposer]) {
-        console.warn(
-            '[model-viewer] ambient-occlusion requires control over the effect composer. Please remove other custom composers before enabling.');
-        this.ambientOcclusion = false;
-        return;
-      }
-
-      if (!this[$aoComposer]) {
-        this[$aoComposer] =
-            new LDAmbientOcclusionComposer(this.getComposerOptions());
-      }
-      this.registerEffectComposer(this[$aoComposer]!);
-      (this as any)[$needsRender]();
-    }
-
-    private teardownAmbientOcclusion() {
-      if (this[$aoComposer]) {
-        if ((this as any)[$scene].effectRenderer === this[$aoComposer]) {
-          this.unregisterEffectComposer();
-        }
-        (this[$aoComposer] as LDAmbientOcclusionComposer).dispose();
-        this[$aoComposer] = null;
         (this as any)[$needsRender]();
       }
     }
 
-    private getComposerOptions(): AmbientOcclusionOptions {
+    getAmbientOcclusionOptions(): AmbientOcclusionOptions {
       const algorithm =
           algorithmMap[this.aoAlgorithm] ?? AOShader.ALGORITHM.GTAO;
       const output = outputMap[this.aoOutput] ?? AO_OUTPUT.Default;
@@ -246,6 +200,7 @@ export const LDAmbientOcclusionMixin = <
         pdSamples: Math.max(2, Math.floor(this.aoDenoiseSamples)),
       };
     }
+
   }
 
   return LDAmbientOcclusionModelViewerElement as Constructor<

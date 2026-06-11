@@ -15,6 +15,7 @@
 
 import {
   BackSide,
+  Camera,
   DoubleSide,
   Box3,
   Material,
@@ -365,6 +366,65 @@ export class Shadow extends Object3D {
     renderer.setRenderTarget(oldRenderTarget);
     renderer.setClearAlpha(initialClearAlpha);
     // this.cameraHelper.visible = true;
+  }
+
+  renderFloor(renderer: WebGLRenderer, scene: Scene, camera: Camera) {
+    if (!this.visible || !this.floor.visible) {
+      return;
+    }
+
+    const visibleState = new Map<Object3D, boolean>();
+    const materialColorWriteState = new Map<Material, boolean>();
+    const floorAncestors = new Set<Object3D>();
+    let parent: Object3D | null = this.floor;
+    while (parent != null) {
+      floorAncestors.add(parent);
+      parent = parent.parent;
+    }
+
+    this.floor.visible = false;
+    this.blurPlane.visible = false;
+    scene.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh || floorAncestors.has(object)) {
+        return;
+      }
+
+      const materials = Array.isArray(mesh.material) ?
+        mesh.material :
+        [mesh.material];
+      for (const material of materials) {
+        if (!materialColorWriteState.has(material)) {
+          materialColorWriteState.set(material, material.colorWrite);
+        }
+        material.colorWrite = false;
+      }
+    });
+
+    const currentAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(scene, camera);
+
+    for (const [material, colorWrite] of materialColorWriteState) {
+      material.colorWrite = colorWrite;
+    }
+    this.floor.visible = true;
+
+    scene.traverse((object) => {
+      const shouldKeepVisible = floorAncestors.has(object);
+      if (!shouldKeepVisible && (object as Mesh).isMesh) {
+        visibleState.set(object, object.visible);
+        object.visible = false;
+      }
+    });
+
+    renderer.render(scene, camera);
+    renderer.autoClear = currentAutoClear;
+
+    for (const [object, visible] of visibleState) {
+      object.visible = visible;
+    }
   }
 
   blurShadow(renderer: WebGLRenderer) {

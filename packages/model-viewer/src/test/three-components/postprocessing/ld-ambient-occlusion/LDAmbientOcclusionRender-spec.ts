@@ -21,6 +21,13 @@ import {waitForEvent} from '../../../../utilities.js';
 
 import {assetPath, rafPasses} from '../../../helpers.js';
 
+const BAG_GLB =
+    'https://assets.v2.londondynamics.com/019dfd85-606d-770c-9854-43a16af56055/puzzledefault/e14d1a56-44bb-dc4a-e1e8-87b0513324d8.glb';
+const CB1_GLB =
+    'https://assets.v2.londondynamics.com/c8bd376d-c1e0-4c8f-ad7f-e64e7d62a08a/puzzlesingle/12111feb-5397-b121-4dc9-d066f14f1a64.glb';
+const CB1_HDR =
+    'https://d1mepjfmhz5ui7.cloudfront.net/crateandbarrel/KO_Base_Hero_Studio_1k.hdr';
+
 const waitFrames = async (count: number = 6) => {
   for (let i = 0; i < count; i++) {
     await rafPasses();
@@ -60,7 +67,12 @@ const countTransparentPixels = (pixels: Uint8Array, threshold: number = 16) => {
   return count;
 };
 
-suite('LDAmbientOcclusion render integration', () => {
+const countOpaquePixels = (pixels: Uint8Array, threshold: number = 16) =>
+    pixels.length / 4 - countTransparentPixels(pixels, threshold);
+
+suite('LDAmbientOcclusion render integration', function() {
+  this.timeout(10000);
+
   let element: ModelViewerElement;
 
   setup(async () => {
@@ -90,6 +102,12 @@ suite('LDAmbientOcclusion render integration', () => {
   test('registers an effect composer when initially enabled', async () => {
     expect(element.ambientOcclusion).to.equal(true);
     expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(
+        (element[$scene].effectRenderer as unknown as {
+          hasAmbientOcclusion(): boolean
+        })
+            .hasAmbientOcclusion())
+        .to.equal(true);
   });
 
   test('matches diffuse output when AO intensity is zero', async () => {
@@ -175,5 +193,34 @@ suite('LDAmbientOcclusion render integration', () => {
             diffuseTransparentPixels,
             Math.max(32, Math.floor(diffuseTransparentPixels * 0.05)),
             'Composite output should preserve the same transparent background');
+  });
+
+  test('Bag', async () => {
+    const loaded = waitForEvent(element, 'load');
+    element.src = BAG_GLB;
+
+    await loaded;
+    await waitFrames();
+
+    expect(element.ambientOcclusion).to.equal(true);
+    expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(countOpaquePixels(readPixels(element)))
+        .to.be.greaterThan(0, 'Bag should render visible pixels with AO enabled');
+  });
+
+  test('CB1', async () => {
+    const loaded = waitForEvent(element, 'load');
+    const environmentChanged = waitForEvent(element, 'environment-change');
+    element.environmentImage = CB1_HDR;
+    element.src = CB1_GLB;
+
+    await Promise.all([loaded, environmentChanged]);
+    await waitFrames();
+
+    expect(element.ambientOcclusion).to.equal(true);
+    expect(element.environmentImage).to.equal(CB1_HDR);
+    expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(countOpaquePixels(readPixels(element)))
+        .to.be.greaterThan(0, 'CB1 should render visible pixels with AO enabled');
   });
 });

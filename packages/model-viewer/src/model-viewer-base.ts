@@ -69,6 +69,7 @@ export const $progressTracker = Symbol('progressTracker');
 export const $getLoaded = Symbol('getLoaded');
 export const $getModelIsVisible = Symbol('getModelIsVisible');
 export const $shouldAttemptPreload = Symbol('shouldAttemptPreload');
+export const $updateLDEnvironment = Symbol('updateLDEnvironment');
 
 export interface Vector3D {
   x: number
@@ -638,6 +639,11 @@ export default class ModelViewerElementBase extends ReactiveElement {
           });
         });
       });
+
+      const updateLDEnvironment = (this as any)[$updateLDEnvironment];
+      if (typeof updateLDEnvironment === 'function') {
+        updateLDEnvironment.call(this);
+      }
     } catch (error) {
       this.dispatchEvent(new CustomEvent(
           'error', {detail: {type: 'loadfailure', sourceError: error}}));
