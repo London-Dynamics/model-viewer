@@ -55,6 +55,20 @@ const outputOptions = [
     plugins,
     onwarn
   },
+  {
+    input: './lib/example-utils/performance-analyser.js',
+    output: {
+      file: './examples/built/performance-analyser.js',
+      sourcemap: true,
+      format: 'esm',
+      name: 'performance-analyser'
+    },
+    watch: {
+      include: watchFiles,
+    },
+    plugins,
+    onwarn
+  },
 ];
 
 export default outputOptions;

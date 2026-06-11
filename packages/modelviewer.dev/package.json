@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "description": "<model-viewer> web site and live documentation",
   "scripts": {
-    "test": "echo \"No tests specified\" && exit 0",
+    "test": "node ./test/ld-path-tracer-example.test.mjs && node ./test/ld-ao-bloom-path-tracer-example.test.mjs",
     "test:ci": "npm test",
     "clean": "rm -rf ./examples/built ./lib ./dist",
     "build": "tsc && rollup -c",
