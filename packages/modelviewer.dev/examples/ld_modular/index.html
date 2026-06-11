@@ -1107,7 +1107,9 @@
                 <p>
                   Click objects to select one at a time, hold
                   <kbd>Shift</kbd> while clicking to add or remove items from the
-                  selection, then drag or rotate the selection as a group. Use
+                  selection, then drag or rotate the selection as a group. Seeded
+                  models use the Khronos Duck (offset origin) so rotation-disc
+                  behaviour matches the Rotation Controls example. Use
                   <strong>Select all</strong> and <strong>Deselect all</strong>
                   to exercise the programmatic APIs. Switch between
                   <span class="attribute">group</span> and
@@ -1163,7 +1165,7 @@
                                 id="multi-select-seed"
                                 class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
                               >
-                                Seed sofa parts
+                                Seed ducks
                               </button>
                               <button
                                 type="button"
@@ -1259,13 +1261,16 @@
 
                       if (!modelViewer) return;
 
+                      const DUCK_URL =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf';
+
                       const SEED_ITEMS = [
                         {
-                          id: 'ms-corner-l',
+                          id: 'ms-duck-a',
                           part: {
                             type: 'scene',
-                            id: 'part-corner-l',
-                            name: 'Corner L',
+                            id: 'duck',
+                            name: 'Duck A',
                           },
                           transform: {
                             position: [-1.4, 0, 0],
@@ -1274,11 +1279,11 @@
                           },
                         },
                         {
-                          id: 'ms-middle',
+                          id: 'ms-duck-b',
                           part: {
                             type: 'scene',
-                            id: 'part-middle',
-                            name: 'Middle',
+                            id: 'duck',
+                            name: 'Duck B',
                           },
                           transform: {
                             position: [0, 0, 0],
@@ -1287,36 +1292,21 @@
                           },
                         },
                         {
-                          id: 'ms-corner-r',
+                          id: 'ms-duck-c',
                           part: {
                             type: 'scene',
-                            id: 'part-corner-r',
-                            name: 'Corner R',
+                            id: 'duck',
+                            name: 'Duck C',
                           },
                           transform: {
                             position: [1.4, 0, 0],
-                            rotation: [0, 0, 0],
+                            rotation: [0, Math.PI / 4, 0],
                             scale: [1, 1, 1],
                           },
                         },
                       ];
 
-                      const partToUrl = {
-                        'part-corner-l':
-                          '../../shared-assets/models/sofa_corner_left.glb',
-                        'part-middle':
-                          '../../shared-assets/models/sofa_middle.glb',
-                        'part-corner-r':
-                          '../../shared-assets/models/sofa_corner_right.glb',
-                      };
-
-                      const getHighResUrl = async (item) => {
-                        const partId = item?.part?.id;
-                        return (
-                          (partId && partToUrl[partId]) ||
-                          '../../shared-assets/models/sofa_middle.glb'
-                        );
-                      };
+                      const getHighResUrl = async () => DUCK_URL;
 
                       const formatSelectionReadout = (detail) => {
                         if (!detail) {

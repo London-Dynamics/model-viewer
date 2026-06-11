@@ -1461,6 +1461,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _updateRotationPivotFromSelection() {
+      if (this._rotationGestureActive) {
+        return;
+      }
       const targets = this._getRotationDiscTargets();
       this._computeSelectionPivotFromTargets(targets, this._rotationPivotWorld);
     }
@@ -1646,29 +1649,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       mutate();
       this._emitTransformUpdate(obj);
       this._endTransformSession(obj);
-    }
-
-    private _applyRotationDeltaY(target: Object3D, deltaDeg: number) {
-      if (Math.abs(deltaDeg) <= 1e-4) {
-        return;
-      }
-      const order = target.rotation.order;
-      const current = this._getRotationFromObject(target);
-      const finalDegs: [number, number, number] = [
-        current[0],
-        current[1] + deltaDeg,
-        current[2],
-      ];
-      this._setLogicalRotationOnObject(target, finalDegs);
-      const rotation = new Euler(
-        finalDegs[0] * (Math.PI / 180),
-        finalDegs[1] * (Math.PI / 180),
-        finalDegs[2] * (Math.PI / 180),
-        order
-      );
-      target.rotation.copy(rotation);
-      this.requestShadowUpdate();
-      (this as any)[$needsRender]();
     }
 
     private _dispatchObjectRemoveEvent(object: Object3D) {
@@ -4196,11 +4176,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         e.clientY
       );
       if (!discHit) return false;
-      this._rotationGestureActive = true;
       this._rotationGesturePointerId = e.pointerId;
       this._rotationGestureStartAngleRad = discHit.angleRad;
       this._rotationGestureTargets = targets;
       this._updateRotationPivotFromSelection();
+      this._rotationGestureActive = true;
       if (targets.length > 1) {
         this._rotationGestureStartRotationY = 0;
         this._beginSelectionTransformSession(targets, {
@@ -4286,7 +4266,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             session.gestureDelta.rotation[1] = normalizeAngleDeltaDeg(targetY);
             this._applyRotationDeltaYAroundPivot(
               targets,
-              this._rotationPivotWorld,
+              session.startPivotPosition,
               applyDeltaDeg
             );
             this._emitSelectionTransformUpdate();
@@ -4297,7 +4277,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         const currentY = this._getRotationFromObject(target)[1];
         const applyDeltaDeg = targetY - currentY;
         if (Math.abs(applyDeltaDeg) > 1e-4) {
-          this._applyRotationDeltaY(target, applyDeltaDeg);
+          this._applyRotationDeltaYAroundPivot(
+            [target],
+            this._rotationPivotWorld,
+            applyDeltaDeg
+          );
           const session = this._transformSessions.get(target);
           if (session?.source === 'rotation-disc-y') {
             session.gestureRotationYDelta += applyDeltaDeg;
@@ -4350,6 +4334,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any)[$controls]?.enableDragInteraction?.();
       } catch (_) {}
       (this as any)._isDragging = false;
+      this._updateRotationPivotFromSelection();
+      try {
+        this._updateRotationControlDisc();
+      } catch (_) {}
       queueMicrotask(() => {
         this._suppressSelectionPointerUp = false;
       });
