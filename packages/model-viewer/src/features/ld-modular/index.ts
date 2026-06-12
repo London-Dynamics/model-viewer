@@ -2741,6 +2741,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private dragStartMousePosition: Vector2 = new Vector2();
     private dragStartPosition: Vector3 = new Vector3();
     private dragOffset: Vector3 = new Vector3();
+    private _tmpDragWorldPos: Vector3 = new Vector3();
+    private _tmpDragDesiredLocal: Vector3 = new Vector3();
     private floorPlane: Plane = new Plane(new Vector3(0, 1, 0), 0);
     private originalFloorY: number | undefined = undefined;
     /**
@@ -4760,12 +4762,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       for (const target of roots) {
         this._dragStartPositions.set(target.uuid, target.position.clone());
         if (hasFloorHit) {
+          target.updateMatrixWorld(true);
+          target.getWorldPosition(this._tmpDragWorldPos);
           this._dragOffsets.set(
             target.uuid,
             new Vector3(
-              target.position.x - clickPoint.x,
+              this._tmpDragWorldPos.x - clickPoint.x,
               0,
-              target.position.z - clickPoint.z
+              this._tmpDragWorldPos.z - clickPoint.z
             )
           );
         } else {
@@ -4898,14 +4902,28 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         const offset =
           this._dragOffsets.get(object.uuid) ?? this.dragOffset;
-        const desiredX = intersectionPoint.x + offset.x;
-        const desiredZ = intersectionPoint.z + offset.z;
+
+        object.updateMatrixWorld(true);
+        object.getWorldPosition(this._tmpDragWorldPos);
+        this._tmpDragDesiredLocal.set(
+          intersectionPoint.x + offset.x,
+          this._tmpDragWorldPos.y,
+          intersectionPoint.z + offset.z
+        );
+        if (object.parent) {
+          object.parent.worldToLocal(this._tmpDragDesiredLocal);
+        }
+
         const desiredY =
           object.userData?.isSnappedGroup === true
             ? object.position.y
             : this.originalFloorY || 0;
 
-        object.position.set(desiredX, desiredY, desiredZ);
+        object.position.set(
+          this._tmpDragDesiredLocal.x,
+          desiredY,
+          this._tmpDragDesiredLocal.z
+        );
 
         this._setPendingSnapConnection(null);
         if (this.snappingEnabled) {
