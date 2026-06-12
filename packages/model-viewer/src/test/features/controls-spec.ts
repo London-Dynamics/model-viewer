@@ -476,6 +476,39 @@ suite('Controls', () => {
       expect(cc.touches.one).to.equal(CameraControls.ACTION.TOUCH_ROTATE);
     });
 
+    test('transient drag enable does not override disableCameraDrag', async () => {
+      await timePasses();
+      const adapter = controls as any;
+      const cc = adapter.thirdPartyControls;
+
+      element.disableCameraDrag();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.NONE);
+
+      adapter.enableDragInteraction();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.NONE);
+
+      element.enableCameraDrag();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.ROTATE);
+    });
+
+    test('disableCameraDrag does not override transient drag disable', async () => {
+      await timePasses();
+      const adapter = controls as any;
+      const cc = adapter.thirdPartyControls;
+
+      adapter.disableDragInteraction();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.NONE);
+
+      element.disableCameraDrag();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.NONE);
+
+      element.enableCameraDrag();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.NONE);
+
+      adapter.enableDragInteraction();
+      expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.ROTATE);
+    });
+
     suite('when user is interacting', () => {
       test('sets an appropriate camera-change event source', async () => {
         await rafPasses();

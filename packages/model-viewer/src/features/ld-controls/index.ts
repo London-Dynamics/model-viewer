@@ -162,9 +162,12 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   // Methods that need to be implemented by the adapter
   enableInteraction(): void;
   disableInteraction(): void;
-  /** Disables orbit/pan drag while keeping wheel/pinch zoom. */
+  /** Disables orbit/pan drag while keeping wheel/pinch zoom (transient, e.g. hover). */
   disableDragInteraction(): void;
   enableDragInteraction(): void;
+  /** Disables orbit/pan drag via {@link disableCameraDrag} until paired enable. */
+  disableExternalDragInteraction(): void;
+  enableExternalDragInteraction(): void;
   applyOptions(options: any): void;
   updateTouchActionStyle(): void;
   setDamperDecayTime(decay: number): void;
@@ -220,7 +223,17 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _enablePan: boolean = true;
   private _enableTap: boolean = true;
   private _interactionMode: InteractionMode = 'rotate';
-  private _dragInteractionDisabled: boolean = false;
+  /** Transient disables (hover, object drag, rotation gesture). */
+  private _internalDragDisableCount: number = 0;
+  /** API disables via disableCameraDrag / enableCameraDrag. */
+  private _externalDragDisableCount: number = 0;
+
+  private get isDragInteractionDisabled(): boolean {
+    return (
+      this._internalDragDisableCount > 0 ||
+      this._externalDragDisableCount > 0
+    );
+  }
 
   // Tap detection state
   private startTime: number = 0;
@@ -506,7 +519,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
         : touchZoomAction;
     }
 
-    if (this._dragInteractionDisabled) {
+    if (this.isDragInteractionDisabled) {
       this.applyDragDisabledBindings();
     }
   }
@@ -519,19 +532,52 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     if (!this.canEnableInteraction()) {
       return;
     }
-    if (this._dragInteractionDisabled) {
+    const wasDisabled = this.isDragInteractionDisabled;
+    this._internalDragDisableCount++;
+    if (!wasDisabled) {
+      this.ensureControlsListening();
+      this.applyInteractionBindings();
+    }
+  }
+
+  enableDragInteraction(): void {
+    if (this._internalDragDisableCount <= 0) {
       return;
     }
-    this._dragInteractionDisabled = true;
+    this._internalDragDisableCount--;
+    if (this.isDragInteractionDisabled) {
+      return;
+    }
+    if (!this.canEnableInteraction()) {
+      this.disableInteraction();
+      return;
+    }
     this.ensureControlsListening();
     this.applyInteractionBindings();
   }
 
-  enableDragInteraction(): void {
-    if (!this._dragInteractionDisabled) {
+  /** Disables orbit/pan pointer drags via disableCameraDrag(). */
+  disableExternalDragInteraction(): void {
+    if (!this.canEnableInteraction()) {
       return;
     }
-    this._dragInteractionDisabled = false;
+    const wasDisabled = this.isDragInteractionDisabled;
+    this._externalDragDisableCount++;
+    if (!wasDisabled) {
+      this.ensureControlsListening();
+      this.applyInteractionBindings();
+    }
+  }
+
+  /** Restores orbit/pan pointer drags after disableCameraDrag(). */
+  enableExternalDragInteraction(): void {
+    if (this._externalDragDisableCount <= 0) {
+      return;
+    }
+    this._externalDragDisableCount--;
+    if (this.isDragInteractionDisabled) {
+      return;
+    }
     if (!this.canEnableInteraction()) {
       this.disableInteraction();
       return;
@@ -575,13 +621,14 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       this.disableInteraction();
       return;
     }
-    this._dragInteractionDisabled = false;
+    this._internalDragDisableCount = 0;
     this.ensureControlsListening();
     this.applyInteractionBindings();
   }
 
   disableInteraction(): void {
-    this._dragInteractionDisabled = false;
+    this._internalDragDisableCount = 0;
+    this._externalDragDisableCount = 0;
     this.thirdPartyControls.enabled = false;
     // Remove tap detection listeners
     this.domElement.removeEventListener('mousedown', this.onMouseDown);
@@ -1447,12 +1494,12 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     /** Disables orbit/pan pointer drags while keeping wheel and pinch zoom. */
     disableCameraDrag() {
-      this[$controls].disableDragInteraction();
+      this[$controls].disableExternalDragInteraction();
     }
 
     /** Restores orbit/pan pointer drags after {@link disableCameraDrag}. */
     enableCameraDrag() {
-      this[$controls].enableDragInteraction();
+      this[$controls].enableExternalDragInteraction();
     }
 
     connectedCallback() {
