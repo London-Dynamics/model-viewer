@@ -108,6 +108,16 @@ Add `.ld-hud-passive` when the overlay must not block viewport interaction. Add 
 </div>
 ```
 
+**Segmented button group:**
+
+```html
+<div class="ld-button-group">
+  <button type="button" class="ld-button-group-btn-first">First</button>
+  <button type="button" class="ld-button-group-btn">Middle</button>
+  <button type="button" class="ld-button-group-btn-last">Last</button>
+</div>
+```
+
 ## Cursor Cloud specific instructions
 
 ### Overview
