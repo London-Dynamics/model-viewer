@@ -32,6 +32,8 @@
       href="../../assets/favicon.png"
     />
 
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
   <body class="ld">
@@ -84,47 +86,30 @@
                     interaction-prompt="none"
                     ground-elevation="0.6"
                   >
-                    <div class="absolute bottom-0 inset-x-0 p-2">
-                      <div class="bg-white shadow-sm rounded-lg">
-                        <div class="px-4 py-5">
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
                           <h3
-                            class="text-base! flex items-center justify-between m-0! font-normal! text-gray-400"
+                            class="ld-panel-title flex items-center justify-between"
                           >
                             <span>Control Panel</span>
                             <button
                               type="button"
-                              class="text-gray-400 group hover:text-blue-500 cursor-pointer"
+                              class="text-gray-400 hover:text-blue-500 cursor-pointer"
                               data-toggle="collapse"
                               data-target="#control-panel-body"
                               aria-expanded="true"
                               aria-controls="control-panel-body"
                             >
                               <span class="sr-only">Toggle Control Panel</span>
-                              <svg
-                                class="size-5 group-aria-expanded:rotate-180 transition-transform"
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 20 20"
-                                fill="currentColor"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  fill-rule="evenodd"
-                                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.27a.75.75 0 01.02-1.06z"
-                                  clip-rule="evenodd"
-                                />
-                              </svg>
+                              <span aria-hidden="true">▾</span>
                             </button>
                           </h3>
-                          <div
-                            id="control-panel-body"
-                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
-                          >
-                            <div
-                              class="flex items-center justify-between gap-4"
-                            >
+                          <div id="control-panel-body" class="ld-sections-loose">
+                            <div class="ld-field-row-between">
                               <label
                                 for="water-distortion-scale"
-                                class="block text-sm font-medium text-gray-500"
+                                class="ld-label-muted"
                                 >Distortion Scale</label
                               >
                               <input
@@ -134,15 +119,13 @@
                                 max="20"
                                 step="0.1"
                                 value="3.7"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                class="ld-range w-1/2 shrink-0"
                               />
                             </div>
-                            <div
-                              class="w-full flex items-center justify-between gap-4"
-                            >
+                            <div class="ld-field-row-between w-full">
                               <label
                                 for="water-size"
-                                class="block text-sm font-medium text-gray-500"
+                                class="ld-label-muted"
                                 >Water Size</label
                               >
                               <input
@@ -152,15 +135,13 @@
                                 max="10"
                                 step="0.1"
                                 value="1"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                class="ld-range w-1/2 shrink-0"
                               />
                             </div>
-                            <div
-                              class="w-full flex items-center justify-between gap-4"
-                            >
+                            <div class="ld-field-row-between w-full">
                               <label
                                 for="sun-elevation"
-                                class="block text-sm font-medium text-gray-500"
+                                class="ld-label-muted"
                                 >Sun Elevation</label
                               >
                               <input
@@ -170,15 +151,13 @@
                                 max="90"
                                 step="0.1"
                                 value="2"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                class="ld-range w-1/2 shrink-0"
                               />
                             </div>
-                            <div
-                              class="w-full flex items-center justify-between gap-4"
-                            >
+                            <div class="ld-field-row-between w-full">
                               <label
                                 for="sun-azimuth"
-                                class="block text-sm font-medium text-gray-500"
+                                class="ld-label-muted"
                                 >Sun Azimuth</label
                               >
                               <input
@@ -188,7 +167,7 @@
                                 max="180"
                                 step="0.1"
                                 value="180"
-                                class="w-1/2 shrink-0 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                                class="ld-range w-1/2 shrink-0"
                               />
                             </div>
                           </div>

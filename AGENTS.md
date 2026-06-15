@@ -1,5 +1,113 @@
 # Agents
 
+## LD example UI guidelines
+
+LD examples under `packages/modelviewer.dev/examples/ld_*/` use a shared component stylesheet based on [Tailwind UI](https://tailwindui.com/) patterns.
+
+### Required assets
+
+Every LD example page should include in `<head>`:
+
+```html
+<link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+<link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+<style type="text/tailwindcss"></style>
+<script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+<script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+```
+
+Set `<body class="ld">` so default docs-site button/select/grid overrides in `examples.css` do not clash with Tailwind controls.
+
+The empty `<style type="text/tailwindcss">` plus `ld-ui-loader.js` is required because the Tailwind Play CDN only processes inline `text/tailwindcss` blocks — it does not compile external `<link>` tags or `@import` file paths. The loader synchronously fetches `ld-ui.css` into that block before the Play CDN script runs.
+
+### When to use
+
+Use `ld-*` classes whenever an LD example includes interactive controls for testing (sliders, buttons, forms, toggles) or viewport status readouts.
+
+Prefer `ld-*` classes over long inline Tailwind utility strings. Add new component classes to [`packages/modelviewer.dev/styles/ld-ui.css`](packages/modelviewer.dev/styles/ld-ui.css) when a pattern repeats across examples.
+
+### Conventions
+
+- **Tailwind UI** is the visual source of truth
+- **Light mode only** — no `dark:*` classes
+- **Blue accents** (`blue-600`, `blue-500`) for focus and active states — never indigo
+- **No Heroicons** — use unicode (e.g. `▾` for select chevrons) or emoji for icons
+- **Range sliders** — use `.ld-range`; do not restyle unless there is a repo-wide design change
+
+### Layout patterns
+
+**Control docks** (bottom panels with form controls):
+
+```html
+<div class="ld-panel">
+  <div class="ld-card">
+    <div class="ld-card-body">
+      <h3 class="ld-panel-title">Control Panel</h3>
+      <div class="ld-sections">…</div>
+    </div>
+  </div>
+</div>
+```
+
+**Status readouts** (semi-transparent HUD overlays in viewport corners):
+
+```html
+<div class="ld-hud ld-hud-top-right">undo: 0 | redo: 0</div>
+<div class="ld-hud ld-hud-top-left ld-hud-passive">transform: idle</div>
+```
+
+Add `.ld-hud-passive` when the overlay must not block viewport interaction. Add `.ld-hud-narrow` to cap width (`max-w-xs`).
+
+### Class reference
+
+| Class | Purpose |
+|---|---|
+| `.ld-panel` | Bottom overlay wrapper |
+| `.ld-card` / `.ld-card-body` / `.ld-card-toolbar` | White card shell and padding variants |
+| `.ld-sections` / `.ld-section-title` | Divided sections inside a card |
+| `.ld-axis-grid` / `.ld-field-row` / `.ld-field` | Grid and row layout for controls |
+| `.ld-hud` + `.ld-hud-top-left` etc. | Viewport status readout overlays |
+| `.ld-hud-passive` / `.ld-hud-narrow` | HUD modifiers |
+| `.ld-panel-title` / `.ld-label` / `.ld-label-muted` / `.ld-helper-text` | Typography |
+| `.ld-button` / `.ld-button-primary` / `.ld-button-danger` / `.ld-button-ghost` | Buttons |
+| `.ld-button-sm` / `.ld-button-pill` | Compact and pill-shaped buttons |
+| `.ld-switch` + `.ld-switch-thumb` | `role="switch"` toggle buttons |
+| `.ld-switch-row` | Horizontal switch + label row |
+| `.ld-sections-loose` / `.ld-field-row-between` | Spacious sections / spaced control rows |
+| `.ld-button-group` + `.ld-button-group-btn-*` | Segmented button groups |
+| `.ld-input` / `.ld-input-number` / `.ld-textarea` | Text inputs |
+| `.ld-select-wrap` + `.ld-select` + `.ld-select-chevron` | Select with chevron |
+| `.ld-toggle` + `.ld-toggle-thumb` + `.ld-toggle-input` | Toggle switch (checkbox) |
+| `.ld-range` | Range slider track |
+| `.ld-color-input` | Color picker |
+| `.ld-badge` / `.ld-divider` | Status pill / horizontal rule |
+
+**Select with chevron:**
+
+```html
+<div class="ld-select-wrap">
+  <select class="ld-select" id="my-select">…</select>
+  <span class="ld-select-chevron" aria-hidden="true">▾</span>
+</div>
+```
+
+**Switch button (`role="switch"`):**
+
+```html
+<button type="button" class="ld-switch" role="switch" aria-checked="false">
+  <span class="ld-switch-thumb" aria-hidden="true"></span>
+</button>
+```
+
+**Toggle switch:**
+
+```html
+<div class="ld-toggle">
+  <span class="ld-toggle-thumb"></span>
+  <input type="checkbox" class="ld-toggle-input" aria-label="Use setting" />
+</div>
+```
+
 ## Cursor Cloud specific instructions
 
 ### Overview

@@ -1,0 +1,227 @@
+@import 'tailwindcss';
+
+/* Layout */
+.ld-panel {
+  @apply absolute bottom-0 inset-x-0 p-2;
+}
+
+.ld-card {
+  @apply overflow-hidden rounded-lg bg-white/80 backdrop-blur shadow;
+}
+
+.ld-card-body {
+  @apply px-3 py-4 sm:p-4;
+}
+
+.ld-card-toolbar {
+  @apply p-3 flex flex-wrap gap-3 items-center;
+}
+
+.ld-sections {
+  @apply mt-2 divide-y divide-black/5 *:py-2 -my-2;
+}
+
+.ld-sections-loose {
+  @apply mt-3 divide-y divide-gray-100 *:py-3 -my-3;
+}
+
+.ld-field-row-between {
+  @apply flex items-center justify-between gap-4;
+}
+
+.ld-axis-grid {
+  @apply grid grid-cols-3! grid-rows-none! gap-4!;
+}
+
+.ld-field-row {
+  @apply flex items-center gap-2;
+}
+
+.ld-field {
+  @apply mt-2;
+}
+
+/* HUD overlays */
+.ld-hud {
+  @apply z-30 rounded-md bg-black/70 px-3 py-2 text-xs text-white font-mono whitespace-pre;
+}
+
+.ld-hud-top-left {
+  @apply absolute left-2 top-2;
+}
+
+.ld-hud-top-right {
+  @apply absolute right-2 top-2;
+}
+
+.ld-hud-bottom-left {
+  @apply absolute left-2 bottom-2;
+}
+
+.ld-hud-bottom-right {
+  @apply absolute right-2 bottom-2;
+}
+
+.ld-hud-passive {
+  @apply pointer-events-none;
+}
+
+.ld-hud-narrow {
+  @apply max-w-xs;
+}
+
+/* Typography */
+.ld-panel-title {
+  @apply text-base! m-0! font-normal! text-gray-400;
+}
+
+.ld-section-title {
+  @apply mt-3 text-xs! uppercase;
+}
+
+.ld-label {
+  @apply block text-sm/6 font-medium text-gray-900 whitespace-nowrap;
+}
+
+.ld-label-muted {
+  @apply block text-sm font-medium text-gray-400;
+}
+
+.ld-helper-text {
+  @apply text-xs text-gray-500;
+}
+
+/* Controls */
+.ld-button {
+  @apply rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50;
+}
+
+.ld-button-sm {
+  @apply rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50;
+}
+
+.ld-button-pill {
+  @apply rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50;
+}
+
+.ld-button-primary {
+  @apply rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500;
+}
+
+.ld-button-danger {
+  @apply rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500;
+}
+
+.ld-button-ghost {
+  @apply rounded-md bg-transparent px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100;
+}
+
+.ld-button-group {
+  @apply isolate inline-flex rounded-md shadow-sm;
+}
+
+.ld-button-group-btn {
+  @apply relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600;
+}
+
+.ld-button-group-btn-first {
+  @apply relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600;
+}
+
+.ld-button-group-btn-last {
+  @apply relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600;
+}
+
+.ld-input {
+  @apply block w-full rounded-md bg-white px-3 py-1.5 text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6;
+}
+
+.ld-input-number {
+  @apply block rounded-md bg-white px-3 py-1.5 text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6 w-20;
+}
+
+.ld-textarea {
+  @apply block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6;
+}
+
+.ld-select-wrap {
+  @apply grid grid-cols-1;
+}
+
+.ld-select {
+  @apply col-start-1 row-start-1 w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-8 text-base text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-blue-600 sm:text-sm/6;
+}
+
+.ld-select-chevron {
+  @apply pointer-events-none col-start-1 row-start-1 mr-2 size-5 self-center justify-self-end text-gray-500 sm:size-4;
+}
+
+.ld-toggle {
+  @apply relative inline-flex w-11 shrink-0 rounded-full bg-gray-200 p-0.5 outline-offset-2 outline-blue-600 ring-1 ring-inset ring-gray-900/5 transition-colors duration-200 ease-in-out has-[:checked]:bg-blue-600 has-[:focus-visible]:outline has-[:focus-visible]:outline-2;
+}
+
+.ld-toggle-thumb {
+  @apply size-5 rounded-full bg-white shadow-sm ring-1 ring-gray-900/5 transition-transform duration-200 ease-in-out;
+}
+
+.ld-toggle:has(:checked) .ld-toggle-thumb {
+  transform: translateX(1.25rem);
+}
+
+.ld-toggle-input {
+  @apply absolute inset-0 size-full appearance-none focus:outline-none;
+}
+
+.ld-switch {
+  @apply relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden aria-checked:bg-blue-600;
+}
+
+.ld-switch-thumb {
+  @apply pointer-events-none inline-block size-5 translate-x-0 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out;
+}
+
+.ld-switch[aria-checked='true'] .ld-switch-thumb {
+  transform: translateX(1.25rem);
+}
+
+.ld-switch-row {
+  @apply flex items-center;
+}
+
+.ld-range {
+  @apply w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer;
+}
+
+.ld-color-input {
+  @apply h-8 w-10 p-0 border-0 bg-transparent;
+}
+
+.ld-badge {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700;
+}
+
+.ld-divider {
+  @apply border-t border-gray-200;
+}
+
+/* Range slider thumbs (cannot use @apply on pseudo-elements) */
+.ld-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background-color: #fff;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  border: 1px solid rgb(0 0 0 / 0.05);
+  cursor: pointer;
+}
+
+.ld-range::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background-color: #fff;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  border: 1px solid rgb(0 0 0 / 0.05);
+  cursor: pointer;
+}

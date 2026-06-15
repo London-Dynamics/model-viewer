@@ -32,74 +32,11 @@
       href="../../assets/favicon.png"
     />
 
-    <style>
-      .controls {
-        position: absolute;
-        bottom: 16px;
-        left: 16px;
-        right: 16px;
-        max-width: unset;
-        transform: unset;
-        pointer-events: auto;
-        border-radius: 4px;
-        background-color: #fff;
-        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
-        padding: 0.5rem 1rem;
-        color: #999;
-      }
-
-      .flex-col {
-        display: flex;
-        flex-direction: column;
-      }
-      .flex-row {
-        display: flex;
-        flex-direction: row;
-      }
-      .controls h5 {
-        margin: 0 0 0.25em 0;
-      }
-      .controls label {
-        color: gray;
-        font-size: 0.6rem;
-        text-transform: uppercase;
-        line-height: 1em;
-      }
-      .controls input {
-        width: 100%;
-      }
-      .controls button {
-        border: 1px solid #ccc;
-        padding: 0.25em 0.5em;
-        border-radius: 4px;
-        background: white;
-        color: #111;
-        cursor: pointer;
-      }
-      .controls button:hover {
-        background: #eee;
-      }
-      .controls button:active {
-        background: cornflowerblue;
-        color: white;
-      }
-      .gap-3 {
-        gap: 1rem;
-      }
-      .p-3 {
-        padding: 1rem;
-      }
-      .px-3 {
-        padding-left: 1rem;
-        padding-right: 1rem;
-      }
-      .py-3 {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-      }
-    </style>
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
-  <body>
+  <body class="ld">
     <div class="examples-page">
       <div class="sidebar" id="sidenav"></div>
       <div id="toggle"></div>
@@ -135,11 +72,15 @@
                     alt="An animated 3D model a bedside lamp"
                     tone-mapping="agx"
                   >
-                    <div class="controls flex-row gap-3">
-                      <button type="button" id="toggleLights">Turn ON</button>
-                      <button type="button" id="toggleAttribute">
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-toolbar">
+                      <button type="button" id="toggleLights" class="ld-button-sm">Turn ON</button>
+                      <button type="button" id="toggleAttribute" class="ld-button-sm">
                         Toggle HTML attribute
                       </button>
+                        </div>
+                      </div>
                     </div>
                   </model-viewer>
 

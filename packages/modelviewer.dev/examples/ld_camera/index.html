@@ -50,6 +50,8 @@
     ></script>
 
     <!-- Tailwind CSS via CDN: -->
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
   <body class="ld">
@@ -98,30 +100,29 @@
                     shadow-intensity="1"
                     viewport-gizmo
                   >
-                    <div
-                      class="bg-white px-4 *:py-2 -my-2 divide-y divide-stone-100 absolute bottom-4 left-4 rounded-md shadow-md"
-                    >
-                      <fieldset class="flex items-center gap-2">
-                        <label class="text-stone-400">States</label>
+                    <div class="ld-card absolute bottom-4 left-4">
+                      <div class="ld-card-body ld-sections">
+                      <fieldset class="ld-field-row">
+                        <label class="ld-label-muted">States</label>
                         <button
-                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="ld-button-sm"
                           type="button"
                           id="saveState"
                         >
                           Save State
                         </button>
                         <button
-                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="ld-button-sm"
                           type="button"
                           id="resetCamera"
                         >
                           Reset to State
                         </button>
                       </fieldset>
-                      <fieldset class="flex items-center gap-2">
-                        <label class="text-stone-400">Rotation</label>
+                      <fieldset class="ld-field-row">
+                        <label class="ld-label-muted">Rotation</label>
                         <button
-                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="rotate-camera ld-button-sm"
                           type="button"
                           data-azimuth="0"
                           data-polar="0"
@@ -129,7 +130,7 @@
                           T
                         </button>
                         <button
-                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="rotate-camera ld-button-sm"
                           type="button"
                           data-azimuth="0"
                           data-polar="180"
@@ -137,7 +138,7 @@
                           Btm
                         </button>
                         <button
-                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="rotate-camera ld-button-sm"
                           type="button"
                           data-azimuth="-90"
                           data-polar="90"
@@ -145,7 +146,7 @@
                           L
                         </button>
                         <button
-                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="rotate-camera ld-button-sm"
                           type="button"
                           data-azimuth="90"
                           data-polar="90"
@@ -153,7 +154,7 @@
                           R
                         </button>
                         <button
-                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="rotate-camera ld-button-sm"
                           type="button"
                           data-azimuth="0"
                           data-polar="90"
@@ -161,7 +162,7 @@
                           F
                         </button>
                         <button
-                          class="rotate-camera rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="rotate-camera ld-button-sm"
                           type="button"
                           data-azimuth="180"
                           data-polar="90"
@@ -170,24 +171,25 @@
                         </button>
                       </fieldset>
                       <fieldset>
-                        <label class="text-stone-400">Mode</label>
+                        <label class="ld-label-muted">Mode</label>
                         <button
-                          class="camera-mode rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="camera-mode ld-button-sm"
                           type="button"
                           data-type="perspective"
                         >
                           Perspective
                         </button>
                         <button
-                          class="camera-mode rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="camera-mode ld-button-sm"
                           type="button"
                           data-type="orthographic"
                         >
                           Orthographic
                         </button>
                       </fieldset>
-                    </div></model-viewer
-                  >
+                      </div>
+                    </div>
+                  </model-viewer>
                   <script type="module">
                     (() => {
                       const modelViewer =
@@ -299,21 +301,18 @@
                     interaction-prompt="none"
                     shadow-intensity="1"
                   >
-                    <div
-                      class="bg-white px-4 *:py-2 -my-2 divide-y divide-stone-100 absolute bottom-4 left-4 rounded-md shadow-md"
-                    >
-                      <div class="flex items-center justify-between gap-4">
-                        <div class="flex items-center">
+                    <div class="ld-card absolute bottom-4 left-4">
+                      <div class="ld-card-body ld-sections">
+                      <div class="ld-field-row-between">
+                        <div class="ld-switch-row">
                           <button
                             type="button"
                             id="interaction-camera-type-toggle"
                             role="switch"
                             aria-checked="false"
-                            class="group relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors aria-checked:bg-blue-600"
+                            class="ld-switch"
                           >
-                            <span
-                              class="inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform group-aria-checked:translate-x-5"
-                            ></span>
+                            <span class="ld-switch-thumb"></span>
                           </button>
                           <span class="ml-2 text-sm" id="camera-type-toggle-label">
                             <span class="font-medium text-gray-900"
@@ -325,18 +324,16 @@
                           </span>
                         </div>
                       </div>
-                      <div class="flex items-center justify-between gap-4">
-                        <div class="flex items-center">
+                      <div class="ld-field-row-between">
+                        <div class="ld-switch-row">
                           <button
                             type="button"
                             id="interaction-mode-toggle"
                             role="switch"
                             aria-checked="false"
-                            class="group relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors aria-checked:bg-blue-600"
+                            class="ld-switch"
                           >
-                            <span
-                              class="inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform group-aria-checked:translate-x-5"
-                            ></span>
+                            <span class="ld-switch-thumb"></span>
                           </button>
                           <span class="ml-2 text-sm" id="interaction-mode-toggle-label">
                             <span class="font-medium text-gray-900"
@@ -348,18 +345,16 @@
                           </span>
                         </div>
                       </div>
-                      <div class="flex items-center justify-between gap-4">
-                        <div class="flex items-center">
+                      <div class="ld-field-row-between">
+                        <div class="ld-switch-row">
                           <button
                             type="button"
                             id="camera-controls-toggle"
                             role="switch"
                             aria-checked="true"
-                            class="group relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 transition-colors aria-checked:bg-blue-600"
+                            class="ld-switch"
                           >
-                            <span
-                              class="inline-block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow transition-transform group-aria-checked:translate-x-5"
-                            ></span>
+                            <span class="ld-switch-thumb"></span>
                           </button>
                           <span class="ml-2 text-sm" id="camera-controls-toggle-label">
                             <span class="font-medium text-gray-900"
@@ -371,9 +366,10 @@
                           </span>
                         </div>
                       </div>
-                      <div id="interaction-mode-state" class="text-xs text-stone-500">
+                      <div id="interaction-mode-state" class="ld-helper-text">
                         cameraType: perspective, interaction-mode: rotate,
                         camera-controls: true
+                      </div>
                       </div>
                     </div>
                   </model-viewer>
@@ -504,33 +500,32 @@
                     src="../../shared-assets/models/cubes.gltf"
                     alt="An animated 3D model two cubes"
                   >
-                    <div
-                      class="bg-white p-4 absolute bottom-4 left-4 rounded-md shadow-md max-w-xl"
-                    >
-                      <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <div class="ld-card absolute bottom-4 left-4 max-w-xl">
+                      <div class="ld-card-body">
+                      <div class="ld-card-toolbar mb-2">
                         <button
-                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="ld-button-sm"
                           type="button"
                           id="getCameraButton"
                         >
                           Get Camera JSON
                         </button>
                         <button
-                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="ld-button-sm"
                           type="button"
                           id="setCameraButton"
                         >
                           Set Camera from JSON
                         </button>
                         <button
-                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="ld-button-sm"
                           type="button"
                           id="roundTripButton"
                         >
                           Round-trip test
                         </button>
                         <button
-                          class="rounded bg-white px-2 py-1 text-xs font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                          class="ld-button-sm"
                           type="button"
                           id="targetRoundTripButton"
                           title="Round-trips the current view using controlsSnapshot (pan manually first)"
@@ -540,8 +535,9 @@
                       </div>
                       <div
                         id="camera-json-output"
-                        class="block text-xs bg-stone-100 p-2 rounded overflow-auto max-h-48 min-h-[4rem] text-stone-600 empty:hidden"
+                        class="ld-helper-text block bg-gray-100 p-2 rounded overflow-auto max-h-48 min-h-[4rem] empty:hidden"
                       ></div>
+                      </div>
                     </div>
                   </model-viewer>
 

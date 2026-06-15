@@ -32,6 +32,10 @@
       href="../../assets/favicon.png"
     />
 
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
     <script type="importmap">
       {
         "imports": {
@@ -69,46 +73,6 @@
         position: absolute;
         z-index: 40;
         pointer-events: auto;
-        border-radius: 12px;
-        background: rgba(255, 255, 255, 0.98);
-        box-shadow:
-          0 8px 24px rgba(0, 0, 0, 0.2),
-          0 1px 2px rgba(0, 0, 0, 0.16);
-        padding: 8px;
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-
-      #floating-ui-panel button {
-        border: 1px solid #d1d5db;
-        background: #fff;
-        border-radius: 9999px;
-        padding: 6px 10px;
-        font-size: 12px;
-        cursor: pointer;
-      }
-
-      .anchor-hint {
-        position: absolute;
-        left: 12px;
-        top: 12px;
-        z-index: 30;
-        pointer-events: none;
-        border-radius: 6px;
-        background: rgba(0, 0, 0, 0.72);
-        color: #fff;
-        padding: 8px 12px;
-        font:
-          12px/1.4 ui-monospace,
-          SFMono-Regular,
-          Menlo,
-          Monaco,
-          Consolas,
-          'Liberation Mono',
-          'Courier New',
-          monospace;
-        max-width: 28rem;
       }
     </style>
   </head>
@@ -177,36 +141,18 @@
                       </svg>
                     </div>
 
-                    <div class="anchor-hint">
+                    <div class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow">
                       Click “Place duck”, then click the floor and drag slightly
                       to commit. Select the object to see the sphere. Radius:
                       <span id="sphere-radius-readout">—</span> px
                     </div>
 
-                    <div
-                      style="
-                        position: absolute;
-                        bottom: 12px;
-                        left: 12px;
-                        z-index: 30;
-                        display: flex;
-                        gap: 8px;
-                      "
-                    >
-                      <button
-                        type="button"
-                        id="place-duck"
-                        style="
-                          border-radius: 6px;
-                          border: 1px solid #d1d5db;
-                          background: #fff;
-                          padding: 6px 10px;
-                          font-size: 12px;
-                          cursor: pointer;
-                        "
-                      >
+                    <div class="ld-card absolute bottom-3 left-3 z-30">
+                      <div class="ld-card-toolbar">
+                      <button type="button" id="place-duck" class="ld-button-sm">
                         Place duck
                       </button>
+                      </div>
                     </div>
                   </model-viewer>
 
@@ -341,39 +287,27 @@
                       data-no-raycast
                     ></div>
 
-                    <div id="floating-ui-panel">
-                      <button type="button">Do Thing</button>
-                      <button type="button">Do Other Thing</button>
+                    <div id="floating-ui-panel" class="ld-card ld-card-toolbar">
+                      <button type="button" class="ld-button-pill">Do Thing</button>
+                      <button type="button" class="ld-button-pill">Do Other Thing</button>
                     </div>
 
-                    <div class="anchor-hint">
+                    <div class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow">
                       Click “Place duck”, then click the floor and drag slightly
                       to commit. Bottom placement + radius offset:
                       <span id="radius-readout">—</span> px.
                     </div>
 
-                    <div
-                      style="
-                        position: absolute;
-                        bottom: 12px;
-                        left: 12px;
-                        z-index: 30;
-                      "
-                    >
+                    <div class="ld-card absolute bottom-3 left-3 z-30">
+                      <div class="ld-card-toolbar">
                       <button
                         type="button"
                         id="place-duck-ui"
-                        style="
-                          border-radius: 6px;
-                          border: 1px solid #d1d5db;
-                          background: #fff;
-                          padding: 6px 10px;
-                          font-size: 12px;
-                          cursor: pointer;
-                        "
+                        class="ld-button-sm"
                       >
                         Place duck
                       </button>
+                      </div>
                     </div>
                   </model-viewer>
 

@@ -32,6 +32,8 @@
       href="../../assets/favicon.png"
     />
 
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
   <body class="ld">
@@ -107,32 +109,32 @@
                     <div slot="ruler-height" class="ld-ruler"></div>
                     <div slot="ruler-depth" class="ld-ruler"></div> -->
 
-                    <div class="absolute bottom-0 inset-x-0 p-2">
-                      <div class="bg-white shadow-sm rounded-lg">
-                        <div class="px-4 py-5">
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
                           <h3
-                            class="text-base! m-0! font-normal! text-gray-400"
+                            class="ld-panel-title"
                           >
                             Control Panel
                           </h3>
                           <div
-                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                            class="ld-sections-loose"
                           >
                             <div
                               class="text-sm text-gray-500 grid grid-cols-2 gap-4"
                             >
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="toggle-rulers"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="false"
                                   aria-labelledby="enable-rulers-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -144,17 +146,17 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="toggle-grid"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-labelledby="enable-grid-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -166,18 +168,18 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="toggle-lines"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="true"
                                   aria-labelledby="enable-lines-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -195,15 +197,15 @@
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
                               <div class="flex items-center gap-4">
-                                <h4 class="text-sm! font-medium text-gray-900">
+                                <h4 class="ld-label">
                                   Unit
                                 </h4>
                                 <span
-                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                  class="ld-button-group"
                                 >
                                   <button
                                     type="button"
-                                    class="measure-unit relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="measure-unit ld-button-group-btn-first"
                                     data-unit="m"
                                     aria-checked="true"
                                   >
@@ -211,42 +213,42 @@
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="measure-unit ld-button-group-btn"
                                     data-unit="cm"
                                   >
                                     cm
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="measure-unit ld-button-group-btn"
                                     data-unit="mm"
                                   >
                                     mm
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="measure-unit ld-button-group-btn"
                                     data-unit="yd"
                                   >
                                     yd
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="measure-unit ld-button-group-btn"
                                     data-unit="ft"
                                   >
                                     ft
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="measure-unit ld-button-group-btn"
                                     data-unit="in"
                                   >
                                     in
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-unit relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600 rounded-r-md"
+                                    class="measure-unit ld-button-group-btn-last"
                                     data-unit="ft-in"
                                   >
                                     ft/in
@@ -254,7 +256,7 @@
                                 </span>
                               </div>
                               <div class="flex w-1/2 items-center gap-4">
-                                <h4 class="text-sm! font-medium text-gray-900">
+                                <h4 class="ld-label">
                                   Precision
                                 </h4>
 
@@ -262,7 +264,7 @@
                                   id="measurePrecision"
                                   type="number"
                                   name="measurePrecision"
-                                  class="block w-full rounded-md bg-white px-3 py-1.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600 sm:text-sm/6"
+                                  class="ld-input"
                                   placeholder="42"
                                   value="2"
                                   min="0"
@@ -273,15 +275,15 @@
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
                               <div class="flex items-center gap-4">
-                                <h4 class="text-sm! font-medium text-gray-900">
+                                <h4 class="ld-label">
                                   Scope
                                 </h4>
                                 <span
-                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                  class="ld-button-group"
                                 >
                                   <button
                                     type="button"
-                                    class="relative selection-scope inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="relative selection-scope ld-button-group-btn-first"
                                     data-value="scene"
                                     aria-checked="true"
                                   >
@@ -289,14 +291,14 @@
                                   </button>
                                   <button
                                     type="button"
-                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="relative selection-scope ld-button-group-btn"
                                     data-value="group"
                                   >
                                     Any Group
                                   </button>
                                   <button
                                     type="button"
-                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600 rounded-r-md"
+                                    class="relative selection-scope ld-button-group-btn-last"
                                     data-value="part"
                                   >
                                     Any Part
@@ -308,15 +310,15 @@
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
                               <div class="flex items-center gap-4">
-                                <h4 class="text-sm! font-medium text-gray-900">
+                                <h4 class="ld-label">
                                   Grid
                                 </h4>
                                 <span
-                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                  class="ld-button-group"
                                 >
                                   <button
                                     type="button"
-                                    class="relative selection-scope inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="relative selection-scope ld-button-group-btn-first"
                                     data-value="scene"
                                     aria-checked="true"
                                   >
@@ -324,14 +326,14 @@
                                   </button>
                                   <button
                                     type="button"
-                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600"
+                                    class="relative selection-scope ld-button-group-btn"
                                     data-value="group"
                                   >
                                     Any Group
                                   </button>
                                   <button
                                     type="button"
-                                    class="relative selection-scope -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10 aria-checked:bg-blue-600 aria-checked:text-white aria-checked:ring-blue-600 rounded-r-md"
+                                    class="relative selection-scope ld-button-group-btn-last"
                                     data-value="part"
                                   >
                                     Any Part
@@ -343,22 +345,22 @@
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
                               <div class="flex items-center gap-4">
-                                <h4 class="text-sm! font-medium text-gray-900">
+                                <h4 class="ld-label">
                                   Dimensions
                                 </h4>
                                 <span
-                                  class="block isolate inline-flex rounded-md shadow-xs"
+                                  class="ld-button-group"
                                 >
                                   <button
                                     type="button"
-                                    class="measure-override relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-override ld-button-group-btn-first"
                                     data-dimensions=""
                                   >
                                     Auto
                                   </button>
                                   <button
                                     type="button"
-                                    class="measure-override relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="measure-override ld-button-group-btn"
                                     data-dimensions="4.96 2 2"
                                   >
                                     Scene 2X
@@ -366,7 +368,7 @@
                                   <button
                                     type="button"
                                     id="setBoxDimensions"
-                                    class="relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus:z-10"
+                                    class="ld-button-group-btn-last"
                                   >
                                     Box L ½
                                   </button>
@@ -564,32 +566,32 @@
                     alt="A model with custom grid shape lines"
                     grid
                   >
-                    <div class="absolute bottom-0 inset-x-0 p-2">
-                      <div class="bg-white shadow-sm rounded-lg">
-                        <div class="px-4 py-5">
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
                           <h3
-                            class="text-base! m-0! font-normal! text-gray-400"
+                            class="ld-panel-title"
                           >
                             Control Panel
                           </h3>
                           <div
-                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                            class="ld-sections-loose"
                           >
                             <div
                               class="text-sm text-gray-500 grid grid-cols-2 gap-4"
                             >
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="toggle-grid-shapes-demo"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="false"
                                   aria-labelledby="enable-grid-shapes-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -712,32 +714,32 @@
                     floor
                     debug
                   >
-                    <div class="absolute bottom-0 inset-x-0 p-2">
-                      <div class="bg-white shadow-sm rounded-lg">
-                        <div class="px-4 py-5">
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
                           <h3
-                            class="text-base! m-0! font-normal! text-gray-400"
+                            class="ld-panel-title"
                           >
                             Room shell, measure, and grid
                           </h3>
                           <div
-                            class="mt-3 divide-y *:py-3 -my-3 divide-gray-100"
+                            class="ld-sections-loose"
                           >
                             <div
                               class="text-sm text-gray-500 grid grid-cols-2 gap-4"
                             >
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="room-measure-toggle-grid"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="true"
                                   aria-labelledby="room-measure-grid-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -749,18 +751,18 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="room-measure-toggle-measure"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="true"
                                   aria-labelledby="room-measure-measure-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -772,18 +774,18 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="room-measure-toggle-grid-shapes"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="false"
                                   aria-labelledby="room-measure-grid-shapes-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -795,18 +797,18 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="room-measure-toggle-walls"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="true"
                                   aria-labelledby="room-measure-walls-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
@@ -818,18 +820,18 @@
                                   >
                                 </span>
                               </div>
-                              <div class="flex items-center">
+                              <div class="ld-switch-row">
                                 <button
                                   id="room-measure-toggle-floor"
                                   type="button"
-                                  class="group relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 aria-checked:bg-blue-600 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 focus:outline-hidden"
+                                  class="ld-switch"
                                   role="switch"
                                   aria-checked="true"
                                   aria-labelledby="room-measure-floor-label"
                                 >
                                   <span
                                     aria-hidden="true"
-                                    class="pointer-events-none inline-block size-5 translate-x-0 group-aria-checked:translate-x-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out"
+                                    class="ld-switch-thumb"
                                   ></span>
                                 </button>
                                 <span
