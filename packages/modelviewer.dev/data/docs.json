@@ -1695,6 +1695,75 @@
     ]
   },
   {
+    "Title": "LD History",
+    "htmlName": "ld_history",
+    "Attributes": [
+      {
+        "name": "max-undo-steps",
+        "htmlName": "maxUndoSteps",
+        "description": "Maximum number of undo steps kept in memory (default <code>50</code>). Oldest steps are pruned when the limit is exceeded.",
+        "links": [
+          "<a href=\"../examples/ld_history/#history-demo\">Undo / Redo example</a>"
+        ]
+      }
+    ],
+    "Methods": [
+      {
+        "name": "undo",
+        "htmlName": "undo",
+        "description": "Undo the last committed LD Modular or LD Transforms action. Returns <code>true</code> when an entry was applied.",
+        "signature": "undo(): boolean",
+        "links": [
+          "<a href=\"../examples/ld_history/#history-demo\">Undo / Redo example</a>",
+          "<a href=\"../examples/ld_modular/#modular\">LD Modular</a>"
+        ]
+      },
+      {
+        "name": "redo",
+        "htmlName": "redo",
+        "description": "Redo the last undone action. Returns <code>true</code> when an entry was applied.",
+        "signature": "redo(): boolean",
+        "links": [
+          "<a href=\"../examples/ld_history/#history-demo\">Undo / Redo example</a>"
+        ]
+      },
+      {
+        "name": "canUndo",
+        "htmlName": "canUndo",
+        "description": "Whether an undo step is available.",
+        "signature": "canUndo(): boolean"
+      },
+      {
+        "name": "canRedo",
+        "htmlName": "canRedo",
+        "description": "Whether a redo step is available.",
+        "signature": "canRedo(): boolean"
+      },
+      {
+        "name": "clearUndoHistory",
+        "htmlName": "clearUndoHistory",
+        "description": "Clear both undo and redo stacks and release detached nodes no longer referenced by history.",
+        "signature": "clearUndoHistory(): void"
+      },
+      {
+        "name": "getHistoryState",
+        "htmlName": "getHistoryState",
+        "description": "Synchronous snapshot of undo/redo availability, stack sizes, labels, and summaries of the next undo/redo entries. Use to seed toolbar UI before the first <code>history-change</code> event.",
+        "signature": "getHistoryState(): HistoryState"
+      }
+    ],
+    "Events": [
+      {
+        "name": "history-change",
+        "htmlName": "historyChange",
+        "description": "Dispatched after every stack mutation (<code>record</code>, <code>undo</code>, <code>redo</code>, <code>clear</code>, <code>prune</code>). detail: <code>{ canUndo, canRedo, undoSize, redoSize, maxUndoSteps, isReplaying, undoLabel, redoLabel, nextUndo, nextRedo, reason, affectedEntry }</code>. Subscribe once to drive undo/redo toolbar state without polling.",
+        "links": [
+          "<a href=\"../examples/ld_history/#history-demo\">Undo / Redo example</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Image Capture",
     "htmlName": "ld_image_capture",
     "Methods": [
@@ -2518,7 +2587,7 @@
       {
         "name": "transformend",
         "htmlName": "transformend",
-        "description": "Fires when a transform ends. detail.active is null; detail.transform is the final state."
+        "description": "Fires when a transform ends. detail.active is null; detail.transform is the final state. Each completed gesture is recorded as one undo step (see <a href=\"../docs/#ldHistory\">LD History</a>)."
       }
     ]
   }

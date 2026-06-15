@@ -382,6 +382,16 @@
     ]
   },
   {
+    "name": "LD History",
+    "htmlName": "ld_history",
+    "examples": [
+      {
+        "htmlId": "history-demo",
+        "name": "Undo / Redo"
+      }
+    ]
+  },
+  {
     "name": "LD Image Capture",
     "htmlName": "ld_image_capture",
     "examples": [

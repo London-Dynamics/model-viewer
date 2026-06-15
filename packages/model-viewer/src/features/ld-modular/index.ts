@@ -74,6 +74,15 @@ import {
   snapRotationYToStepGrid,
 } from './rotation-control-disc.js';
 import {
+  applyTransformValuesToObject,
+  captureStructureMementoFromNodes,
+  UndoHistoryManager,
+  type DetachedNodeRecord,
+  type HistoryChangeDetail,
+  type HistoryState,
+  type StructureNodeMemento,
+} from './undo-history.js';
+import {
   ActiveTransform,
   BeginTransformSessionOptions,
   computeTransformDelta,
@@ -109,6 +118,13 @@ export {
   SELECTION_TRANSFORM_PIVOT_UUID,
   shortestAngleDeltaDeg,
 } from './transform-events.js';
+export type {
+  HistoryChangeDetail,
+  HistoryChangeReason,
+  HistoryEntryKind,
+  HistoryEntrySummary,
+  HistoryState,
+} from './undo-history.js';
 
 function isRotationFineSnapModifierActive(e: PointerEvent): boolean {
   return e.getModifierState(ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY);
@@ -406,6 +422,14 @@ export declare interface LDModularInterface {
   groupSelectedObjects?: () => Object3D | null;
   breakGroup?: (group: Object3D) => boolean;
   breakLink?: (connectionId: string) => boolean;
+
+  maxUndoSteps: number;
+  undo(): boolean;
+  redo(): boolean;
+  canUndo(): boolean;
+  canRedo(): boolean;
+  clearUndoHistory(): void;
+  getHistoryState(): HistoryState;
 }
 
 export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -462,6 +486,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: String, attribute: 'rotation-controls-highlight-color' })
     rotationControlsHighlightColor: string = '#3b82f6';
 
+    @property({ type: Number, attribute: 'max-undo-steps' })
+    maxUndoSteps: number = 50;
+
+    private _undoHistory: UndoHistoryManager | null = null;
+
     // Store bound event handler reference
     private _boundSelectionChangeHandler: ((event: Event) => void) | null =
       null;
@@ -495,6 +524,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     connectedCallback() {
       super.connectedCallback();
       this._syncRoomSourceMode();
+      this._ensureUndoHistory().maxUndoSteps = this.maxUndoSteps;
 
       // Keep stable references so listeners are properly removed.
       this._boundSelectionChangeHandler = (event: Event) => {
@@ -665,6 +695,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         clearExplosionFragments(this[$scene]);
       } catch (e) {}
+
+      try {
+        this._undoHistory?.clear();
+        this._undoHistory = null;
+      } catch (e) {}
     }
 
     async placeGlb(
@@ -778,6 +813,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const results: Array<{ id: string; node: Object3D }> = new Array(total);
       const concurrency = Math.max(1, options?.concurrency ?? 4);
 
+      this._ensureUndoHistory().beginBatch();
+
       let nextIndex = 0;
       let completed = 0;
 
@@ -841,6 +878,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       await Promise.all(workers);
+
+      this._ensureUndoHistory().endBatch(
+        total === 1 ? undefined : `Place ${total} objects`
+      );
 
       try {
         (this as any).dispatchEvent(
@@ -1337,6 +1378,321 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       };
     }
 
+    private _ensureUndoHistory(): UndoHistoryManager {
+      if (!this._undoHistory) {
+        this._undoHistory = new UndoHistoryManager({
+          getObjectByUuid: (uuid) => this.getPart(uuid),
+          cloneTransformValues: (obj) => this._cloneTransformValues(obj),
+          applyTransformValues: (obj, values) =>
+            this._applyTransformValues(obj, values),
+          getDisplayName: (obj) => getObjectDisplayName(obj),
+          detachNode: (node, selectionUuids) =>
+            this._detachNodeForUndo(node, selectionUuids),
+          reattachNode: (record) => this._reattachNodeFromUndo(record),
+          captureStructureMemento: (nodes) =>
+            captureStructureMementoFromNodes(nodes, (obj) =>
+              this._cloneTransformValues(obj)
+            ),
+          applyStructureMemento: (mementos) =>
+            this._applyStructureMemento(mementos),
+          findSceneRoot: () => {
+            const scene = (this as any)[$scene];
+            return scene?.target ?? scene ?? null;
+          },
+          dispatchHistoryChange: (detail) => this._dispatchHistoryChange(detail),
+          requestRender: () => (this as any)[$needsRender](),
+        });
+      }
+      return this._undoHistory;
+    }
+
+    undo(): boolean {
+      return this._ensureUndoHistory().undo();
+    }
+
+    redo(): boolean {
+      return this._ensureUndoHistory().redo();
+    }
+
+    canUndo(): boolean {
+      return this._ensureUndoHistory().canUndo();
+    }
+
+    canRedo(): boolean {
+      return this._ensureUndoHistory().canRedo();
+    }
+
+    clearUndoHistory(): void {
+      this._ensureUndoHistory().clear();
+    }
+
+    getHistoryState(): HistoryState {
+      return this._ensureUndoHistory().getHistoryState();
+    }
+
+    private _dispatchHistoryChange(detail: HistoryChangeDetail): void {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent<HistoryChangeDetail>('history-change', {
+            detail,
+            bubbles: true,
+            composed: true,
+          })
+        );
+      } catch (e) {}
+    }
+
+    private _applyTransformValues(obj: Object3D, values: TransformValues): void {
+      this._setLogicalRotationOnObject(obj, values.rotation);
+      applyTransformValuesToObject(obj, values);
+      this.requestShadowUpdate();
+    }
+
+    private _detachNodeForUndo(
+      node: Object3D,
+      selectionUuids?: string[]
+    ): DetachedNodeRecord {
+      const parent = node.parent;
+      const parentUuid = parent?.uuid ?? null;
+      const siblingIndex = parent ? parent.children.indexOf(node) : -1;
+      if (parent) {
+        parent.remove(node);
+      }
+      return { node, parentUuid, siblingIndex, selectionUuids };
+    }
+
+    private _reattachNodeFromUndo(record: DetachedNodeRecord): void {
+      const scene = (this as any)[$scene];
+      const root = scene?.target ?? scene ?? null;
+      let parent: Object3D | null = null;
+      if (record.parentUuid) {
+        parent = this.getPart(record.parentUuid);
+      }
+      if (!parent) {
+        parent = root;
+      }
+      if (!parent) return;
+
+      if (
+        record.siblingIndex >= 0 &&
+        record.siblingIndex <= parent.children.length
+      ) {
+        parent.children.splice(record.siblingIndex, 0, record.node);
+        record.node.parent = parent;
+      } else {
+        parent.add(record.node);
+      }
+      (this as any)[$needsRender]();
+    }
+
+    private _applyStructureMemento(mementos: StructureNodeMemento[]): void {
+      const history = this._ensureUndoHistory();
+      const scene = (this as any)[$scene];
+      const root = scene?.target ?? scene ?? null;
+      if (!root) return;
+
+      const validUuids = new Set(
+        mementos.filter((memento) => memento.exists).map((memento) => memento.uuid)
+      );
+
+      const nodesToRemove: Object3D[] = [];
+      root.traverse((child: Object3D) => {
+        if (
+          (child.userData?.isSnappedGroup || child.userData?.isPlacedObject) &&
+          !validUuids.has(child.uuid)
+        ) {
+          nodesToRemove.push(child);
+        }
+      });
+
+      for (const node of nodesToRemove) {
+        if (node.userData?.isSnappedGroup) {
+          const parent = node.parent;
+          const children = [...node.children];
+          for (const child of children) {
+            node.remove(child);
+            parent?.add(child);
+            if (child.userData) {
+              delete child.userData.groupId;
+              delete child.userData.isInGroup;
+            }
+          }
+        }
+        if (node.parent) {
+          if (node.userData?.isSnappedGroup) {
+            history.detachToGraveyard(node);
+          } else {
+            node.parent.remove(node);
+          }
+        }
+      }
+
+      for (const memento of mementos) {
+        if (!memento.exists) continue;
+
+        let obj =
+          this.getPart(memento.uuid) ?? history.getGraveyardNode(memento.uuid);
+        if (!obj) continue;
+
+        let parent: Object3D | null = null;
+        if (memento.parentUuid) {
+          parent = this.getPart(memento.parentUuid);
+        }
+        if (!parent) {
+          parent = root;
+        }
+        if (!parent) continue;
+
+        if (obj.parent !== parent) {
+          obj.parent?.remove(obj);
+          if (
+            memento.siblingIndex >= 0 &&
+            memento.siblingIndex <= parent.children.length
+          ) {
+            parent.children.splice(memento.siblingIndex, 0, obj);
+            obj.parent = parent;
+          } else {
+            parent.add(obj);
+          }
+        } else if (
+          memento.siblingIndex >= 0 &&
+          memento.siblingIndex < parent.children.length &&
+          parent.children[memento.siblingIndex] !== obj
+        ) {
+          const currentIndex = parent.children.indexOf(obj);
+          if (currentIndex >= 0) {
+            parent.children.splice(currentIndex, 1);
+            parent.children.splice(memento.siblingIndex, 0, obj);
+          }
+        }
+
+        this._applyTransformValues(obj, memento.transform);
+        obj.userData = obj.userData || {};
+        for (const [key, value] of Object.entries(memento.userData)) {
+          if (value === undefined) {
+            delete obj.userData[key];
+          } else if (key === 'snapConnections' && Array.isArray(value)) {
+            obj.userData.snapConnections = value.map((item) =>
+              typeof item === 'object' && item !== null ? {...item} : item
+            );
+          } else if (key === 'ldLogicalRotationDeg' && Array.isArray(value)) {
+            obj.userData.ldLogicalRotationDeg = [...value];
+          } else if (key === 'part' && typeof value === 'object' && value) {
+            obj.userData.part = {...(value as object)};
+          } else {
+            obj.userData[key] = value;
+          }
+        }
+        if (memento.name) {
+          obj.name = memento.name;
+        }
+        if (!memento.userData.isInGroup) {
+          delete obj.userData.isInGroup;
+          delete obj.userData.groupId;
+        }
+      }
+    }
+
+    private _recordTransformSessionFromObject(obj: Object3D): void {
+      const session = this._transformSessions.get(obj);
+      if (!session || this._ensureUndoHistory().isReplaying) return;
+
+      const after = this._cloneTransformValues(obj);
+      const before = session.startSnapshot;
+      this._ensureUndoHistory().recordTransform(
+        [{uuid: obj.uuid, before, after}],
+        {
+          source: session.source,
+          components: session.components,
+          targetNames: [getObjectDisplayName(obj)],
+          targetUuids: [obj.uuid],
+        }
+      );
+    }
+
+    private _recordSelectionTransformSession(): void {
+      const session = this._selectionTransformSession;
+      if (!session || this._ensureUndoHistory().isReplaying) return;
+
+      const changes: Array<{
+        uuid: string;
+        before: TransformValues;
+        after: TransformValues;
+      }> = [];
+      const targetNames: string[] = [];
+      const targetUuids: string[] = [];
+
+      for (const obj of session.targets) {
+        const before = session.startSnapshots.get(obj.uuid);
+        if (!before) continue;
+        const after = this._cloneTransformValues(obj);
+        changes.push({uuid: obj.uuid, before, after});
+        targetNames.push(getObjectDisplayName(obj));
+        targetUuids.push(obj.uuid);
+      }
+
+      this._ensureUndoHistory().recordTransform(changes, {
+        source: session.source,
+        components: session.components,
+        targetNames,
+        targetUuids,
+      });
+    }
+
+    private _collectStructureNodes(...seeds: Array<Object3D | null | undefined>): Object3D[] {
+      const nodes: Object3D[] = [];
+      const seen = new Set<string>();
+      const visit = (obj: Object3D | null | undefined) => {
+        if (!obj || seen.has(obj.uuid)) return;
+        seen.add(obj.uuid);
+        nodes.push(obj);
+        if (obj.userData?.isSnappedGroup) {
+          for (const child of obj.children) {
+            visit(child);
+          }
+        }
+      };
+
+      for (const seed of seeds) {
+        visit(seed ?? undefined);
+        const group = seed ? getSnappedGroup(seed as Object3D) : null;
+        if (group) {
+          visit(group);
+          for (const child of group.children) {
+            visit(child);
+          }
+        }
+      }
+      return nodes;
+    }
+
+    _recordPlacementAdd(node: Object3D): void {
+      if (this._ensureUndoHistory().isReplaying) return;
+      this._ensureUndoHistory().recordAdd(node);
+    }
+
+    private _recordStructureChange(
+      beforeNodes: Object3D[],
+      afterNodes: Object3D[],
+      label: string
+    ): void {
+      const history = this._ensureUndoHistory();
+      if (history.isReplaying) return;
+      const before = history.captureNodesMemento(beforeNodes);
+      const after = history.captureNodesMemento(afterNodes);
+      const targetNames = afterNodes
+        .filter((node) => node.userData?.isPlacedObject)
+        .map((node) => getObjectDisplayName(node));
+      const targetUuids = afterNodes.map((node) => node.uuid);
+      history.recordStructure(
+        before,
+        after,
+        label,
+        targetNames.length > 0 ? targetNames : afterNodes.map((n) => getObjectDisplayName(n)),
+        targetUuids
+      );
+    }
+
     private _buildActiveTransform(obj: Object3D): ActiveTransform | null {
       const session = this._transformSessions.get(obj);
       if (!session) {
@@ -1416,6 +1772,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this._transformSessions.has(obj)) {
         return;
       }
+      this._recordTransformSessionFromObject(obj);
       this._transformSessions.delete(obj);
       this._dispatchTransformEvent(
         'transformend',
@@ -1580,6 +1937,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _endSelectionTransformSession() {
       if (!this._selectionTransformSession) return;
       const first = this._selectionTransformSession.targets[0];
+      this._recordSelectionTransformSession();
       this._selectionTransformSession = null;
       this._dispatchTransformEvent(
         'transformend',
@@ -2759,9 +3117,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     // Remove a group and reparent its children back to the group's parent,
     // preserving world transforms. Returns true on success.
-    private ungroupSnappedGroup(group: Object3D): boolean {
+    private ungroupSnappedGroup(
+      group: Object3D,
+      options?: {skipHistory?: boolean}
+    ): boolean {
       if (!group) return false;
       try {
+        const beforeNodes = this._collectStructureNodes(group);
         const parent = group.parent;
         const children = [...group.children];
 
@@ -2838,6 +3200,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         // Remove group from scene
         if (group.parent) group.parent.remove(group);
+
+        if (!options?.skipHistory) {
+          this._recordStructureChange(
+            beforeNodes,
+            this._collectStructureNodes(...children),
+            `Ungroup ${getObjectDisplayName(group)}`
+          );
+        }
 
         (this as any)[$needsRender]();
         return true;
@@ -3042,6 +3412,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       draggedPoint: SnapPoint;
       targetPoint: SnapPoint;
     }) {
+      const beforeNodes = this._collectStructureNodes(
+        connection.draggedObject,
+        connection.targetObject
+      );
       try {
         // debug removed
       } catch (e) {}
@@ -3131,6 +3505,16 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._breakLinkSlotsVisible = true;
         this.updateBreakLinkSlots();
       }
+
+      this._recordStructureChange(
+        beforeNodes,
+        this._collectStructureNodes(
+          focusGroup,
+          connection.draggedObject,
+          connection.targetObject
+        ),
+        `Snap ${getObjectDisplayName(connection.draggedObject)} to ${getObjectDisplayName(connection.targetObject)}`
+      );
 
       (this as any)[$needsRender]();
     }
@@ -5195,6 +5579,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
         if (!selectedGroup?.userData?.isSnappedGroup) return;
 
+        const beforeNodes = this._collectStructureNodes(selectedGroup);
+
         try {
           (this as any).log('[puzzler] breakSpecificConnection selectedGroup', {
             name: selectedGroup.name || selectedGroup.uuid,
@@ -5261,6 +5647,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         // If no remaining connections, ungroup everything
         if (connections.length === 0) {
+          const childrenBeforeUngroup = [...selectedGroup.children];
           try {
             try {
               (this as any).log(
@@ -5271,7 +5658,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               );
             } catch (e) {}
 
-            const ungrouped = this.ungroupSnappedGroup(selectedGroup);
+            const ungrouped = this.ungroupSnappedGroup(selectedGroup, {
+              skipHistory: true,
+            });
             try {
               (this as any).log('[puzzler] ungroupSnappedGroup result', {
                 ungrouped,
@@ -5298,6 +5687,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               this.updateBreakLinkSlots();
             } catch (e) {}
             (this as any)[$needsRender]();
+            this._recordStructureChange(
+              beforeNodes,
+              this._collectStructureNodes(...childrenBeforeUngroup),
+              'Break link'
+            );
           } catch (e) {
             try {
               (this as any).log('[puzzler] ungroup error', { e });
@@ -5389,6 +5783,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               })),
           });
         } catch (e) {}
+
+        this._recordStructureChange(
+          beforeNodes,
+          this._collectStructureNodes(selectedGroup),
+          'Break link'
+        );
 
         (this as any)[$needsRender]();
       } catch (e) {
@@ -5536,6 +5936,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       try {
         this._purgeSelectionForDeletedNode(node);
 
+        if (!this._ensureUndoHistory().isReplaying) {
+          const detached = this._ensureUndoHistory().detachToGraveyard(
+            node,
+            ((this as any).selectedObjects || []).map((o: Object3D) => o.uuid)
+          );
+          this._firePartsStateEvents(node, 'delete', {});
+          this._dispatchObjectRemoveEvent(node);
+          this._ensureUndoHistory().recordRemove([detached]);
+          (this as any)[$needsRender]();
+          return true;
+        }
+
         // Fire events for individual parts before deletion
         this._firePartsStateEvents(node, 'delete', {});
 
@@ -5607,19 +6019,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         const doRemoveNow = () => {
           try {
-            // Clear any lingering in-group metadata
-            try {
-              if (obj.userData) {
-                delete obj.userData.groupId;
-                delete obj.userData.isInGroup;
-              }
-            } catch (e) {}
-
-            if (obj.parent) {
-              this._dispatchObjectRemoveEvent(obj);
-              obj.parent.remove(obj);
-            }
-            (this as any)[$needsRender]();
+            this.deleteNode(obj);
           } catch (e) {}
         };
 
@@ -5730,15 +6130,27 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Clear selection first so controls/UI do not hold stale references.
         (this as any).clearSelection();
 
+        const history = this._ensureUndoHistory();
+        const shouldBatch = roots.length > 1 && !history.isReplaying;
+        if (shouldBatch) {
+          history.beginBatch();
+        }
+
         const scene = (this as any)[$scene];
-        for (const node of roots) {
-          if (!node) continue;
-          // removeObject resolves by name; only use it when the name maps back
-          // to this exact node to avoid deleting a same-named sibling.
-          if (node.name && scene?.getObjectByName(node.name) === node) {
-            this.removeObject(node.name, options);
-          } else {
-            this.deleteNode(node);
+        try {
+          for (const node of roots) {
+            if (!node) continue;
+            // removeObject resolves by name; only use it when the name maps back
+            // to this exact node to avoid deleting a same-named sibling.
+            if (node.name && scene?.getObjectByName(node.name) === node) {
+              this.removeObject(node.name, options);
+            } else {
+              this.deleteNode(node);
+            }
+          }
+        } finally {
+          if (shouldBatch) {
+            history.endBatch(`Delete ${roots.length} objects`);
           }
         }
       } catch (e) {
@@ -5775,6 +6187,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if ((this as any).selectedObjects.length < 2) return null;
 
       try {
+        const selected = [...((this as any).selectedObjects as Object3D[])];
+        const beforeNodes = this._collectStructureNodes(...selected);
+        const count = selected.length;
+
         // Create new group
         const group = new Object3D();
         group.name = `user_group_${Date.now()}`;
@@ -5811,6 +6227,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         (this as any).selectGroup(group);
         this._firePartsStateEvents(group, 'group', {});
+
+        this._recordStructureChange(
+          beforeNodes,
+          this._collectStructureNodes(group),
+          `Group ${count} objects`
+        );
 
         (this as any)[$needsRender]();
         return group;
@@ -7539,6 +7961,9 @@ class PlacementSession extends EventTarget {
 
       this.state = 'ended';
       const detail = { sessionId: this.id, placedNode: gltf.scene };
+      try {
+        element._recordPlacementAdd?.(gltf.scene);
+      } catch (e) {}
       (this as any).dispatchEvent(new CustomEvent('loaded', { detail }));
       return { id: objectKey, node: gltf.scene };
     } catch (error) {

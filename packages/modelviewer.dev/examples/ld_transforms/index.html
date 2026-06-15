@@ -280,9 +280,6 @@
                       const modelViewer =
                         document.querySelector('#transform-demo');
 
-                      const degToRad = (deg) => (deg * Math.PI) / 180;
-                      const radToDeg = (rad) => rad * (180 / Math.PI);
-
                       let rotationOrder = 'ZXY';
 
                       const rotationOrderSelect =
@@ -292,9 +289,47 @@
                         'change',
                         (event) => {
                           rotationOrder = event.target.value;
-                          console.log('rotationOrder', rotationOrder);
                         }
                       );
+
+                      const readTranslate = () => [
+                        parseFloat(
+                          modelViewer.querySelector('#box-translate-xaxis')
+                            .value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#box-translate-yaxis')
+                            .value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#box-translate-zaxis')
+                            .value
+                        ),
+                      ];
+
+                      const readRotation = () => [
+                        parseFloat(
+                          modelViewer.querySelector('#box-rotate-xaxis').value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#box-rotate-yaxis').value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#box-rotate-zaxis').value
+                        ),
+                      ];
+
+                      const readScale = () => [
+                        parseFloat(
+                          modelViewer.querySelector('#box-scale-xaxis').value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#box-scale-yaxis').value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#box-scale-zaxis').value
+                        ),
+                      ];
 
                       const boxTranslators = modelViewer.querySelectorAll(
                         '#box-transforms .translate .axis-input'
@@ -309,73 +344,34 @@
                       );
 
                       boxTranslators.forEach((input) => {
-                        input.addEventListener('input', (event) => {
-                          const x = modelViewer.querySelector(
-                            '#box-translate-xaxis'
-                          ).value;
-                          const y = modelViewer.querySelector(
-                            '#box-translate-yaxis'
-                          ).value;
-                          const z = modelViewer.querySelector(
-                            '#box-translate-zaxis'
-                          ).value;
-
-                          modelViewer.updateMeshPosition('Box', [x, y, z]);
+                        input.addEventListener('input', () => {
+                          modelViewer.setPosition('Box', readTranslate());
                         });
                       });
 
                       boxRotators.forEach((input) => {
-                        input.addEventListener('input', (event) => {
-                          const x =
-                            modelViewer.querySelector(
-                              '#box-rotate-xaxis'
-                            ).value;
-                          // modelViewer.querySelector(
-                          //   '#box-rotate-x-value'
-                          // ).innerText = x;
-                          const y =
-                            modelViewer.querySelector(
-                              '#box-rotate-yaxis'
-                            ).value;
-                          // modelViewer.querySelector(
-                          //   '#box-rotate-y-value'
-                          // ).innerText = y;
-                          const z =
-                            modelViewer.querySelector(
-                              '#box-rotate-zaxis'
-                            ).value;
-                          // modelViewer.querySelector(
-                          //   '#box-rotate-z-value'
-                          // ).innerText = z;
-
-                          modelViewer.updateMeshRotation(
-                            'Box',
-                            [degToRad(x), degToRad(y), degToRad(z)],
-                            rotationOrder
-                          );
+                        input.addEventListener('input', () => {
+                          modelViewer.setRotation('Box', readRotation(), {
+                            order: rotationOrder,
+                          });
                         });
                       });
 
                       boxScalers.forEach((input) => {
-                        input.addEventListener('input', (event) => {
-                          const x =
-                            modelViewer.querySelector('#box-scale-xaxis').value;
-                          const y =
-                            modelViewer.querySelector('#box-scale-yaxis').value;
-                          const z =
-                            modelViewer.querySelector('#box-scale-zaxis').value;
-
-                          modelViewer.updateMeshScale('Box', [x, y, z]);
+                        input.addEventListener('input', () => {
+                          modelViewer.setScale('Box', readScale());
                         });
                       });
 
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
 
-                        console.log(
-                          'Objects and Materials',
-                          modelViewer.getSceneNames()
-                        );
+                        if (typeof modelViewer.getSceneNames === 'function') {
+                          console.log(
+                            'Objects and Materials',
+                            modelViewer.getSceneNames()
+                          );
+                        }
                         console.groupEnd();
                       });
                     })();
@@ -614,6 +610,57 @@
                         '#transform-scene-demo'
                       );
 
+                      let rotationOrder = 'ZXY';
+
+                      const rotationOrderSelect =
+                        modelViewer.querySelector('#rotation-order');
+
+                      rotationOrderSelect.addEventListener('change', (event) => {
+                        rotationOrder = event.target.value;
+                      });
+
+                      const readTranslate = () => [
+                        parseFloat(
+                          modelViewer.querySelector('#scene-translate-xaxis')
+                            .value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#scene-translate-yaxis')
+                            .value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#scene-translate-zaxis')
+                            .value
+                        ),
+                      ];
+
+                      const readRotation = () => [
+                        parseFloat(
+                          modelViewer.querySelector('#scene-rotate-xaxis')
+                            .value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#scene-rotate-yaxis')
+                            .value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#scene-rotate-zaxis')
+                            .value
+                        ),
+                      ];
+
+                      const readScale = () => [
+                        parseFloat(
+                          modelViewer.querySelector('#scene-scale-xaxis').value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#scene-scale-yaxis').value
+                        ),
+                        parseFloat(
+                          modelViewer.querySelector('#scene-scale-zaxis').value
+                        ),
+                      ];
+
                       const sceneTranslators = modelViewer.querySelectorAll(
                         '#scene-transforms .translate .axis-input'
                       );
@@ -627,66 +674,33 @@
                       );
 
                       sceneTranslators.forEach((input) => {
-                        input.addEventListener('input', (event) => {
-                          const x = modelViewer.querySelector(
-                            '#scene-translate-xaxis'
-                          ).value;
-                          const y = modelViewer.querySelector(
-                            '#scene-translate-yaxis'
-                          ).value;
-                          const z = modelViewer.querySelector(
-                            '#scene-translate-zaxis'
-                          ).value;
-
-                          modelViewer.updateScenePosition([x, y, z]);
+                        input.addEventListener('input', () => {
+                          modelViewer.setPosition('Scene', readTranslate());
                         });
                       });
 
                       sceneRotators.forEach((input) => {
-                        input.addEventListener('input', (event) => {
-                          const x = modelViewer.querySelector(
-                            '#scene-rotate-xaxis'
-                          ).value;
-                          const y = modelViewer.querySelector(
-                            '#scene-rotate-yaxis'
-                          ).value;
-                          const z = modelViewer.querySelector(
-                            '#scene-rotate-zaxis'
-                          ).value;
-
-                          modelViewer.updateSceneRotation([
-                            x * Math.PI,
-                            y * Math.PI,
-                            z * Math.PI,
-                          ]);
+                        input.addEventListener('input', () => {
+                          modelViewer.setRotation('Scene', readRotation(), {
+                            order: rotationOrder,
+                          });
                         });
                       });
 
                       sceneScalers.forEach((input) => {
-                        input.addEventListener('input', (event) => {
-                          const x =
-                            modelViewer.querySelector(
-                              '#scene-scale-xaxis'
-                            ).value;
-                          const y =
-                            modelViewer.querySelector(
-                              '#scene-scale-yaxis'
-                            ).value;
-                          const z =
-                            modelViewer.querySelector(
-                              '#scene-scale-zaxis'
-                            ).value;
-
-                          modelViewer.updateSceneScale([x, y, z]);
+                        input.addEventListener('input', () => {
+                          modelViewer.setScale('Scene', readScale());
                         });
                       });
 
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
-                        console.log(
-                          'Objects and Materials',
-                          modelViewer.getSceneNames()
-                        );
+                        if (typeof modelViewer.getSceneNames === 'function') {
+                          console.log(
+                            'Objects and Materials',
+                            modelViewer.getSceneNames()
+                          );
+                        }
                         console.groupEnd();
                       });
                     })();
