@@ -4,7 +4,8 @@ export type TransformSource =
   | 'pointer-drag'
   | 'rotation-disc-y'
   | 'api'
-  | 'animation';
+  | 'animation'
+  | 'align-distribute';
 
 export type TransformValues = {
   position: [number, number, number];
@@ -98,6 +99,7 @@ export type BeginTransformSessionOptions = {
   source: TransformSource;
   components: TransformComponent[];
   axes?: Partial<Record<TransformComponent, TransformAxis[]>>;
+  historyLabel?: string;
 };
 
 export type ParsedRotationAxisInput = {

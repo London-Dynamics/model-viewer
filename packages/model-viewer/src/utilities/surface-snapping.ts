@@ -288,7 +288,7 @@ function passesRangeClearance(
   return true;
 }
 
-function getObjectLocalBounds(object: Object3D): Box3 | null {
+export function getObjectLocalBounds(object: Object3D): Box3 | null {
   const cached = OBJECT_LOCAL_BOUNDS_CACHE.get(object);
   if (cached) return cached;
 
@@ -661,4 +661,95 @@ export function applySurfaceSnapTransform(
     delete object.userData.attachedWallName;
     delete object.userData.attachedWallUuid;
   }
+}
+
+export function inferWallNormalWorld(wall: Object3D): Vector3 {
+  const mesh = (wall as any).isMesh
+    ? wall
+    : ((wall as any).getObjectByProperty?.('isMesh', true) as Object3D | null);
+  const fallback = new Vector3(0, 0, 1);
+  const meshGeometry = (mesh as any)?.geometry;
+  if (!meshGeometry?.attributes?.normal?.array) {
+    wall.updateMatrixWorld(true);
+    wall.getWorldDirection(fallback);
+    return fallback.normalize();
+  }
+
+  const normalAttr = meshGeometry.attributes.normal.array as ArrayLike<number>;
+  if (normalAttr.length < 3) {
+    return fallback;
+  }
+
+  const normal = new Vector3(normalAttr[0], normalAttr[1], normalAttr[2]);
+  if (normal.lengthSq() <= 1e-8) {
+    return fallback;
+  }
+
+  if (!mesh) {
+    return fallback;
+  }
+
+  mesh.updateMatrixWorld(true);
+  mesh.getWorldQuaternion(TMP_WORLD_QUAT);
+  return normal.applyQuaternion(TMP_WORLD_QUAT).normalize();
+}
+
+function collectWallMeshes(wall: Object3D, out: Object3D[]): void {
+  if ((wall as any).isMesh) {
+    out.push(wall);
+  }
+  wall.traverse((child) => {
+    if ((child as any).isMesh) {
+      out.push(child);
+    }
+  });
+}
+
+export function findSurfaceSnapHitOnWall(
+  wall: Object3D,
+  worldPoint: Vector3,
+  worldNormal: Vector3,
+  snapPoint: SnapPoint,
+  snappedObject: Object3D
+): SurfaceSnapHit | null {
+  const candidates: Object3D[] = [];
+  collectWallMeshes(wall, candidates);
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const rayOrigin = worldPoint
+    .clone()
+    .add(worldNormal.clone().multiplyScalar(0.5));
+  const rayDirection = worldNormal.clone().negate().normalize();
+  SHARED_RAYCASTER.set(rayOrigin, rayDirection);
+  const intersections = SHARED_RAYCASTER.intersectObjects(candidates, false);
+
+  for (const intersection of intersections) {
+    if (!intersection.face) continue;
+    TMP_WORLD_NORMAL.copy(intersection.face.normal)
+      .transformDirection(intersection.object.matrixWorld)
+      .normalize();
+    const surfaceType = classifySurfaceType(intersection.object, TMP_WORLD_NORMAL);
+    if (!allowsSurfaceType(snapPoint, surfaceType)) continue;
+    if (
+      !passesEdgeClearance(
+        snapPoint,
+        intersection.object,
+        intersection.point,
+        TMP_WORLD_NORMAL,
+        snappedObject
+      )
+    ) {
+      continue;
+    }
+    return {
+      point: intersection.point.clone(),
+      normal: TMP_WORLD_NORMAL.clone(),
+      surfaceType,
+      object: intersection.object,
+    };
+  }
+
+  return null;
 }

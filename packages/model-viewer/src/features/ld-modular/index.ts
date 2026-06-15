@@ -36,6 +36,7 @@ import {
   applySurfaceSnapTransform,
   clientToNdc,
   findSurfaceSnapHitForNdc,
+  findSurfaceSnapHitOnWall,
   getBaseModelObject,
   getRoomFloorY,
   invalidateRoomSurfaceIndexCache,
@@ -97,6 +98,14 @@ import {
   TransformSource,
   TransformValues,
 } from './transform-events.js';
+import {
+  type AlignAction,
+  applyWorldPositionDelta,
+  computeAlignDistributeDeltas,
+  getAlignActionLabel,
+  resolveLayoutContext,
+  type WallLayoutContext,
+} from './align-distribute.js';
 import { Selection } from '@london-dynamics/types/puzzler';
 
 export type {
@@ -109,6 +118,7 @@ export type {
   TransformTarget,
   TransformValues,
 } from './transform-events.js';
+export type {AlignAction} from './align-distribute.js';
 export {
   computeTransformDelta,
   getObjectDisplayName,
@@ -430,6 +440,8 @@ export declare interface LDModularInterface {
   canRedo(): boolean;
   clearUndoHistory(): void;
   getHistoryState(): HistoryState;
+
+  alignObjects(action: AlignAction): boolean;
 }
 
 export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -1430,6 +1442,47 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return this._ensureUndoHistory().getHistoryState();
     }
 
+    alignObjects(action: AlignAction): boolean {
+      const targets = this._getSelectedRootObjects();
+      const context = resolveLayoutContext(targets, (uuid) => this.getPart(uuid));
+      if (!context) {
+        return false;
+      }
+
+      const deltas = computeAlignDistributeDeltas(action, targets, context);
+      if (deltas.size === 0) {
+        return false;
+      }
+
+      const isWall = context.kind === 'wall';
+      this._beginSelectionTransformSession(targets, {
+        source: 'align-distribute',
+        components: ['position'],
+        axes: {position: isWall ? ['x', 'y', 'z'] : ['x', 'z']},
+        historyLabel: getAlignActionLabel(action, targets.length),
+      });
+
+      if (!this._selectionTransformSession) {
+        return false;
+      }
+
+      for (const obj of targets) {
+        const delta = deltas.get(obj.uuid);
+        if (delta) {
+          applyWorldPositionDelta(obj, delta);
+        }
+        if (isWall && !this._resnapWallObjectAfterAlignMove(obj, context)) {
+          this._abortSelectionTransformSession();
+          return false;
+        }
+      }
+
+      this.requestShadowUpdate();
+      (this as any)[$needsRender]();
+      this._endSelectionTransformSession();
+      return true;
+    }
+
     private _dispatchHistoryChange(detail: HistoryChangeDetail): void {
       try {
         (this as any).dispatchEvent(
@@ -1636,6 +1689,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         components: session.components,
         targetNames,
         targetUuids,
+        label: session.historyLabel,
       });
     }
 
@@ -1908,6 +1962,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         source: options.source,
         components: options.components,
         axes: options.axes ?? {},
+        historyLabel: options.historyLabel,
         startSnapshots,
         startPivotPosition,
         startPivotRotationY: 0,
@@ -1944,6 +1999,57 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         first,
         this._buildSelectionTransformEventDetail(null)
       );
+    }
+
+    private _abortSelectionTransformSession() {
+      if (!this._selectionTransformSession) return;
+      const session = this._selectionTransformSession;
+      const first = session.targets[0];
+      for (const obj of session.targets) {
+        const before = session.startSnapshots.get(obj.uuid);
+        if (before) {
+          this._applyTransformValues(obj, before);
+        }
+      }
+      this._selectionTransformSession = null;
+      this._dispatchTransformEvent(
+        'transformend',
+        first,
+        this._buildSelectionTransformEventDetail(null)
+      );
+    }
+
+    private _resnapWallObjectAfterAlignMove(
+      object: Object3D,
+      context: WallLayoutContext
+    ): boolean {
+      const snapPoint = getPrimarySurfaceSnapPoint(object);
+      if (!snapPoint) {
+        return false;
+      }
+
+      const worldPoint = new Vector3();
+      object.updateMatrixWorld(true);
+      object.getWorldPosition(worldPoint);
+
+      const hit = findSurfaceSnapHitOnWall(
+        context.wall,
+        worldPoint,
+        context.wallNormal,
+        snapPoint,
+        object
+      );
+      if (!hit) {
+        return false;
+      }
+
+      const roomObject = this._findRoomSurfaceObject();
+      const floorY = roomObject ? getRoomFloorY(roomObject) : null;
+      applySurfaceSnapTransform(object, snapPoint, hit, floorY);
+      if (object.userData?.isPlacedObject === true) {
+        this._markRoomWallVisibilityCacheDirty();
+      }
+      return true;
     }
 
     private _applyRotationDeltaYAroundPivot(
@@ -2875,8 +2981,46 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       (this as any)[$needsRender]();
     }
 
-    /** Set when we disabled camera on pointer down over a selectable; re-enable on pointer up. */
-    private _cameraDisabledForPointer: boolean = false;
+    /** Orbit/pan drag off while the pointer is over a selectable. */
+    private _pointerHoverDisablesCameraDrag: boolean = false;
+    /** Orbit/pan drag off during an interactive placement session. */
+    private _placementDisablesCameraDrag: boolean = false;
+    /** Combined hover/placement state last pushed to controls. */
+    private _cameraDragDisabled: boolean = false;
+
+    private _syncCameraDragDisabled(): void {
+      const shouldDisable =
+        this._pointerHoverDisablesCameraDrag ||
+        this._placementDisablesCameraDrag;
+      if (shouldDisable === this._cameraDragDisabled) {
+        return;
+      }
+      this._cameraDragDisabled = shouldDisable;
+      try {
+        if (shouldDisable) {
+          (this as any)[$controls]?.disableDragInteraction?.();
+        } else {
+          (this as any)[$controls]?.enableDragInteraction?.();
+        }
+      } catch (_) {}
+    }
+
+    /** Toggle hover/select camera-drag disable; only calls controls when state changes. */
+    private _setPointerHoverCameraDragDisabled(disabled: boolean): void {
+      if (disabled === this._pointerHoverDisablesCameraDrag) {
+        return;
+      }
+      this._pointerHoverDisablesCameraDrag = disabled;
+      this._syncCameraDragDisabled();
+    }
+
+    private _setPlacementCameraDragDisabled(disabled: boolean): void {
+      if (disabled === this._placementDisablesCameraDrag) {
+        return;
+      }
+      this._placementDisablesCameraDrag = disabled;
+      this._syncCameraDragDisabled();
+    }
 
     /** True = pointer went down on selectable, false = on empty (camera drag). Don't disable on move during camera drag. */
     private _pointerDownOnSelectable: boolean | null = null;
@@ -2922,6 +3066,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       source: TransformSource;
       components: TransformComponent[];
       axes: Partial<Record<TransformComponent, TransformAxis[]>>;
+      historyLabel?: string;
       startSnapshots: Map<string, TransformValues>;
       startPivotPosition: Vector3;
       startPivotRotationY: number;
@@ -4866,6 +5011,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
       if (!this.editMode || !(this as any)[$controls]) return;
+      if (this._placementDisablesCameraDrag) return;
       if ((this as any).isDragging) return;
       if (this._pointerDownOnSelectable === false) return;
 
@@ -4877,6 +5023,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         const p = this._pendingPointerMove;
         this._pendingPointerMove = null;
         if (!p || !this.editMode || !(this as any)[$controls]) return;
+        if (this._placementDisablesCameraDrag) return;
         if ((this as any).isDragging) return;
         if (this._pointerDownOnSelectable === false) return;
 
@@ -4886,15 +5033,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         );
         const overSelectable = hoveredObject != null;
         this._dispatchHoverChange(hoveredObject);
-        try {
-          if (overSelectable) {
-            (this as any)[$controls]?.disableDragInteraction?.();
-            this._cameraDisabledForPointer = true;
-          } else if (this._cameraDisabledForPointer) {
-            (this as any)[$controls]?.enableDragInteraction?.();
-            this._cameraDisabledForPointer = false;
-          }
-        } catch (_) {}
+        this._setPointerHoverCameraDragDisabled(overSelectable);
       });
     }
 
@@ -4906,6 +5045,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       if (!this.editMode) return;
       if (!(this as any)[$controls]) return;
+      if (this._placementDisablesCameraDrag) return;
       const hoveredObject = this._resolvePointerSelectableObject(
         e.clientX,
         e.clientY
@@ -4916,10 +5056,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._dispatchHoverChange(null);
       }
       if (!overSelectable) return;
-      try {
-        (this as any)[$controls]?.disableDragInteraction?.();
-        this._cameraDisabledForPointer = true;
-      } catch (_) {}
+      this._setPointerHoverCameraDragDisabled(true);
     }
 
     private _onPointerUpCapture(e: PointerEvent) {
@@ -4933,18 +5070,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
       this._pointerDownOnSelectable = null;
-      if (!this._cameraDisabledForPointer) return;
+      if (this._placementDisablesCameraDrag) return;
       if ((this as any).isDragging) return;
       const hoveredObject = this._resolvePointerSelectableObject(
         e.clientX,
         e.clientY
       );
       this._dispatchHoverChange(hoveredObject);
-      if (hoveredObject) return;
-      this._cameraDisabledForPointer = false;
-      try {
-        (this as any)[$controls]?.enableDragInteraction?.();
-      } catch (_) {}
+      this._setPointerHoverCameraDragDisabled(hoveredObject != null);
     }
 
     private onMouseDown(event: MouseEvent) {
@@ -6349,6 +6482,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         options || {}
       );
       this._activePlacementSession = session;
+      this._setPlacementCameraDragDisabled(true);
 
       // Ensure snapping slots are refreshed immediately when an interactive
       // placement session is started so snapping points for the placeholder
@@ -6362,6 +6496,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (this._activePlacementSession === session) {
           this._activePlacementSession = null;
         }
+        this._setPlacementCameraDragDisabled(false);
       };
 
       session.addEventListener('loaded', endPlacementSession, { once: true });
@@ -6524,6 +6659,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           pointerMoveRaf = 0;
         }
         pendingPointerMove = null;
+        this._setPlacementCameraDragDisabled(false);
       };
 
       // Clean up listeners when session ends or errors.

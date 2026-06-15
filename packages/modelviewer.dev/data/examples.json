@@ -512,6 +512,14 @@
       {
         "htmlId": "rotation-controls",
         "name": "Rotation Controls (Y Axis)"
+      },
+      {
+        "htmlId": "align-distribute-floor",
+        "name": "Align and Distribute (Floor)"
+      },
+      {
+        "htmlId": "align-distribute-wall",
+        "name": "Align and Distribute (Wall)"
       }
     ]
   }

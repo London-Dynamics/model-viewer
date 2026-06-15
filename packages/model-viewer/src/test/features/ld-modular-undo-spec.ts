@@ -3,7 +3,7 @@
  */
 
 import {expect} from 'chai';
-import {Object3D} from 'three';
+import {BoxGeometry, Mesh, MeshBasicMaterial, Object3D} from 'three';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
@@ -50,6 +50,22 @@ const addPlacedPart = (target: Object3D, name: string, displayName?: string) => 
     part.userData.name = displayName;
   }
   target.add(part);
+  return part;
+};
+
+const addPlacedBoxPart = (
+  target: Object3D,
+  name: string,
+  position: [number, number, number],
+  displayName?: string
+) => {
+  const part = addPlacedPart(target, name, displayName);
+  part.position.set(position[0], position[1], position[2]);
+  const mesh = new Mesh(
+    new BoxGeometry(1, 1, 1),
+    new MeshBasicMaterial()
+  );
+  part.add(mesh);
   return part;
 };
 
@@ -232,6 +248,44 @@ suite('ld-modular undo / redo', () => {
     expect(element.canUndo()).to.equal(false);
     expect(element.canRedo()).to.equal(false);
     expect(part.position.x).to.equal(1);
+  });
+
+  test('alignObjects records one undo step and restores on undo', () => {
+    const partA = addPlacedBoxPart(target, 'align-a', [-2, 0, 0], 'A');
+    const partB = addPlacedBoxPart(target, 'align-b', [1, 0, 0], 'B');
+    const partC = addPlacedBoxPart(target, 'align-c', [3, 0, 2], 'C');
+    (element as any).selectedObjects = [partA, partB, partC];
+
+    const transformStarts: number[] = [];
+    element.addEventListener('transformstart', ((e: CustomEvent) => {
+      transformStarts.push(e.detail.targets?.length ?? 0);
+    }) as EventListener);
+
+    const beforeB = partB.position.x;
+    const beforeC = partC.position.x;
+
+    expect(element.alignObjects('align-left')).to.equal(true);
+    expect(element.canUndo()).to.equal(true);
+    expect(element.getHistoryState().undoLabel).to.include('Align left');
+    expect(transformStarts).to.deep.equal([3]);
+
+    expect(partB.position.x).to.not.be.closeTo(beforeB, 1e-3);
+    expect(partC.position.x).to.not.be.closeTo(beforeC, 1e-3);
+
+    expect(element.undo()).to.equal(true);
+    expect(partA.position.x).to.be.closeTo(-2, 1e-4);
+    expect(partB.position.x).to.be.closeTo(beforeB, 1e-4);
+    expect(partC.position.x).to.be.closeTo(beforeC, 1e-4);
+
+    expect(element.redo()).to.equal(true);
+    expect(partB.position.x).to.not.be.closeTo(beforeB, 1e-3);
+  });
+
+  test('alignObjects returns false with insufficient selection', () => {
+    const part = addPlacedBoxPart(target, 'solo', [0, 0, 0]);
+    (element as any).selectedObjects = [part];
+    expect(element.alignObjects('align-left')).to.equal(false);
+    expect(element.canUndo()).to.equal(false);
   });
 });
 

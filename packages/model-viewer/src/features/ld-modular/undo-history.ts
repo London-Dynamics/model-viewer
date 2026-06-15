@@ -286,6 +286,7 @@ export class UndoHistoryManager {
       components: TransformComponent[];
       targetNames: string[];
       targetUuids: string[];
+      label?: string;
     }
   ): void {
     if (this._isReplaying || changes.length === 0) return;
@@ -295,11 +296,13 @@ export class UndoHistoryManager {
     );
     if (meaningful.length === 0) return;
 
-    const label = buildTransformLabel(
-      options.components,
-      options.targetNames,
-      meaningful.length
-    );
+    const label =
+      options.label ??
+      buildTransformLabel(
+        options.components,
+        options.targetNames,
+        meaningful.length
+      );
     const summary: HistoryEntrySummary = {
       kind: 'transform',
       id: createEntryId(),

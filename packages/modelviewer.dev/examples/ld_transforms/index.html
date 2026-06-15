@@ -33,8 +33,30 @@
     />
 
     <style type="text/tailwindcss"></style>
-    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script
+      src="../../styles/ld-ui-loader.js"
+      data-href="../../styles/ld-ui.css"
+    ></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+    <!-- model-viewer-effects imports "three" — must share one instance with model-viewer-module -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <!-- Load effects before model-viewer so stamped <effect-composer> upgrades first -->
+    <script
+      type="module"
+      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
+    ></script>
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
+    ></script>
   </head>
   <body class="ld">
     <div class="examples-page">
@@ -75,10 +97,31 @@
                     src="../../shared-assets/models/cubes.gltf"
                     alt="An animated 3D model two cubes"
                   >
+                    <div class="absolute top-2 left-2 z-30 flex gap-2">
+                      <button
+                        type="button"
+                        id="transform-demo-undo"
+                        class="ld-button-sm disabled:opacity-40"
+                        disabled
+                      >
+                        Undo
+                      </button>
+                      <button
+                        type="button"
+                        id="transform-demo-redo"
+                        class="ld-button-sm disabled:opacity-40"
+                        disabled
+                      >
+                        Redo
+                      </button>
+                    </div>
                     <div
-                      id="box-transforms"
-                      class="ld-panel"
+                      id="transform-demo-history-status"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
                     >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="box-transforms" class="ld-panel">
                       <div class="ld-card">
                         <div class="ld-card-body">
                           <h3 class="ld-panel-title">
@@ -89,16 +132,11 @@
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
                               <div class="ld-field-row">
-                                <label
-                                  for="rotation-order"
-                                  class="ld-label"
+                                <label for="rotation-order" class="ld-label"
                                   >Transform Order</label
                                 >
                                 <div class="ld-select-wrap">
-                                  <select
-                                    id="rotation-order"
-                                    class="ld-select"
-                                  >
+                                  <select id="rotation-order" class="ld-select">
                                     <option value="XYZ">XYZ</option>
                                     <option value="ZXY" selected>ZXY</option>
                                   </select>
@@ -363,6 +401,47 @@
                         });
                       });
 
+                      const undoBtn = document.getElementById(
+                        'transform-demo-undo'
+                      );
+                      const redoBtn = document.getElementById(
+                        'transform-demo-redo'
+                      );
+                      const historyStatus = document.getElementById(
+                        'transform-demo-history-status'
+                      );
+                      const applyHistoryUi = (state) => {
+                        undoBtn.disabled = !state.canUndo;
+                        redoBtn.disabled = !state.canRedo;
+                        undoBtn.textContent = state.undoLabel
+                          ? `Undo: ${state.undoLabel}`
+                          : 'Undo';
+                        redoBtn.textContent = state.redoLabel
+                          ? `Redo: ${state.redoLabel}`
+                          : 'Redo';
+                        historyStatus.textContent = [
+                          `undo: ${state.undoSize}`,
+                          `redo: ${state.redoSize}`,
+                        ].join(' | ');
+                      };
+                      applyHistoryUi(modelViewer.getHistoryState());
+                      modelViewer.addEventListener('history-change', (e) =>
+                        applyHistoryUi(e.detail)
+                      );
+                      undoBtn.addEventListener('click', () =>
+                        modelViewer.undo()
+                      );
+                      redoBtn.addEventListener('click', () =>
+                        modelViewer.redo()
+                      );
+                      window.addEventListener('keydown', (event) => {
+                        const mod = event.metaKey || event.ctrlKey;
+                        if (!mod || event.key.toLowerCase() !== 'z') return;
+                        event.preventDefault();
+                        if (event.shiftKey) modelViewer.redo();
+                        else modelViewer.undo();
+                      });
+
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
 
@@ -404,30 +483,44 @@
                     src="../../shared-assets/models/cubes.gltf"
                     alt="An animated 3D model two cubes"
                   >
+                    <div class="absolute top-2 left-2 z-30 flex gap-2">
+                      <button
+                        type="button"
+                        id="transform-scene-undo"
+                        class="ld-button-sm disabled:opacity-40"
+                        disabled
+                      >
+                        Undo
+                      </button>
+                      <button
+                        type="button"
+                        id="transform-scene-redo"
+                        class="ld-button-sm disabled:opacity-40"
+                        disabled
+                      >
+                        Redo
+                      </button>
+                    </div>
                     <div
-                      id="scene-transforms"
-                      class="ld-panel"
+                      id="transform-scene-history-status"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
                     >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="scene-transforms" class="ld-panel">
                       <div class="ld-card">
                         <div class="ld-card-body">
-                          <h3 class="ld-panel-title">
-                            Control Panel (Scene)
-                          </h3>
+                          <h3 class="ld-panel-title">Control Panel (Scene)</h3>
                           <div class="ld-sections">
                             <div
                               class="text-sm text-gray-500 flex gap-4 items-center"
                             >
                               <div class="ld-field-row">
-                                <label
-                                  for="rotation-order"
-                                  class="ld-label"
+                                <label for="rotation-order" class="ld-label"
                                   >Transform Order</label
                                 >
                                 <div class="ld-select-wrap">
-                                  <select
-                                    id="rotation-order"
-                                    class="ld-select"
-                                  >
+                                  <select id="rotation-order" class="ld-select">
                                     <option value="XYZ">XYZ</option>
                                     <option value="ZXY" selected>ZXY</option>
                                   </select>
@@ -615,9 +708,12 @@
                       const rotationOrderSelect =
                         modelViewer.querySelector('#rotation-order');
 
-                      rotationOrderSelect.addEventListener('change', (event) => {
-                        rotationOrder = event.target.value;
-                      });
+                      rotationOrderSelect.addEventListener(
+                        'change',
+                        (event) => {
+                          rotationOrder = event.target.value;
+                        }
+                      );
 
                       const readTranslate = () => [
                         parseFloat(
@@ -636,16 +732,13 @@
 
                       const readRotation = () => [
                         parseFloat(
-                          modelViewer.querySelector('#scene-rotate-xaxis')
-                            .value
+                          modelViewer.querySelector('#scene-rotate-xaxis').value
                         ),
                         parseFloat(
-                          modelViewer.querySelector('#scene-rotate-yaxis')
-                            .value
+                          modelViewer.querySelector('#scene-rotate-yaxis').value
                         ),
                         parseFloat(
-                          modelViewer.querySelector('#scene-rotate-zaxis')
-                            .value
+                          modelViewer.querySelector('#scene-rotate-zaxis').value
                         ),
                       ];
 
@@ -693,6 +786,47 @@
                         });
                       });
 
+                      const undoBtn = document.getElementById(
+                        'transform-scene-undo'
+                      );
+                      const redoBtn = document.getElementById(
+                        'transform-scene-redo'
+                      );
+                      const historyStatus = document.getElementById(
+                        'transform-scene-history-status'
+                      );
+                      const applyHistoryUi = (state) => {
+                        undoBtn.disabled = !state.canUndo;
+                        redoBtn.disabled = !state.canRedo;
+                        undoBtn.textContent = state.undoLabel
+                          ? `Undo: ${state.undoLabel}`
+                          : 'Undo';
+                        redoBtn.textContent = state.redoLabel
+                          ? `Redo: ${state.redoLabel}`
+                          : 'Redo';
+                        historyStatus.textContent = [
+                          `undo: ${state.undoSize}`,
+                          `redo: ${state.redoSize}`,
+                        ].join(' | ');
+                      };
+                      applyHistoryUi(modelViewer.getHistoryState());
+                      modelViewer.addEventListener('history-change', (e) =>
+                        applyHistoryUi(e.detail)
+                      );
+                      undoBtn.addEventListener('click', () =>
+                        modelViewer.undo()
+                      );
+                      redoBtn.addEventListener('click', () =>
+                        modelViewer.redo()
+                      );
+                      window.addEventListener('keydown', (event) => {
+                        const mod = event.metaKey || event.ctrlKey;
+                        if (!mod || event.key.toLowerCase() !== 'z') return;
+                        event.preventDefault();
+                        if (event.shiftKey) modelViewer.redo();
+                        else modelViewer.undo();
+                      });
+
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
                         if (typeof modelViewer.getSceneNames === 'function') {
@@ -727,6 +861,7 @@
                     camera-controls
                     interaction-prompt="none"
                     edit
+                    highlight-selected
                     selection-scope="part"
                     rotation-controls
                     src-is-room
@@ -735,10 +870,47 @@
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Room with placed duck rotation controls demo"
                   >
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
                     <div
-                      id="rotation-controls-panel"
-                      class="ld-panel"
+                      class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          id="rotation-controls-undo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Undo
+                        </button>
+                        <button
+                          type="button"
+                          id="rotation-controls-redo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Redo
+                        </button>
+                      </div>
+                      <div
+                        id="rotation-controls-selection"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        selection: none
+                      </div>
+                    </div>
+                    <div
+                      id="rotation-controls-history-status"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
+                    >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="rotation-controls-panel" class="ld-panel">
                       <div class="ld-card">
                         <div class="ld-card-toolbar">
                           <label class="ld-field-row">
@@ -764,7 +936,8 @@
                             />
                           </label>
                           <span class="ld-helper-text"
-                            >Hold Shift for fine snap when fine step &gt; 0</span
+                            >Hold Shift for fine snap when fine step &gt;
+                            0</span
                           >
                           <label class="ld-field-row">
                             Highlight
@@ -788,8 +961,9 @@
                       const majorStepInput = modelViewer.querySelector(
                         '#rotation-major-step'
                       );
-                      const fineStepInput =
-                        modelViewer.querySelector('#rotation-fine-step');
+                      const fineStepInput = modelViewer.querySelector(
+                        '#rotation-fine-step'
+                      );
                       const colorInput =
                         modelViewer.querySelector('#rotation-color');
                       const applySettings = () => {
@@ -842,6 +1016,646 @@
                       fineStepInput.addEventListener('input', applySettings);
                       colorInput.addEventListener('input', applySettings);
                       applySettings();
+
+                      const selectionReadout = document.getElementById(
+                        'rotation-controls-selection'
+                      );
+                      const updateSelectionReadout = (detail) => {
+                        if (!selectionReadout) return;
+                        const objects = detail?.selectedObjects ?? [];
+                        if (objects.length === 0) {
+                          selectionReadout.textContent =
+                            'selection: none (Shift+click)';
+                          return;
+                        }
+                        const names = objects
+                          .map(
+                            (o) =>
+                              o.userData?.name ||
+                              o.userData?.part?.name ||
+                              o.name ||
+                              '?'
+                          )
+                          .join(', ');
+                        selectionReadout.textContent = `selection: ${objects.length} — ${names}`;
+                      };
+                      modelViewer.addEventListener('selection-change', (e) =>
+                        updateSelectionReadout(e.detail)
+                      );
+
+                      const undoBtn = document.getElementById(
+                        'rotation-controls-undo'
+                      );
+                      const redoBtn = document.getElementById(
+                        'rotation-controls-redo'
+                      );
+                      const historyStatus = document.getElementById(
+                        'rotation-controls-history-status'
+                      );
+                      const applyHistoryUi = (state) => {
+                        undoBtn.disabled = !state.canUndo;
+                        redoBtn.disabled = !state.canRedo;
+                        undoBtn.textContent = state.undoLabel
+                          ? `Undo: ${state.undoLabel}`
+                          : 'Undo';
+                        redoBtn.textContent = state.redoLabel
+                          ? `Redo: ${state.redoLabel}`
+                          : 'Redo';
+                        historyStatus.textContent = [
+                          `undo: ${state.undoSize}`,
+                          `redo: ${state.redoSize}`,
+                        ].join(' | ');
+                      };
+                      applyHistoryUi(modelViewer.getHistoryState());
+                      modelViewer.addEventListener('history-change', (e) =>
+                        applyHistoryUi(e.detail)
+                      );
+                      undoBtn.addEventListener('click', () =>
+                        modelViewer.undo()
+                      );
+                      redoBtn.addEventListener('click', () =>
+                        modelViewer.redo()
+                      );
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="align-distribute-floor" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Align and Distribute (Floor)</h2>
+                <h4>
+                  Multi-select floor-placed parts (Shift+click) and call
+                  <code>alignObjects(action)</code> on world X/Z. Each action
+                  records one undo step.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="align-distribute-floor"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="align-floor-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    edit
+                    highlight-selected
+                    selection-scope="group"
+                    src-is-room
+                    floor
+                    shadow-intensity="1"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Floor align and distribute demo"
+                  >
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
+                    <div
+                      class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
+                    >
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          id="align-floor-undo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Undo
+                        </button>
+                        <button
+                          type="button"
+                          id="align-floor-redo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Redo
+                        </button>
+                      </div>
+                      <div
+                        id="align-floor-selection"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        selection: none (Shift+click)
+                      </div>
+                    </div>
+                    <div
+                      id="align-floor-history-status"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
+                    >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="align-floor-panel" class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">Align and distribute</h3>
+                          <div class="ld-sections">
+                            <div>
+                              <h4 class="ld-section-title">Align horizontal</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="align-left"
+                                >
+                                  Left
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="align-center-h"
+                                >
+                                  Center
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="align-right"
+                                >
+                                  Right
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="ld-section-title">Align vertical</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="align-top"
+                                >
+                                  Top
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="align-center-v"
+                                >
+                                  Center
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="align-bottom"
+                                >
+                                  Bottom
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="ld-section-title">Distribute</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="distribute-h"
+                                >
+                                  H
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="distribute-v"
+                                >
+                                  V
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="distribute-line"
+                                >
+                                  Line
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="ld-section-title">Equal gap</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="equal-gap-h"
+                                >
+                                  H
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="equal-gap-v"
+                                >
+                                  V
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="equal-gap-line"
+                                >
+                                  Line
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const viewer =
+                        document.getElementById('align-floor-demo');
+                      const DUCK_URL =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb';
+
+                      const undoBtn =
+                        document.getElementById('align-floor-undo');
+                      const redoBtn =
+                        document.getElementById('align-floor-redo');
+                      const historyStatus = document.getElementById(
+                        'align-floor-history-status'
+                      );
+                      const selectionReadout = document.getElementById(
+                        'align-floor-selection'
+                      );
+                      const updateSelectionReadout = (detail) => {
+                        if (!selectionReadout) return;
+                        const objects = detail?.selectedObjects ?? [];
+                        if (objects.length === 0) {
+                          selectionReadout.textContent =
+                            'selection: none (Shift+click)';
+                          return;
+                        }
+                        const names = objects
+                          .map(
+                            (o) =>
+                              o.userData?.name ||
+                              o.userData?.part?.name ||
+                              o.name ||
+                              '?'
+                          )
+                          .join(', ');
+                        selectionReadout.textContent = `selection: ${objects.length} — ${names}`;
+                      };
+                      viewer.addEventListener('selection-change', (e) =>
+                        updateSelectionReadout(e.detail)
+                      );
+                      const applyHistoryUi = (state) => {
+                        undoBtn.disabled = !state.canUndo;
+                        redoBtn.disabled = !state.canRedo;
+                        undoBtn.textContent = state.undoLabel
+                          ? `Undo: ${state.undoLabel}`
+                          : 'Undo';
+                        redoBtn.textContent = state.redoLabel
+                          ? `Redo: ${state.redoLabel}`
+                          : 'Redo';
+                        historyStatus.textContent = [
+                          `undo: ${state.undoSize}`,
+                          `redo: ${state.redoSize}`,
+                        ].join(' | ');
+                      };
+                      applyHistoryUi(viewer.getHistoryState());
+                      viewer.addEventListener('history-change', (e) =>
+                        applyHistoryUi(e.detail)
+                      );
+                      undoBtn.addEventListener('click', () => viewer.undo());
+                      redoBtn.addEventListener('click', () => viewer.redo());
+
+                      viewer
+                        .querySelectorAll('.align-action')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const action = button.dataset.action;
+                            if (action) viewer.alignObjects(action);
+                          });
+                        });
+
+                      window.addEventListener('keydown', (event) => {
+                        const mod = event.metaKey || event.ctrlKey;
+                        if (!mod || event.key.toLowerCase() !== 'z') return;
+                        if (!viewer.matches(':hover')) return;
+                        event.preventDefault();
+                        if (event.shiftKey) viewer.redo();
+                        else viewer.undo();
+                      });
+
+                      const placeFloorDucks = async () => {
+                        if (viewer.dataset.ducksPlaced === 'true') return;
+                        viewer.dataset.ducksPlaced = 'true';
+                        const spots = [
+                          { name: 'align-floor-a', position: [-1.5, 0, -1] },
+                          { name: 'align-floor-b', position: [0.5, 0, 1.2] },
+                          { name: 'align-floor-c', position: [2, 0, -0.5] },
+                        ];
+                        for (const spot of spots) {
+                          await viewer.placeGlb(DUCK_URL, {
+                            name: spot.name,
+                            position: spot.position,
+                            part: { type: 'scene', editable: true },
+                          });
+                        }
+                      };
+
+                      viewer.addEventListener('load', () => {
+                        if (!('IntersectionObserver' in window)) {
+                          placeFloorDucks();
+                          return;
+                        }
+                        const observer = new IntersectionObserver(
+                          (entries) => {
+                            if (
+                              !entries.some((entry) => entry.isIntersecting)
+                            ) {
+                              return;
+                            }
+                            observer.disconnect();
+                            placeFloorDucks();
+                          },
+                          { root: null, threshold: 0.1 }
+                        );
+                        observer.observe(viewer);
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="align-distribute-wall" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Align and Distribute (Wall)</h2>
+                <h4>
+                  Place wall-snap parts (e.g. from
+                  <a href="../ld_modular/">LD Modular</a>), select 2+ on the
+                  <strong>same wall</strong>, then align along the wall
+                  horizontally and by height (Y).
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="align-distribute-wall"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="align-wall-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    edit
+                    highlight-selected
+                    selection-scope="part"
+                    src-is-room
+                    walls
+                    floor
+                    shadow-intensity="1"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Wall align and distribute demo"
+                  >
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
+                    <div
+                      class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
+                    >
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          id="align-wall-undo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Undo
+                        </button>
+                        <button
+                          type="button"
+                          id="align-wall-redo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Redo
+                        </button>
+                      </div>
+                      <div
+                        id="align-wall-selection"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        selection: none (Shift+click)
+                      </div>
+                    </div>
+                    <div
+                      id="align-wall-history-status"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
+                    >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="align-wall-panel" class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">Align and distribute</h3>
+                          <p class="ld-helper-text">
+                            Use parts with <code>surfaceSnap</code> and
+                            <code>allowedSurfaces: ['wall']</code>. Mixed walls
+                            or floor+wall selections are rejected.
+                          </p>
+                          <div class="ld-sections">
+                            <div>
+                              <h4 class="ld-section-title">Align horizontal</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="align-left"
+                                >
+                                  Left
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="align-center-h"
+                                >
+                                  Center
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="align-right"
+                                >
+                                  Right
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="ld-section-title">Align vertical</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="align-top"
+                                >
+                                  Top
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="align-center-v"
+                                >
+                                  Center
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="align-bottom"
+                                >
+                                  Bottom
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="ld-section-title">Distribute</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="distribute-h"
+                                >
+                                  H
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="distribute-v"
+                                >
+                                  V
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="distribute-line"
+                                >
+                                  Line
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <h4 class="ld-section-title">Equal gap</h4>
+                              <div class="ld-button-group">
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-first align-action"
+                                  data-action="equal-gap-h"
+                                >
+                                  H
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn align-action"
+                                  data-action="equal-gap-v"
+                                >
+                                  V
+                                </button>
+                                <button
+                                  type="button"
+                                  class="ld-button-group-btn-last align-action"
+                                  data-action="equal-gap-line"
+                                >
+                                  Line
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const viewer = document.getElementById('align-wall-demo');
+                      const undoBtn =
+                        document.getElementById('align-wall-undo');
+                      const redoBtn =
+                        document.getElementById('align-wall-redo');
+                      const historyStatus = document.getElementById(
+                        'align-wall-history-status'
+                      );
+                      const selectionReadout = document.getElementById(
+                        'align-wall-selection'
+                      );
+                      const updateSelectionReadout = (detail) => {
+                        if (!selectionReadout) return;
+                        const objects = detail?.selectedObjects ?? [];
+                        if (objects.length === 0) {
+                          selectionReadout.textContent =
+                            'selection: none (Shift+click)';
+                          return;
+                        }
+                        const names = objects
+                          .map(
+                            (o) =>
+                              o.userData?.name ||
+                              o.userData?.part?.name ||
+                              o.name ||
+                              '?'
+                          )
+                          .join(', ');
+                        selectionReadout.textContent = `selection: ${objects.length} — ${names}`;
+                      };
+                      viewer.addEventListener('selection-change', (e) =>
+                        updateSelectionReadout(e.detail)
+                      );
+                      const applyHistoryUi = (state) => {
+                        undoBtn.disabled = !state.canUndo;
+                        redoBtn.disabled = !state.canRedo;
+                        undoBtn.textContent = state.undoLabel
+                          ? `Undo: ${state.undoLabel}`
+                          : 'Undo';
+                        redoBtn.textContent = state.redoLabel
+                          ? `Redo: ${state.redoLabel}`
+                          : 'Redo';
+                        historyStatus.textContent = [
+                          `undo: ${state.undoSize}`,
+                          `redo: ${state.redoSize}`,
+                        ].join(' | ');
+                      };
+                      applyHistoryUi(viewer.getHistoryState());
+                      viewer.addEventListener('history-change', (e) =>
+                        applyHistoryUi(e.detail)
+                      );
+                      undoBtn.addEventListener('click', () => viewer.undo());
+                      redoBtn.addEventListener('click', () => viewer.redo());
+
+                      viewer
+                        .querySelectorAll('.align-action')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const action = button.dataset.action;
+                            if (action) viewer.alignObjects(action);
+                          });
+                        });
+
+                      window.addEventListener('keydown', (event) => {
+                        const mod = event.metaKey || event.ctrlKey;
+                        if (!mod || event.key.toLowerCase() !== 'z') return;
+                        if (!viewer.matches(':hover')) return;
+                        event.preventDefault();
+                        if (event.shiftKey) viewer.redo();
+                        else viewer.undo();
+                      });
                     })();
                   </script>
                 </template>
@@ -875,11 +1689,5 @@
 
     <!-- Documentation-specific dependencies: -->
     <script type="module" src="../built/dependencies.js"></script>
-
-    <!-- Loads <model-viewer> on modern browsers: -->
-    <script
-      type="module"
-      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
-    ></script>
   </body>
 </html>

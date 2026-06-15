@@ -2564,6 +2564,17 @@
         ]
       },
       {
+        "name": "alignObjects",
+        "htmlName": "alignObjects",
+        "description": "Align or distribute the currently selected root objects. Pass an <code>AlignAction</code> string such as <code>align-left</code>, <code>distribute-h</code>, or <code>equal-gap-line</code>. Requires at least two selected objects; distribute and equal-gap actions require at least three. Floor objects use world X/Z (Y unchanged). Wall objects must share the same <code>attachedWallUuid</code>; layout is horizontal along the wall and vertical by height (Y), and objects are re-snapped to the wall surface. Mixed floor/wall selections return <code>false</code>. Emits <code>transformstart</code>/<code>transformend</code> and records one undo step. Returns <code>true</code> when positions changed.",
+        "signature": "alignObjects(action: AlignAction): boolean",
+        "links": [
+          "<a href=\"../examples/ld_transforms/#align-distribute-floor\">Align and Distribute (Floor)</a>",
+          "<a href=\"../examples/ld_transforms/#align-distribute-wall\">Align and Distribute (Wall)</a>",
+          "<a href=\"../docs/#ldHistory\">LD History (undo)</a>"
+        ]
+      },
+      {
         "name": "Transform getters",
         "htmlName": "getTransforms",
         "description": "Read transforms from a named object or the current modular selection via getPosition(name?), getRotation(name?), and getScale(name?).",
@@ -2587,7 +2598,7 @@
       {
         "name": "transformend",
         "htmlName": "transformend",
-        "description": "Fires when a transform ends. detail.active is null; detail.transform is the final state. Each completed gesture is recorded as one undo step (see <a href=\"../docs/#ldHistory\">LD History</a>)."
+        "description": "Fires when a transform ends. detail.active is null; detail.transform is the final state. Each completed gesture — including <code>alignObjects</code> — is recorded as one undo step (see <a href=\"../docs/#ldHistory\">LD History</a>)."
       }
     ]
   }

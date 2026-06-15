@@ -628,7 +628,6 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   disableInteraction(): void {
     this._internalDragDisableCount = 0;
-    this._externalDragDisableCount = 0;
     this.thirdPartyControls.enabled = false;
     // Remove tap detection listeners
     this.domElement.removeEventListener('mousedown', this.onMouseDown);
