@@ -1,228 +1,149 @@
-import { property } from 'lit/decorators.js';
-import {
-  MathUtils,
-  Object3D,
-  PlaneGeometry,
-  PMREMGenerator,
-  RepeatWrapping,
-  Scene,
-  ShaderMaterial,
-  TextureLoader,
-  Vector3,
-} from 'three';
-import { Renderer } from '../../three-components/Renderer.js';
+import {property} from 'lit/decorators.js';
+import {Euler, Object3D} from 'three';
+
 import ModelViewerElementBase, {
-  $scene,
   $needsRender,
+  $renderer,
+  $scene,
+  $updateLDEnvironment,
 } from '../../model-viewer-base.js';
-
-import { Constructor } from '../../utilities.js';
-
-import { Water } from './water.js';
-import { Sky } from './sky.js';
-
-const $justAddWater = Symbol('justAddWater');
-const $addSky = Symbol('addSky');
-const $updateSun = Symbol('updateSun');
-const $animateEnvironment = Symbol('animateEnvironment');
-const $water = Symbol('water');
-const $sun = Symbol('sun');
-const $sky = Symbol('sky');
-const $pmremGenerator = Symbol('pmremGenerator');
-const $sceneEnv = Symbol('sceneEnv');
-const $renderTarget = Symbol('renderTarget');
+import {normalizeUnit} from '../../styles/conversions.js';
+import {NumberNode, parseExpressions} from '../../styles/parsers.js';
+import {Constructor, deserializeUrl} from '../../utilities.js';
 
 export declare interface LDEnvironmentInterface {
-  sky: boolean | null;
-  sunAzimuth: number | undefined;
-  sunElevation: number | undefined;
-  waterTexture: string | null;
-  waterDistortionScale: number | null;
-  waterSize: number | null;
+  environmentModel: string|null;
+  environmentModelPosition: string;
+  environmentModelOrientation: string;
+  environmentModelScale: string;
 }
 
-export const LDEnvironmentMixin = <
-  T extends Constructor<ModelViewerElementBase>,
->(
-  ModelViewerElement: T
-): Constructor<LDEnvironmentInterface> & T => {
+export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
+    ModelViewerElement: T): Constructor<LDEnvironmentInterface>&T => {
   class LDEnvironmentModelViewerElement extends ModelViewerElement {
-    @property({ type: String, attribute: 'water-texture' })
-    waterTexture: string | null = null;
+    @property({type: String, attribute: 'environment-model'})
+    environmentModel: string|null = null;
 
-    @property({ type: Number, attribute: 'water-distortion-scale' })
-    waterDistortionScale: number | null = null;
+    @property({type: String, attribute: 'environment-model-position'})
+    environmentModelPosition: string = '0m 0m 0m';
 
-    @property({ type: Number, attribute: 'water-size' })
-    waterSize: number | null = null;
+    @property({type: String, attribute: 'environment-model-orientation'})
+    environmentModelOrientation: string = '0deg 0deg 0deg';
 
-    @property({ type: Number, attribute: 'sky' })
-    sky: boolean | null = null;
+    @property({type: String, attribute: 'environment-model-scale'})
+    environmentModelScale: string = '1 1 1';
 
-    @property({ type: Number, attribute: 'sun-elevation' })
-    sunElevation: number | undefined = undefined;
+    private environmentModelLoadId = 0;
 
-    @property({ type: Number, attribute: 'sun-azimuth' })
-    sunAzimuth: number | undefined = undefined;
+    updated(changedProperties: Map<string|number|symbol, unknown>) {
+      super.updated(changedProperties);
 
-    @property({ type: Number, attribute: 'ground-elevation' })
-    groundElevation: number | null = null;
+      if (changedProperties.has('src')) {
+        this.clearEnvironmentModel();
+      }
 
-    private [$water]: Water | null = null;
-    private [$sky]: Sky | null = null;
-    private [$sun]: Vector3 | null = null;
-    private [$pmremGenerator]: PMREMGenerator | null = null;
-    private [$sceneEnv]: any = null;
-    private [$renderTarget]: any = null;
+      if (changedProperties.has('environmentModel')) {
+        if (this.environmentModel == null) {
+          this.clearEnvironmentModel();
+        } else {
+          this[$updateLDEnvironment]();
+        }
+      }
 
-    private [$animateEnvironment]() {
-      if (this[$water]) {
-        this[$water].animate();
-        this[$needsRender]();
-        requestAnimationFrame(() => {
-          this[$animateEnvironment]();
-        });
+      if (changedProperties.has('environmentModelPosition') ||
+          changedProperties.has('environmentModelOrientation') ||
+          changedProperties.has('environmentModelScale')) {
+        this.updateEnvironmentModelTransform();
       }
     }
 
-    private [$justAddWater]() {
-      if (this[$scene] && !this[$water]) {
-        const { waterTexture } = this;
+    private clearEnvironmentModel() {
+      this.environmentModelLoadId++;
+      this[$scene].clearEnvironmentModel();
+      this[$needsRender]();
+    }
 
-        // Find the Target object to add the grid
-        let targetObject: Object3D | undefined;
-        this[$scene].traverse((child) => {
-          if (child.name === 'Target') {
-            targetObject = child;
-          }
-        });
+    private prepareEnvironmentModel(root: Object3D) {
+      root.traverse((node: Object3D) => {
+        node.userData.noHit = true;
+        node.userData.selectable = false;
 
-        if (!targetObject) {
-          console.warn('Target object not found for water placement.');
-          return;
+        if ('castShadow' in node) {
+          (node as any).castShadow = false;
         }
 
-        const target = targetObject as Object3D;
-
-        const waterGeometry = new PlaneGeometry(10000, 10000);
-
-        this[$water] = new Water(waterGeometry, {
-          textureWidth: 512,
-          textureHeight: 512,
-          waterNormals: new TextureLoader().load(
-            waterTexture!,
-            function (texture) {
-              texture.wrapS = texture.wrapT = RepeatWrapping;
-            }
-          ),
-          sunDirection: new Vector3(),
-          sunColor: 0xd3e8ff,
-          waterColor: 0x001e0f,
-          distortionScale: this.waterDistortionScale || 3.7,
-          fog: this[$scene].fog !== undefined,
-        });
-
-        /* This to make sure plane is at floor level */
-        this[$water].rotation.x = -Math.PI / 2;
-        this[$water].position.y = this.groundElevation || 0;
-
-        this[$water].userData.environment = true;
-
-        this[$scene].hasCustomGroundPlane = true;
-
-        target.add(this[$water]);
-
-        this[$animateEnvironment]();
-      }
+        if ('receiveShadow' in node) {
+          (node as any).receiveShadow = false;
+        }
+      });
     }
 
-    private [$updateSun](elevation: number = 2, azimuth: number = 180) {
-      if (
-        !this[$sun] ||
-        !this[$sky] ||
-        !this[$water] ||
-        !this[$pmremGenerator]
-      ) {
+    private parseVector3(value: string, fallback: [number, number, number]):
+        [NumberNode, NumberNode, NumberNode] {
+      const terms = parseExpressions(value)[0]?.terms as NumberNode[] |
+          undefined;
+
+      return [
+        terms?.[0] ?? {type: 'number', number: fallback[0], unit: null},
+        terms?.[1] ?? {type: 'number', number: fallback[1], unit: null},
+        terms?.[2] ?? {type: 'number', number: fallback[2], unit: null},
+      ];
+    }
+
+    private updateEnvironmentModelTransform() {
+      const [x, y, z] =
+          this.parseVector3(this.environmentModelPosition, [0, 0, 0]);
+      const [roll, pitch, yaw] =
+          this.parseVector3(this.environmentModelOrientation, [0, 0, 0]);
+      const [scaleX, scaleY, scaleZ] =
+          this.parseVector3(this.environmentModelScale, [1, 1, 1]);
+      const environmentRoot = this[$scene].environmentRoot;
+
+      environmentRoot.position.set(
+          normalizeUnit(x).number,
+          normalizeUnit(y).number,
+          normalizeUnit(z).number);
+      environmentRoot.quaternion.setFromEuler(new Euler(
+          normalizeUnit(pitch).number,
+          normalizeUnit(yaw).number,
+          normalizeUnit(roll).number,
+          'YXZ'));
+      environmentRoot.scale.set(scaleX.number, scaleY.number, scaleZ.number);
+      this[$needsRender]();
+    }
+
+    async[$updateLDEnvironment]() {
+      const loadId = ++this.environmentModelLoadId;
+      const url = deserializeUrl(this.environmentModel);
+
+      this[$scene].clearEnvironmentModel();
+
+      if (url == null || !this.loaded) {
+        this[$needsRender]();
         return;
       }
 
-      const phi = MathUtils.degToRad(90 - elevation);
-      const theta = MathUtils.degToRad(azimuth);
+      try {
+        const gltf = await this[$renderer].loader.load(url, this);
+        if (loadId !== this.environmentModelLoadId ||
+            url !== deserializeUrl(this.environmentModel)) {
+          gltf.dispose();
+          return;
+        }
 
-      this[$sun].setFromSphericalCoords(1, phi, theta);
+        this.prepareEnvironmentModel(gltf.scene);
+        this[$scene].setEnvironmentModel(gltf.scene, () => gltf.dispose());
+        this.dispatchEvent(
+            new CustomEvent('environment-model-load', {detail: {url}}));
+      } catch (error) {
+        if (loadId !== this.environmentModelLoadId) {
+          return;
+        }
 
-      (this[$sky].material as ShaderMaterial).uniforms[
-        'sunPosition'
-      ].value.copy(this[$sun]);
-      (this[$water].material as ShaderMaterial).uniforms['sunDirection'].value
-        .copy(this[$sun])
-        .normalize();
-
-      if (this[$renderTarget]) this[$renderTarget].dispose();
-
-      this[$sceneEnv].add(this[$sky]);
-      this[$renderTarget] = this[$pmremGenerator].fromScene(this[$sceneEnv]);
-      this[$scene].add(this[$sky]);
-
-      this[$scene].environment = this[$renderTarget].texture;
-    }
-
-    private [$addSky]() {
-      this[$sun] = new Vector3();
-
-      this[$sky] = new Sky();
-      this[$sky].scale.setScalar(10000);
-      this[$scene].add(this[$sky]);
-
-      const skyUniforms = (this[$sky].material as ShaderMaterial).uniforms;
-
-      skyUniforms['turbidity'].value = 10;
-      skyUniforms['rayleigh'].value = 2;
-      skyUniforms['mieCoefficient'].value = 0.005;
-      skyUniforms['mieDirectionalG'].value = 0.8;
-
-      this[$pmremGenerator] = new PMREMGenerator(
-        Renderer.singleton.threeRenderer
-      );
-      this[$sceneEnv] = new Scene();
-    }
-
-    updated(changedProperties: Map<string | number | symbol, unknown>) {
-      super.updated(changedProperties);
-
-      if (changedProperties.has('waterTexture') && this.waterTexture != null) {
-        this[$justAddWater]();
-      }
-
-      if (changedProperties.has('sky') && this.sky != null) {
-        this[$addSky]();
-        this[$updateSun](this.sunElevation, this.sunAzimuth);
-      }
-
-      if (
-        (changedProperties.has('sunElevation') && this.sunElevation != null) ||
-        (changedProperties.has('sunAzimuth') && this.sunAzimuth != null)
-      ) {
-        this[$updateSun](this.sunElevation, this.sunAzimuth);
-      }
-
-      if (
-        changedProperties.has('waterDistortionScale') &&
-        this[$water] &&
-        this.waterDistortionScale
-      ) {
-        (this[$water].material as ShaderMaterial).uniforms[
-          'distortionScale'
-        ].value = this.waterDistortionScale;
-      }
-
-      if (
-        changedProperties.has('waterSize') &&
-        this[$water] &&
-        this.waterSize
-      ) {
-        (this[$water].material as ShaderMaterial).uniforms['size'].value =
-          this.waterSize;
+        this.dispatchEvent(new CustomEvent(
+            'environment-model-error', {detail: {url, error}}));
+      } finally {
+        this[$needsRender]();
       }
     }
   }

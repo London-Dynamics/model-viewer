@@ -93,6 +93,22 @@ export interface MarkedAnimation {
 }
 
 export type IlluminationRole = 'primary' | 'secondary';
+export type ShadowMode = 'none' | 'soft-shadow' | 'path-tracer';
+
+export const normalizeShadowMode = (shadowMode: string): ShadowMode => {
+  switch (shadowMode) {
+    case 'none':
+    case 'soft-shadow':
+    case 'path-tracer':
+      return shadowMode;
+    case 'softshadow':
+      return 'soft-shadow';
+    case 'pathtracer':
+      return 'path-tracer';
+    default:
+      return 'soft-shadow';
+  }
+};
 
 export const IlluminationRole: { [index: string]: IlluminationRole } = {
   Primary: 'primary',
@@ -142,6 +158,7 @@ export class ModelScene extends Scene {
   public url: string | null = null;
   public pivot = new Object3D();
   public target = new Object3D();
+  public environmentRoot = new Object3D();
   public animationNames: Array<string> = [];
   public boundingBox = new Box3();
   public boundingSphere = new Sphere();
@@ -150,6 +167,7 @@ export class ModelScene extends Scene {
   public framedFoVDeg = 0;
 
   public shadow: Shadow | null = null;
+  public shadowMode: ShadowMode = 'soft-shadow';
   public shadowIntensity = 0;
   public shadowSoftness = 1;
   public bakedShadows = new Set<Mesh>();
@@ -170,12 +188,15 @@ export class ModelScene extends Scene {
 
   private _currentGLTF: ModelViewerGLTFInstance | null = null;
   private _model: Object3D | null = null;
+  private _environmentModel: Object3D | null = null;
+  private environmentModelDispose: (() => void) | null = null;
   private mixer: AnimationMixer;
   private cancelPendingSourceChange: (() => void) | null = null;
   private animationsByName: Map<string, AnimationClip> = new Map();
   private currentAnimationAction: AnimationAction | null = null;
 
   private groundedSkybox = new GroundedSkybox();
+  private skyboxRotation = new Euler();
 
   constructor({ canvas, element, width, height }: ModelSceneConfig) {
     super();
@@ -192,6 +213,9 @@ export class ModelScene extends Scene {
 
     this.add(this.pivot);
     this.pivot.name = 'Pivot';
+
+    this.add(this.environmentRoot);
+    this.environmentRoot.name = 'EnvironmentRoot';
 
     this.pivot.add(this.target);
 
@@ -408,8 +432,45 @@ export class ModelScene extends Scene {
     this.mixer.uncacheRoot(this);
   }
 
+  setEnvironmentModel(model: Object3D | null, dispose?: () => void) {
+    this.clearEnvironmentModel();
+
+    if (model == null) {
+      return;
+    }
+
+    this._environmentModel = model;
+    this.environmentModelDispose = dispose ?? null;
+    this.environmentRoot.add(model);
+    this.queueRender();
+  }
+
+  clearEnvironmentModel() {
+    if (this._environmentModel != null) {
+      this._environmentModel.removeFromParent();
+      this._environmentModel = null;
+    }
+
+    if (this.environmentModelDispose != null) {
+      this.environmentModelDispose();
+      this.environmentModelDispose = null;
+    }
+
+    this.queueRender();
+  }
+
+  setEnvironmentModelVisible(visible: boolean) {
+    if (this.environmentRoot.visible === visible) {
+      return;
+    }
+
+    this.environmentRoot.visible = visible;
+    this.queueRender();
+  }
+
   dispose() {
     this.reset();
+    this.clearEnvironmentModel();
     if (this.shadow != null) {
       this.shadow.dispose();
       this.shadow = null;
@@ -616,7 +677,10 @@ export class ModelScene extends Scene {
     this.target.add(model);
   }
 
-  setBakedShadowVisibility(visible: boolean = this.shadowIntensity <= 0) {
+  setBakedShadowVisibility(
+    visible: boolean = this.shadowMode === 'soft-shadow' &&
+      this.shadowIntensity <= 0
+  ) {
     for (const shadow of this.bakedShadows) {
       shadow.visible = visible;
     }
@@ -679,6 +743,19 @@ export class ModelScene extends Scene {
       this.target.remove(this.groundedSkybox);
       this.background = skybox;
     }
+  }
+
+  setSkyboxRotation(rotation: Euler) {
+    this.skyboxRotation.copy(rotation);
+    this.groundedSkybox.rotation.copy(rotation);
+    this.groundedSkybox.rotation.y -= this.yaw;
+    this.backgroundRotation.copy(rotation);
+    this.environmentRotation.copy(rotation);
+    this.queueRender();
+  }
+
+  getSkyboxRotation(): Euler {
+    return this.skyboxRotation.clone();
   }
 
   // farRadius() {
@@ -789,7 +866,8 @@ export class ModelScene extends Scene {
    */
   set yaw(radiansY: number) {
     this.pivot.rotation.y = radiansY;
-    this.groundedSkybox.rotation.y = -radiansY;
+    this.groundedSkybox.rotation.copy(this.skyboxRotation);
+    this.groundedSkybox.rotation.y -= radiansY;
     this.queueRender();
   }
 
@@ -1212,16 +1290,34 @@ export class ModelScene extends Scene {
 
   renderShadow(renderer: WebGLRenderer) {
     const shadow = this.shadow;
-    if (shadow != null && shadow.needsUpdate == true) {
+    if (
+      this.shadowMode === 'soft-shadow' &&
+      shadow != null &&
+      shadow.needsUpdate == true
+    ) {
       shadow.render(renderer, this);
       shadow.needsUpdate = false;
     }
   }
 
   private queueShadowRender() {
-    if (this.shadow != null) {
+    if (this.shadowMode === 'soft-shadow' && this.shadow != null) {
       this.shadow.needsUpdate = true;
     }
+  }
+
+  setShadowMode(shadowMode: ShadowMode|string) {
+    this.shadowMode = normalizeShadowMode(shadowMode);
+    this.setBakedShadowVisibility();
+
+    if (this.shadowMode === 'soft-shadow') {
+      this.setShadowIntensity(this.shadowIntensity);
+      this.updateShadow();
+    } else if (this.shadow != null) {
+      this.shadow.setIntensity(0);
+    }
+
+    this.queueRender();
   }
 
   /**
@@ -1233,6 +1329,10 @@ export class ModelScene extends Scene {
       return;
     }
     this.setBakedShadowVisibility();
+    if (this.shadowMode !== 'soft-shadow') {
+      this.shadow?.setIntensity(0);
+      return;
+    }
     if (shadowIntensity <= 0 && this.shadow == null) {
       return;
     }

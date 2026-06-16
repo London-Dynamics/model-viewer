@@ -326,6 +326,16 @@
     ]
   },
   {
+    "name": "LD Path Tracer",
+    "htmlName": "ld_path_tracer",
+    "examples": [
+      {
+        "htmlId": "ld-path-tracer",
+        "name": "Progressive Path Tracing"
+      }
+    ]
+  },
+  {
     "name": "LD Bloom",
     "htmlName": "ld_bloom",
     "examples": [
@@ -362,8 +372,38 @@
     "htmlName": "ld_environment",
     "examples": [
       {
-        "htmlId": "water",
-        "name": "Just Add Water"
+        "htmlId": "environment-model",
+        "name": "Environment Model"
+      }
+    ]
+  },
+  {
+    "name": "LD AO+Env",
+    "htmlName": "ld_ao_env",
+    "examples": [
+      {
+        "htmlId": "ao-environment-model",
+        "name": "AO + Environment Model"
+      }
+    ]
+  },
+  {
+    "name": "LD+AO+Bloom",
+    "htmlName": "ld_ao_bloom_env",
+    "examples": [
+      {
+        "htmlId": "ao-bloom-environment-model",
+        "name": "AO + Bloom + Environment Model"
+      }
+    ]
+  },
+  {
+    "name": "LD AO+Bloom+Path Tracer",
+    "htmlName": "ld_ao_bloom_path_tracer",
+    "examples": [
+      {
+        "htmlId": "ao-bloom-path-tracer",
+        "name": "AO + Bloom + Path Tracer"
       }
     ]
   },

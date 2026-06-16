@@ -22,6 +22,7 @@
     <meta name="description" content="&lt;model-viewer&gt; LD bloom examples" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
     <link
       rel="shortcut icon"
@@ -54,12 +55,12 @@
          dark enough to make emissive bloom pop, but light enough that a
          dark model is still visible against it.
 
-         The selector matches the `.demo model-viewer` rule in
-         examples.css (specificity 0,1,1) so we win without needing
-         `!important`. */
-      .demo model-viewer {
+         The model-viewer itself is only the space above the controls, not
+         the full stage height inherited from the shared examples CSS. */
+      .ld-bloom-stage > model-viewer {
         background: #262626;
         flex: 1 1 auto;
+        height: auto;
         min-height: 0;
         width: 100%;
       }
@@ -110,10 +111,18 @@
       <div id="toggle"></div>
 
       <div class="examples-container">
-        <div class="sample">
+        <div class="sample minimized-content">
           <div id="ld-bloom" class="demo"></div>
           <div class="content">
-            <div class="wrapper">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="ld-bloom-content"
+            >
+              Info & code
+            </button>
+            <div id="ld-bloom-content" class="wrapper">
               <h4 id="intro">
                 <span class="font-medium">LD Bloom</span> by
                 <a href="https://londondynamics.com" target="_blank"
@@ -613,6 +622,18 @@
       })();
       (() => {
         initFooterLinks();
+      })();
+      (() => {
+        const sample = document.querySelector('#ld-bloom')?.closest('.sample');
+        const toggle = sample?.querySelector('.content-toggle');
+        if (sample == null || toggle == null) {
+          return;
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = sample.classList.toggle('content-expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
       })();
     </script>
 

@@ -2,10 +2,12 @@ import {expect} from 'chai';
 import {
   BoxGeometry,
   Color,
+  LinearSRGBColorSpace,
   Material,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NoToneMapping,
   Object3D,
   Texture
 } from 'three';
@@ -23,11 +25,21 @@ type BloomComposerInternals = {
   activeMsaa: number;
   hasDarkenedState: boolean;
   savedBackground: Color|Texture|null;
+  finalRenderTarget?: {samples: number};
+  renderer?: {capabilities: {isWebGL2: boolean, maxSamples: number}};
   bloomComposer?: {render(deltaTime?: DOMHighResTimeStamp): void};
   finalComposer?: {render(deltaTime?: DOMHighResTimeStamp): void};
+  outputPass?: {
+    render(
+        renderer: unknown, writeBuffer: unknown,
+        readBuffer: {texture: Texture}): void;
+    fsQuad: {render(renderer: unknown): void};
+    material: {defines?: Record<string, string>};
+  };
   darkenNonTargeted(): void;
   restoreNonTargeted(): void;
   dispose(): void;
+  setActiveMsaa(msaa: number): void;
   render(deltaTime?: DOMHighResTimeStamp): void;
   runWithShadowBloomState(callback: () => void): void;
 };
@@ -565,5 +577,67 @@ suite('LD Bloom', () => {
     await timePasses();
 
     expect(getComposer(element).activeMsaa).to.equal(0);
+  });
+
+  test('smart quality keeps hosted AO render target non-multisampled',
+      async () => {
+        addCubeMesh(element, 'Mesh-1');
+
+        element.ambientOcclusion = true;
+        element.bloomQuality = 'smart';
+        element.bloomMsaa = 8;
+        element.setBloomTargets([{mesh: 'Mesh-1'}]);
+        element.bloom = true;
+        await timePasses();
+
+        const composer = getComposer(element);
+        if (composer.renderer != null) {
+          composer.renderer.capabilities.isWebGL2 = true;
+          composer.renderer.capabilities.maxSamples = 8;
+        }
+        composer.setActiveMsaa(0);
+
+        const movingComposer = getComposer(element);
+        expect(movingComposer.activeMsaa).to.equal(0);
+        expect(movingComposer.finalRenderTarget?.samples).to.equal(0);
+
+        element.dispatchEvent(new CustomEvent('camera-change'));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await timePasses();
+
+        const idleComposer = getComposer(element);
+        expect(idleComposer.activeMsaa).to.equal(0);
+        expect(idleComposer.finalRenderTarget?.samples).to.equal(0);
+      });
+
+  test('uses scene output transform for hosted AO final output', async () => {
+    addCubeMesh(element, 'Mesh-1');
+
+    element.ambientOcclusion = true;
+    element.setBloomTargets([{mesh: 'Mesh-1'}]);
+    element.bloom = true;
+    await timePasses();
+
+    const composer = getComposer(element);
+    const outputPass = composer.outputPass!;
+    outputPass.fsQuad.render = () => {};
+
+    const renderer = {
+      autoClearColor: true,
+      autoClearDepth: true,
+      autoClearStencil: true,
+      outputColorSpace: LinearSRGBColorSpace,
+      toneMapping: NoToneMapping,
+      toneMappingExposure: 1,
+      clear: () => {},
+      setRenderTarget: () => {},
+    };
+    outputPass.render(renderer, {}, {texture: new Texture()});
+
+    expect(outputPass.material.defines).to.have.property(
+        'NEUTRAL_TONE_MAPPING');
+    expect(outputPass.material.defines).to.have.property('SRGB_TRANSFER');
+    expect(renderer.toneMapping).to.equal(NoToneMapping);
+    expect(renderer.outputColorSpace).to.equal(LinearSRGBColorSpace);
   });
 });

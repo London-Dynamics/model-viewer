@@ -34,7 +34,11 @@ import { LDLightsMixin } from './features/ld-lights.js';
 import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
 import { LDMeasureMixin } from './features/ld-measure/index.js';
 import { LDModularMixin } from './features/ld-modular/index.js';
+import { LDPathTracerMixin } from './features/ld-path-tracer.js';
+import { LDRenderPipelineMixin } from './features/ld-render-pipeline.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
+import { LDServerAIDenoiseMixin } from './features/ld-server-ai-denoise.js';
+import { LDSkyboxRotationMixin } from './features/ld-skybox-rotation.js';
 
 // Import custom effects to register them
 import './features/ld-selection/selection-outline-effect.js';
@@ -48,24 +52,32 @@ export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
 const ModelViewerElementImpl = LDMaterialManagerMixin(
   LDFloatingObjectAnchorMixin(
     LDMeasureMixin(
-      LDBloomMixin(
-        LDAmbientOcclusionMixin(
-          LDModularMixin(
-            LDSelectionMixin(
-              LDLightsMixin(
-                LDImageCaptureMixin(
-                  LDCameraMixin(
-                    LDEnvironmentMixin(
-                      LDAnimationMixin(
-                        LDDebugMixin(
-                          AnnotationMixin(
-                            SceneGraphMixin(
-                              StagingMixin(
-                                EnvironmentMixin(
-                                  LDControlsMixin(
-                                    ARMixin(
-                                      LoadingMixin(
-                                        AnimationMixin(ModelViewerElementBase)
+      LDRenderPipelineMixin(
+        LDBloomMixin(
+          LDServerAIDenoiseMixin(
+            LDPathTracerMixin(
+              LDAmbientOcclusionMixin(
+                LDModularMixin(
+                  LDSelectionMixin(
+                    LDLightsMixin(
+                      LDImageCaptureMixin(
+                        LDCameraMixin(
+                          LDSkyboxRotationMixin(
+                            LDEnvironmentMixin(
+                              LDAnimationMixin(
+                                LDDebugMixin(
+                                  AnnotationMixin(
+                                    SceneGraphMixin(
+                                      StagingMixin(
+                                        EnvironmentMixin(
+                                          LDControlsMixin(
+                                            ARMixin(
+                                              LoadingMixin(
+                                                AnimationMixin(ModelViewerElementBase)
+                                              )
+                                            )
+                                          )
+                                        )
                                       )
                                     )
                                   )

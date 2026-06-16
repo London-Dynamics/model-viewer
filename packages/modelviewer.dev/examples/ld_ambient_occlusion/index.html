@@ -25,12 +25,37 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
     <link
       rel="shortcut icon"
       type="image/png"
       href="../../assets/favicon.png"
     />
+    <style>
+      #ld-ambient-occlusion example-snippet,
+      #ld-ambient-occlusion example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-ao-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .ld-ao-stage > model-viewer {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+      }
+
+      .ld-ao-controls {
+        flex: 0 0 auto;
+      }
+    </style>
 
     <style type="text/tailwindcss"></style>
     <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
@@ -41,10 +66,18 @@
       <div class="sidebar" id="sidenav"></div>
       <div id="toggle"></div>
       <div class="examples-container">
-        <div class="sample">
+        <div class="sample minimized-content">
           <div id="ld-ambient-occlusion" class="demo"></div>
           <div class="content">
-            <div class="wrapper">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="ld-ambient-occlusion-content"
+            >
+              Info & code
+            </button>
+            <div id="ld-ambient-occlusion-content" class="wrapper">
               <h4 id="intro">
                 <span class="font-medium">LD Ambient Occlusion</span> by
                 <a href="https://londondynamics.com" target="_blank"
@@ -56,7 +89,7 @@
                 <h2 class="demo-title">Real-time AO</h2>
                 <h4>
                   Toggle the built-in screen-space occlusion pass and tweak its
-                  parameters live on the Bentley Continental model.
+                  parameters live on the selected AO test scene.
                 </h4>
               </div>
               <example-snippet
@@ -64,31 +97,47 @@
                 highlight-as="html"
               >
                 <template>
-                  <model-viewer
-                    id="ld-ao-demo"
-                    camera-controls
-                    interaction-prompt="none"
-                    autoplay
-                    ar
-                    ar-modes="webxr scene-viewer"
-                    shadow-intensity="1"
-                    exposure="1.15"
-                    environment-image="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr"
-                    ambient-occlusion
-                    ao-algorithm="gtao"
-                    ao-radius="4"
-                    ao-intensity="0.85"
-                    ao-output="default"
-                    ao-noise="magic-square"
-                    src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
-                    alt="A LD Bentley Continental lit with real-time ambient occlusion"
-                  >
-                    <div class="absolute bottom-0 inset-x-0 p-2">
+                  <div class="ld-ao-stage">
+                    <model-viewer
+                      id="ld-ao-demo"
+                      camera-controls
+                      min-camera-orbit="auto auto 0.01m"
+                      max-camera-orbit="auto auto 1000m"
+                      interaction-prompt="none"
+                      autoplay
+                      ar
+                      ar-modes="webxr scene-viewer"
+                      shadow-intensity="1"
+                      exposure="1.15"
+                      environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr"
+                      ambient-occlusion
+                      ao-algorithm="gtao"
+                      ao-radius="4"
+                      ao-intensity="0.85"
+                      ao-output="default"
+                      ao-noise="magic-square"
+                      src="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/AO_TestScene.glb"
+                      alt="AO test scene lit with real-time ambient occlusion"
+                    ></model-viewer>
+                    <div class="ld-ao-controls p-2">
                       <form
                         id="ao-control-panel"
                         class="bg-white shadow-sm rounded-lg px-4 py-5 flex flex-col gap-3"
                       >
-                        <div class="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+                        <div class="grid grid-cols-[minmax(0,12rem)_1fr_1fr_auto] gap-3 items-end">
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Test case
+                            <select
+                              id="test-case-select"
+                              class="w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            >
+                              <option value="test-scene" selected>
+                                Test scene
+                              </option>
+                              <option value="car">Car</option>
+                              <option value="bag">Bag</option>
+                            </select>
+                          </label>
                           <label class="text-xs text-gray-500 flex flex-col gap-1">
                             Model URL
                             <input
@@ -210,13 +259,27 @@
                         </div>
                       </form>
                     </div>
-                  </model-viewer>
+                  </div>
                   <script type="module">
                     (() => {
+                      const TEST_CASES = {
+                        'test-scene': {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/AO_TestScene.glb',
+                        },
+                        car: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb',
+                        },
+                        bag: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/019dfd85-606d-770c-9854-43a16af56055/puzzledefault/e14d1a56-44bb-dc4a-e1e8-87b0513324d8.glb',
+                        },
+                      };
                       const DEFAULT_MODEL_SRC =
-                        'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb';
+                        TEST_CASES['test-scene'].modelSrc;
                       const DEFAULT_ENVIRONMENT_IMAGE =
-                        'http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr';
+                        'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr';
                       const modelViewer =
                         document.querySelector('#ld-ao-demo');
                       const controlPanel =
@@ -226,6 +289,8 @@
                       const environmentSrcInput = document.querySelector(
                         '#environment-src-input'
                       );
+                      const testCaseSelect =
+                        document.querySelector('#test-case-select');
                       const aoToggle = document.querySelector('#toggle-ao');
                       const radiusInput = document.querySelector('#ao-radius');
                       const radiusLabel =
@@ -322,6 +387,16 @@
                         await applySourceOverrides();
                       });
 
+                      testCaseSelect.addEventListener('change', async (event) => {
+                        const testCase = TEST_CASES[event.target.value];
+                        if (testCase === undefined) {
+                          return;
+                        }
+
+                        modelSrcInput.value = testCase.modelSrc;
+                        await applySourceOverrides();
+                      });
+
                       algorithmSelect.addEventListener('change', (event) => {
                         modelViewer.setAttribute(
                           'ao-algorithm',
@@ -366,8 +441,8 @@
                 </template>
               </example-snippet>
               <p class="text-sm text-gray-600 mt-6">
-                Source model: <code>LD_Car1.glb</code> from
-                <code>shared-assets/glTF-Sample-Assets/Models/Car</code>.
+                Source model: <code>AO_TestScene.glb</code> from the
+                <code>Test scene</code> AO test case.
               </p>
             </div>
           </div>
@@ -393,6 +468,20 @@
       (() => {
         initFooterLinks();
       })();
+      (() => {
+        const sample = document
+          .querySelector('#ld-ambient-occlusion')
+          ?.closest('.sample');
+        const toggle = sample?.querySelector('.content-toggle');
+        if (sample == null || toggle == null) {
+          return;
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = sample.classList.toggle('content-expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
+      })();
     </script>
 
     <!-- Documentation-specific dependencies: -->
@@ -401,7 +490,7 @@
     <!-- Loads <model-viewer> on modern browsers: -->
     <script
       type="module"
-      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
+      src="../../../model-viewer/dist/model-viewer.js"
     ></script>
   </body>
 </html>

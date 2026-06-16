@@ -18,10 +18,12 @@ import {ACESFilmicToneMapping, AgXToneMapping, CineonToneMapping, LinearToneMapp
 
 import ModelViewerElementBase, {$needsRender, $progressTracker, $renderer, $scene, $shouldAttemptPreload} from '../model-viewer-base.js';
 import {clamp, Constructor, deserializeUrl} from '../utilities.js';
+import {ShadowMode} from '../three-components/ModelScene.js';
 
 export const BASE_OPACITY = 0.5;
 const DEFAULT_SHADOW_INTENSITY = 0.0;
 const DEFAULT_SHADOW_SOFTNESS = 1.0;
+const DEFAULT_SHADOW_MODE: ShadowMode = 'soft-shadow';
 const DEFAULT_EXPOSURE = 1.0;
 
 export type ToneMappingValue = 'auto'|'aces'|'agx'|'commerce'|'neutral'|
@@ -38,6 +40,7 @@ export declare interface EnvironmentInterface {
   skyboxHeight: string;
   shadowIntensity: number;
   shadowSoftness: number;
+  shadowMode: ShadowMode;
   exposure: number;
   hasBakedShadow(): boolean;
 }
@@ -56,6 +59,9 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({type: Number, attribute: 'shadow-softness'})
     shadowSoftness: number = DEFAULT_SHADOW_SOFTNESS;
+
+    @property({type: String, attribute: 'shadow-mode'})
+    shadowMode: ShadowMode = DEFAULT_SHADOW_MODE;
 
     @property({type: Number}) exposure: number = DEFAULT_EXPOSURE;
 
@@ -80,6 +86,11 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (changedProperties.has('shadowSoftness')) {
         this[$scene].setShadowSoftness(this.shadowSoftness);
+        this[$needsRender]();
+      }
+
+      if (changedProperties.has('shadowMode')) {
+        this[$scene].setShadowMode(this.shadowMode);
         this[$needsRender]();
       }
 
