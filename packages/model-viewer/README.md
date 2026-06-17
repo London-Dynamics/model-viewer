@@ -130,3 +130,27 @@ Command                         | Description
 `npm run clean`                 | Deletes all build artifacts
 `npm run dev`                   | Starts `tsc` and `rollup` in "watch" mode, causing artifacts to automatically rebuild upon incremental changes
 
+## Releasing
+
+1. Bump the version in `package.json` and commit (e.g. `4.6.3`).
+2. Create and push a matching tag:
+
+```console
+git tag v4.6.3
+git push origin v4.6.3
+```
+
+3. The [release workflow](../../.github/workflows/release-package.yml) will validate the tag, build, test, publish to GitHub Packages, and create a GitHub Release with auto-generated notes.
+
+The tag **must** match `package.json` exactly (`v4.6.3` ↔ `"version": "4.6.3"`). Publishing the same version twice will fail at the registry.
+
+Only strict semver tags (`vX.Y.Z`) trigger a release. Pre-release tags such as `v4.2.0-beta.49` do not.
+
+To re-run manually, use **workflow_dispatch** in the Actions UI and select the tag ref (e.g. `v4.6.3`) — not a branch.
+
+### GitHub settings (one-time, repo admin)
+
+- **Required**: Settings → Actions → General → Workflow permissions → **Read and write permissions**
+- **Recommended**: Settings → Tags → protection rule for `v*`
+- **No longer needed**: manually creating a GitHub Release before publish
+
