@@ -97,6 +97,10 @@ assert.match(
     'test case selector should include the Southbay model');
 assert.match(
     html,
+    /<option value="gym-planer"[^>]*>Gym Planer<\/option>/,
+    'test case selector should include the Gym Planer model');
+assert.match(
+    html,
     /<option value="car"[^>]*selected[^>]*>Car<\/option>/,
     'test case selector should default to the car model');
 assert.match(
@@ -113,8 +117,24 @@ assert.match(
     'Southbay test case should use the requested GLB and HDR');
 assert.match(
     html,
-    /id="path-tracer-save-image"/,
-    'path tracer example should expose a save image button');
+    /['"]gym-planer['"]:\s*\{[\s\S]*modelSrc:\s*['"]https:\/\/assets\.v2\.londondynamics\.com\/71931451-f74c-4f9e-8c89-45eb5759ce1c\/00000000-0000-0000-0000-000000000000\/Planner-Demo\.glb['"][\s\S]*environmentImage:\s*['"]https:\/\/assets\.v2\.londondynamics\.com\/00000000-0000-0000-0000-000000000000\/00000000-0000-0000-0000-000000000000\/environments\/dancing_hall_2k_desat\.hdr['"]/,
+    'Gym Planer test case should use the requested GLB and car HDR');
+assert.match(
+    html,
+    /id="path-tracer-save-path-traced"/,
+    'path tracer example should expose a save path traced button');
+assert.match(
+    html,
+    /Save path traced/,
+    'path tracer save button should make the path traced export explicit');
+assert.match(
+    html,
+    /id="path-tracer-save-final"/,
+    'path tracer example should expose a save final button');
+assert.match(
+    html,
+    /Save Final/,
+    'path tracer example should expose a final output export');
 assert.match(
     html,
     /class="ld-path-tracer-export-overlay"/,
@@ -129,24 +149,40 @@ assert.doesNotMatch(
     'save image button should not force a large minimum width');
 assert.match(
     html,
+    /downloadPathTracedCanvas/,
+    'save path traced button should use a dedicated path traced export handler');
+assert.match(
+    html,
+    /downloadFinalCanvas/,
+    'save final button should use a dedicated final export handler');
+assert.match(
+    html,
     /modelViewer\.toBlob\(\s*\{\s*mimeType:\s*['"]image\/png['"]/,
-    'save image button should export the current model-viewer pass as a png blob');
+    'save buttons should export the current model-viewer pass as a png blob');
 assert.match(
     html,
     /fillStyle = ['"]white['"]/,
-    'save image button should composite transparent pixels over the visible white background');
+    'save buttons should composite transparent pixels over the visible white background');
 assert.match(
     html,
     /drawImage\(image,\s*0,\s*0\)/,
-    'save image button should draw the current pass onto the export canvas');
+    'save buttons should draw the current pass onto the export canvas');
+assert.match(
+    html,
+    /drawImage\(\s*serverAIDenoiseOverlay,\s*0,\s*0,\s*exportCanvas\.width,\s*exportCanvas\.height\s*\)/,
+    'save final should composite the visible server AI denoise overlay');
 assert.doesNotMatch(
     html,
     /canvas\.toBlob\(/,
-    'save image button should not export the raw WebGL canvas directly');
+    'save buttons should not export the raw WebGL canvas directly');
 assert.match(
     html,
-    /download = ['"]model-viewer-path-tracer\.png['"]/,
-    'save image button should download a png file');
+    /['"]model-viewer-path-tracer\.png['"]/,
+    'save path traced should download a path tracer png file');
+assert.match(
+    html,
+    /['"]model-viewer-final\.png['"]/,
+    'save final should download a final png file');
 assert.match(
     html,
     /id="path-tracer-denoise-mode"/,

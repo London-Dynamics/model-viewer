@@ -358,11 +358,18 @@
                           </select>
                         </label>
                         <button
-                          id="path-tracer-save-image"
+                          id="path-tracer-save-path-traced"
                           type="button"
                           class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
                         >
-                          Save image
+                          Save path traced
+                        </button>
+                        <button
+                          id="path-tracer-save-final"
+                          type="button"
+                          class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                        >
+                          Save Final
                         </button>
                         <span
                           id="server-ai-denoise-status"
@@ -384,6 +391,7 @@
                               <option value="bag">Bag</option>
                               <option value="centurion">Centurion</option>
                               <option value="southbay">Southbay</option>
+                              <option value="gym-planer">Gym Planer</option>
                             </select>
                           </label>
                           <label>
@@ -702,6 +710,12 @@
                           environmentImage:
                             'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
                         },
+                        'gym-planer': {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/00000000-0000-0000-0000-000000000000/Planner-Demo.glb',
+                          environmentImage:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+                        },
                       };
                       const CAMERA_PRESETS = {
                         none: {
@@ -790,8 +804,11 @@
                       const aspectRatio = document.querySelector(
                         '#path-tracer-aspect-ratio'
                       );
-                      const saveImage = document.querySelector(
-                        '#path-tracer-save-image'
+                      const savePathTraced = document.querySelector(
+                        '#path-tracer-save-path-traced'
+                      );
+                      const saveFinal = document.querySelector(
+                        '#path-tracer-save-final'
                       );
                       const serverAIDenoiseOverlay = document.querySelector(
                         '#server-ai-denoise-overlay'
@@ -1165,41 +1182,86 @@
                           aspectRatio.value
                         );
                       };
-                      const downloadCanvas = async () => {
+                      const createExportCanvas = async () => {
                         const canvas =
                           modelViewer.shadowRoot?.querySelector('canvas');
                         if (canvas == null) {
                           alert('No rendered canvas is available to save yet.');
-                          return;
+                          return null;
                         }
 
+                        const blob = await modelViewer.toBlob({
+                          mimeType: 'image/png',
+                        });
+                        const image = await createImageBitmap(blob);
+                        const exportCanvas = document.createElement('canvas');
+                        exportCanvas.width = image.width;
+                        exportCanvas.height = image.height;
+                        const context = exportCanvas.getContext('2d');
+                        context.fillStyle = 'white';
+                        context.fillRect(
+                          0,
+                          0,
+                          exportCanvas.width,
+                          exportCanvas.height
+                        );
+                        context.drawImage(image, 0, 0);
+                        image.close?.();
+
+                        return exportCanvas;
+                      };
+                      const downloadExportCanvas = (exportCanvas, filename) => {
+                        const dataUrl = exportCanvas.toDataURL('image/png');
+                        const link = document.createElement('a');
+                        link.href = dataUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        setTimeout(() => {
+                          document.body.removeChild(link);
+                        }, 250);
+                      };
+                      const downloadPathTracedCanvas = async () => {
                         try {
-                          const blob = await modelViewer.toBlob({
-                            mimeType: 'image/png',
-                          });
-                          const image = await createImageBitmap(blob);
-                          const exportCanvas = document.createElement('canvas');
-                          exportCanvas.width = image.width;
-                          exportCanvas.height = image.height;
-                          const context = exportCanvas.getContext('2d');
-                          context.fillStyle = 'white';
-                          context.fillRect(
-                            0,
-                            0,
-                            exportCanvas.width,
-                            exportCanvas.height
+                          const exportCanvas = await createExportCanvas();
+                          if (exportCanvas == null) {
+                            return;
+                          }
+                          downloadExportCanvas(
+                            exportCanvas,
+                            'model-viewer-path-tracer.png'
                           );
-                          context.drawImage(image, 0, 0);
-                          const dataUrl = exportCanvas.toDataURL('image/png');
-                          image.close?.();
-                          const link = document.createElement('a');
-                          link.href = dataUrl;
-                          link.download = 'model-viewer-path-tracer.png';
-                          document.body.appendChild(link);
-                          link.click();
-                          setTimeout(() => {
-                            document.body.removeChild(link);
-                          }, 250);
+                        } catch {
+                          alert(
+                            'The browser blocked image export for this canvas.'
+                          );
+                        }
+                      };
+                      const downloadFinalCanvas = async () => {
+                        try {
+                          const exportCanvas = await createExportCanvas();
+                          if (exportCanvas == null) {
+                            return;
+                          }
+                          if (
+                            !serverAIDenoiseOverlay.hidden &&
+                            serverAIDenoiseOverlay.classList.contains(
+                              'server-ai-denoise-overlay-visible'
+                            )
+                          ) {
+                            const context = exportCanvas.getContext('2d');
+                            context.drawImage(
+                              serverAIDenoiseOverlay,
+                              0,
+                              0,
+                              exportCanvas.width,
+                              exportCanvas.height
+                            );
+                          }
+                          downloadExportCanvas(
+                            exportCanvas,
+                            'model-viewer-final.png'
+                          );
                         } catch {
                           alert(
                             'The browser blocked image export for this canvas.'
@@ -1267,7 +1329,11 @@
                         applyServerAIAspectRatio();
                         clearServerAIDenoise();
                       });
-                      saveImage.addEventListener('click', downloadCanvas);
+                      savePathTraced.addEventListener(
+                        'click',
+                        downloadPathTracedCanvas
+                      );
+                      saveFinal.addEventListener('click', downloadFinalCanvas);
                       window.addEventListener('resize', () => {
                         if (denoiseMode.value === 'server-ai') {
                           applyServerAIAspectRatio();
