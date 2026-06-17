@@ -110,6 +110,18 @@ hr.solid {
   margin-block-end: 0em;
 }
 
+.category h3,
+.subcategory-header {
+  padding-right: 20px;
+}
+
+.category h3 a,
+.subcategory-header a {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .active {
   text-decoration: underline;
 }

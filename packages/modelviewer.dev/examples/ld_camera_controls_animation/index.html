@@ -1,0 +1,442 @@
+<!--
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Camera Controls &amp; Animation</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD camera controls and animation example"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      #camera-controls-animation example-snippet,
+      #camera-controls-animation example-snippet > template ~ * {
+        display: block;
+      }
+
+      #camera-controls-animation-demo {
+        height: 100vh;
+        width: 100%;
+      }
+    </style>
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="camera-controls-animation" class="demo"></div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="camera-controls-animation-content"
+            >
+              Info & code
+            </button>
+            <div id="camera-controls-animation-content" class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Camera Controls & Animation</span>
+                demonstrates switching between orbit and FPS controls, setting
+                camera views with the familiar camera attributes, and animating
+                between views while routing around the model bounds.
+              </h4>
+              <example-snippet
+                stamp-to="camera-controls-animation"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="camera-controls-animation-demo"
+                    camera-controls
+                    camera-control-mode="orbit"
+                    fps-look-sensitivity="0.5"
+                    fps-move-sensitivity="0.3"
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    min-camera-orbit="auto auto 0.01m"
+                    max-camera-orbit="auto auto 1000m"
+                    camera-orbit="-120deg 78deg 7m"
+                    camera-target="0m 0.45m 0m"
+                    field-of-view="35deg"
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    exposure="1"
+                    ambient-occlusion
+                    bloom
+                    bloom-mode="unreal"
+                    bloom-quality="smart"
+                    bloom-strength="0.69"
+                    bloom-radius="0.2"
+                    bloom-threshold="0.05"
+                    bloom-msaa="8"
+                    environment-image="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/industrial_sunset_puresky_4k%201.hdr"
+                    skybox-image="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/industrial_sunset_puresky_4k%201.hdr"
+                    skybox-rotation="0deg 0deg 0.5deg"
+                    skybox-rotation-animation
+                    skybox-rotation-axis="y"
+                    skybox-rotation-speed="0.25deg/s"
+                    environment-model="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/Road.glb"
+                    environment-model-position="0m -0.82m 0m"
+                    environment-model-orientation="0deg 0deg 0deg"
+                    environment-model-scale="1 1 1"
+                    src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
+                    alt="A car for testing LD camera controls and animation"
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body ld-sections">
+                          <div>
+                            <h3 class="ld-panel-title">
+                              Camera Controls & Animation
+                            </h3>
+                            <p class="ld-helper-text">
+                              FPS mode uses pointer drag to look around in place.
+                              Override enables keyboard fly mode for free camera
+                              movement.
+                            </p>
+                          </div>
+                          <div class="ld-field-row">
+                            <button
+                              id="camera-outside-1-orbit"
+                              type="button"
+                              class="ld-button ld-button-primary"
+                            >
+                              Outside 1, Orbit
+                            </button>
+                            <button
+                              id="camera-outside-2-orbit"
+                              type="button"
+                              class="ld-button"
+                            >
+                              Outside 2, Orbit
+                            </button>
+                            <button
+                              id="camera-inside-fps"
+                              type="button"
+                              class="ld-button"
+                            >
+                              Inside FPS
+                            </button>
+                            <button
+                              id="camera-override-fps"
+                              type="button"
+                              class="ld-button ld-button-danger"
+                            >
+                              Override
+                            </button>
+                            <button
+                              id="camera-toggle-animation"
+                              type="button"
+                              class="ld-button"
+                            >
+                              Toggle animated outside view
+                            </button>
+                          </div>
+                          <div class="ld-divider"></div>
+                          <div class="ld-field-row">
+                            <button
+                              id="camera-save-outside-1"
+                              type="button"
+                              class="ld-button-sm"
+                            >
+                              Save Outside 1
+                            </button>
+                            <button
+                              id="camera-save-outside-2"
+                              type="button"
+                              class="ld-button-sm"
+                            >
+                              Save Outside 2
+                            </button>
+                            <button
+                              id="camera-save-inside"
+                              type="button"
+                              class="ld-button-sm"
+                            >
+                              Save Inside
+                            </button>
+                          </div>
+                          <div
+                            id="camera-controls-animation-status"
+                            class="ld-helper-text"
+                          >
+                            mode: orbit
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#camera-controls-animation-demo'
+                      );
+                      const status = document.querySelector(
+                        '#camera-controls-animation-status'
+                      );
+                      const bloomTargets = [
+                        {
+                          material: 'Polestar_RenderMaterial_RedLight',
+                          color: '#ff0000',
+                          intensity: 0.69,
+                        },
+                        {
+                          material: 'Polestar_RenderMaterial_WhiteLight',
+                          color: '#ffffff',
+                          intensity: 0.69,
+                        },
+                      ];
+                      const cameraSlots = {
+                        outside1: {
+                          type: 'PerspectiveCamera',
+                          controlMode: 'orbit',
+                          position: [
+                            -5.929704696203918,
+                            1.4553818357243162,
+                            -3.423516602568318,
+                          ],
+                          worldTarget: [0, 0, 0],
+                          target: [0, 0, 0],
+                          fov: 35,
+                          near: 0.1,
+                          far: 2000,
+                          zoom: 1,
+                          up: [0, 1, 0],
+                          enableKeyboardMove: false,
+                          enableFlyMode: false,
+                        },
+                        outside2: {
+                          type: 'PerspectiveCamera',
+                          controlMode: 'orbit',
+                          position: [
+                            5.42615830403639,
+                            0.6237445276814764,
+                            -4.378098768155458,
+                          ],
+                          worldTarget: [0, 0, 0],
+                          target: [0, 0, 0],
+                          fov: 35,
+                          near: 0.1,
+                          far: 2000,
+                          zoom: 1,
+                          up: [0, 1, 0],
+                          enableKeyboardMove: false,
+                          enableFlyMode: false,
+                        },
+                        inside: {
+                          type: 'PerspectiveCamera',
+                          controlMode: 'fps',
+                          position: [
+                            0.08251846345676345,
+                            0.9237167243421402,
+                            0.3074030924477068,
+                          ],
+                          worldTarget: [
+                            -0.10881897029496262,
+                            0.5724078218130786,
+                            -0.6090967937765798,
+                          ],
+                          target: [
+                            -0.10881897029496262,
+                            0.5724078218130786,
+                            -0.6090967937765798,
+                          ],
+                          fov: 58,
+                          near: 0.1,
+                          far: 2000,
+                          zoom: 1,
+                          up: [0, 1, 0],
+                          enableKeyboardMove: false,
+                          enableFlyMode: false,
+                        },
+                      };
+                      const outsideViews = [
+                        () => cameraSlots.outside1,
+                        () => cameraSlots.outside2,
+                      ];
+                      let outsideIndex = 0;
+
+                      const setStatus = (text) => {
+                        status.textContent = text;
+                      };
+
+                      const applyBloomTargets = () => {
+                        modelViewer.setBloomTargets(bloomTargets);
+                      };
+                      const saveCameraSlot = (slotName) => {
+                        const meta = modelViewer.getCameraJSON();
+                        if (meta == null) {
+                          return;
+                        }
+
+                        const isInside = slotName === 'inside';
+                        cameraSlots[slotName] = {
+                          ...meta.object,
+                          controlMode: isInside ? 'fps' : 'orbit',
+                          enableKeyboardMove: false,
+                          enableFlyMode: false,
+                        };
+                        console.log(
+                          `LD Camera ${slotName}`,
+                          JSON.stringify(cameraSlots[slotName], null, 2)
+                        );
+                        setStatus(`saved ${slotName} camera; see console`);
+                      };
+
+                      customElements.whenDefined('model-viewer').then(() => {
+                        modelViewer.addEventListener('load', applyBloomTargets);
+                        applyBloomTargets();
+                      });
+
+                      document
+                        .querySelector('#camera-outside-1-orbit')
+                        .addEventListener('click', async () => {
+                          await modelViewer.setCameraView(cameraSlots.outside1);
+                          setStatus('mode: orbit | outside 1');
+                        });
+
+                      document
+                        .querySelector('#camera-outside-2-orbit')
+                        .addEventListener('click', async () => {
+                          await modelViewer.setCameraView(cameraSlots.outside2);
+                          setStatus('mode: orbit | outside 2');
+                        });
+
+                      document
+                        .querySelector('#camera-inside-fps')
+                        .addEventListener('click', async () => {
+                          await modelViewer.setCameraView(cameraSlots.inside);
+                          setStatus('mode: fps | drag to look around');
+                        });
+
+                      document
+                        .querySelector('#camera-override-fps')
+                        .addEventListener('click', () => {
+                          modelViewer.setCameraControlsMode('fps', {
+                            enableKeyboardMove: true,
+                            enableFlyMode: true,
+                          });
+                          setStatus('mode: fps override | WASD/arrows fly');
+                        });
+
+                      document
+                        .querySelector('#camera-toggle-animation')
+                        .addEventListener('click', async () => {
+                          outsideIndex = (outsideIndex + 1) % outsideViews.length;
+                          await modelViewer.animateCameraTo(
+                            outsideViews[outsideIndex](),
+                            {
+                              duration: 1500,
+                              easing: 'easeInOutQuad',
+                              avoidSubject: true,
+                              avoidMargin: 2,
+                            }
+                          );
+                          setStatus(
+                            `mode: orbit | animated outside view ${
+                              outsideIndex + 1
+                            }`
+                          );
+                        });
+
+                      document
+                        .querySelector('#camera-save-outside-1')
+                        .addEventListener('click', () => {
+                          saveCameraSlot('outside1');
+                        });
+
+                      document
+                        .querySelector('#camera-save-outside-2')
+                        .addEventListener('click', () => {
+                          saveCameraSlot('outside2');
+                        });
+
+                      document
+                        .querySelector('#camera-save-inside')
+                        .addEventListener('click', () => {
+                          saveCameraSlot('inside');
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2026 London Dynamics. Licensed under the Apache License
+            2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_camera_controls_animation');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+      (() => {
+        const sample = document
+          .querySelector('#camera-controls-animation')
+          ?.closest('.sample');
+        const toggle = sample?.querySelector('.content-toggle');
+        if (sample == null || toggle == null) {
+          return;
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = sample.classList.toggle('content-expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
+      })();
+    </script>
+
+    <script type="module" src="../built/dependencies.js"></script>
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+  </body>
+</html>

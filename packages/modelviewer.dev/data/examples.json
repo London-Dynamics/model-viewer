@@ -368,6 +368,16 @@
     ]
   },
   {
+    "name": "LD Camera Controls & Animation",
+    "htmlName": "ld_camera_controls_animation",
+    "examples": [
+      {
+        "htmlId": "camera-controls-animation",
+        "name": "Camera Controls & Animation"
+      }
+    ]
+  },
+  {
     "name": "LD Environment",
     "htmlName": "ld_environment",
     "examples": [

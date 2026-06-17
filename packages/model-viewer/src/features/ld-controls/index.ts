@@ -18,7 +18,8 @@
  *
  * This module provides a camera controls mixin that uses the CameraControls
  * third-party library instead of the original SmoothControls. The interface
- * remains identical to the original controls, making it a true drop-in replacement.
+ * remains identical to the original controls, making it a true drop-in
+ * replacement.
  *
  * Link to CameraControls library:
  * https://github.com/yomotsu/camera-controls
@@ -34,83 +35,23 @@
  * ```
  */
 
-import { property } from 'lit/decorators.js';
+import CameraControls from 'camera-controls';
+import {property} from 'lit/decorators.js';
 import * as THREE from 'three';
 
-import { style } from '../../decorators.js';
-import ModelViewerElementBase, {
-  $ariaLabel,
-  $container,
-  $getModelIsVisible,
-  $loadedTime,
-  $needsRender,
-  $onModelLoad,
-  $onResize,
-  $renderer,
-  $scene,
-  $tick,
-  $updateStatus,
-  $userInputElement,
-  toVector3D,
-  Vector3D,
-} from '../../model-viewer-base.js';
+import {style} from '../../decorators.js';
+import ModelViewerElementBase, {$ariaLabel, $container, $getModelIsVisible, $loadedTime, $needsRender, $onModelLoad, $onResize, $renderer, $scene, $tick, $updateStatus, $userInputElement, toVector3D, Vector3D,} from '../../model-viewer-base.js';
+import {EvaluatedStyle, Intrinsics, SphericalIntrinsics, Vector3Intrinsics,} from '../../styles/evaluators.js';
+import {DECAY_MILLISECONDS} from '../../three-components/Damper.js';
+import {ChangeSource, PointerChangeEvent,} from '../../three-components/SmoothControls.js';
+import {Constructor} from '../../utilities.js';
+import {timeline, TimingFunction} from '../../utilities/animation.js';
 
-import {
-  EvaluatedStyle,
-  Intrinsics,
-  SphericalIntrinsics,
-  Vector3Intrinsics,
-} from '../../styles/evaluators.js';
+import {ensureViewportGizmo, type ViewportGizmoHandle,} from './viewport-gizmo.js';
 
-import { DECAY_MILLISECONDS } from '../../three-components/Damper.js';
-import {
-  ChangeSource,
-  PointerChangeEvent,
-} from '../../three-components/SmoothControls.js';
-import { Constructor } from '../../utilities.js';
-import { timeline, TimingFunction } from '../../utilities/animation.js';
+import {$controls, $fingerAnimatedContainers, $panElement, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
-import CameraControls from 'camera-controls';
-
-import {
-  ensureViewportGizmo,
-  type ViewportGizmoHandle,
-} from './viewport-gizmo.js';
-
-import {
-  $controls,
-  $fingerAnimatedContainers,
-  $panElement,
-  $promptAnimatedContainer,
-  $promptElement,
-  A11yTranslationsInterface,
-  cameraOrbitIntrinsics,
-  cameraTargetIntrinsics,
-  fieldOfViewIntrinsics,
-  Finger,
-  InteractionPromptStrategy,
-  InteractionPromptStyle,
-  maxCameraOrbitIntrinsics,
-  minCameraOrbitIntrinsics,
-  minFieldOfViewIntrinsics,
-  SphericalPosition,
-  TouchAction,
-  type CameraChangeDetails,
-  type ControlsInterface,
-} from '../controls.js';
-
-import {
-  DEFAULT_FOV_DEG,
-  DEFAULT_MIN_FOV_DEG,
-  DEFAULT_CAMERA_ORBIT,
-  DEFAULT_CAMERA_TARGET,
-  DEFAULT_FIELD_OF_VIEW,
-  MINIMUM_RADIUS_RATIO,
-  AZIMUTHAL_QUADRANT_LABELS,
-  POLAR_TRIENT_LABELS,
-  DEFAULT_INTERACTION_PROMPT_THRESHOLD,
-  INTERACTION_PROMPT,
-} from '../controls.js';
+import {DEFAULT_FOV_DEG, DEFAULT_MIN_FOV_DEG, DEFAULT_CAMERA_ORBIT, DEFAULT_CAMERA_TARGET, DEFAULT_FIELD_OF_VIEW, MINIMUM_RADIUS_RATIO, AZIMUTHAL_QUADRANT_LABELS, POLAR_TRIENT_LABELS, DEFAULT_INTERACTION_PROMPT_THRESHOLD, INTERACTION_PROMPT,} from '../controls.js';
 
 export {
   DEFAULT_FOV_DEG,
@@ -125,7 +66,7 @@ export {
   INTERACTION_PROMPT,
 };
 
-CameraControls.install({ THREE: THREE });
+CameraControls.install({THREE: THREE});
 
 // Functions to auto-forward from CameraControls to the adapter
 const CAMERA_CONTROLS_METHODS_TO_EXPOSE = [
@@ -142,10 +83,19 @@ const CAMERA_CONTROLS_METHODS_TO_EXPOSE = [
 
 type ExposedMethodNames = (typeof CAMERA_CONTROLS_METHODS_TO_EXPOSE)[number];
 type ExposedCameraControlsMethods = Pick<CameraControls, ExposedMethodNames>;
-type InteractionMode = 'rotate' | 'pan';
+type InteractionMode = 'rotate'|'pan';
+export type CameraControlMode = 'orbit'|'fps';
+
+const DEFAULT_FPS_LOOK_SENSITIVITY = 0.5;
+const DEFAULT_FPS_MOVE_SENSITIVITY = 0.3;
+
+function normalizeFpsSensitivity(value: number, fallback: number): number {
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
 
 /**
- * Adapter interface that bridges between the 3rd party controls and the expected SmoothControls interface
+ * Adapter interface that bridges between the 3rd party controls and the
+ * expected SmoothControls interface
  */
 interface ControlsAdapter extends ExposedCameraControlsMethods {
   // Core controls properties
@@ -157,15 +107,25 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   enablePan: boolean;
   enableTap: boolean;
   interactionMode: InteractionMode;
+  cameraControlMode: CameraControlMode;
+  fpsKeyboardMove: boolean;
+  fpsFlyMode: boolean;
+  fpsLookSensitivity: number;
+  fpsMoveSensitivity: number;
   changeSource: ChangeSource;
 
   // Methods that need to be implemented by the adapter
   enableInteraction(): void;
   disableInteraction(): void;
-  /** Disables orbit/pan drag while keeping wheel/pinch zoom (transient, e.g. hover). */
+  /**
+   * Disables orbit/pan drag while keeping wheel/pinch zoom (transient, e.g.
+   * hover).
+   */
   disableDragInteraction(): void;
   enableDragInteraction(): void;
-  /** Disables orbit/pan drag via {@link disableCameraDrag} until paired enable. */
+  /**
+   * Disables orbit/pan drag via {@link disableCameraDrag} until paired enable.
+   */
   disableExternalDragInteraction(): void;
   enableExternalDragInteraction(): void;
   applyOptions(options: any): void;
@@ -183,10 +143,8 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
 
   // Event handling
   addEventListener(type: string, listener: (event: THREE.Event) => void): void;
-  removeEventListener(
-    type: string,
-    listener: (event: THREE.Event) => void
-  ): void;
+  removeEventListener(type: string, listener: (event: THREE.Event) => void):
+      void;
 
   // Options object for configuration
   options: {
@@ -208,12 +166,13 @@ const TAP_MS = 300;
 
 /**
  * Concrete adapter implementation that wraps a 3rd party controls library
- * This class adapts the 3rd party interface to match the expected SmoothControls interface
+ * This class adapts the 3rd party interface to match the expected
+ * SmoothControls interface
  */
 class ThirdPartyControlsAdapter implements ControlsAdapter {
   private thirdPartyControls: CameraControls;
   private domElement: HTMLElement;
-  private scene: any; // ModelScene reference for recenter functionality
+  private scene: any;  // ModelScene reference for recenter functionality
   private canEnableInteraction: () => boolean;
   private _inputSensitivity: number = 1;
   private _orbitSensitivity: number = 1;
@@ -223,6 +182,18 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _enablePan: boolean = true;
   private _enableTap: boolean = true;
   private _interactionMode: InteractionMode = 'rotate';
+  private _cameraControlMode: CameraControlMode = 'orbit';
+  private _fpsKeyboardMove: boolean = false;
+  private _fpsFlyMode: boolean = false;
+  private _fpsLookSensitivity: number = DEFAULT_FPS_LOOK_SENSITIVITY;
+  private _fpsMoveSensitivity: number = DEFAULT_FPS_MOVE_SENSITIVITY;
+  private _fpsPointerActive: boolean = false;
+  private _fpsPointerId: number|null = null;
+  private _fpsLastPointer = new THREE.Vector2();
+  private _fpsYaw = 0;
+  private _fpsPitch = 0;
+  private _fpsLookDistance = 1;
+  private _fpsKeys = new Set<string>();
   /** Transient disables (hover, object drag, rotation gesture). */
   private _internalDragDisableCount: number = 0;
   /** API disables via disableCameraDrag / enableCameraDrag. */
@@ -230,14 +201,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   private get isDragInteractionDisabled(): boolean {
     return (
-      this._internalDragDisableCount > 0 ||
-      this._externalDragDisableCount > 0
-    );
+        this._internalDragDisableCount > 0 ||
+        this._externalDragDisableCount > 0);
   }
 
   // Tap detection state
   private startTime: number = 0;
-  private startPointerPosition: { clientX: number; clientY: number } = {
+  private startPointerPosition: {clientX: number; clientY: number} = {
     clientX: 0,
     clientY: 0,
   };
@@ -324,7 +294,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   set enableTap(value: boolean) {
     this._enableTap = value;
-    // Tap handling is implemented via pointer event listeners in enableInteraction/disableInteraction
+    // Tap handling is implemented via pointer event listeners in
+    // enableInteraction/disableInteraction
   }
 
   get interactionMode(): InteractionMode {
@@ -336,15 +307,60 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.applyInteractionBindings();
   }
 
+  get cameraControlMode(): CameraControlMode {
+    return this._cameraControlMode;
+  }
+
+  set cameraControlMode(value: CameraControlMode) {
+    this._cameraControlMode = value === 'fps' ? 'fps' : 'orbit';
+    this.syncFpsAnglesFromCamera();
+    this.applyInteractionBindings();
+  }
+
+  get fpsKeyboardMove(): boolean {
+    return this._fpsKeyboardMove;
+  }
+
+  set fpsKeyboardMove(value: boolean) {
+    this._fpsKeyboardMove = value;
+    if (!value) {
+      this._fpsKeys.clear();
+    }
+  }
+
+  get fpsFlyMode(): boolean {
+    return this._fpsFlyMode;
+  }
+
+  set fpsFlyMode(value: boolean) {
+    this._fpsFlyMode = value;
+  }
+
+  get fpsLookSensitivity(): number {
+    return this._fpsLookSensitivity;
+  }
+
+  set fpsLookSensitivity(value: number) {
+    this._fpsLookSensitivity =
+        normalizeFpsSensitivity(value, DEFAULT_FPS_LOOK_SENSITIVITY);
+  }
+
+  get fpsMoveSensitivity(): number {
+    return this._fpsMoveSensitivity;
+  }
+
+  set fpsMoveSensitivity(value: number) {
+    this._fpsMoveSensitivity =
+        normalizeFpsSensitivity(value, DEFAULT_FPS_MOVE_SENSITIVITY);
+  }
+
   constructor(
-    camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
-    element: HTMLElement,
-    scene: any,
-    canEnableInteraction: () => boolean = () => true
-  ) {
+      camera: THREE.PerspectiveCamera|THREE.OrthographicCamera,
+      element: HTMLElement, scene: any,
+      canEnableInteraction: () => boolean = () => true) {
     this.thirdPartyControls = new CameraControls(camera, element);
     this.domElement = element;
-    this.scene = scene; // Store scene reference for recenter functionality
+    this.scene = scene;  // Store scene reference for recenter functionality
     this.canEnableInteraction = canEnableInteraction;
 
     // Initialize default settings to match SmoothControls behavior
@@ -357,34 +373,30 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     }
 
     // Ensure camera up vector is valid
-    if (
-      !camera.up.isVector3 ||
-      camera.up.length() === 0 ||
-      !isFinite(camera.up.x) ||
-      !isFinite(camera.up.y) ||
-      !isFinite(camera.up.z)
-    ) {
+    if (!camera.up.isVector3 || camera.up.length() === 0 ||
+        !isFinite(camera.up.x) || !isFinite(camera.up.y) ||
+        !isFinite(camera.up.z)) {
       camera.up.set(0, 1, 0);
     }
 
     // Ensure projection matrix is properly set up
     if (camera instanceof THREE.PerspectiveCamera) {
       if (!camera.fov || !isFinite(camera.fov) || camera.fov <= 0) {
-        camera.fov = 45; // Default field of view
+        camera.fov = 45;  // Default field of view
       }
       if (!camera.aspect || !isFinite(camera.aspect) || camera.aspect <= 0) {
-        camera.aspect = 1; // Default aspect ratio
+        camera.aspect = 1;  // Default aspect ratio
       }
     } else if (camera instanceof THREE.OrthographicCamera) {
       if (!camera.zoom || !isFinite(camera.zoom) || camera.zoom <= 0) {
-        camera.zoom = 1; // Default zoom
+        camera.zoom = 1;  // Default zoom
       }
     }
     if (!camera.near || !isFinite(camera.near) || camera.near <= 0) {
-      camera.near = 0.1; // Default near plane
+      camera.near = 0.1;  // Default near plane
     }
     if (!camera.far || !isFinite(camera.far) || camera.far <= camera.near) {
-      camera.far = 1000; // Default far plane
+      camera.far = 1000;  // Default far plane
     }
 
     // Update projection matrix with valid parameters
@@ -400,13 +412,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Now set CameraControls with the properly initialized camera
     this.thirdPartyControls.setLookAt(
-      camera.position.x,
-      camera.position.y,
-      camera.position.z, // Camera position from actual camera
-      defaultTarget.x,
-      defaultTarget.y,
-      defaultTarget.z, // Target position
-      false // No transition
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,  // Camera position from actual camera
+        defaultTarget.x,
+        defaultTarget.y,
+        defaultTarget.z,  // Target position
+        false             // No transition
     );
 
     // Force multiple updates to ensure proper matrix calculation
@@ -417,11 +429,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Final validation - if still invalid, reset to absolute safe defaults
     const matrixValid = camera.matrixWorld.elements.every(
-      (n: number) => isFinite(n) && !isNaN(n)
-    );
+        (n: number) => isFinite(n) && !isNaN(n));
     const projMatrixValid = camera.projectionMatrix.elements.every(
-      (n: number) => isFinite(n) && !isNaN(n)
-    );
+        (n: number) => isFinite(n) && !isNaN(n));
 
     if (!matrixValid || !projMatrixValid) {
       camera.position.set(0, 0, 5);
@@ -446,10 +456,21 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Set up sensitivity mappings
     this.updateSensitivity();
     this.applyInteractionBindings();
+    this.domElement.addEventListener('pointerdown', this.onFpsPointerDown);
+    this.domElement.addEventListener('pointermove', this.onFpsPointerMove);
+    this.domElement.addEventListener('pointerup', this.onFpsPointerUp);
+    this.domElement.addEventListener('pointercancel', this.onFpsPointerUp);
+    this.domElement.addEventListener('keydown', this.onFpsKeyDown);
+    this.domElement.addEventListener('keyup', this.onFpsKeyUp);
+    this.domElement.addEventListener('blur', this.onFpsBlur);
+    if (!this.domElement.hasAttribute('tabindex')) {
+      this.domElement.setAttribute('tabindex', '0');
+    }
 
-    // CameraControls does not set changeSource like SmoothControls did on pointer
-    // events. Without this, interaction-prompt wiggle leaves changeSource as
-    // AUTOMATIC and user drags are not recognized (prompt never dismisses).
+    // CameraControls does not set changeSource like SmoothControls did on
+    // pointer events. Without this, interaction-prompt wiggle leaves
+    // changeSource as AUTOMATIC and user drags are not recognized (prompt never
+    // dismisses).
     this.thirdPartyControls.addEventListener('controlstart', () => {
       if (this.changeSource !== ChangeSource.AUTOMATIC) {
         this.changeSource = ChangeSource.USER_INTERACTION;
@@ -466,57 +487,65 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private applyInteractionBindings(): void {
     const controls = this.thirdPartyControls;
     const wheelZoomAction =
-      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
-        ? CameraControls.ACTION.ZOOM
-        : CameraControls.ACTION.DOLLY) as typeof controls.mouseButtons.wheel;
+        (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera ?
+             CameraControls.ACTION.ZOOM :
+             CameraControls.ACTION.DOLLY) as typeof controls.mouseButtons.wheel;
     const mouseZoomAction =
-      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
-        ? CameraControls.ACTION.ZOOM
-        : CameraControls.ACTION.DOLLY) as typeof controls.mouseButtons.middle;
+        (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera ?
+             CameraControls.ACTION.ZOOM :
+             CameraControls.ACTION.DOLLY) as
+        typeof controls.mouseButtons.middle;
     const touchZoomAction =
-      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
-        ? CameraControls.ACTION.TOUCH_ZOOM
-        : CameraControls.ACTION.TOUCH_DOLLY) as typeof controls.touches.two;
+        (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera ?
+             CameraControls.ACTION.TOUCH_ZOOM :
+             CameraControls.ACTION.TOUCH_DOLLY) as typeof controls.touches.two;
     const touchZoomTruckAction =
-      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
-        ? CameraControls.ACTION.TOUCH_ZOOM_TRUCK
-        : CameraControls.ACTION.TOUCH_DOLLY_TRUCK) as typeof controls.touches.two;
+        (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera ?
+             CameraControls.ACTION.TOUCH_ZOOM_TRUCK :
+             CameraControls.ACTION.TOUCH_DOLLY_TRUCK) as
+        typeof controls.touches.two;
 
-    controls.mouseButtons.wheel = this._disableZoom
-      ? CameraControls.ACTION.NONE
-      : wheelZoomAction;
+    if (this._cameraControlMode === 'fps') {
+      controls.mouseButtons.left = CameraControls.ACTION.NONE;
+      controls.mouseButtons.right = CameraControls.ACTION.NONE;
+      controls.mouseButtons.middle = CameraControls.ACTION.NONE;
+      controls.mouseButtons.wheel = CameraControls.ACTION.NONE;
+      controls.touches.one = CameraControls.ACTION.NONE;
+      controls.touches.two = CameraControls.ACTION.NONE;
+      controls.touches.three = CameraControls.ACTION.NONE;
+      return;
+    }
+
+    controls.mouseButtons.wheel =
+        this._disableZoom ? CameraControls.ACTION.NONE : wheelZoomAction;
     controls.mouseButtons.middle = mouseZoomAction;
 
     if (this._interactionMode === 'pan') {
-      controls.mouseButtons.left = this._enablePan
-        ? CameraControls.ACTION.TRUCK
-        : CameraControls.ACTION.NONE;
-      controls.mouseButtons.right = this._enablePan
-        ? CameraControls.ACTION.TRUCK
-        : CameraControls.ACTION.NONE;
+      controls.mouseButtons.left = this._enablePan ?
+          CameraControls.ACTION.TRUCK :
+          CameraControls.ACTION.NONE;
+      controls.mouseButtons.right = this._enablePan ?
+          CameraControls.ACTION.TRUCK :
+          CameraControls.ACTION.NONE;
 
-      controls.touches.one = this._enablePan
-        ? CameraControls.ACTION.TOUCH_TRUCK
-        : CameraControls.ACTION.NONE;
-      controls.touches.two = this._enablePan
-        ? touchZoomTruckAction
-        : touchZoomAction;
-      controls.touches.three = this._enablePan
-        ? touchZoomTruckAction
-        : touchZoomAction;
+      controls.touches.one = this._enablePan ?
+          CameraControls.ACTION.TOUCH_TRUCK :
+          CameraControls.ACTION.NONE;
+      controls.touches.two =
+          this._enablePan ? touchZoomTruckAction : touchZoomAction;
+      controls.touches.three =
+          this._enablePan ? touchZoomTruckAction : touchZoomAction;
     } else {
       controls.mouseButtons.left = CameraControls.ACTION.ROTATE;
-      controls.mouseButtons.right = this._enablePan
-        ? CameraControls.ACTION.TRUCK
-        : CameraControls.ACTION.NONE;
+      controls.mouseButtons.right = this._enablePan ?
+          CameraControls.ACTION.TRUCK :
+          CameraControls.ACTION.NONE;
 
       controls.touches.one = CameraControls.ACTION.TOUCH_ROTATE;
-      controls.touches.two = this._enablePan
-        ? touchZoomTruckAction
-        : touchZoomAction;
-      controls.touches.three = this._enablePan
-        ? touchZoomTruckAction
-        : touchZoomAction;
+      controls.touches.two =
+          this._enablePan ? touchZoomTruckAction : touchZoomAction;
+      controls.touches.three =
+          this._enablePan ? touchZoomTruckAction : touchZoomAction;
     }
 
     if (this.isDragInteractionDisabled) {
@@ -586,7 +615,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.applyInteractionBindings();
   }
 
-  /** Turn on CameraControls and tap listeners without resetting drag-disabled state. */
+  /**
+   * Turn on CameraControls and tap listeners without resetting drag-disabled
+   * state.
+   */
   private ensureControlsListening(): void {
     if (!this.canEnableInteraction()) {
       return;
@@ -605,9 +637,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private applyDragDisabledBindings(): void {
     const controls = this.thirdPartyControls;
     const touchZoomOnly =
-      (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera
-        ? CameraControls.ACTION.TOUCH_ZOOM
-        : CameraControls.ACTION.TOUCH_DOLLY) as typeof controls.touches.two;
+        (this.thirdPartyControls.camera instanceof THREE.OrthographicCamera ?
+             CameraControls.ACTION.TOUCH_ZOOM :
+             CameraControls.ACTION.TOUCH_DOLLY) as typeof controls.touches.two;
 
     controls.mouseButtons.left = CameraControls.ACTION.NONE;
     controls.mouseButtons.right = CameraControls.ACTION.NONE;
@@ -641,7 +673,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
    */
   private onMouseDown = (event: MouseEvent) => {
     // Only track left mouse button
-    if (event.button !== 0) return;
+    if (event.button !== 0)
+      return;
     this.startTime = performance.now();
     this.startPointerPosition.clientX = event.clientX;
     this.startPointerPosition.clientY = event.clientY;
@@ -651,7 +684,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
    * Handle touch start for tap detection
    */
   private onTouchStart = (event: TouchEvent) => {
-    if (event.changedTouches.length === 0) return;
+    if (event.changedTouches.length === 0)
+      return;
     this.startTime = performance.now();
     this.startPointerPosition.clientX = event.changedTouches[0].clientX;
     this.startPointerPosition.clientY = event.changedTouches[0].clientY;
@@ -662,7 +696,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
    */
   private onMouseUp = (event: MouseEvent) => {
     // Only handle left mouse button
-    if (event.button !== 0) return;
+    if (event.button !== 0)
+      return;
     if (this._enablePan && this._enableTap) {
       this.recenter(event.clientX, event.clientY);
     }
@@ -672,14 +707,221 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
    * Handle touch end - check if it was a tap and recenter if so
    */
   private onTouchEnd = (event: TouchEvent) => {
-    if (event.changedTouches.length === 0) return;
+    if (event.changedTouches.length === 0)
+      return;
     if (this._enablePan && this._enableTap) {
       this.recenter(
-        event.changedTouches[0].clientX,
-        event.changedTouches[0].clientY
-      );
+          event.changedTouches[0].clientX, event.changedTouches[0].clientY);
     }
   };
+
+  private onFpsPointerDown = (event: PointerEvent) => {
+    if (this._cameraControlMode !== 'fps' || !this.thirdPartyControls.enabled ||
+        event.button !== 0) {
+      return;
+    }
+
+    this.domElement.focus({preventScroll: true});
+    this.syncFpsAnglesFromCamera();
+    this._fpsPointerActive = true;
+    this._fpsPointerId = event.pointerId;
+    this._fpsLastPointer.set(event.clientX, event.clientY);
+    this.domElement.setPointerCapture?.(event.pointerId);
+    this.changeSource = ChangeSource.USER_INTERACTION;
+    event.preventDefault();
+  };
+
+  private onFpsPointerMove = (event: PointerEvent) => {
+    if (this._cameraControlMode !== 'fps' || !this._fpsPointerActive ||
+        this._fpsPointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - this._fpsLastPointer.x;
+    const deltaY = event.clientY - this._fpsLastPointer.y;
+    this._fpsLastPointer.set(event.clientX, event.clientY);
+
+    const sensitivity =
+        0.004 * this._orbitSensitivity * this._fpsLookSensitivity;
+    this._fpsYaw += deltaX * sensitivity;
+    this._fpsPitch = THREE.MathUtils.clamp(
+        this._fpsPitch - deltaY * sensitivity,
+        -Math.PI / 2 + 0.01,
+        Math.PI / 2 - 0.01);
+    this.applyFpsLookAtCurrentPosition();
+    event.preventDefault();
+  };
+
+  private onFpsPointerUp = (event: PointerEvent) => {
+    if (this._fpsPointerId !== event.pointerId) {
+      return;
+    }
+    this._fpsPointerActive = false;
+    this._fpsPointerId = null;
+    this.domElement.releasePointerCapture?.(event.pointerId);
+    if (this.changeSource === ChangeSource.USER_INTERACTION) {
+      this.changeSource = ChangeSource.NONE;
+    }
+  };
+
+  private onFpsKeyDown = (event: KeyboardEvent) => {
+    if (this._cameraControlMode !== 'fps' || !this._fpsKeyboardMove ||
+        !this.thirdPartyControls.enabled || event.metaKey || event.ctrlKey ||
+        event.altKey) {
+      return;
+    }
+
+    const key = this.normalizeFpsMoveKey(event.key);
+    if (key == null) {
+      return;
+    }
+    this._fpsKeys.add(key);
+    this.changeSource = ChangeSource.USER_INTERACTION;
+    event.preventDefault();
+  };
+
+  private onFpsKeyUp = (event: KeyboardEvent) => {
+    const key = this.normalizeFpsMoveKey(event.key);
+    if (key == null) {
+      return;
+    }
+    this._fpsKeys.delete(key);
+    if (this._fpsKeys.size === 0 && !this._fpsPointerActive) {
+      this.changeSource = ChangeSource.NONE;
+    }
+  };
+
+  private onFpsBlur = () => {
+    this._fpsKeys.clear();
+    this._fpsPointerActive = false;
+    this._fpsPointerId = null;
+    if (this.changeSource === ChangeSource.USER_INTERACTION) {
+      this.changeSource = ChangeSource.NONE;
+    }
+  };
+
+  private normalizeFpsMoveKey(key: string): string|null {
+    switch (key.toLowerCase()) {
+      case 'w':
+      case 'arrowup':
+        return 'forward';
+      case 's':
+      case 'arrowdown':
+        return 'back';
+      case 'a':
+      case 'arrowleft':
+        return 'left';
+      case 'd':
+      case 'arrowright':
+        return 'right';
+      default:
+        return null;
+    }
+  }
+
+  private syncFpsAnglesFromCamera(): void {
+    const camera = this.thirdPartyControls.camera;
+    const target = new THREE.Vector3();
+    this.thirdPartyControls.getTarget(target);
+
+    const direction = target.sub(camera.position);
+    const distance = direction.length();
+    this._fpsLookDistance = Math.max(distance, 1);
+
+    if (distance <= 0.0001) {
+      camera.getWorldDirection(direction);
+    } else {
+      direction.normalize();
+    }
+
+    this._fpsPitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
+    this._fpsYaw = Math.atan2(direction.x, -direction.z);
+  }
+
+  private applyFpsLookAtCurrentPosition(): void {
+    const camera = this.thirdPartyControls.camera;
+    const cosPitch = Math.cos(this._fpsPitch);
+    const direction = new THREE.Vector3(
+        Math.sin(this._fpsYaw) * cosPitch,
+        Math.sin(this._fpsPitch),
+        -Math.cos(this._fpsYaw) * cosPitch);
+    const target = camera.position.clone().add(
+        direction.multiplyScalar(this._fpsLookDistance));
+
+    this.thirdPartyControls.setLookAt(
+        camera.position.x,
+        camera.position.y,
+        camera.position.z,
+        target.x,
+        target.y,
+        target.z,
+        false);
+    this.thirdPartyControls.update(0);
+  }
+
+  private updateFpsKeyboardMovement(delta: number): boolean {
+    if (this._cameraControlMode !== 'fps' || !this._fpsKeyboardMove ||
+        this._fpsKeys.size === 0 || !this.thirdPartyControls.enabled) {
+      return false;
+    }
+
+    const camera = this.thirdPartyControls.camera;
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    if (!this._fpsFlyMode) {
+      forward.y = 0;
+    }
+    if (forward.lengthSq() < 0.000001) {
+      forward.set(Math.sin(this._fpsYaw), 0, -Math.cos(this._fpsYaw));
+    }
+    forward.normalize();
+
+    const right =
+        new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+    const move = new THREE.Vector3();
+
+    if (this._fpsKeys.has('forward')) {
+      move.add(forward);
+    }
+    if (this._fpsKeys.has('back')) {
+      move.sub(forward);
+    }
+    if (this._fpsKeys.has('right')) {
+      move.add(right);
+    }
+    if (this._fpsKeys.has('left')) {
+      move.sub(right);
+    }
+
+    if (move.lengthSq() === 0) {
+      return false;
+    }
+
+    const sceneRadius = this.scene?.boundingSphere?.radius;
+    const speed = Math.max(
+        typeof sceneRadius === 'number' && Number.isFinite(sceneRadius) ?
+            sceneRadius :
+            1,
+        1);
+    move.normalize().multiplyScalar(
+        speed * 1.5 * this._fpsMoveSensitivity * (delta / 1000));
+
+    const target = new THREE.Vector3();
+    this.thirdPartyControls.getTarget(target);
+    const position = camera.position.clone().add(move);
+    target.add(move);
+
+    this.thirdPartyControls.setLookAt(
+        position.x,
+        position.y,
+        position.z,
+        target.x,
+        target.y,
+        target.z,
+        false);
+    this.thirdPartyControls.update(0);
+    return true;
+  }
 
   /**
    * Recenter the camera target on tap (matching SmoothControls behavior)
@@ -687,16 +929,15 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
    */
   private recenter(clientX: number, clientY: number) {
     // Check if this was a tap (short duration, small movement)
-    if (
-      performance.now() > this.startTime + TAP_MS ||
-      Math.abs(clientX - this.startPointerPosition.clientX) > TAP_DISTANCE ||
-      Math.abs(clientY - this.startPointerPosition.clientY) > TAP_DISTANCE
-    ) {
+    if (performance.now() > this.startTime + TAP_MS ||
+        Math.abs(clientX - this.startPointerPosition.clientX) > TAP_DISTANCE ||
+        Math.abs(clientY - this.startPointerPosition.clientY) > TAP_DISTANCE) {
       return;
     }
 
-    const { scene } = this;
-    if (!scene) return;
+    const {scene} = this;
+    if (!scene)
+      return;
 
     // Get normalized device coordinates for the click position
     const ndc = scene.getNDC(clientX, clientY);
@@ -704,7 +945,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     if (hit == null) {
       // No hit - reset to default target and zoom out
-      const { cameraTarget } = scene.element;
+      const {cameraTarget} = scene.element;
       scene.element.cameraTarget = '';
       scene.element.cameraTarget = cameraTarget;
       // Zoom all the way out (increase radius)
@@ -761,9 +1002,11 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   setDamperDecayTime(decay: number): void {
     // Convert decay time (milliseconds) to smoothTime (seconds)
-    // SmoothControls uses decay in ms, CameraControls uses smoothTime in seconds
+    // SmoothControls uses decay in ms, CameraControls uses smoothTime in
+    // seconds
     this.thirdPartyControls.smoothTime = decay / 1000;
-    this.thirdPartyControls.draggingSmoothTime = decay / 2000; // Half for dragging
+    this.thirdPartyControls.draggingSmoothTime =
+        decay / 2000;  // Half for dragging
   }
 
   jumpToGoal(): void {
@@ -783,19 +1026,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     if (this.thirdPartyControls.camera instanceof THREE.PerspectiveCamera) {
       return this.thirdPartyControls.camera.fov;
     }
-    return 30; // Default for orthographic cameras
+    return 30;  // Default for orthographic cameras
   }
 
   setOrbit(theta: number, phi: number, radius: number): void {
     // Validate input parameters to avoid NaN issues
-    if (
-      !isFinite(theta) ||
-      !isFinite(phi) ||
-      !isFinite(radius) ||
-      isNaN(theta) ||
-      isNaN(phi) ||
-      isNaN(radius)
-    ) {
+    if (!isFinite(theta) || !isFinite(phi) || !isFinite(radius) ||
+        isNaN(theta) || isNaN(phi) || isNaN(radius)) {
       console.warn('setOrbit called with invalid values:', {
         theta,
         phi,
@@ -807,7 +1044,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Ensure radius is positive and non-zero
     if (radius <= 0) {
       console.warn('setOrbit called with invalid radius:', radius);
-      radius = 1; // Use a safe default
+      radius = 1;  // Use a safe default
     }
 
     // Clamp phi to valid range to avoid gimbal lock issues
@@ -818,12 +1055,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.getTarget(currentTarget);
 
     // Ensure the target is valid (not NaN)
-    if (
-      !currentTarget.isVector3 ||
-      !isFinite(currentTarget.x) ||
-      !isFinite(currentTarget.y) ||
-      !isFinite(currentTarget.z)
-    ) {
+    if (!currentTarget.isVector3 || !isFinite(currentTarget.x) ||
+        !isFinite(currentTarget.y) || !isFinite(currentTarget.z)) {
       currentTarget.set(0, 0, 0);
     }
 
@@ -838,15 +1071,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     expectedPosition.add(currentTarget);
 
     // Validate expected position
-    if (
-      !expectedPosition.isVector3 ||
-      !isFinite(expectedPosition.x) ||
-      !isFinite(expectedPosition.y) ||
-      !isFinite(expectedPosition.z)
-    ) {
+    if (!expectedPosition.isVector3 || !isFinite(expectedPosition.x) ||
+        !isFinite(expectedPosition.y) || !isFinite(expectedPosition.z)) {
       console.error(
-        'Expected camera position is invalid, resetting to safe state'
-      );
+          'Expected camera position is invalid, resetting to safe state');
       this.thirdPartyControls.setLookAt(0, 0, 5, 0, 0, 0, false);
       this.thirdPartyControls.update(0);
       return;
@@ -859,13 +1087,11 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Verify the camera matrix is valid after update
     const matrixValid =
-      this.thirdPartyControls.camera.matrixWorld.elements.every(
-        (n: number) => isFinite(n) && !isNaN(n)
-      );
+        this.thirdPartyControls.camera.matrixWorld.elements.every(
+            (n: number) => isFinite(n) && !isNaN(n));
     if (!matrixValid) {
       console.error(
-        'Camera matrix became invalid after setOrbit, resetting to safe state'
-      );
+          'Camera matrix became invalid after setOrbit, resetting to safe state');
       // Reset to a safe state
       this.thirdPartyControls.setLookAt(0, 0, 5, 0, 0, 0, false);
       this.thirdPartyControls.update(0);
@@ -879,38 +1105,24 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     const goal = new THREE.Spherical();
     this.thirdPartyControls.getSpherical(goal, true);
     this.thirdPartyControls.rotateTo(
-      goal.theta - deltaTheta,
-      goal.phi - deltaPhi,
-      false
-    );
+        goal.theta - deltaTheta, goal.phi - deltaPhi, false);
     if (deltaRadius !== 0) {
       this.thirdPartyControls.dolly(deltaRadius, false);
     }
     this.thirdPartyControls.update(0);
   }
 
-  rotate(
-    azimuthAngle: number,
-    polarAngle: number,
-    enableTransition?: boolean
-  ): Promise<void> {
+  rotate(azimuthAngle: number, polarAngle: number, enableTransition?: boolean):
+      Promise<void> {
     return this.thirdPartyControls.rotateTo(
-      azimuthAngle,
-      polarAngle,
-      enableTransition
-    );
+        azimuthAngle, polarAngle, enableTransition);
   }
 
   rotateTo(
-    azimuthAngle: number,
-    polarAngle: number,
-    enableTransition?: boolean
-  ): Promise<void> {
+      azimuthAngle: number, polarAngle: number,
+      enableTransition?: boolean): Promise<void> {
     return this.thirdPartyControls.rotateTo(
-      azimuthAngle,
-      polarAngle,
-      enableTransition
-    );
+        azimuthAngle, polarAngle, enableTransition);
   }
 
   updateNearFar(near: number, far: number): void {
@@ -937,8 +1149,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Periodically validate camera matrix to catch and fix NaN issues
     this.validateAndFixCameraMatrix();
 
+    const fpsMoved = this.updateFpsKeyboardMovement(delta);
+
     // Update CameraControls - delta is in seconds for CameraControls
-    return this.thirdPartyControls.update(delta / 1000);
+    return this.thirdPartyControls.update(delta / 1000) || fpsMoved;
   }
 
   addEventListener(type: string, listener: (event: THREE.Event) => void): void {
@@ -955,10 +1169,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     const mappedType = this.mapEventType(type);
     if (mappedType) {
       // Use the basic removeEventListener for compatibility
-      (this.thirdPartyControls as any).removeEventListener(
-        mappedType,
-        listener
-      );
+      (this.thirdPartyControls as any)
+          .removeEventListener(mappedType, listener);
     }
   }
 
@@ -1002,14 +1214,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Check if camera position and target are valid
     const position = camera.position;
-    const positionValid =
-      position.isVector3 &&
-      isFinite(position.x) &&
-      isFinite(position.y) &&
-      isFinite(position.z) &&
-      !isNaN(position.x) &&
-      !isNaN(position.y) &&
-      !isNaN(position.z);
+    const positionValid = position.isVector3 && isFinite(position.x) &&
+        isFinite(position.y) && isFinite(position.z) && !isNaN(position.x) &&
+        !isNaN(position.y) && !isNaN(position.z);
 
     if (!positionValid) {
       position.set(0, 0, 5);
@@ -1018,15 +1225,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Check camera up vector
     const up = camera.up;
-    const upValid =
-      up.isVector3 &&
-      isFinite(up.x) &&
-      isFinite(up.y) &&
-      isFinite(up.z) &&
-      !isNaN(up.x) &&
-      !isNaN(up.y) &&
-      !isNaN(up.z) &&
-      up.length() > 0;
+    const upValid = up.isVector3 && isFinite(up.x) && isFinite(up.y) &&
+        isFinite(up.z) && !isNaN(up.x) && !isNaN(up.y) && !isNaN(up.z) &&
+        up.length() > 0;
 
     if (!upValid) {
       up.set(0, 1, 0);
@@ -1056,14 +1257,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Check CameraControls target
     const target = new THREE.Vector3();
     this.thirdPartyControls.getTarget(target);
-    const targetValid =
-      target.isVector3 &&
-      isFinite(target.x) &&
-      isFinite(target.y) &&
-      isFinite(target.z) &&
-      !isNaN(target.x) &&
-      !isNaN(target.y) &&
-      !isNaN(target.z);
+    const targetValid = target.isVector3 && isFinite(target.x) &&
+        isFinite(target.y) && isFinite(target.z) && !isNaN(target.x) &&
+        !isNaN(target.y) && !isNaN(target.z);
 
     if (!targetValid) {
       this.thirdPartyControls.setTarget(0, 0, 0, false);
@@ -1078,13 +1274,11 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Check if matrices are valid
     const matrixValid =
-      camera.matrix.elements.every((n: number) => isFinite(n) && !isNaN(n)) &&
-      camera.matrixWorld.elements.every(
-        (n: number) => isFinite(n) && !isNaN(n)
-      );
+        camera.matrix.elements.every((n: number) => isFinite(n) && !isNaN(n)) &&
+        camera.matrixWorld.elements.every(
+            (n: number) => isFinite(n) && !isNaN(n));
     const projMatrixValid = camera.projectionMatrix.elements.every(
-      (n: number) => isFinite(n) && !isNaN(n)
-    );
+        (n: number) => isFinite(n) && !isNaN(n));
 
     if (!matrixValid || !projMatrixValid) {
       // Reset to a known good state
@@ -1111,11 +1305,11 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   /**
    * Update the camera reference and reinitialize CameraControls state.
-   * This should be called when the camera type changes (e.g., perspective <-> orthographic).
+   * This should be called when the camera type changes (e.g., perspective <->
+   * orthographic).
    */
-  updateCamera(
-    newCamera: THREE.PerspectiveCamera | THREE.OrthographicCamera
-  ): void {
+  updateCamera(newCamera: THREE.PerspectiveCamera|
+               THREE.OrthographicCamera): void {
     // Save current position and target
     const oldPosition = this.thirdPartyControls.camera.position.clone();
     const oldTarget = new THREE.Vector3();
@@ -1134,6 +1328,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.smoothTime = 0.25;
     this.thirdPartyControls.draggingSmoothTime = 0.125;
     this.thirdPartyControls.enabled = wasEnabled;
+    this.syncFpsAnglesFromCamera();
 
     // Restore sensitivity settings
     this.updateSensitivity();
@@ -1141,11 +1336,11 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Restore constraints from options
     if (this.options.minimumAzimuthalAngle !== undefined) {
       this.thirdPartyControls.minAzimuthAngle =
-        this.options.minimumAzimuthalAngle;
+          this.options.minimumAzimuthalAngle;
     }
     if (this.options.maximumAzimuthalAngle !== undefined) {
       this.thirdPartyControls.maxAzimuthAngle =
-        this.options.maximumAzimuthalAngle;
+          this.options.maximumAzimuthalAngle;
     }
     if (this.options.minimumPolarAngle !== undefined) {
       this.thirdPartyControls.minPolarAngle = this.options.minimumPolarAngle;
@@ -1164,20 +1359,19 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Restore the camera position and target
     this.thirdPartyControls.setLookAt(
-      oldPosition.x,
-      oldPosition.y,
-      oldPosition.z,
-      oldTarget.x,
-      oldTarget.y,
-      oldTarget.z,
-      false
-    );
+        oldPosition.x,
+        oldPosition.y,
+        oldPosition.z,
+        oldTarget.x,
+        oldTarget.y,
+        oldTarget.z,
+        false);
 
     // Force update
     this.thirdPartyControls.update(0);
   }
 
-  private mapEventType(smoothControlsEventType: string): string | null {
+  private mapEventType(smoothControlsEventType: string): string|null {
     // Map SmoothControls event types to CameraControls event types
     switch (smoothControlsEventType) {
       case 'user-interaction':
@@ -1189,7 +1383,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       case 'change':
         return 'update';
       default:
-        return smoothControlsEventType; // Pass through if no mapping needed
+        return smoothControlsEventType;  // Pass through if no mapping needed
     }
   }
 }
@@ -1205,22 +1399,22 @@ const PROMPT_ANIMATION_TIME = 5000;
 const wiggle = timeline({
   initialValue: 0,
   keyframes: [
-    { frames: 5, value: -1 },
-    { frames: 1, value: -1 },
-    { frames: 8, value: 1 },
-    { frames: 1, value: 1 },
-    { frames: 5, value: 0 },
-    { frames: 18, value: 0 },
+    {frames: 5, value: -1},
+    {frames: 1, value: -1},
+    {frames: 8, value: 1},
+    {frames: 1, value: 1},
+    {frames: 5, value: 0},
+    {frames: 18, value: 0},
   ],
 });
 
 const fade = timeline({
   initialValue: 0,
   keyframes: [
-    { frames: 1, value: 1 },
-    { frames: 5, value: 1 },
-    { frames: 1, value: 0 },
-    { frames: 6, value: 0 },
+    {frames: 1, value: 1},
+    {frames: 5, value: 1},
+    {frames: 1, value: 0},
+    {frames: 6, value: 0},
   ],
 });
 
@@ -1259,22 +1453,46 @@ const $syncMaxCameraOrbit = Symbol('syncMaxCameraOrbit');
 const $syncMinFieldOfView = Symbol('syncMinFieldOfView');
 const $syncMaxFieldOfView = Symbol('syncMaxFieldOfView');
 
-export declare interface LDControlsInterface extends ControlsInterface {}
+export declare interface LDControlsInterface extends ControlsInterface {
+  cameraControlMode: CameraControlMode;
+  fpsKeyboardMove: boolean;
+  fpsFlyMode: boolean;
+  fpsLookSensitivity: number;
+  fpsMoveSensitivity: number;
+  setCameraControlsMode(mode: CameraControlMode, options?: {
+    enableKeyboardMove?: boolean,
+    enableFlyMode?: boolean
+  }): void;
+}
 
 export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
-  ModelViewerElement: T
-): Constructor<LDControlsInterface> & T => {
+    ModelViewerElement: T): Constructor<LDControlsInterface>&T => {
   class ControlsModelViewerElement extends ModelViewerElement {
-    @property({ type: Boolean, attribute: 'camera-controls' })
+    @property({type: Boolean, attribute: 'camera-controls'})
     cameraControls: boolean = false;
 
-    @property({ type: String, attribute: 'interaction-mode' })
+    @property({type: String, attribute: 'interaction-mode'})
     interactionMode: InteractionMode = 'rotate';
 
-    @property({ type: Boolean, attribute: 'viewport-gizmo' })
+    @property({type: String, attribute: 'camera-control-mode'})
+    cameraControlMode: CameraControlMode = 'orbit';
+
+    @property({type: Boolean, attribute: 'fps-keyboard-move'})
+    fpsKeyboardMove: boolean = false;
+
+    @property({type: Boolean, attribute: 'fps-fly-mode'})
+    fpsFlyMode: boolean = false;
+
+    @property({type: Number, attribute: 'fps-look-sensitivity'})
+    fpsLookSensitivity: number = DEFAULT_FPS_LOOK_SENSITIVITY;
+
+    @property({type: Number, attribute: 'fps-move-sensitivity'})
+    fpsMoveSensitivity: number = DEFAULT_FPS_MOVE_SENSITIVITY;
+
+    @property({type: Boolean, attribute: 'viewport-gizmo'})
     showViewportGizmo: boolean = false;
 
-    viewportGizmoHandle: ViewportGizmoHandle | null = null;
+    viewportGizmoHandle: ViewportGizmoHandle|null = null;
 
     @style({
       intrinsics: cameraOrbitIntrinsics,
@@ -1356,76 +1574,72 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     })
     maxFieldOfView: string = 'auto';
 
-    @property({ type: Number, attribute: 'interaction-prompt-threshold' })
+    @property({type: Number, attribute: 'interaction-prompt-threshold'})
     interactionPromptThreshold: number = DEFAULT_INTERACTION_PROMPT_THRESHOLD;
 
-    @property({ type: String, attribute: 'interaction-prompt' })
+    @property({type: String, attribute: 'interaction-prompt'})
     interactionPrompt: InteractionPromptStrategy =
-      InteractionPromptStrategy.AUTO;
+        InteractionPromptStrategy.AUTO;
 
-    @property({ type: String, attribute: 'interaction-prompt-style' })
+    @property({type: String, attribute: 'interaction-prompt-style'})
     interactionPromptStyle: InteractionPromptStyle =
-      InteractionPromptStyle.WIGGLE;
+        InteractionPromptStyle.WIGGLE;
 
-    @property({ type: Number, attribute: 'orbit-sensitivity' })
+    @property({type: Number, attribute: 'orbit-sensitivity'})
     orbitSensitivity: number = 1;
 
-    @property({ type: Number, attribute: 'zoom-sensitivity' })
+    @property({type: Number, attribute: 'zoom-sensitivity'})
     zoomSensitivity: number = 1;
 
-    @property({ type: Number, attribute: 'pan-sensitivity' })
+    @property({type: Number, attribute: 'pan-sensitivity'})
     panSensitivity: number = 1;
 
-    @property({ type: String, attribute: 'touch-action' })
+    @property({type: String, attribute: 'touch-action'})
     touchAction: TouchAction = TouchAction.NONE;
 
-    @property({ type: Boolean, attribute: 'disable-zoom' })
+    @property({type: Boolean, attribute: 'disable-zoom'})
     disableZoom: boolean = false;
 
-    @property({ type: Boolean, attribute: 'disable-pan' })
+    @property({type: Boolean, attribute: 'disable-pan'})
     disablePan: boolean = false;
 
-    @property({ type: Boolean, attribute: 'disable-tap' })
+    @property({type: Boolean, attribute: 'disable-tap'})
     disableTap: boolean = false;
 
-    @property({ type: Number, attribute: 'interpolation-decay' })
+    @property({type: Number, attribute: 'interpolation-decay'})
     interpolationDecay: number = DECAY_MILLISECONDS;
 
-    @property() a11y: A11yTranslationsInterface | string | null = null;
+    @property() a11y: A11yTranslationsInterface|string|null = null;
 
-    protected [$promptElement] = this.shadowRoot!.querySelector(
-      '.interaction-prompt'
-    ) as HTMLElement;
-    protected [$promptAnimatedContainer] = this.shadowRoot!.querySelector(
-      '#prompt'
-    ) as HTMLElement;
-    protected [$fingerAnimatedContainers]: HTMLElement[] = [
+    protected[$promptElement] =
+        this.shadowRoot!.querySelector('.interaction-prompt') as HTMLElement;
+    protected[$promptAnimatedContainer] =
+        this.shadowRoot!.querySelector('#prompt') as HTMLElement;
+    protected[$fingerAnimatedContainers]: HTMLElement[] = [
       this.shadowRoot!.querySelector('#finger0')!,
       this.shadowRoot!.querySelector('#finger1')!,
     ];
-    protected [$panElement] = this.shadowRoot!.querySelector(
-      '.pan-target'
-    ) as HTMLElement;
+    protected[$panElement] =
+        this.shadowRoot!.querySelector('.pan-target') as HTMLElement;
 
-    protected [$lastPromptOffset] = 0;
-    protected [$promptElementVisibleTime] = Infinity;
-    protected [$userHasInteracted] = false;
-    protected [$waitingToPromptUser] = false;
-    protected [$cancellationSource] = ChangeSource.AUTOMATIC;
+    protected[$lastPromptOffset] = 0;
+    protected[$promptElementVisibleTime] = Infinity;
+    protected[$userHasInteracted] = false;
+    protected[$waitingToPromptUser] = false;
+    protected[$cancellationSource] = ChangeSource.AUTOMATIC;
 
     // Replace SmoothControls with ThirdPartyControlsAdapter
-    protected [$controls] = new ThirdPartyControlsAdapter(
-      this[$scene].camera as THREE.PerspectiveCamera,
-      this[$userInputElement],
-      this[$scene],
-      () => this.cameraControls || this.interactionMode === 'pan'
-    );
+    protected[$controls] = new ThirdPartyControlsAdapter(
+        this[$scene].camera as THREE.PerspectiveCamera, this[$userInputElement],
+        this[$scene],
+        () => this.cameraControls || this.interactionMode === 'pan' ||
+            this.cameraControlMode === 'fps');
 
-    protected [$lastSpherical] = new THREE.Spherical();
-    protected [$jumpCamera] = false;
-    protected [$initialized] = false;
-    protected [$maintainThetaPhi] = false;
-    protected [$a11y] = {} as A11yTranslationsInterface;
+    protected[$lastSpherical] = new THREE.Spherical();
+    protected[$jumpCamera] = false;
+    protected[$initialized] = false;
+    protected[$maintainThetaPhi] = false;
+    protected[$a11y] = {} as A11yTranslationsInterface;
 
     get inputSensitivity(): number {
       return this[$controls].inputSensitivity;
@@ -1436,7 +1650,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     getCameraOrbit(): SphericalPosition {
-      const { theta, phi, radius } = this[$lastSpherical];
+      const {theta, phi, radius} = this[$lastSpherical];
       return {
         theta,
         phi,
@@ -1449,10 +1663,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getCameraTarget(): Vector3D {
       return toVector3D(
-        this[$renderer].isPresenting
-          ? this[$renderer].arRenderer.target
-          : this[$scene].getDynamicTarget()
-      );
+          this[$renderer].isPresenting ? this[$renderer].arRenderer.target :
+                                         this[$scene].getDynamicTarget());
     }
 
     getFieldOfView(): number {
@@ -1482,13 +1694,26 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$promptElementVisibleTime] = Infinity;
       this[$userHasInteracted] = false;
       this[$waitingToPromptUser] =
-        this.interactionPrompt === InteractionPromptStrategy.AUTO &&
-        this.cameraControls;
+          this.interactionPrompt === InteractionPromptStrategy.AUTO &&
+          this.cameraControls;
     }
 
     zoom(keyPresses: number) {
-      const event = new WheelEvent('wheel', { deltaY: -30 * keyPresses });
+      const event = new WheelEvent('wheel', {deltaY: -30 * keyPresses});
       this[$userInputElement].dispatchEvent(event);
+    }
+
+    setCameraControlsMode(mode: CameraControlMode, options: {
+      enableKeyboardMove?: boolean,
+      enableFlyMode?: boolean
+    } = {}) {
+      this.cameraControlMode = mode === 'fps' ? 'fps' : 'orbit';
+      if (options.enableKeyboardMove != null) {
+        this.fpsKeyboardMove = options.enableKeyboardMove;
+      }
+      if (options.enableFlyMode != null) {
+        this.fpsFlyMode = options.enableFlyMode;
+      }
     }
 
     /** Disables orbit/pan pointer drags while keeping wheel and pinch zoom. */
@@ -1505,17 +1730,13 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       super.connectedCallback();
 
       this[$controls].addEventListener(
-        'user-interaction',
-        this[$cancelPrompts]
-      );
+          'user-interaction', this[$cancelPrompts]);
       this[$controls].addEventListener(
-        'pointer-change-start',
-        this[$onPointerChange] as (event: THREE.Event) => void
-      );
+          'pointer-change-start',
+          this[$onPointerChange] as (event: THREE.Event) => void);
       this[$controls].addEventListener(
-        'pointer-change-end',
-        this[$onPointerChange] as (event: THREE.Event) => void
-      );
+          'pointer-change-end',
+          this[$onPointerChange] as (event: THREE.Event) => void);
 
       this.viewportGizmoHandle = ensureViewportGizmo({
         host: this,
@@ -1531,17 +1752,13 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       super.disconnectedCallback();
 
       this[$controls].removeEventListener(
-        'user-interaction',
-        this[$cancelPrompts]
-      );
+          'user-interaction', this[$cancelPrompts]);
       this[$controls].removeEventListener(
-        'pointer-change-start',
-        this[$onPointerChange] as (event: THREE.Event) => void
-      );
+          'pointer-change-start',
+          this[$onPointerChange] as (event: THREE.Event) => void);
       this[$controls].removeEventListener(
-        'pointer-change-end',
-        this[$onPointerChange] as (event: THREE.Event) => void
-      );
+          'pointer-change-end',
+          this[$onPointerChange] as (event: THREE.Event) => void);
 
       if (this.viewportGizmoHandle) {
         this.viewportGizmoHandle.dispose();
@@ -1549,13 +1766,13 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    updated(changedProperties: Map<string | number | symbol, unknown>) {
+    updated(changedProperties: Map<string|number|symbol, unknown>) {
       super.updated(changedProperties);
 
       const controls = this[$controls];
       const scene = this[$scene];
-      const interactionAllowed =
-        this.cameraControls || this.interactionMode === 'pan';
+      const interactionAllowed = this.cameraControls ||
+          this.interactionMode === 'pan' || this.cameraControlMode === 'fps';
 
       if (changedProperties.has('cameraControls')) {
         if (interactionAllowed) {
@@ -1579,6 +1796,31 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
+      if (changedProperties.has('cameraControlMode')) {
+        controls.cameraControlMode = this.cameraControlMode;
+        if (interactionAllowed) {
+          controls.enableInteraction();
+        } else {
+          controls.disableInteraction();
+        }
+      }
+
+      if (changedProperties.has('fpsKeyboardMove')) {
+        controls.fpsKeyboardMove = this.fpsKeyboardMove;
+      }
+
+      if (changedProperties.has('fpsFlyMode')) {
+        controls.fpsFlyMode = this.fpsFlyMode;
+      }
+
+      if (changedProperties.has('fpsLookSensitivity')) {
+        controls.fpsLookSensitivity = this.fpsLookSensitivity;
+      }
+
+      if (changedProperties.has('fpsMoveSensitivity')) {
+        controls.fpsMoveSensitivity = this.fpsMoveSensitivity;
+      }
+
       if (changedProperties.has('disableZoom')) {
         controls.disableZoom = this.disableZoom;
       }
@@ -1591,16 +1833,11 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         controls.enableTap = !this.disableTap;
       }
 
-      if (
-        changedProperties.has('interactionPrompt') ||
-        changedProperties.has('cameraControls') ||
-        changedProperties.has('src')
-      ) {
-        if (
-          this.interactionPrompt === InteractionPromptStrategy.AUTO &&
-          this.cameraControls &&
-          !this[$userHasInteracted]
-        ) {
+      if (changedProperties.has('interactionPrompt') ||
+          changedProperties.has('cameraControls') ||
+          changedProperties.has('src')) {
+        if (this.interactionPrompt === InteractionPromptStrategy.AUTO &&
+            this.cameraControls && !this[$userHasInteracted]) {
           this[$waitingToPromptUser] = true;
         } else {
           this[$deferInteractionPrompt]();
@@ -1609,14 +1846,13 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (changedProperties.has('interactionPromptStyle')) {
         this[$promptAnimatedContainer].style.opacity =
-          this.interactionPromptStyle == InteractionPromptStyle.BASIC
-            ? '1'
-            : '0';
+            this.interactionPromptStyle == InteractionPromptStyle.BASIC ? '1' :
+                                                                          '0';
       }
 
       if (changedProperties.has('touchAction')) {
         const touchAction = this.touchAction;
-        controls.applyOptions({ touchAction });
+        controls.applyOptions({touchAction});
         controls.updateTouchActionStyle();
       }
 
@@ -1687,30 +1923,28 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (fingerElements[0].style.opacity === '1') {
         console.warn(
-          'interact() failed because an existing interaction is running.'
-        );
+            'interact() failed because an existing interaction is running.');
         return;
       }
 
-      const xy = new Array<{ x: TimingFunction; y: TimingFunction }>();
-      xy.push({ x: timeline(finger0.x), y: timeline(finger0.y) });
-      const positions = [{ x: xy[0].x(0), y: xy[0].y(0) }];
+      const xy = new Array<{x: TimingFunction; y: TimingFunction}>();
+      xy.push({x: timeline(finger0.x), y: timeline(finger0.y)});
+      const positions = [{x: xy[0].x(0), y: xy[0].y(0)}];
 
       if (finger1 != null) {
-        xy.push({ x: timeline(finger1.x), y: timeline(finger1.y) });
-        positions.push({ x: xy[1].x(0), y: xy[1].y(0) });
+        xy.push({x: timeline(finger1.x), y: timeline(finger1.y)});
+        positions.push({x: xy[1].x(0), y: xy[1].y(0)});
       }
 
       let startTime = performance.now();
-      const { width, height } = this[$scene];
+      const {width, height} = this[$scene];
       const rect = this.getBoundingClientRect();
 
       const dispatchTouches = (type: string) => {
         for (const [i, position] of positions.entries()) {
-          const { style } = fingerElements[i];
+          const {style} = fingerElements[i];
           style.transform = `translateX(${width * position.x}px) translateY(${
-            height * position.y
-          }px)`;
+              height * position.y}px)`;
           if (type === 'pointerdown') {
             style.opacity = '1';
           } else if (type === 'pointerup') {
@@ -1718,12 +1952,12 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
 
           const init = {
-            pointerId: i - 5678, // help ensure uniqueness
+            pointerId: i - 5678,  // help ensure uniqueness
             pointerType: 'touch',
             target: inputElement,
             clientX: width * position.x + rect.x,
             clientY: height * position.y + rect.y,
-            altKey: true, // flag that this is not a user interaction
+            altKey: true,  // flag that this is not a user interaction
           } as PointerEventInit;
 
           inputElement.dispatchEvent(new PointerEvent(type, init));
@@ -1734,19 +1968,16 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Cancel interaction if something else moves the camera or input is
         // removed from the DOM.
         const changeSource = this[$cancellationSource];
-        if (
-          changeSource !== ChangeSource.AUTOMATIC ||
-          !inputElement.isConnected
-        ) {
+        if (changeSource !== ChangeSource.AUTOMATIC ||
+            !inputElement.isConnected) {
           for (const fingerElement of this[$fingerAnimatedContainers]) {
             fingerElement.style.opacity = '0';
           }
           dispatchTouches('pointercancel');
           this.dispatchEvent(
-            new CustomEvent<CameraChangeDetails>('interact-stopped', {
-              detail: { source: changeSource },
-            })
-          );
+              new CustomEvent<CameraChangeDetails>('interact-stopped', {
+                detail: {source: changeSource},
+              }));
           document.removeEventListener('visibilitychange', onVisibilityChange);
           return;
         }
@@ -1763,10 +1994,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         } else {
           dispatchTouches('pointerup');
           this.dispatchEvent(
-            new CustomEvent<CameraChangeDetails>('interact-stopped', {
-              detail: { source: ChangeSource.AUTOMATIC },
-            })
-          );
+              new CustomEvent<CameraChangeDetails>('interact-stopped', {
+                detail: {source: ChangeSource.AUTOMATIC},
+              }));
           document.removeEventListener('visibilitychange', onVisibilityChange);
         }
       };
@@ -1801,7 +2031,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$syncCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
       const controls = this[$controls];
       if (this[$maintainThetaPhi]) {
-        const { theta, phi } = this.getCameraOrbit();
+        const {theta, phi} = this.getCameraOrbit();
         style[0] = theta;
         style[1] = phi;
         this[$maintainThetaPhi] = false;
@@ -1842,7 +2072,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     [$syncMaxFieldOfView](style: EvaluatedStyle<Intrinsics<['rad']>>) {
       const fov = this[$scene].adjustedFoV((style[0] * 180) / Math.PI);
-      this[$controls].applyOptions({ maximumFieldOfView: fov });
+      this[$controls].applyOptions({maximumFieldOfView: fov});
       this.jumpCameraToGoal();
     }
 
@@ -1868,10 +2098,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const now = performance.now();
       if (this[$waitingToPromptUser]) {
-        if (
-          this.loaded &&
-          now > this[$loadedTime] + this.interactionPromptThreshold
-        ) {
+        if (this.loaded &&
+            now > this[$loadedTime] + this.interactionPromptThreshold) {
           this[$waitingToPromptUser] = false;
           this[$promptElementVisibleTime] = now;
 
@@ -1881,12 +2109,11 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       let interactionPromptAdjustedOrbit = false;
 
-      if (
-        isFinite(this[$promptElementVisibleTime]) &&
-        this.interactionPromptStyle === InteractionPromptStyle.WIGGLE
-      ) {
+      if (isFinite(this[$promptElementVisibleTime]) &&
+          this.interactionPromptStyle === InteractionPromptStyle.WIGGLE) {
         const animationTime =
-          ((now - this[$promptElementVisibleTime]) / PROMPT_ANIMATION_TIME) % 1;
+            ((now - this[$promptElementVisibleTime]) / PROMPT_ANIMATION_TIME) %
+            1;
         const offset = wiggle(animationTime);
         const opacity = fade(animationTime);
 
@@ -1895,10 +2122,10 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (offset !== this[$lastPromptOffset]) {
           const xOffset = offset * scene.width * 0.05;
           const deltaTheta =
-            ((offset - this[$lastPromptOffset]) * Math.PI) / 16;
+              ((offset - this[$lastPromptOffset]) * Math.PI) / 16;
 
           this[$promptAnimatedContainer].style.transform =
-            `translateX(${xOffset}px)`;
+              `translateX(${xOffset}px)`;
 
           controls.changeSource = ChangeSource.AUTOMATIC;
           controls.adjustOrbit(deltaTheta, 0, 0);
@@ -1914,18 +2141,18 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (cameraMoved || targetMoved) {
         this[$onChange]();
       } else if (interactionPromptAdjustedOrbit) {
-        // CameraControls may have applied the wiggle before update() returned true
-        // (e.g. when rotateTo snaps with enableTransition=false). Ensure a frame is
-        // rendered so the interaction prompt is visible without auto-rotate.
+        // CameraControls may have applied the wiggle before update() returned
+        // true (e.g. when rotateTo snaps with enableTransition=false). Ensure a
+        // frame is rendered so the interaction prompt is visible without
+        // auto-rotate.
         this[$needsRender]();
       }
 
-      // Do not leave AUTOMATIC set after wiggle; otherwise the next controlstart
-      // is treated as part of the prompt instead of user interaction.
-      if (
-        interactionPromptAdjustedOrbit &&
-        controls.changeSource === ChangeSource.AUTOMATIC
-      ) {
+      // Do not leave AUTOMATIC set after wiggle; otherwise the next
+      // controlstart is treated as part of the prompt instead of user
+      // interaction.
+      if (interactionPromptAdjustedOrbit &&
+          controls.changeSource === ChangeSource.AUTOMATIC) {
         controls.changeSource = ChangeSource.NONE;
       }
 
@@ -1952,23 +2179,22 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$updateCameraForRadius](radius: number) {
       const maximumRadius = Math.max(this[$scene].farRadius(), radius);
 
-      const near = 0;
+      const near = 0.1;
       const far = Math.abs(2 * maximumRadius);
       this[$controls].updateNearFar(near, far);
     }
 
     [$updateAria]() {
-      const { theta, phi } = this[$controls]!.getCameraSpherical(
-        this[$lastSpherical]
-      );
+      const {theta, phi} =
+          this[$controls]!.getCameraSpherical(this[$lastSpherical]);
 
       const azimuthalQuadrant =
-        (4 + Math.floor(((theta % TAU) + QUARTER_PI) / HALF_PI)) % 4;
+          (4 + Math.floor(((theta % TAU) + QUARTER_PI) / HALF_PI)) % 4;
 
       const polarTrient = Math.floor(phi / THIRD_PI);
 
       const azimuthalQuadrantLabel =
-        AZIMUTHAL_QUADRANT_LABELS[azimuthalQuadrant];
+          AZIMUTHAL_QUADRANT_LABELS[azimuthalQuadrant];
       const polarTrientLabel = POLAR_TRIENT_LABELS[polarTrient];
       const position = `${polarTrientLabel}${azimuthalQuadrantLabel}`;
 
@@ -1979,22 +2205,21 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$updateStatus](`View from stage ${position}`);
       }
 
-      return position; // HACK
+      return position;  // HACK
     }
 
-    get [$ariaLabel]() {
+    get[$ariaLabel]() {
       let interactionPrompt = INTERACTION_PROMPT;
       if ('interaction-prompt' in this[$a11y]) {
         interactionPrompt = `. ${this[$a11y]['interaction-prompt']}`;
       }
 
       return (
-        super[$ariaLabel].replace(/\.$/, '') +
-        (this.cameraControls ? interactionPrompt : '')
-      );
+          super[$ariaLabel].replace(/\.$/, '') +
+          (this.cameraControls ? interactionPrompt : ''));
     }
 
-    async [$onResize](event: any) {
+    async[$onResize](event: any) {
       const controls = this[$controls];
       const scene = this[$scene];
       const oldFramedFoV = scene.adjustedFoV(scene.framedFoVDeg);
@@ -2005,7 +2230,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const fovRatio = scene.adjustedFoV(scene.framedFoVDeg) / oldFramedFoV;
       const fov =
-        controls.getFieldOfView() * (isFinite(fovRatio) ? fovRatio : 1);
+          controls.getFieldOfView() * (isFinite(fovRatio) ? fovRatio : 1);
 
       controls.updateAspect(this[$scene].aspect);
 
@@ -2017,9 +2242,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (this.viewportGizmoHandle) {
         this.viewportGizmoHandle.updateOnResize(
-          this[$scene].width,
-          this[$scene].height
-        );
+            this[$scene].width, this[$scene].height);
       }
     }
 
@@ -2062,22 +2285,18 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     };
 
     [$onChange] = () => {
-      const spatialRegion = this[$updateAria](); // HACK
+      const spatialRegion = this[$updateAria]();  // HACK
       this[$needsRender]();
       const source = this[$controls].changeSource;
 
-      this.dispatchEvent(
-        new CustomEvent<CameraChangeDetails>('camera-change', {
-          detail: { source, spatialRegion },
-        })
-      ); // HACK
+      this.dispatchEvent(new CustomEvent<CameraChangeDetails>('camera-change', {
+        detail: {source, spatialRegion},
+      }));  // HACK
     };
 
     [$onPointerChange] = (event: PointerChangeEvent) => {
       this[$container].classList.toggle(
-        'pointer-tumbling',
-        event.type === 'pointer-change-start'
-      );
+          'pointer-tumbling', event.type === 'pointer-change-start');
     };
 
     [$updateA11y]() {
@@ -2090,9 +2309,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
         } else if (this.a11y.length > 0) {
           console.warn(
-            'Error not supported format, should be a JSON string:',
-            this.a11y
-          );
+              'Error not supported format, should be a JSON string:',
+              this.a11y);
         } else {
           this[$a11y] = <A11yTranslationsInterface>{};
         }

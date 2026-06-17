@@ -78,12 +78,14 @@ body:not(.ld) select {
   margin: 0;
   padding: 0;
   background-color: #f6f6f6;
+  box-sizing: border-box;
   position: fixed;
   top: 0;
   height: 100%;
   overflow: auto;
   border-right: 1px solid #bdbdbd;
   transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+  width: var(--og-sidebar-width);
   z-index: 1010;
 }
 

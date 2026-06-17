@@ -1,14 +1,11 @@
-import ModelViewerElementBase, {
-  $scene,
-  $onModelLoad,
-  $needsRender,
-} from '../model-viewer-base.js';
+import {Box3, CubicBezierCurve3, MathUtils, Matrix4, Mesh, Quaternion, Vector3,} from 'three';
 
-import { $controls } from './controls.js';
-import { Constructor } from '../utilities.js';
-import { MathUtils, Mesh, Matrix4, Quaternion, Vector3 } from 'three';
+import ModelViewerElementBase, {$needsRender, $onModelLoad, $scene,} from '../model-viewer-base.js';
+import {Constructor} from '../utilities.js';
 
-import type { ViewportGizmoHandle } from './ld-controls/viewport-gizmo.js';
+import {$controls} from './controls.js';
+
+import type {ViewportGizmoHandle} from './ld-controls/viewport-gizmo.js';
 
 export interface ClickDetails {
   geometry?: string;
@@ -22,23 +19,143 @@ export interface CameraTypeChangeDetails {
 }
 
 type CameraMeta = {
-  metadata: object;
-  object: {
-    [key: string]: any;
-  };
+  metadata: object; object: {[key: string]: any;};
 };
 
-export type CameraType = 'perspective' | 'orthographic';
+export type CameraType = 'perspective'|'orthographic';
+export type CameraControlMode = 'orbit'|'fps';
 
-const CAMERA_JSON_DEBUG =
-  typeof globalThis !== 'undefined' &&
-  !!(globalThis as {MODEL_VIEWER_CAMERA_JSON_DEBUG?: boolean})
-    .MODEL_VIEWER_CAMERA_JSON_DEBUG;
+export type CameraView = CameraMeta['object']|{
+  controlMode?: CameraControlMode;
+  cameraOrbit?: string;
+  cameraTarget?: string;
+  fieldOfView?: string;
+  enableKeyboardMove?: boolean;
+  enableFlyMode?: boolean;
+};
+
+export type CameraEasing =|'linear'|'easeInSine'|'easeOutSine'|'easeInOutSine'|
+    'easeInQuad'|'easeOutQuad'|'easeInOutQuad'|'easeInCubic'|'easeOutCubic'|
+    'easeInOutCubic'|'easeInQuart'|'easeOutQuart'|'easeInOutQuart'|
+    'easeInQuint'|'easeOutQuint'|'easeInOutQuint'|'easeInExpo'|'easeOutExpo'|
+    'easeInOutExpo'|'easeInCirc'|'easeOutCirc'|'easeInOutCirc'|'easeInBack'|
+    'easeOutBack'|'easeInOutBack'|'easeInElastic'|'easeOutElastic'|
+    'easeInOutElastic'|'easeInBounce'|'easeOutBounce'|'easeInOutBounce';
+
+export interface CameraAnimationOptions {
+  duration?: number;
+  easing?: CameraEasing;
+  avoidSubject?: boolean;
+  avoidMargin?: number;
+}
+
+interface CameraPose {
+  position: Vector3;
+  target: Vector3;
+  fov?: number;
+}
+
+const CAMERA_JSON_DEBUG = typeof globalThis !== 'undefined' &&
+    !!(globalThis as {
+        MODEL_VIEWER_CAMERA_JSON_DEBUG?: boolean
+      }).MODEL_VIEWER_CAMERA_JSON_DEBUG;
 
 function debugCameraJSON(label: string, data?: unknown): void {
   if (CAMERA_JSON_DEBUG) {
     console.debug(`[ld-camera] ${label}`, data);
   }
+}
+
+const easeOutBounce = (x: number): number => {
+  const n1 = 7.5625;
+  const d1 = 2.75;
+  if (x < 1 / d1) {
+    return n1 * x * x;
+  }
+  if (x < 2 / d1) {
+    return n1 * (x -= 1.5 / d1) * x + 0.75;
+  }
+  if (x < 2.5 / d1) {
+    return n1 * (x -= 2.25 / d1) * x + 0.9375;
+  }
+  return n1 * (x -= 2.625 / d1) * x + 0.984375;
+};
+
+const CAMERA_EASINGS: Record<CameraEasing, (x: number) => number> = {
+  linear: (x) => x,
+  easeInSine: (x) => 1 - Math.cos((x * Math.PI) / 2),
+  easeOutSine: (x) => Math.sin((x * Math.PI) / 2),
+  easeInOutSine: (x) => -(Math.cos(Math.PI * x) - 1) / 2,
+  easeInQuad: (x) => x * x,
+  easeOutQuad: (x) => 1 - (1 - x) * (1 - x),
+  easeInOutQuad: (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2,
+  easeInCubic: (x) => x * x * x,
+  easeOutCubic: (x) => 1 - Math.pow(1 - x, 3),
+  easeInOutCubic: (x) =>
+      x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
+  easeInQuart: (x) => x * x * x * x,
+  easeOutQuart: (x) => 1 - Math.pow(1 - x, 4),
+  easeInOutQuart: (x) =>
+      x < 0.5 ? 8 * x * x * x * x : 1 - Math.pow(-2 * x + 2, 4) / 2,
+  easeInQuint: (x) => x * x * x * x * x,
+  easeOutQuint: (x) => 1 - Math.pow(1 - x, 5),
+  easeInOutQuint: (x) =>
+      x < 0.5 ? 16 * x * x * x * x * x : 1 - Math.pow(-2 * x + 2, 5) / 2,
+  easeInExpo: (x) => (x === 0 ? 0 : Math.pow(2, 10 * x - 10)),
+  easeOutExpo: (x) => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x)),
+  easeInOutExpo: (x) => x === 0 ? 0 :
+      x === 1                   ? 1 :
+      x < 0.5                   ? Math.pow(2, 20 * x - 10) / 2 :
+                                  (2 - Math.pow(2, -20 * x + 10)) / 2,
+  easeInCirc: (x) => 1 - Math.sqrt(1 - Math.pow(x, 2)),
+  easeOutCirc: (x) => Math.sqrt(1 - Math.pow(x - 1, 2)),
+  easeInOutCirc: (x) => x < 0.5 ?
+      (1 - Math.sqrt(1 - Math.pow(2 * x, 2))) / 2 :
+      (Math.sqrt(1 - Math.pow(-2 * x + 2, 2)) + 1) / 2,
+  easeInBack: (x) => 2.70158 * x * x * x - 1.70158 * x * x,
+  easeOutBack: (x) =>
+      1 + 2.70158 * Math.pow(x - 1, 3) + 1.70158 * Math.pow(x - 1, 2),
+  easeInOutBack: (x) => {
+    const c1 = 1.70158;
+    const c2 = c1 * 1.525;
+    return x < 0.5 ?
+        (Math.pow(2 * x, 2) * ((c2 + 1) * 2 * x - c2)) / 2 :
+        (Math.pow(2 * x - 2, 2) * ((c2 + 1) * (x * 2 - 2) + c2) + 2) / 2;
+  },
+  easeInElastic: (x) => x === 0 ? 0 :
+      x === 1                   ? 1 :
+                                  -Math.pow(2, 10 * x - 10) *
+          Math.sin((x * 10 - 10.75) * ((2 * Math.PI) / 3)),
+  easeOutElastic: (x) => x === 0 ? 0 :
+      x === 1                    ? 1 :
+                                   Math.pow(2, -10 * x) *
+              Math.sin((x * 10 - 0.75) * ((2 * Math.PI) / 3)) +
+          1,
+  easeInOutElastic: (x) => x === 0 ? 0 :
+      x === 1                      ? 1 :
+      x < 0.5                      ? -(Math.pow(2, 20 * x - 10) *
+                  Math.sin((20 * x - 11.125) * ((2 * Math.PI) / 4.5))) /
+          2 :
+                (Math.pow(2, -20 * x + 10) *
+                 Math.sin((20 * x - 11.125) * ((2 * Math.PI) / 4.5))) /
+              2 +
+          1,
+  easeInBounce: (x) => 1 - easeOutBounce(1 - x),
+  easeOutBounce,
+  easeInOutBounce: (x) => x < 0.5 ? (1 - easeOutBounce(1 - 2 * x)) / 2 :
+                                    (1 + easeOutBounce(2 * x - 1)) / 2,
+};
+
+function getCameraEasing(name?: string): (x: number) => number {
+  return CAMERA_EASINGS[(name as CameraEasing) || 'easeInOutQuad'] ??
+      CAMERA_EASINGS.easeInOutQuad;
+}
+
+function hasAttributeStyleCameraView(data: any): boolean {
+  return (
+      typeof data?.cameraOrbit === 'string' ||
+      typeof data?.cameraTarget === 'string' ||
+      typeof data?.fieldOfView === 'string');
 }
 
 /** Convert a world-space look-at point to model (pivot) space. */
@@ -62,7 +179,7 @@ function modelTargetToWorldSpace(scene: any, modelTarget: Vector3): Vector3 {
 }
 
 /** camera-controls fromJSON expects a JSON string; tolerate parsed objects. */
-function normalizeControlsState(state: unknown): string | null {
+function normalizeControlsState(state: unknown): string|null {
   if (state == null) {
     return null;
   }
@@ -75,7 +192,9 @@ function normalizeControlsState(state: unknown): string | null {
   return null;
 }
 
-/** Align CameraControls with a camera pose when no explicit target is stored. */
+/**
+ * Align CameraControls with a camera pose when no explicit target is stored.
+ */
 function syncControlsFromCameraPose(camera: any, controls: any): void {
   const cc = controls?.thirdPartyControls;
   if (!cc || typeof cc.setLookAt !== 'function') {
@@ -88,34 +207,24 @@ function syncControlsFromCameraPose(camera: any, controls: any): void {
   const lookAt = position.clone().add(forward);
 
   cc.setLookAt(
-    position.x,
-    position.y,
-    position.z,
-    lookAt.x,
-    lookAt.y,
-    lookAt.z,
-    false
-  );
+      position.x, position.y, position.z, lookAt.x, lookAt.y, lookAt.z, false);
   if (typeof cc.update === 'function') {
     cc.update(1);
   }
 }
 
 function isFiniteVector3(v: Vector3): boolean {
-  return (
-    Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
-  );
+  return (Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z));
 }
 
 /** LDControls orbit look-at is on CameraControls, not ModelScene.setTarget. */
 function usesCameraControlsLookAt(controls: any): boolean {
   return (
-    controls?.thirdPartyControls &&
-    typeof controls.thirdPartyControls.setLookAt === 'function'
-  );
+      controls?.thirdPartyControls &&
+      typeof controls.thirdPartyControls.setLookAt === 'function');
 }
 
-function resolveSavedPosition(data: any): Vector3 | null {
+function resolveSavedPosition(data: any): Vector3|null {
   if (Array.isArray(data.position) && data.position.length === 3) {
     const position = new Vector3().fromArray(data.position);
     return isFiniteVector3(position) ? position : null;
@@ -130,16 +239,16 @@ function resolveSavedPosition(data: any): Vector3 | null {
   return null;
 }
 
-function resolveWorldLookAt(scene: any, data: any): Vector3 | null {
+function resolveWorldLookAt(scene: any, data: any): Vector3|null {
   if (Array.isArray(data.worldTarget) && data.worldTarget.length === 3) {
     const worldTarget = new Vector3().fromArray(data.worldTarget);
     return isFiniteVector3(worldTarget) ? worldTarget : null;
   }
   if (Array.isArray(data.target) && data.target.length === 3) {
     const modelTarget = new Vector3().fromArray(data.target);
-    return isFiniteVector3(modelTarget)
-      ? modelTargetToWorldSpace(scene, modelTarget)
-      : null;
+    return isFiniteVector3(modelTarget) ?
+        modelTargetToWorldSpace(scene, modelTarget) :
+        null;
   }
   return null;
 }
@@ -155,14 +264,11 @@ const CONTROLS_POSE_KEYS = [
   'zoom0',
 ] as const;
 
-type ControlsPoseSnapshot = Partial<
-  Record<(typeof CONTROLS_POSE_KEYS)[number], number[] | number>
->;
+type ControlsPoseSnapshot =
+    Partial<Record<(typeof CONTROLS_POSE_KEYS)[number], number[]|number>>;
 
 function applyControlsPoseToTemplate(
-  template: Record<string, unknown>,
-  pose: ControlsPoseSnapshot
-): void {
+    template: Record<string, unknown>, pose: ControlsPoseSnapshot): void {
   for (const key of CONTROLS_POSE_KEYS) {
     const value = pose[key];
     if (value != null) {
@@ -171,15 +277,10 @@ function applyControlsPoseToTemplate(
   }
 }
 
-function parseControlsPose(
-  parsed: Record<string, unknown>
-): ControlsPoseSnapshot | null {
-  if (
-    !Array.isArray(parsed.position) ||
-    !Array.isArray(parsed.target) ||
-    parsed.position.length < 3 ||
-    parsed.target.length < 3
-  ) {
+function parseControlsPose(parsed: Record<string, unknown>):
+    ControlsPoseSnapshot|null {
+  if (!Array.isArray(parsed.position) || !Array.isArray(parsed.target) ||
+      parsed.position.length < 3 || parsed.target.length < 3) {
     return null;
   }
 
@@ -211,22 +312,15 @@ function parseControlsPose(
 }
 
 function applyProjectionFromData(
-  camera: any,
-  data: any,
-  scene?: any,
-  options?: {skipZoom?: boolean}
-): void {
+    camera: any, data: any, scene?: any, options?: {skipZoom?: boolean}): void {
   if (typeof data.near === 'number' && Number.isFinite(data.near)) {
     camera.near = data.near;
   }
   if (typeof data.far === 'number' && Number.isFinite(data.far)) {
     camera.far = data.far;
   }
-  if (
-    !options?.skipZoom &&
-    typeof data.zoom === 'number' &&
-    Number.isFinite(data.zoom)
-  ) {
+  if (!options?.skipZoom && typeof data.zoom === 'number' &&
+      Number.isFinite(data.zoom)) {
     camera.zoom = data.zoom;
   }
 
@@ -237,7 +331,8 @@ function applyProjectionFromData(
     const viewportAspect = scene?.aspect;
     if (typeof viewportAspect === 'number' && Number.isFinite(viewportAspect)) {
       camera.aspect = viewportAspect;
-    } else if (typeof data.aspect === 'number' && Number.isFinite(data.aspect)) {
+    } else if (
+        typeof data.aspect === 'number' && Number.isFinite(data.aspect)) {
       camera.aspect = data.aspect;
     }
     if (typeof data.focus === 'number' && Number.isFinite(data.focus)) {
@@ -246,7 +341,8 @@ function applyProjectionFromData(
     if (typeof data.filmGauge === 'number' && Number.isFinite(data.filmGauge)) {
       camera.filmGauge = data.filmGauge;
     }
-    if (typeof data.filmOffset === 'number' && Number.isFinite(data.filmOffset)) {
+    if (typeof data.filmOffset === 'number' &&
+        Number.isFinite(data.filmOffset)) {
       camera.filmOffset = data.filmOffset;
     }
   }
@@ -272,32 +368,22 @@ function applyProjectionFromData(
  * position/target (CC world space, without focal offset) because
  * object.position includes focal offset applied by CC.update().
  */
-function reconcileCameraControlsPose(
-  cc: any,
-  data: any,
-  scene: any
-): void {
+function reconcileCameraControlsPose(cc: any, data: any, scene: any): void {
   if (!cc || typeof cc.setLookAt !== 'function') {
     return;
   }
 
-  const snapshot = data.controlsSnapshot as Record<string, unknown> | undefined;
+  const snapshot = data.controlsSnapshot as Record<string, unknown>| undefined;
   const pose = data.controlsPose as ControlsPoseSnapshot | undefined;
 
-  let position: Vector3 | null = null;
-  let worldTarget: Vector3 | null = null;
+  let position: Vector3|null = null;
+  let worldTarget: Vector3|null = null;
 
-  if (
-    snapshot &&
-    Array.isArray(snapshot.position) &&
-    Array.isArray(snapshot.target)
-  ) {
+  if (snapshot && Array.isArray(snapshot.position) &&
+      Array.isArray(snapshot.target)) {
     position = new Vector3().fromArray(snapshot.position as number[]);
     worldTarget = new Vector3().fromArray(snapshot.target as number[]);
-  } else if (
-    Array.isArray(pose?.position) &&
-    Array.isArray(pose?.target)
-  ) {
+  } else if (Array.isArray(pose?.position) && Array.isArray(pose?.target)) {
     position = new Vector3().fromArray(pose.position);
     worldTarget = new Vector3().fromArray(pose.target);
   } else {
@@ -305,36 +391,30 @@ function reconcileCameraControlsPose(
     position = resolveSavedPosition(data);
   }
 
-  if (
-    !position ||
-    !worldTarget ||
-    !isFiniteVector3(position) ||
-    !isFiniteVector3(worldTarget)
-  ) {
+  if (!position || !worldTarget || !isFiniteVector3(position) ||
+      !isFiniteVector3(worldTarget)) {
     return;
   }
 
   cc.stop();
   cc.setLookAt(
-    position.x,
-    position.y,
-    position.z,
-    worldTarget.x,
-    worldTarget.y,
-    worldTarget.z,
-    false
-  );
+      position.x,
+      position.y,
+      position.z,
+      worldTarget.x,
+      worldTarget.y,
+      worldTarget.z,
+      false);
 
-  const focalOffset = (snapshot?.focalOffset ??
-    pose?.focalOffset ??
-    data.focalOffset) as number[] | undefined;
+  const focalOffset = (snapshot?.focalOffset ?? pose?.focalOffset ??
+                       data.focalOffset) as number[] |
+      undefined;
   if (Array.isArray(focalOffset) && focalOffset.length === 3) {
     cc.setFocalOffset(focalOffset[0], focalOffset[1], focalOffset[2], false);
   }
 
-  const controlsZoom = (snapshot?.zoom ??
-    pose?.zoom ??
-    data.controlsZoom) as number | undefined;
+  const controlsZoom =
+      (snapshot?.zoom ?? pose?.zoom ?? data.controlsZoom) as number | undefined;
   if (typeof controlsZoom === 'number' && Number.isFinite(controlsZoom)) {
     cc.zoomTo(controlsZoom, false);
   }
@@ -351,7 +431,9 @@ function reconcileCameraControlsPose(
   }
 }
 
-/** camera-controls stop() snaps pose but leaves smoothDamp velocities intact. */
+/**
+ * camera-controls stop() snaps pose but leaves smoothDamp velocities intact.
+ */
 function zeroCameraControlsVelocities(cc: any): void {
   if (!cc) {
     return;
@@ -395,13 +477,12 @@ function settleCameraControls(cc: any): void {
 
 /** Apply a saved CameraControls JSON string (or controlsSnapshot object). */
 function restoreCameraFromControlsJSON(
-  controls: any,
-  camera: any,
-  data: any,
-  scene: any,
-  controlsStateJson: string,
-  debugLabel: string
-): boolean {
+    controls: any,
+    camera: any,
+    data: any,
+    scene: any,
+    controlsStateJson: string,
+    debugLabel: string): boolean {
   if (!controls || typeof controls.fromJSON !== 'function') {
     return false;
   }
@@ -418,9 +499,8 @@ function restoreCameraFromControlsJSON(
   }
   camera.updateProjectionMatrix();
 
-  const hasSnapshotObject =
-    data.controlsSnapshot != null &&
-    typeof data.controlsSnapshot === 'object';
+  const hasSnapshotObject = data.controlsSnapshot != null &&
+      typeof data.controlsSnapshot === 'object';
 
   // fromJSON uses moveTo/rotateTo/dollyTo which leave smoothDamp velocities
   // running; reconcile setLookAt then looks correct for one frame before the
@@ -454,10 +534,9 @@ function restoreCameraFromControlsJSON(
     fov: camera.isPerspectiveCamera ? camera.fov : undefined,
     aspect: camera.isPerspectiveCamera ? camera.aspect : undefined,
     near: camera.near,
-    scenePivotTarget:
-      typeof scene.getTarget === 'function'
-        ? scene.getTarget().toArray()
-        : null,
+    scenePivotTarget: typeof scene.getTarget === 'function' ?
+        scene.getTarget().toArray() :
+        null,
   });
 
   return true;
@@ -467,16 +546,10 @@ function restoreCameraFromControlsJSON(
  * Legacy fallback when only pose fields were persisted (no controlsSnapshot).
  */
 function restoreCameraControlsFromPartial(
-  scene: any,
-  controls: any,
-  camera: any,
-  data: any
-): boolean {
-  if (
-    !usesCameraControlsLookAt(controls) ||
-    typeof controls.toJSON !== 'function' ||
-    typeof controls.fromJSON !== 'function'
-  ) {
+    scene: any, controls: any, camera: any, data: any): boolean {
+  if (!usesCameraControlsLookAt(controls) ||
+      typeof controls.toJSON !== 'function' ||
+      typeof controls.fromJSON !== 'function') {
     return false;
   }
 
@@ -505,26 +578,24 @@ function restoreCameraControlsFromPartial(
     if (Array.isArray(data.focalOffset) && data.focalOffset.length === 3) {
       template.focalOffset = data.focalOffset;
     }
-    const controlsZoom =
-      typeof data.controlsZoom === 'number' &&
-      Number.isFinite(data.controlsZoom)
-        ? data.controlsZoom
-        : typeof data.zoom === 'number' && Number.isFinite(data.zoom)
-          ? data.zoom
-          : null;
+    const controlsZoom = typeof data.controlsZoom === 'number' &&
+            Number.isFinite(data.controlsZoom) ?
+        data.controlsZoom :
+        typeof data.zoom === 'number' && Number.isFinite(data.zoom) ?
+        data.zoom :
+        null;
     if (controlsZoom != null) {
       template.zoom = controlsZoom;
     }
   }
 
   return restoreCameraFromControlsJSON(
-    controls,
-    camera,
-    data,
-    scene,
-    JSON.stringify(template),
-    'setCameraFromJSON CameraControls partial merge path'
-  );
+      controls,
+      camera,
+      data,
+      scene,
+      JSON.stringify(template),
+      'setCameraFromJSON CameraControls partial merge path');
 }
 
 function awaitCameraSettled(cc?: any): Promise<void> {
@@ -545,12 +616,146 @@ function awaitCameraSettled(cc?: any): Promise<void> {
   });
 }
 
+function readCameraPose(scene: any, controls: any): CameraPose|null {
+  const camera = scene?.camera;
+  if (!camera) {
+    return null;
+  }
+
+  camera.updateMatrixWorld(true);
+  const target = new Vector3();
+  if (controls?.thirdPartyControls?.getTarget) {
+    controls.thirdPartyControls.getTarget(target);
+  } else {
+    camera.getWorldDirection(target);
+    target.add(camera.position);
+  }
+
+  return {
+    position: camera.position.clone(),
+    target,
+    fov: camera.isPerspectiveCamera ? camera.fov : undefined,
+  };
+}
+
+function cameraPoseFromView(scene: any, view: CameraView): CameraPose|null {
+  const data: any = (view as any)?.object ?? view;
+  if (!data || hasAttributeStyleCameraView(data)) {
+    return null;
+  }
+
+  const position = resolveSavedPosition(data);
+  const target = resolveWorldLookAt(scene, data);
+  if (!position || !target) {
+    return null;
+  }
+
+  return {
+    position,
+    target,
+    fov: typeof data.fov === 'number' && Number.isFinite(data.fov) ? data.fov :
+                                                                     undefined,
+  };
+}
+
+function applyCameraViewControlOptions(
+    element: any,
+    view: CameraView,
+    options: {enableKeyboardMove?: boolean, enableFlyMode?: boolean} = {}) {
+  const data: any = (view as any)?.object ?? view;
+  const controlMode = data?.controlMode as CameraControlMode | undefined;
+  if (controlMode && typeof element.setCameraControlsMode === 'function') {
+    element.setCameraControlsMode(controlMode, {
+      enableKeyboardMove: data.enableKeyboardMove ?? options.enableKeyboardMove,
+      enableFlyMode: data.enableFlyMode ?? options.enableFlyMode,
+    });
+    return;
+  }
+
+  if (options.enableKeyboardMove != null) {
+    element.fpsKeyboardMove = options.enableKeyboardMove;
+  }
+  if (options.enableFlyMode != null) {
+    element.fpsFlyMode = options.enableFlyMode;
+  }
+}
+
+function applyCameraPose(
+    pose: CameraPose, scene: any, controls: any, needsRender: () => void):
+    void {
+  const camera = scene?.camera;
+  const cc = controls?.thirdPartyControls;
+  if (!camera || !cc?.setLookAt) {
+    return;
+  }
+
+  cc.setLookAt(
+      pose.position.x,
+      pose.position.y,
+      pose.position.z,
+      pose.target.x,
+      pose.target.y,
+      pose.target.z,
+      false);
+
+  if (pose.fov != null && camera.isPerspectiveCamera) {
+    camera.fov = pose.fov;
+    camera.updateProjectionMatrix();
+  }
+
+  cc.update(0);
+  camera.updateMatrixWorld(true);
+  needsRender();
+}
+
+function segmentIntersectsBox(
+    start: Vector3, end: Vector3, box: Box3): boolean {
+  const sample = new Vector3();
+  for (let i = 0; i <= 32; ++i) {
+    sample.lerpVectors(start, end, i / 32);
+    if (box.containsPoint(sample)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function avoidDirection(start: Vector3, end: Vector3, box: Box3): Vector3 {
+  const center = box.getCenter(new Vector3());
+  const midpoint = start.clone().lerp(end, 0.5);
+  const direction = midpoint.sub(center);
+
+  if (direction.lengthSq() > 0.000001) {
+    return direction.normalize();
+  }
+
+  const path = end.clone().sub(start).normalize();
+  direction.crossVectors(path, new Vector3(0, 1, 0));
+  if (direction.lengthSq() <= 0.000001) {
+    direction.set(1, 0, 0);
+  }
+  return direction.normalize();
+}
+
+function cameraCurve(
+    start: Vector3, end: Vector3, avoidBox: Box3|null): CubicBezierCurve3 {
+  const controlA = start.clone().lerp(end, 1 / 3);
+  const controlB = start.clone().lerp(end, 2 / 3);
+
+  if (avoidBox && segmentIntersectsBox(start, end, avoidBox)) {
+    const size = avoidBox.getSize(new Vector3());
+    const margin = Math.max(size.length() * 0.5, 0.001);
+    const offset = avoidDirection(start, end, avoidBox).multiplyScalar(margin);
+    controlA.add(offset);
+    controlB.add(offset);
+  }
+
+  return new CubicBezierCurve3(start.clone(), controlA, controlB, end.clone());
+}
+
 /** Apply a stored look-at to scene pivot (SmoothControls). */
 function applyStoredLookAt(
-  scene: any,
-  camera: any,
-  modelTarget: Vector3
-): void {
+    scene: any, camera: any, modelTarget: Vector3): void {
   if (!isFiniteVector3(modelTarget)) {
     return;
   }
@@ -558,10 +763,9 @@ function applyStoredLookAt(
   debugCameraJSON('applyStoredLookAt', {
     modelTarget: modelTarget.toArray(),
     cameraPosition: camera.position.toArray(),
-    scenePivotTarget:
-      typeof scene.getTarget === 'function'
-        ? scene.getTarget().toArray()
-        : null,
+    scenePivotTarget: typeof scene.getTarget === 'function' ?
+        scene.getTarget().toArray() :
+        null,
   });
 
   if (typeof scene.setTarget === 'function') {
@@ -579,7 +783,14 @@ export declare interface LDCameraInterface {
   setCurrentAsDefaultCamera(): void;
 
   setCameraFromJSON(json: CameraMeta['object']): Promise<void>;
-  getCameraJSON(): CameraMeta | null;
+  getCameraJSON(): CameraMeta|null;
+  setCameraView(view: CameraView, options?: {
+    animate?: false;
+    enableKeyboardMove?: boolean,
+    enableFlyMode?: boolean
+  }): Promise<void>;
+  animateCameraTo(view: CameraView, options?: CameraAnimationOptions):
+      Promise<void>;
   truckCamera(x: number, y: number, z?: number): void;
 
   setCameraType(type: CameraType): void;
@@ -588,12 +799,12 @@ export declare interface LDCameraInterface {
 }
 
 export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
-  ModelViewerElement: T
-): Constructor<LDCameraInterface> & T => {
+    ModelViewerElement: T): Constructor<LDCameraInterface>&T => {
   class LDCameraModelViewerElement extends ModelViewerElement {
     private _pointerDwn = [0, 0];
     private _pointerUp = [0, 0];
     private _interactionListenersAttached = false;
+    private _cameraAnimationCancel: (() => void)|null = null;
 
     private _onPointerDown = (event: PointerEvent) => {
       this._pointerDwn = [event.offsetX, event.offsetY];
@@ -608,26 +819,25 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     };
 
     handleClick(event: MouseEvent) {
-      const { _pointerDwn, _pointerUp } = this;
+      const {_pointerDwn, _pointerUp} = this;
       const d = Math.hypot(
-        _pointerUp[0] - _pointerDwn[0],
-        _pointerUp[1] - _pointerDwn[1]
-      );
+          _pointerUp[0] - _pointerDwn[0], _pointerUp[1] - _pointerDwn[1]);
       /* This to allow for a small drag on sensetive input devices */
-      if (d > 4) return;
+      if (d > 4)
+        return;
 
-      const { clientX, clientY } = event;
+      const {clientX, clientY} = event;
 
       const scene = this[$scene];
       const ndcCoords = scene.getNDC(clientX, clientY);
       const hit = scene.hitFromPoint(ndcCoords);
 
       if (hit) {
-        const { object } = hit;
+        const {object} = hit;
 
         if (object && object.isObject3D && object.visible) {
           const detail: ClickDetails = {};
-          const { material, name, geometry } = object as Mesh;
+          const {material, name, geometry} = object as Mesh;
 
           if (name) {
             detail.mesh = name;
@@ -640,10 +850,10 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           if (typeof material !== 'undefined' && !Array.isArray(material)) {
             detail.material = material.name;
           }
-          // Use 'object-click' (not 'click') to avoid re-triggering the click listener and stack overflow
+          // Use 'object-click' (not 'click') to avoid re-triggering the click
+          // listener and stack overflow
           this.dispatchEvent(
-            new CustomEvent<ClickDetails>('object-click', { detail })
-          );
+              new CustomEvent<ClickDetails>('object-click', {detail}));
         }
       }
     }
@@ -692,15 +902,134 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     rotateCamera(azimuth: number, polar: number, animate: boolean = false) {
       const controls = (this as any)[$controls];
       controls.rotateTo(
-        azimuth * MathUtils.DEG2RAD,
-        polar * MathUtils.DEG2RAD,
-        animate
-      );
+          azimuth * MathUtils.DEG2RAD, polar * MathUtils.DEG2RAD, animate);
     }
 
     setCurrentAsDefaultCamera() {
       const controls = (this as any)[$controls];
       controls.saveState();
+    }
+
+    async setCameraView(view: CameraView, options: {
+      animate?: false;
+      enableKeyboardMove?: boolean,
+      enableFlyMode?: boolean
+    } = {}) {
+      const data: any = (view as any)?.object ?? view;
+      if (!data || typeof data !== 'object') {
+        return;
+      }
+
+      applyCameraViewControlOptions(this, data, options);
+
+      if (hasAttributeStyleCameraView(data)) {
+        if (typeof data.cameraOrbit === 'string') {
+          (this as any).cameraOrbit = data.cameraOrbit;
+        }
+        if (typeof data.cameraTarget === 'string') {
+          (this as any).cameraTarget = data.cameraTarget;
+        }
+        if (typeof data.fieldOfView === 'string') {
+          (this as any).fieldOfView = data.fieldOfView;
+        }
+        await (this as any).updateComplete;
+        if (typeof (this as any).jumpCameraToGoal === 'function') {
+          (this as any).jumpCameraToGoal();
+        }
+        await (this as any).updateComplete;
+        this[$needsRender]();
+        return;
+      }
+
+      await this.setCameraFromJSON(data);
+    }
+
+    async animateCameraTo(
+        view: CameraView, options: CameraAnimationOptions = {}) {
+      const scene = this[$scene];
+      const controls = (this as any)[$controls] as any;
+      const start = readCameraPose(scene, controls);
+      if (!start) {
+        return;
+      }
+
+      if (this._cameraAnimationCancel) {
+        this._cameraAnimationCancel();
+        this._cameraAnimationCancel = null;
+      }
+
+      applyCameraViewControlOptions(this, view);
+      let end = cameraPoseFromView(scene, view);
+      if (!end) {
+        await this.setCameraView(view);
+        end = readCameraPose(scene, controls);
+      }
+      if (!end) {
+        return;
+      }
+
+      applyCameraPose(start, scene, controls, () => this[$needsRender]());
+
+      const duration = Math.max(0, options.duration ?? 300);
+      if (duration === 0) {
+        applyCameraPose(end, scene, controls, () => this[$needsRender]());
+        return;
+      }
+
+      const avoidBox = options.avoidSubject && scene?.boundingBox &&
+              !scene.boundingBox.isEmpty() ?
+          scene.boundingBox.clone().expandByScalar(
+              Math.max(0, options.avoidMargin ?? 0.25)) :
+          null;
+      const positionCurve = cameraCurve(start.position, end.position, avoidBox);
+      const targetAvoidBox = avoidBox &&
+              !avoidBox.containsPoint(start.target) &&
+              !avoidBox.containsPoint(end.target) ?
+          avoidBox :
+          null;
+      const targetCurve = cameraCurve(start.target, end.target, targetAvoidBox);
+      const easing = getCameraEasing(options.easing);
+      const startFov = start.fov;
+      const endFov = end.fov;
+
+      await new Promise<void>((resolve) => {
+        let cancelled = false;
+        const startedAt = performance.now();
+        this._cameraAnimationCancel = () => {
+          cancelled = true;
+          resolve();
+        };
+
+        const step = (now: number) => {
+          if (cancelled) {
+            return;
+          }
+
+          const rawProgress = Math.min(1, (now - startedAt) / duration);
+          const progress = easing(rawProgress);
+          const pose: CameraPose = {
+            position: positionCurve.getPoint(progress),
+            target: targetCurve.getPoint(progress),
+          };
+
+          if (startFov != null && endFov != null) {
+            pose.fov = MathUtils.lerp(startFov, endFov, progress);
+          }
+
+          applyCameraPose(pose, scene, controls, () => this[$needsRender]());
+
+          if (rawProgress < 1) {
+            requestAnimationFrame(step);
+            return;
+          }
+
+          applyCameraPose(end, scene, controls, () => this[$needsRender]());
+          this._cameraAnimationCancel = null;
+          resolve();
+        };
+
+        requestAnimationFrame(step);
+      });
     }
 
     /**
@@ -721,7 +1050,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       // Ensure the underlying camera class matches the incoming payload before
       // any controls-state restore path, since switching camera type replaces
       // camera/control instances.
-      let desiredType: CameraType | null = null;
+      let desiredType: CameraType|null = null;
       const typeValue = data.type;
 
       if (typeof typeValue === 'string') {
@@ -732,38 +1061,30 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      if (
-        desiredType &&
-        typeof scene.getCameraType === 'function' &&
-        scene.getCameraType() !== desiredType
-      ) {
+      if (desiredType && typeof scene.getCameraType === 'function' &&
+          scene.getCameraType() !== desiredType) {
         this.setCameraType(desiredType);
       }
 
       // Prefer controlsSnapshot (parsed object persisted by the host). Legacy
       // controlsState strings are still accepted for older saved data.
       const embeddedControlsState = normalizeControlsState(
-        (data as any).controlsSnapshot ??
-          (data as any).controlsState ??
-          (json as any)?.metadata?.controlsState
-      );
+          (data as any).controlsSnapshot ?? (data as any).controlsState ??
+          (json as any)?.metadata?.controlsState);
 
       const camera: any = scene.camera;
       if (!camera) {
         return;
       }
 
-      if (
-        embeddedControlsState &&
-        restoreCameraFromControlsJSON(
-          controls,
-          camera,
-          data,
-          scene,
-          embeddedControlsState,
-          'setCameraFromJSON controlsSnapshot path'
-        )
-      ) {
+      if (embeddedControlsState &&
+          restoreCameraFromControlsJSON(
+              controls,
+              camera,
+              data,
+              scene,
+              embeddedControlsState,
+              'setCameraFromJSON controlsSnapshot path')) {
         this[$needsRender]();
         await awaitCameraSettled(controls?.thirdPartyControls);
         return;
@@ -785,10 +1106,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         camera.matrixAutoUpdate = false;
         camera.matrix.copy(m);
         camera.matrix.decompose(
-          camera.position,
-          camera.quaternion,
-          camera.scale
-        );
+            camera.position, camera.quaternion, camera.scale);
       } else {
         if (savedPosition) {
           camera.position.copy(savedPosition);
@@ -812,21 +1130,20 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       const hasExplicitTarget =
-        Array.isArray(data.target) && data.target.length === 3;
+          Array.isArray(data.target) && data.target.length === 3;
 
       if (hasExplicitTarget) {
         if (usesCameraControlsLookAt(controls)) {
           const worldTarget = resolveWorldLookAt(scene, data);
           if (worldTarget) {
             cc.setLookAt(
-              camera.position.x,
-              camera.position.y,
-              camera.position.z,
-              worldTarget.x,
-              worldTarget.y,
-              worldTarget.z,
-              false
-            );
+                camera.position.x,
+                camera.position.y,
+                camera.position.z,
+                worldTarget.x,
+                worldTarget.y,
+                worldTarget.z,
+                false);
             cc.update(0);
           }
         } else {
@@ -845,7 +1162,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Export the current camera as a three.js-style JSON structure that can be
      * used both by Blender scripts and to restore camera state later.
      */
-    getCameraJSON(): CameraMeta | null {
+    getCameraJSON(): CameraMeta|null {
       const scene = this[$scene];
       const camera: any = scene?.camera;
 
@@ -863,11 +1180,9 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       const isOrthographic = !!camera.isOrthographicCamera;
       const object: any = {
         // three.js compatible identifiers
-        type: isPerspective
-          ? 'PerspectiveCamera'
-          : isOrthographic
-            ? 'OrthographicCamera'
-            : 'Camera',
+        type: isPerspective ? 'PerspectiveCamera' :
+            isOrthographic  ? 'OrthographicCamera' :
+                              'Camera',
         matrix: camera.matrix.toArray(),
         position: camera.position.toArray(),
         quaternion: camera.quaternion.toArray(),
@@ -890,14 +1205,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         object.bottom = camera.bottom;
       }
 
-      // Include the current look-at in model (pivot) space. Prefer CameraControls
-      // (updated on pan/truck) over scene.getTarget() (only moves via attributes
-      // or tap-recenter in LDControls).
-      if (
-        controls &&
-        controls.thirdPartyControls &&
-        typeof controls.thirdPartyControls.getTarget === 'function'
-      ) {
+      // Include the current look-at in model (pivot) space. Prefer
+      // CameraControls (updated on pan/truck) over scene.getTarget() (only
+      // moves via attributes or tap-recenter in LDControls).
+      if (controls && controls.thirdPartyControls &&
+          typeof controls.thirdPartyControls.getTarget === 'function') {
         const worldTarget = new Vector3();
         controls.thirdPartyControls.getTarget(worldTarget);
         const modelTarget = worldTargetToModelSpace(scene, worldTarget);
@@ -906,20 +1218,16 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         debugCameraJSON('getCameraJSON target from CameraControls', {
           worldTarget: object.worldTarget,
           modelTarget: object.target,
-          scenePivotTarget:
-            typeof scene.getTarget === 'function'
-              ? scene.getTarget().toArray()
-              : null,
+          scenePivotTarget: typeof scene.getTarget === 'function' ?
+              scene.getTarget().toArray() :
+              null,
         });
       } else if (scene && typeof scene.getTarget === 'function') {
         const modelTarget = scene.getTarget();
         object.target = [modelTarget.x, modelTarget.y, modelTarget.z];
       }
-      if (
-        object.target == null &&
-        scene?.boundingBox &&
-        !scene.boundingBox.isEmpty()
-      ) {
+      if (object.target == null && scene?.boundingBox &&
+          !scene.boundingBox.isEmpty()) {
         const center = scene.boundingBox.getCenter(new Vector3());
         object.target = [center.x, center.y, center.z];
       }
@@ -970,8 +1278,8 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       const controls = (this as any)[$controls];
 
       // Store current camera state before switching
-      let currentPosition: Vector3 | null = null;
-      let currentTarget: Vector3 | null = null;
+      let currentPosition: Vector3|null = null;
+      let currentTarget: Vector3|null = null;
 
       if (controls && controls.thirdPartyControls) {
         // Save current camera position and target
@@ -996,14 +1304,13 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
             if (currentPosition && currentTarget) {
               controls.thirdPartyControls.setLookAt(
-                currentPosition.x,
-                currentPosition.y,
-                currentPosition.z,
-                currentTarget.x,
-                currentTarget.y,
-                currentTarget.z,
-                false
-              );
+                  currentPosition.x,
+                  currentPosition.y,
+                  currentPosition.z,
+                  currentTarget.x,
+                  currentTarget.y,
+                  currentTarget.z,
+                  false);
             }
             controls.thirdPartyControls.update(0);
           }
@@ -1020,28 +1327,25 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       // Update effect renderer if present
-      if (
-        scene.effectRenderer &&
-        typeof scene.effectRenderer.setMainCamera === 'function'
-      ) {
+      if (scene.effectRenderer &&
+          typeof scene.effectRenderer.setMainCamera === 'function') {
         scene.effectRenderer.setMainCamera(scene.camera);
       }
 
       // Update viewport gizmo with new camera
-      const gizmoHandle = (this as any)
-        .viewportGizmoHandle as ViewportGizmoHandle | null;
+      const gizmoHandle =
+          (this as any).viewportGizmoHandle as ViewportGizmoHandle | null;
       if (gizmoHandle) {
         gizmoHandle.updateCamera(scene.camera);
       }
 
       this.dispatchEvent(
-        new CustomEvent<CameraTypeChangeDetails>('camera-type-change', {
-          detail: {
-            from: previousType,
-            to: type,
-          },
-        })
-      );
+          new CustomEvent<CameraTypeChangeDetails>('camera-type-change', {
+            detail: {
+              from: previousType,
+              to: type,
+            },
+          }));
 
       this[$needsRender]();
     }
@@ -1049,7 +1353,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     /**
      * Get the current camera type
      */
-    getCameraType(): 'perspective' | 'orthographic' {
+    getCameraType(): 'perspective'|'orthographic' {
       return this[$scene].getCameraType();
     }
 
@@ -1059,7 +1363,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     toggleCameraType() {
       const currentType = this.getCameraType();
       const newType =
-        currentType === 'perspective' ? 'orthographic' : 'perspective';
+          currentType === 'perspective' ? 'orthographic' : 'perspective';
       this.setCameraType(newType);
     }
 
