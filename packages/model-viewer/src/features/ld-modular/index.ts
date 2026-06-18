@@ -7232,7 +7232,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _finalizePasteCommitMany(
       commits: Array<{node: Object3D; itemEntry: ClipboardEntry}>,
-      options?: {select?: boolean}
+      options?: {select?: boolean; emitChange?: boolean}
     ): PasteCommitResult {
       const history = this._ensureUndoHistory();
       const shouldBatch = commits.length > 1 && !history.isReplaying;
@@ -7262,7 +7262,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any)[$needsRender]();
       } catch (_e) {}
 
-      this._emitClipboardChange('paste-commit');
+      if (options?.emitChange !== false) {
+        this._emitClipboardChange('paste-commit');
+      }
 
       return {
         id: commits[0].node.name,
@@ -7393,8 +7395,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (maxDistanceSq <= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
           session.updatePosition(e.clientX, e.clientY);
         }
-        session.commit({select: true});
+        const result = session.commit({select: true, emitChange: false});
         this._endActivePasteSession();
+        if (result) {
+          this._emitClipboardChange('paste-commit');
+        }
       };
 
       const onKeyDown = (e: KeyboardEvent) => {

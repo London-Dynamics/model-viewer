@@ -43,7 +43,7 @@ export type PasteSessionHost = PlacementPoseHost & {
   ): PasteCommitResult;
   _finalizePasteCommitMany?(
     commits: Array<{node: Object3D; itemEntry: ClipboardEntry}>,
-    options?: {select?: boolean}
+    options?: {select?: boolean; emitChange?: boolean}
   ): PasteCommitResult;
   _emitClipboardChange(reason: string): void;
 };
@@ -183,7 +183,7 @@ export class PasteSession extends EventTarget {
     this._host[$needsRender]();
   }
 
-  commit(options?: {select?: boolean}): PasteCommitResult | null {
+  commit(options?: {select?: boolean; emitChange?: boolean}): PasteCommitResult | null {
     if (this.state !== 'previewing') return null;
     if (entryRequiresSurfaceSnap(this._entry) && !this._hasValidSurfaceSnap) {
       return null;
