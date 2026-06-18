@@ -64,6 +64,7 @@
     "prepublishOnly": "npm run build",
     "test": "web-test-runner --playwright --browsers chromium firefox webkit",
     "test:ci": "web-test-runner --static-logging --config web-test-ci.config.mjs",
+    "test:ci:ld": "web-test-runner --static-logging --config web-test-ci-ld.config.mjs",
     "check-fidelity": "node ./test/fidelity/index.js ./test/fidelity/config.json",
     "compare-fidelity": "./scripts/compare-fidelity-to-ref.sh",
     "serve": "node_modules/.bin/http-server -c-1",

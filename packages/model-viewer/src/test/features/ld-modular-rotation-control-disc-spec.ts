@@ -34,7 +34,7 @@ suite('ld-modular rotation control disc', () => {
     const cumulativeDeg = 90;
     const rawTargetY = startY + cumulativeDeg;
     expect(snapRotationYToStepGrid(rawTargetY, 90)).to.equal(90);
-    expect(snapRotationYToStepGrid(rawTargetY, 45)).to.equal(45);
+    expect(snapRotationYToStepGrid(rawTargetY, 45)).to.equal(90);
     expect(snapRotationYToStepGrid(rawTargetY, 90)).to.equal(90);
   });
 

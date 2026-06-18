@@ -1,0 +1,41 @@
+name: LD unit tests
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'packages/model-viewer/**'
+      - 'packages/shared-assets/**'
+      - 'package-lock.json'
+      - '.github/workflows/ld-unit-tests.yml'
+  pull_request:
+    paths:
+      - 'packages/model-viewer/**'
+      - 'packages/shared-assets/**'
+      - 'package-lock.json'
+      - '.github/workflows/ld-unit-tests.yml'
+
+jobs:
+  model_viewer_ld_tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-node@v4
+
+      - name: NPM install
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build model-viewer
+        run: npm run clean --workspace=packages/model-viewer && npm run build --workspace=packages/model-viewer
+
+      - name: LD unit tests
+        run: npm run test:ci:ld --workspace=packages/model-viewer

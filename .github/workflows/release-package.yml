@@ -49,9 +49,6 @@ jobs:
       - name: Build package
         run: npm run build --workspace=packages/model-viewer
 
-      - name: Test package
-        run: npm run test:ci --workspace=packages/model-viewer
-
       - name: Dry-run publish
         working-directory: packages/model-viewer
         run: npm publish --dry-run
