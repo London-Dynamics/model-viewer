@@ -1,0 +1,30 @@
+---
+description: LD example layout patterns (panels, HUDs)
+globs: packages/modelviewer.dev/examples/ld_*/**
+alwaysApply: false
+---
+
+# LD example layout
+
+## Control docks (bottom panels)
+
+```html
+<div class="ld-panel">
+  <div class="ld-card">
+    <div class="ld-card-body">
+      <h3 class="ld-panel-title">Control Panel</h3>
+      <div class="ld-sections">…</div>
+    </div>
+  </div>
+</div>
+```
+
+## Status readouts (viewport HUDs)
+
+```html
+<div class="ld-hud ld-hud-top-right">undo: 0 | redo: 0</div>
+<div class="ld-hud ld-hud-top-left ld-hud-passive">transform: idle</div>
+```
+
+- `.ld-hud-passive` — overlay must not block viewport interaction
+- `.ld-hud-narrow` — cap width (`max-w-xs`)

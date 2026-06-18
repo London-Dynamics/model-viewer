@@ -1,0 +1,24 @@
+---
+description: LD feature implementation conventions in model-viewer
+globs: packages/model-viewer/src/features/**,packages/model-viewer/src/model-viewer.ts
+alwaysApply: false
+---
+
+# LD feature implementation
+
+## Module layout
+
+- Feature modules live under `packages/model-viewer/src/features/ld-*` or `src/features/ld-*/`
+- Co-locate specs in `src/test/features/` or adjacent `*-spec.ts`
+
+## Mixin registration
+
+Register new mixins in the `ModelViewerElementImpl` chain in [`model-viewer.ts`](../../packages/model-viewer/src/model-viewer.ts). Follow existing import style and nesting order.
+
+## Reuse
+
+Prefer extending existing LD utilities (`ld-debug`, `ld-utils`, transform events, selection outline) over duplicating logic.
+
+## Docs & examples
+
+When adding public API surface, update `docs.json`, `examples.json`, and an `ld_*` example page — see `docs-and-examples-registry.mdc`.

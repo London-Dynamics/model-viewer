@@ -1,0 +1,29 @@
+---
+description: model-viewer monorepo bootstrap (overview, commands)
+alwaysApply: true
+---
+
+# model-viewer monorepo
+
+London Dynamics fork of **model-viewer** — a web component library for interactive 3D models (glTF/GLB), published as `@london-dynamics/model-viewer`. npm workspaces with 5 packages under `packages/`.
+
+## Node.js
+
+Requires **Node.js 18** (see `.nvmrc`):
+
+```
+export NVM_DIR="$HOME/.nvm" && source "$NVM_DIR/nvm.sh"
+```
+
+## Key commands
+
+See root `README.md` for full details.
+
+- **Install**: `npm install`
+- **Build**: `npm run build` (all workspaces)
+- **Build (faster)**: `cd packages/model-viewer && npm run build:dev` — dev rollup when iterating on `model-viewer` only
+- **Test**: `npm run test` or `npm run test:ci`
+- **Serve**: `npm run serve` — port 8080; docs at `/packages/modelviewer.dev/`, editor at `/packages/space-opera/editor/`
+- **Lint**: `npm run lint` (no-op; `.eslintignore` excludes all packages)
+
+Feature, docs, and example conventions → [`.cursor/rules/README.md`](README.md)

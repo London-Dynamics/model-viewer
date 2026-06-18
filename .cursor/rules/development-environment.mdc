@@ -1,0 +1,29 @@
+---
+description: Testing, CI, hooks, and environment notes
+globs: packages/**/src/test/**,packages/modelviewer.dev/test/**,packages/**/web-test*.mjs,.github/workflows/**
+alwaysApply: false
+---
+
+# Development environment
+
+## Testing
+
+- `@web/test-runner` with **Playwright** (Chromium, Firefox, WebKit)
+- **WebKit does not work** on Ubuntu 24.04 (ICU `uidna_nameToUnicode_70` mismatch) — use Chromium (optionally Firefox)
+- Single package: `npm run test --workspace=<name>` or `cd packages/<name> && npx web-test-runner --playwright --browsers chromium`
+
+## Install
+
+`PUPPETEER_SKIP_DOWNLOAD=1` during `npm install` avoids a long Puppeteer browser download (`render-fidelity-tools`). Cached browsers: `~/.cache/puppeteer/`.
+
+## Pre-commit
+
+Husky hook (`scripts/pre-commit.sh`) auto-formats staged `.ts` with `clang-format`. Husky v7 may need `npx husky install` once.
+
+## Known issues (last verified 2026-06-18)
+
+- `packages/model-viewer` build failure: `ld-environment.ts` deleted but still imported in `model-viewer.ts` — `tsc` does not complete
+- Committed `lib/` has stale output; web tests may fail on missing `lib/features/ld-environment.js`
+- Other 4 packages build and test normally
+
+Remove this section when resolved.

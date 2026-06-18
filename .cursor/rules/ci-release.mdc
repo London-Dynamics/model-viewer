@@ -1,0 +1,56 @@
+---
+description: npm release and CI workflows for @london-dynamics/model-viewer
+globs: .github/workflows/release-package.yml,.github/workflows/deploy-documentation.yml,packages/model-viewer/package.json
+alwaysApply: false
+---
+
+# Release & CI
+
+## Agent guardrails
+
+- **Do not** bump `packages/model-viewer/package.json` version unless explicitly asked
+- **Do not** create or push git tags unless explicitly asked
+
+## Human pre-flight
+
+1. Changes merged to the release branch
+2. Confirm `packages/model-viewer/package.json` version is the intended release
+3. Commit version bump if not already on the branch
+
+## Release (`@london-dynamics/model-viewer` only)
+
+Tag must match `package.json` exactly (`v4.7.3` ↔ `"version": "4.7.3"`).
+
+```bash
+git tag v4.7.3
+git push origin v4.7.3
+```
+
+Or **workflow_dispatch** in Actions — select the **tag ref** (e.g. `v4.7.3`), not a branch.
+
+**Strict semver only** — `vX.Y.Z` triggers release. Pre-release tags (e.g. `v4.2.0-beta.49`) do **not**.
+
+## `release-package.yml` (on tag push)
+
+| Step | Action |
+|---|---|
+| Validate | Tag version equals `package.json` |
+| Install | `npm ci` (`LONDON_DYNAMICS_NPM_AUTH_TOKEN`) |
+| Build | `npm run build --workspace=packages/model-viewer` |
+| Publish | `npm publish` → GitHub Packages |
+| Release | GitHub Release with auto-generated notes |
+
+**Note:** workflow does **not** run tests before publish. Re-publishing the same version fails at the registry.
+
+## Docs deploy (separate from npm release)
+
+[`deploy-documentation.yml`](../../.github/workflows/deploy-documentation.yml):
+
+- Triggers on **push to `master`** or manual dispatch
+- `npm run build` → `ci-before-deploy.sh` → GitHub Pages (`gh-pages`)
+- Independent of npm tags — docs and package releases can ship separately
+
+## One-time admin (repo settings)
+
+- Actions → Workflow permissions → **Read and write**
+- Optional: tag protection for `v*`
