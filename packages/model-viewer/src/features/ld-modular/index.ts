@@ -5359,6 +5359,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this.updateMousePosition(event as any);
 
+      // Shift-click toggles selection; don't start a drag that swallows pointerup.
+      if ((this as any)._isMultiSelectModifierActive?.(event)) {
+        return;
+      }
+
       // Only start dragging if clicking on an already-selected object
       if ((this as any).selectedObjects.length) {
         const isOnSelectedObject = (this as any).selectedObjects.some(
@@ -5397,6 +5402,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (event.touches.length === 1) {
         const touch = event.touches[0];
         this.updateMousePositionFromTouch(touch);
+
+        if ((this as any)._isMultiSelectModifierActive?.(event)) {
+          return;
+        }
 
         if ((this as any).selectedObjects.length) {
           const isOnSelectedObject = (this as any).selectedObjects.some(
