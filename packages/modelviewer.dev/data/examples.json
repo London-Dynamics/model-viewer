@@ -442,6 +442,20 @@
     ]
   },
   {
+    "name": "LD Clipboard",
+    "htmlName": "ld_clipboard",
+    "examples": [
+      {
+        "htmlId": "clipboard-copy-paste",
+        "name": "Copy / Paste"
+      },
+      {
+        "htmlId": "clipboard-interactive",
+        "name": "Interactive Duplicate"
+      }
+    ]
+  },
+  {
     "name": "LD Image Capture",
     "htmlName": "ld_image_capture",
     "examples": [

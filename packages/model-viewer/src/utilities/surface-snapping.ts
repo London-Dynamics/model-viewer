@@ -13,7 +13,9 @@ import {
   allowsSurfaceType,
   getMaxFromFloorConstraint,
   getMinFromFloorConstraint,
+  getPrimarySurfaceSnapPoint,
   getSurfaceSnapOffset,
+  requiresSurfaceSnap,
   type SurfaceType,
 } from './snapping-points.js';
 
@@ -782,4 +784,62 @@ export function findSurfaceSnapHitOnWall(
   }
 
   return null;
+}
+
+/**
+ * Snap a wall item at an approximate transform onto the nearest valid room
+ * wall surface (used after immediate placement via placeGlb).
+ */
+export function tryResnapToNearestWall(
+  object: Object3D,
+  roomObject: Object3D
+): boolean {
+  if (!requiresSurfaceSnap(object)) {
+    return false;
+  }
+
+  const snapPoint = getPrimarySurfaceSnapPoint(object);
+  if (!snapPoint) {
+    return false;
+  }
+
+  const worldPoint = new Vector3();
+  object.updateMatrixWorld(true);
+  object.getWorldPosition(worldPoint);
+
+  let bestHit: SurfaceSnapHit | null = null;
+  let bestDistanceSq = Infinity;
+
+  roomObject.traverse((child) => {
+    const wallName = child.name || '';
+    if (!wallName.startsWith('wall_')) {
+      return;
+    }
+
+    const wallNormal = inferWallNormalWorld(child);
+    const hit = findSurfaceSnapHitOnWall(
+      child,
+      worldPoint,
+      wallNormal,
+      snapPoint,
+      object
+    );
+    if (!hit) {
+      return;
+    }
+
+    const distanceSq = hit.point.distanceToSquared(worldPoint);
+    if (distanceSq < bestDistanceSq) {
+      bestDistanceSq = distanceSq;
+      bestHit = hit;
+    }
+  });
+
+  if (!bestHit) {
+    return false;
+  }
+
+  const floorY = getRoomFloorY(roomObject);
+  applySurfaceSnapTransform(object, snapPoint, bestHit, floorY);
+  return true;
 }

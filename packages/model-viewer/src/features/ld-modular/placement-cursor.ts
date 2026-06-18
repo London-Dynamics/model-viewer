@@ -10,12 +10,22 @@ import {
   CircleGeometry,
   Vector3,
 } from 'three';
+import {
+  OVERLAY_RENDER_ORDER,
+  OVERLAY_RENDER_ORDER_TOP,
+} from './overlay-rendering.js';
+
+export {
+  OVERLAY_RENDER_ORDER,
+  OVERLAY_RENDER_ORDER_TOP,
+} from './overlay-rendering.js';
+export {applyOverlayRendering, markPasteGhostNonInteractive} from './overlay-rendering.js';
 
 export const PLACEMENT_CURSOR_DIAMETER_M = 0.5;
 export const PLACEMENT_CURSOR_PULSE_SPEED = 0.4;
 export const PLACEMENT_CURSOR_PULSE_GROWTH_RATIO = 0.12;
 
-const CURSOR_RENDER_ORDER = 9999;
+const CURSOR_RENDER_ORDER = OVERLAY_RENDER_ORDER;
 export const PLACEMENT_CURSOR_DEFAULT_HIGHLIGHT_COLOR = '#3b82f6';
 const CURSOR_FILL_OPACITY = 0.14;
 const CURSOR_RING_OPACITY = 0.85;
@@ -69,7 +79,7 @@ export class PlacementCursor extends Object3D {
       blending: NormalBlending,
     });
     this.ringMesh = new Mesh(ringGeometry, ringMaterial);
-    this.ringMesh.renderOrder = CURSOR_RENDER_ORDER + 1;
+    this.ringMesh.renderOrder = OVERLAY_RENDER_ORDER_TOP;
     this.ringMesh.frustumCulled = false;
     this.ringMesh.userData.noHit = true;
     this.ringMesh.userData.selectable = false;

@@ -2428,6 +2428,52 @@
         "signature": "getPlacementTree()"
       },
       {
+        "name": "copyPart",
+        "htmlName": "copyPart",
+        "description": "Snapshot the given part or snapped group (or the current selection root when <code>objectUuid</code> is omitted) into an in-memory clipboard. With <code>interactive: true</code>, starts a paste session immediately: a semi-transparent ghost follows the pointer and a click commits the copy. Returns a <code>PasteSession</code> when interactive; otherwise void. Rejects multi-root selections.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>",
+          "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"
+        ],
+        "signature": "copyPart(objectUuid?: string, options?: { interactive?: boolean; initialMouse?: { clientX: number; clientY: number } }): PasteSession | void"
+      },
+      {
+        "name": "paste",
+        "htmlName": "paste",
+        "description": "If the in-memory clipboard is non-empty, place one copy at the placement cursor (or optional <code>clientX</code>/<code>clientY</code>). Floor items paste on the floor; wall items require a valid wall surface snap. Returns <code>null</code> when the clipboard is empty, pointer position is unknown, or the target surface is invalid. Keeps the clipboard for multi-paste.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>"
+        ],
+        "signature": "paste(options?: { clientX?: number; clientY?: number; select?: boolean }): Promise<{ id: string; node: Object3D } | null>"
+      },
+      {
+        "name": "cancelPaste",
+        "htmlName": "cancelPaste",
+        "description": "Cancel the active interactive paste session (ghost preview) without changing the clipboard.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"
+        ],
+        "signature": "cancelPaste(): void"
+      },
+      {
+        "name": "clearClipboard",
+        "htmlName": "clearClipboard",
+        "description": "Cancel any interactive paste session and clear the in-memory clipboard.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>"
+        ],
+        "signature": "clearClipboard(): void"
+      },
+      {
+        "name": "getClipboardState",
+        "htmlName": "getClipboardState",
+        "description": "Synchronous snapshot of clipboard content and any active paste session (mirrors <code>getHistoryState()</code>). Use to seed toolbar UI before the first <code>clipboard-change</code> event.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>"
+        ],
+        "signature": "getClipboardState(): ClipboardState"
+      },
+      {
         "name": "removeSelectedObjects",
         "htmlName": "removeSelectedObjects",
         "description": "Removes the current modular selection (placed objects/groups), clearing selection first. Multiple calls scheduled in the same JavaScript task (for example from both a host <code>window</code> keydown listener and the element's own handler) are coalesced into one removal pass via a microtask; do not use a time-based debounce so key repeat can still remove successive selections. Options are merged across coalesced calls so <code>animate: true</code> wins if any caller requested animated removal. Host applications that add a global listener should mirror the element's own rules: ignore the shortcut when the key is not Delete/Backspace or when <code>event.target</code> is an <code>input</code>, <code>textarea</code>, or <code>contenteditable</code>; only call <code>preventDefault</code> when there is a non-empty modular selection to remove.",
@@ -2468,6 +2514,15 @@
         "description": "Dispatched when hover enters, switches between, or leaves selectable placed objects in edit mode. event.detail contains hovered (boolean), uuid, name, metadata (hovered object's userData), and anchor ({ centerX, centerY, radiusPx, isVisible } in screen space using the same floating-anchor sphere math and multiplier). On leave, hovered is false and anchor is null.",
         "links": [
           "<a href=\"../examples/ld_modular/#hover-anchor-metadata\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "clipboard-change",
+        "htmlName": "clipboardChange",
+        "description": "Dispatched when the in-memory clipboard or interactive paste session changes. detail: <code>{ hasClipboard, entry?, pasteSession?, reason }</code> where <code>pasteSession.validTarget</code> reflects wall/floor snap validity during ghost preview.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>",
+          "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"
         ]
       }
     ]

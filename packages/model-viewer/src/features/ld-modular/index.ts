@@ -41,9 +41,25 @@ import {
   getBaseModelObject,
   getRoomFloorY,
   invalidateRoomSurfaceIndexCache,
+  tryResnapToNearestWall,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
 import { PlacementCursor } from './placement-cursor.js';
+import {
+  type ClipboardChangeDetail,
+  type ClipboardChangeReason,
+  type ClipboardEntry,
+  type ClipboardState,
+  commitPasteClone,
+  createSessionId,
+  disposeClipboardEntry,
+  entryRequiresSurfaceSnap,
+  isClipboardCopyTarget,
+  snapshotClipboardEntry,
+  toClipboardStateEntry,
+} from './clipboard.js';
+import {PasteSession, type PasteCommitResult, type PasteSessionHost} from './paste-session.js';
+import { applyPointerPlacementPose } from './placement-pose.js';
 
 import { getErrorMessage } from '../../utilities/errors.js';
 
@@ -119,7 +135,7 @@ export type {
   TransformTarget,
   TransformValues,
 } from './transform-events.js';
-export type {AlignAction} from './align-distribute.js';
+export {PasteSession} from './paste-session.js';
 export {
   computeTransformDelta,
   getObjectDisplayName,
@@ -291,6 +307,25 @@ export type HoverChangeDetail = {
   } | null;
 };
 
+export type CopyPartOptions = {
+  interactive?: boolean;
+  initialMouse?: { clientX: number; clientY: number };
+};
+
+export type PasteOptions = {
+  clientX?: number;
+  clientY?: number;
+  select?: boolean;
+};
+
+export type PasteResult = PasteCommitResult;
+
+export type {
+  ClipboardChangeDetail,
+  ClipboardChangeReason,
+  ClipboardState,
+} from './clipboard.js';
+
 type RotationOptions = {
   order?: EulerOrder;
   animate?: boolean;
@@ -443,6 +478,15 @@ export declare interface LDModularInterface {
   clearUndoHistory(): void;
   getHistoryState(): HistoryState;
 
+  copyPart: (
+    objectUuid?: string,
+    options?: CopyPartOptions
+  ) => PasteSession | void;
+  paste: (options?: PasteOptions) => Promise<PasteResult | null>;
+  cancelPaste: () => void;
+  clearClipboard: () => void;
+  getClipboardState: () => ClipboardState;
+
   alignObjects(action: AlignAction): boolean;
 }
 
@@ -548,6 +592,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     } | null = null;
     private _boundCursorPointerMove: ((e: PointerEvent) => void) | null = null;
     private _boundCursorPointerLeave: ((e: PointerEvent) => void) | null = null;
+
+    private _clipboardEntry: ClipboardEntry | null = null;
+    private _activePasteSession: PasteSession | null = null;
+    private _pastePointerTeardown: (() => void) | null = null;
+    private _lastCursorClient: { clientX: number; clientY: number } | null =
+      null;
 
     connectedCallback() {
       super.connectedCallback();
@@ -710,6 +760,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._disposeRotationControlDisc();
       this._detachCursorPointerListeners();
       this._disposePlacementCursorMesh();
+      this.clearClipboard();
       try {
         // Use the slot maps and clearSlots helper so they are considered used
         this.clearSlots(this._snappingPointSlots);
@@ -2942,7 +2993,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _cursorTrackingActive(): boolean {
       return (
         this.cursor ||
-        (this._activePlacementSession?.state === 'placing') === true
+        (this._activePlacementSession?.state === 'placing') === true ||
+        this._activePasteSession?.state === 'previewing'
       );
     }
 
@@ -3052,6 +3104,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     _updateCursorFromPointer(clientX: number, clientY: number) {
+      this._lastCursorClient = { clientX, clientY };
       if (!this._cursorTrackingActive()) return;
 
       this._ensurePlacementCursorMesh();
@@ -5286,6 +5339,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this._rotationGestureActive) {
         return;
       }
+      if ((this as any)._isInteractivePlacementActive?.()) {
+        return;
+      }
       // Only handle puzzler mouse interactions when edit-mode is active.
       if (!this.editMode) {
         return;
@@ -5334,6 +5390,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private onTouchStart(event: TouchEvent) {
       if (!this.editMode) return;
+      if ((this as any)._isInteractivePlacementActive?.()) return;
 
       if (event.touches.length === 1) {
         const touch = event.touches[0];
@@ -5428,6 +5485,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private startDragging(_event?: MouseEvent | TouchEvent) {
+      if ((this as any)._isInteractivePlacementActive?.()) {
+        return;
+      }
       if (!(this as any).selectedObjects.length) {
         return;
       }
@@ -6663,6 +6723,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       initialMouse?: { clientX: number; clientY: number }
     ): PlacementSession {
       // Enforce single interactive session
+      this.cancelPaste();
       if (
         this._activePlacementSession &&
         this._activePlacementSession.state === 'placing'
@@ -6954,6 +7015,344 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           | Object3D
           | undefined) ?? null
       );
+    }
+
+    getClipboardState(): ClipboardState {
+      const entry = this._clipboardEntry;
+      const pasteSession = this._activePasteSession;
+      return {
+        hasClipboard: !!entry,
+        entry: entry ? toClipboardStateEntry(entry) : undefined,
+        pasteSession: pasteSession
+          ? {
+              active:
+                pasteSession.state === 'previewing' ||
+                pasteSession.state === 'committing',
+              state:
+                pasteSession.state === 'committing'
+                  ? 'committing'
+                  : 'previewing',
+              validTarget: pasteSession.hasValidSurfaceSnap,
+            }
+          : undefined,
+      };
+    }
+
+    private _emitClipboardChange(reason: ClipboardChangeReason): void {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent<ClipboardChangeDetail>('clipboard-change', {
+            detail: {...this.getClipboardState(), reason},
+          })
+        );
+      } catch (_e) {}
+    }
+
+    private _resolveCopyTarget(objectUuid?: string): Object3D | null {
+      if (objectUuid) {
+        const node = this.getPart(objectUuid);
+        return isClipboardCopyTarget(node) ? node : null;
+      }
+
+      const selected = [...(((this as any).selectedObjects as Object3D[]) || [])];
+      if (selected.length === 0) return null;
+
+      const roots = this._normalizeDeletionRoots(selected);
+      if (roots.length !== 1) return null;
+      const root = roots[0];
+      return isClipboardCopyTarget(root) ? root : null;
+    }
+
+    private _cancelActivePlacementForPaste(): void {
+      const session = this._activePlacementSession;
+      if (session && session.state === 'placing') {
+        try {
+          session.cancel();
+        } catch (_e) {}
+      }
+    }
+
+    private _teardownPastePointerListeners(): void {
+      if (this._pastePointerTeardown) {
+        try {
+          this._pastePointerTeardown();
+        } catch (_e) {}
+        this._pastePointerTeardown = null;
+      }
+    }
+
+    private _endActivePasteSession(): void {
+      if (this._activePasteSession === null) return;
+      this._teardownPastePointerListeners();
+      try {
+        this._activePasteSession.dispose();
+      } catch (_e) {}
+      this._activePasteSession = null;
+      this._setPlacementCameraDragDisabled(false);
+      this._syncCursorLifecycle();
+    }
+
+    cancelPaste(): void {
+      const session = this._activePasteSession;
+      if (!session) return;
+      session.cancel();
+      this._endActivePasteSession();
+    }
+
+    clearClipboard(): void {
+      this.cancelPaste();
+      if (this._clipboardEntry) {
+        disposeClipboardEntry(this._clipboardEntry);
+        this._clipboardEntry = null;
+      }
+      this._emitClipboardChange('clear');
+    }
+
+    copyPart(
+      objectUuid?: string,
+      options?: CopyPartOptions
+    ): PasteSession | void {
+      const target = this._resolveCopyTarget(objectUuid);
+      if (!target) return;
+
+      this._cancelActivePlacementForPaste();
+      this.cancelPaste();
+
+      if (this._clipboardEntry) {
+        disposeClipboardEntry(this._clipboardEntry);
+      }
+      const entry = snapshotClipboardEntry(target);
+      if (!entry) return;
+      this._clipboardEntry = entry;
+      this._emitClipboardChange('copy');
+
+      if (!options?.interactive) return;
+
+      try {
+        (this as any).clearSelection?.();
+      } catch (_e) {}
+
+      const session = new PasteSession(this as unknown as PasteSessionHost, entry);
+      this._activePasteSession = session;
+      this._setPlacementCameraDragDisabled(true);
+      this._syncCursorLifecycle();
+      session.createGhost();
+      const seedMouse =
+        options.initialMouse ??
+        (this._lastCursorClient
+          ? {
+              clientX: this._lastCursorClient.clientX,
+              clientY: this._lastCursorClient.clientY,
+            }
+          : undefined);
+      if (seedMouse) {
+        try {
+          session.updatePosition(seedMouse.clientX, seedMouse.clientY);
+        } catch (_e) {}
+      }
+      this._wirePasteSessionPointers(session, seedMouse);
+      this._emitClipboardChange('paste-start');
+      return session;
+    }
+
+    async paste(options?: PasteOptions): Promise<PasteResult | null> {
+      const entry = this._clipboardEntry;
+      if (!entry) return null;
+
+      const clientX = options?.clientX ?? this._lastCursorClient?.clientX;
+      const clientY = options?.clientY ?? this._lastCursorClient?.clientY;
+      if (clientX === undefined || clientY === undefined) return null;
+
+      const scene = (this as any)[$scene];
+      const parent = scene?.target || scene;
+      if (!parent) return null;
+
+      const sessionId = createSessionId();
+      const node = commitPasteClone(entry, sessionId);
+
+      const pose = applyPointerPlacementPose(
+        this as any,
+        node,
+        clientX,
+        clientY
+      );
+      if (!pose.worldPoint) return null;
+      if (entryRequiresSurfaceSnap(entry) && !pose.hasValidSurfaceSnap) {
+        return null;
+      }
+
+      try {
+        parent.add(node);
+      } catch (_e) {
+        return null;
+      }
+
+      return this._finalizePasteCommit(node, entry, {
+        select: options?.select,
+      });
+    }
+
+    private _finalizePasteCommit(
+      node: Object3D,
+      entry: ClipboardEntry,
+      options?: { select?: boolean }
+    ): PasteCommitResult {
+      try {
+        this._markRoomWallVisibilityCacheDirty();
+      } catch (_e) {}
+
+      if (entry.kind === 'group') {
+        try {
+          this.updateGroupMeshCache(node);
+        } catch (_e) {}
+        this._recordStructureChange([], this._collectStructureNodes(node), 'Paste group');
+      } else {
+        this._recordPlacementAdd(node);
+      }
+
+      this._firePartsStateEvents(node, 'paste', {});
+
+      const select = options?.select !== false;
+      if (select) {
+        try {
+          if (entry.kind === 'group') {
+            (this as any).selectGroup?.(node);
+          } else {
+            (this as any).selectPart?.(node);
+          }
+        } catch (_e) {}
+      }
+
+      try {
+        (this as any)[$needsRender]();
+      } catch (_e) {}
+
+      this._emitClipboardChange('paste-commit');
+
+      return {
+        id: node.name,
+        node,
+      };
+    }
+
+    private _wirePasteSessionPointers(
+      session: PasteSession,
+      initialMouse?: { clientX: number; clientY: number }
+    ): void {
+      this._teardownPastePointerListeners();
+
+      const DRAG_THRESHOLD_PX = 10;
+      let startClientX: number | null = initialMouse?.clientX ?? null;
+      let startClientY: number | null = initialMouse?.clientY ?? null;
+      let maxDistanceSq = 0;
+      let pointerMoveRaf = 0;
+      let pendingPointerMove: { clientX: number; clientY: number } | null = null;
+      let placementPointerId: number | null = null;
+      let suppressPointerUpUntil = 0;
+
+      const isPointerInViewer = (clientX: number, clientY: number) => {
+        const inputEl = (this as any)[$userInputElement] as
+          | HTMLElement
+          | undefined;
+        if (!inputEl) return false;
+        const rect = inputEl.getBoundingClientRect();
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        );
+      };
+
+      const flushPointerMove = () => {
+        pointerMoveRaf = 0;
+        const pending = pendingPointerMove;
+        pendingPointerMove = null;
+        if (!pending || session.state !== 'previewing') return;
+        session.updatePosition(pending.clientX, pending.clientY);
+      };
+
+      const onPointerDown = (e: PointerEvent) => {
+        if (session.state !== 'previewing') return;
+        if (!isPointerInViewer(e.clientX, e.clientY)) return;
+        placementPointerId = e.pointerId;
+        startClientX = e.clientX;
+        startClientY = e.clientY;
+        maxDistanceSq = 0;
+        session.updatePosition(e.clientX, e.clientY);
+      };
+
+      const onPointerMove = (e: PointerEvent) => {
+        if (session.state !== 'previewing') return;
+        if (!isPointerInViewer(e.clientX, e.clientY)) return;
+        if (placementPointerId !== null && e.pointerId !== placementPointerId) {
+          return;
+        }
+        if (startClientX === null || startClientY === null) {
+          startClientX = e.clientX;
+          startClientY = e.clientY;
+        }
+        const dx = e.clientX - startClientX;
+        const dy = e.clientY - startClientY;
+        maxDistanceSq = Math.max(maxDistanceSq, dx * dx + dy * dy);
+        pendingPointerMove = {clientX: e.clientX, clientY: e.clientY};
+        if (!pointerMoveRaf) {
+          pointerMoveRaf = requestAnimationFrame(flushPointerMove);
+        }
+      };
+
+      const onPointerUp = (e: PointerEvent) => {
+        if (session.state !== 'previewing') return;
+        if (performance.now() < suppressPointerUpUntil) return;
+        if (placementPointerId === null || e.pointerId !== placementPointerId) {
+          return;
+        }
+        placementPointerId = null;
+        flushPointerMove();
+        if (maxDistanceSq <= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+          session.updatePosition(e.clientX, e.clientY);
+        }
+        session.commit({select: true});
+        this._endActivePasteSession();
+      };
+
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        session.cancel();
+        this._endActivePasteSession();
+      };
+
+      window.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('keydown', onKeyDown);
+
+      // Ignore the pointerup from the Duplicate button click that started the session.
+      suppressPointerUpUntil = performance.now() + 300;
+
+      this._pastePointerTeardown = () => {
+        window.removeEventListener('pointerdown', onPointerDown);
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('keydown', onKeyDown);
+        if (pointerMoveRaf) {
+          cancelAnimationFrame(pointerMoveRaf);
+          pointerMoveRaf = 0;
+        }
+      };
+
+      if (initialMouse) {
+        try {
+          session.updatePosition(initialMouse.clientX, initialMouse.clientY);
+        } catch (_e) {}
+      } else if (this._lastCursorClient) {
+        try {
+          session.updatePosition(
+            this._lastCursorClient.clientX,
+            this._lastCursorClient.clientY
+          );
+        } catch (_e) {}
+      }
     }
 
     /**
@@ -8046,8 +8445,6 @@ class PlacementSession extends EventTarget {
         name: getPlacementDisplayName(this._options) ?? objectKey,
         part: this._options?.part,
       };
-      gltf.scene.userData.isSurfaceSnapped =
-        this.requiresSurfaceSnap() && this._hasValidSurfaceSnap;
       const placeholderUserData = this.placeholder?.userData || {};
       if (
         typeof placeholderUserData.attachedSurfaceType === 'string' &&
@@ -8097,6 +8494,27 @@ class PlacementSession extends EventTarget {
       } catch (e) {
         scene.add(gltf.scene);
       }
+
+      if (
+        requiresSurfaceSnap(gltf.scene) &&
+        !hasSurfaceSnappedPlaceholder
+      ) {
+        try {
+          const roomObject = element._findRoomSurfaceObject?.();
+          if (
+            roomObject &&
+            tryResnapToNearestWall(gltf.scene, roomObject)
+          ) {
+            element._markRoomWallVisibilityCacheDirty?.();
+          }
+        } catch (e) {}
+      }
+
+      gltf.scene.userData.isSurfaceSnapped =
+        this.requiresSurfaceSnap() &&
+        (this._hasValidSurfaceSnap ||
+          gltf.scene.userData?.isSurfaceSnapped === true);
+
       try {
         element._markRoomWallVisibilityCacheDirty?.();
       } catch (e) {}

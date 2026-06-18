@@ -185,10 +185,14 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     protected _isInteractivePlacementActive(): boolean {
       const session = (this as any)._activePlacementSession;
-      return (
+      if (
         !!session &&
         (session.state === 'placing' || session.state === 'loading')
-      );
+      ) {
+        return true;
+      }
+      const pasteSession = (this as any)._activePasteSession;
+      return pasteSession?.state === 'previewing';
     }
 
     protected _isMultiSelectModifierActive(e: PointerEvent | MouseEvent): boolean {
@@ -198,6 +202,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     protected _isNodeSelectable(node: any): boolean {
       if (!node) return false;
       if (node.userData?.isPlacementPlaceholder === true) return false;
+      if (node.userData?.isPasteGhost === true) return false;
       if (node.selectable === false || node.userData?.selectable === false)
         return false;
 
