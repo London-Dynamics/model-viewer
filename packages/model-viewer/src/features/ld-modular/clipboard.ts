@@ -8,6 +8,7 @@ import {
 } from '../../utilities/snapping-points.js';
 import {getObjectDisplayName} from './transform-events.js';
 import {cloneMeshMaterials, restoreCommittedMeshRendering} from './overlay-rendering.js';
+import {scrubSelectionOutlineLayers} from '../ld-selection/selection-outline-layers.js';
 
 export type ClipboardEntryKind = 'part' | 'group' | 'selection';
 
@@ -165,6 +166,7 @@ function stripRuntimeUserData(node: Object3D): void {
 
 function preparePrototypeClone(source: Object3D): Object3D {
   const prototype = source.clone(true);
+  scrubSelectionOutlineLayers(prototype);
   cloneMeshMaterials(prototype);
   prototype.traverse((child) => {
     stripRuntimeUserData(child);
@@ -386,6 +388,7 @@ export function commitPasteClone(
   }
 
   const node = entry.prototype.clone(true);
+  scrubSelectionOutlineLayers(node);
   cloneMeshMaterials(node);
   restoreCommittedMeshRendering(node);
 

@@ -99,8 +99,14 @@ import ModelViewerElementBase, {
 import {Constructor} from '../../utilities.js';
 import {Object3D, Vector2, Raycaster, Box3, Vector3, Camera} from 'three';
 
+import {scrubSelectionOutlineLayers} from './selection-outline-layers.js';
+
 // Re-export the selection outline effect
 export {SelectionOutlineEffect} from './selection-outline-effect.js';
+export {
+  SELECTION_OUTLINE_LAYER,
+  scrubSelectionOutlineLayers,
+} from './selection-outline-layers.js';
 
 const MULTI_SELECT_MODIFIER_KEY = 'Shift' as const;
 
@@ -996,6 +1002,12 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Uses the outline-effect or ld-outline-effect component if present.
      */
     protected _updateHighlight() {
+      const scene = (this as any)[$scene];
+      const highlightRoot = scene?.target || scene;
+      if (highlightRoot) {
+        scrubSelectionOutlineLayers(highlightRoot);
+      }
+
       const effectComposer = (this as unknown as HTMLElement).querySelector(
         'effect-composer'
       );
@@ -1036,6 +1048,12 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Clear all visual highlights.
      */
     protected _clearHighlights() {
+      const scene = (this as any)[$scene];
+      const highlightRoot = scene?.target || scene;
+      if (highlightRoot) {
+        scrubSelectionOutlineLayers(highlightRoot);
+      }
+
       const effectComposer = (this as unknown as HTMLElement).querySelector(
         'effect-composer'
       );

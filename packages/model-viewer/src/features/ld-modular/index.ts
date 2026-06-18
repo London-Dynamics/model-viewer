@@ -7228,14 +7228,16 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return null;
       }
 
+      const selectPasted = options?.select === true;
+
       if (commits.length > 1) {
         return this._finalizePasteCommitMany(commits, {
-          select: options?.select,
+          select: selectPasted,
         });
       }
 
       return this._finalizePasteCommit(commits[0].node, commits[0].itemEntry, {
-        select: options?.select,
+        select: selectPasted,
       });
     }
 
