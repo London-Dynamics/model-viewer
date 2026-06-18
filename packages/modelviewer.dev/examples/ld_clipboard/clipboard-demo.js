@@ -140,8 +140,8 @@ export function wireClipboardDemo(config) {
 
     duplicateBtn?.addEventListener('click', () => {
       const selected = viewer.getSelectedObjects?.() ?? [];
-      if (selected.length !== 1) return;
-      viewer.copyPart?.(selected[0].uuid, {interactive: true});
+      if (selected.length === 0) return;
+      viewer.copyPart?.(undefined, {interactive: true});
     });
 
     cancelBtn?.addEventListener('click', () => viewer.cancelPaste?.());

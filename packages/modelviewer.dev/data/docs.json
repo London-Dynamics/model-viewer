@@ -2430,7 +2430,7 @@
       {
         "name": "copyPart",
         "htmlName": "copyPart",
-        "description": "Snapshot the given part or snapped group (or the current selection root when <code>objectUuid</code> is omitted) into an in-memory clipboard. With <code>interactive: true</code>, starts a paste session immediately: a semi-transparent ghost follows the pointer and a click commits the copy. Returns a <code>PasteSession</code> when interactive; otherwise void. Rejects multi-root selections.",
+        "description": "Snapshot the given part, snapped group, or current selection into an in-memory clipboard. When <code>objectUuid</code> is omitted, copies all selected roots. When <code>objectUuid</code> matches one of the selected roots, copies the entire selection. With <code>interactive: true</code>, starts a paste session immediately: semi-transparent ghost(s) follow the pointer and a click commits the copy. Returns a <code>PasteSession</code> when interactive; otherwise void.",
         "links": [
           "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>",
           "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"

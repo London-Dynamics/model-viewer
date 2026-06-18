@@ -4,6 +4,7 @@ import {
   getSnappingPointWorldPosition,
   requiresSurfaceSnap,
 } from '../../utilities/snapping-points.js';
+import {getObjectBottomCenterWorld} from './clipboard.js';
 import {getMouseWorldPointOnPlacementPlane} from '../../utilities/mouse-world-point.js';
 import type {SurfaceSnapHit} from '../../utilities/surface-snapping.js';
 import {$scene} from '../../model-viewer-base.js';
@@ -144,6 +145,111 @@ export function applyPointerPlacementPose(
     targetBottomCenter,
     hasValidSurfaceSnap,
     surfaceHit,
+  };
+}
+
+export type SelectionPlacementItem = {
+  object: Object3D;
+  requiresSurfaceSnap: boolean;
+  anchorOffset: Vector3;
+};
+
+export type SelectionPlacementResult = PlacementPoseResult & {
+  itemValidSnap: boolean[];
+};
+
+function positionObjectBottomCenterAtWorld(
+  object: Object3D,
+  worldBottomCenter: Vector3
+): void {
+  object.updateMatrixWorld(true);
+  const current = getObjectBottomCenterWorld(object);
+  const delta = worldBottomCenter.clone().sub(current);
+  const worldPos = new Vector3();
+  object.getWorldPosition(worldPos);
+  worldPos.add(delta);
+
+  const parent = object.parent;
+  if (parent) {
+    parent.updateMatrixWorld(true);
+    object.position.copy(parent.worldToLocal(worldPos));
+  } else {
+    object.position.copy(worldPos);
+  }
+  object.updateMatrixWorld(true);
+}
+
+/**
+ * Positions multiple clipboard ghosts together: the leader follows the pointer,
+ * followers keep their copied offsets and run their own surface snap checks.
+ */
+export function applySelectionPointerPlacementPose(
+  host: PlacementPoseHost,
+  leader: Object3D,
+  items: SelectionPlacementItem[],
+  clientX: number,
+  clientY: number,
+  options?: {updateCursor?: boolean}
+): SelectionPlacementResult {
+  const leaderResult = applyPointerPlacementPose(
+    host,
+    leader,
+    clientX,
+    clientY,
+    options
+  );
+
+  if (!leaderResult.worldPoint) {
+    for (const item of items) {
+      if (item.object !== leader) {
+        try {
+          item.object.visible = false;
+        } catch (_e) {}
+      }
+    }
+    return {
+      ...leaderResult,
+      itemValidSnap: items.map(() => false),
+    };
+  }
+
+  const leaderBottom = getObjectBottomCenterWorld(leader);
+  const itemValidSnap: boolean[] = [];
+
+  for (const item of items) {
+    const isLeader = item.object === leader;
+    if (!isLeader) {
+      positionObjectBottomCenterAtWorld(
+        item.object,
+        leaderBottom.clone().add(item.anchorOffset)
+      );
+      try {
+        item.object.visible = true;
+      } catch (_e) {}
+    }
+
+    let valid = !item.requiresSurfaceSnap;
+    if (item.requiresSurfaceSnap && host.applySurfaceSnapForPlacement) {
+      const hit = host.applySurfaceSnapForPlacement(
+        item.object,
+        clientX,
+        clientY
+      );
+      valid = !!hit;
+    } else if (isLeader) {
+      valid = leaderResult.hasValidSurfaceSnap;
+    }
+    itemValidSnap.push(valid);
+  }
+
+  const hasValidSurfaceSnap = itemValidSnap.every(
+    (valid, index) => !items[index].requiresSurfaceSnap || valid
+  );
+
+  return {
+    ...leaderResult,
+    hasValidSurfaceSnap,
+    itemValidSnap,
   };
 }
 

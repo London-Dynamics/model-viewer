@@ -2,16 +2,23 @@ import {Object3D} from 'three';
 import {$needsRender, $scene} from '../../model-viewer-base.js';
 import {
   type ClipboardEntry,
-  commitPasteClone,
+  commitPasteTargets,
   createSessionId,
   entryRequiresSurfaceSnap,
+  getSelectionClipboardItems,
+  getSelectionLeaderIndex,
 } from './clipboard.js';
 import {
   applyOverlayRendering,
   cloneMeshMaterials,
   markPasteGhostNonInteractive,
 } from './overlay-rendering.js';
-import {applyPointerPlacementPose, type PlacementPoseHost} from './placement-pose.js';
+import {
+  applyPointerPlacementPose,
+  applySelectionPointerPlacementPose,
+  type PlacementPoseHost,
+  type SelectionPlacementItem,
+} from './placement-pose.js';
 import type {SurfaceSnapHit} from '../../utilities/surface-snapping.js';
 
 export type PasteSessionState = 'previewing' | 'committing' | 'ended' | 'cancelled';
@@ -19,6 +26,7 @@ export type PasteSessionState = 'previewing' | 'committing' | 'ended' | 'cancell
 export type PasteCommitResult = {
   id: string;
   node: Object3D;
+  nodes?: Object3D[];
 };
 
 export type PasteSessionHost = PlacementPoseHost & {
@@ -31,20 +39,27 @@ export type PasteSessionHost = PlacementPoseHost & {
   _finalizePasteCommit(
     node: Object3D,
     entry: ClipboardEntry,
+    options?: {select?: boolean; emitChange?: boolean}
+  ): PasteCommitResult;
+  _finalizePasteCommitMany?(
+    commits: Array<{node: Object3D; itemEntry: ClipboardEntry}>,
     options?: {select?: boolean}
   ): PasteCommitResult;
   _emitClipboardChange(reason: string): void;
 };
 
 /**
- * Interactive paste session: ghost follows pointer until click commits.
+ * Interactive paste session: ghost(s) follow the pointer until click commits.
  */
 export class PasteSession extends EventTarget {
   readonly id: string;
   state: PasteSessionState = 'previewing';
   ghost: Object3D | null = null;
+  ghosts: Object3D[] = [];
   private readonly _entry: ClipboardEntry;
   private readonly _host: PasteSessionHost;
+  private readonly _placementItems: SelectionPlacementItem[] = [];
+  private _leaderIndex = 0;
   private _hasValidSurfaceSnap = false;
 
   constructor(host: PasteSessionHost, entry: ClipboardEntry) {
@@ -52,6 +67,7 @@ export class PasteSession extends EventTarget {
     this.id = createSessionId();
     this._host = host;
     this._entry = entry;
+    this._leaderIndex = getSelectionLeaderIndex(entry);
     this.dispatchEvent(
       new CustomEvent('start', {detail: {sessionId: this.id}})
     );
@@ -66,32 +82,64 @@ export class PasteSession extends EventTarget {
     const parent = scene?.target || scene;
     if (!parent) return null;
 
-    const ghost = this._entry.prototype.clone(true);
-    cloneMeshMaterials(ghost);
-    markPasteGhostNonInteractive(ghost);
-    applyOverlayRendering(ghost);
-    ghost.visible = false;
-    parent.add(ghost);
-    this.ghost = ghost;
-    return ghost;
+    const selectionItems = getSelectionClipboardItems(this._entry);
+    this.ghosts = selectionItems.map((item) => {
+      const ghost = item.itemEntry.prototype.clone(true);
+      cloneMeshMaterials(ghost);
+      markPasteGhostNonInteractive(ghost);
+      applyOverlayRendering(ghost);
+      ghost.visible = false;
+      parent.add(ghost);
+      return ghost;
+    });
+
+    this._placementItems.length = 0;
+    for (let index = 0; index < selectionItems.length; index++) {
+      const item = selectionItems[index];
+      this._placementItems.push({
+        object: this.ghosts[index],
+        requiresSurfaceSnap: item.itemEntry.requiresSurfaceSnap,
+        anchorOffset: item.anchorOffset.clone(),
+      });
+    }
+
+    this.ghost = this.ghosts[this._leaderIndex] ?? this.ghosts[0] ?? null;
+    return this.ghost;
   }
 
   updatePosition(clientX: number, clientY: number): void {
-    if (!this.ghost || this.state !== 'previewing') return;
+    if (this.ghosts.length === 0 || this.state !== 'previewing') return;
 
-    const pose = applyPointerPlacementPose(
-      this._host,
-      this.ghost,
-      clientX,
-      clientY
-    );
+    const leader = this.ghosts[this._leaderIndex] ?? this.ghosts[0];
+    if (!leader) return;
+
+    const pose =
+      this._placementItems.length > 1
+        ? applySelectionPointerPlacementPose(
+            this._host,
+            leader,
+            this._placementItems,
+            clientX,
+            clientY
+          )
+        : {
+            ...applyPointerPlacementPose(
+              this._host,
+              leader,
+              clientX,
+              clientY
+            ),
+            itemValidSnap: [true],
+          };
 
     this._hasValidSurfaceSnap = pose.hasValidSurfaceSnap;
 
     if (!pose.worldPoint) {
-      try {
-        this.ghost.visible = false;
-      } catch (_e) {}
+      for (const ghost of this.ghosts) {
+        try {
+          ghost.visible = false;
+        } catch (_e) {}
+      }
       this._host._emitClipboardChange('paste-update');
       this.dispatchEvent(
         new CustomEvent('update', {
@@ -106,9 +154,11 @@ export class PasteSession extends EventTarget {
       return;
     }
 
-    try {
-      this.ghost.visible = true;
-    } catch (_e) {}
+    for (const ghost of this.ghosts) {
+      try {
+        ghost.visible = true;
+      } catch (_e) {}
+    }
 
     this._host._emitClipboardChange('paste-update');
     this.dispatchEvent(
@@ -141,28 +191,45 @@ export class PasteSession extends EventTarget {
 
     this.state = 'committing';
     const sessionId = createSessionId();
-    const node = commitPasteClone(this._entry, sessionId);
+    const commits = commitPasteTargets(this._entry, sessionId);
 
-    if (this.ghost) {
-      node.position.copy(this.ghost.position);
-      node.quaternion.copy(this.ghost.quaternion);
-      node.scale.copy(this.ghost.scale);
-      this._copySurfaceMetadata(this.ghost, node);
-      this._removeGhost();
+    for (let index = 0; index < commits.length; index++) {
+      const {node} = commits[index];
+      const ghost = this.ghosts[index];
+      if (!ghost) continue;
+
+      node.position.copy(ghost.position);
+      node.quaternion.copy(ghost.quaternion);
+      node.scale.copy(ghost.scale);
+      this._copySurfaceMetadata(ghost, node);
     }
+
+    this._removeGhosts();
 
     const scene = this._host[$scene];
     const parent = scene?.target || scene;
     if (parent) {
-      try {
-        parent.add(node);
-      } catch (_e) {
-        this.state = 'previewing';
-        return null;
+      for (const {node} of commits) {
+        try {
+          parent.add(node);
+        } catch (_e) {
+          this.state = 'previewing';
+          return null;
+        }
       }
     }
 
-    const result = this._host._finalizePasteCommit(node, this._entry, options);
+    let result: PasteCommitResult;
+    if (commits.length > 1 && this._host._finalizePasteCommitMany) {
+      result = this._host._finalizePasteCommitMany(commits, options);
+    } else {
+      result = this._host._finalizePasteCommit(
+        commits[0].node,
+        commits[0].itemEntry,
+        options
+      );
+    }
+
     this.state = 'ended';
     this.dispatchEvent(
       new CustomEvent('commit', {detail: {sessionId: this.id, ...result}})
@@ -172,7 +239,7 @@ export class PasteSession extends EventTarget {
 
   cancel(): void {
     if (this.state === 'ended' || this.state === 'cancelled') return;
-    this._removeGhost();
+    this._removeGhosts();
     this.state = 'cancelled';
     this._host._emitClipboardChange('paste-cancel');
     this.dispatchEvent(
@@ -182,7 +249,7 @@ export class PasteSession extends EventTarget {
   }
 
   dispose(): void {
-    this._removeGhost();
+    this._removeGhosts();
     this.state = 'ended';
   }
 
@@ -224,11 +291,13 @@ export class PasteSession extends EventTarget {
     }
   }
 
-  private _removeGhost(): void {
-    if (!this.ghost) return;
-    try {
-      this.ghost.parent?.remove(this.ghost);
-    } catch (_e) {}
+  private _removeGhosts(): void {
+    for (const ghost of this.ghosts) {
+      try {
+        ghost.parent?.remove(ghost);
+      } catch (_e) {}
+    }
+    this.ghosts = [];
     this.ghost = null;
   }
 }

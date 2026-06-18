@@ -50,16 +50,18 @@ import {
   type ClipboardChangeReason,
   type ClipboardEntry,
   type ClipboardState,
-  commitPasteClone,
   createSessionId,
   disposeClipboardEntry,
   entryRequiresSurfaceSnap,
   isClipboardCopyTarget,
-  snapshotClipboardEntry,
+  snapshotClipboardTargets,
   toClipboardStateEntry,
+  commitPasteTargets,
+  getSelectionClipboardItems,
+  getSelectionLeaderIndex,
 } from './clipboard.js';
 import {PasteSession, type PasteCommitResult, type PasteSessionHost} from './paste-session.js';
-import { applyPointerPlacementPose } from './placement-pose.js';
+import { applyPointerPlacementPose, applySelectionPointerPlacementPose } from './placement-pose.js';
 
 import { getErrorMessage } from '../../utilities/errors.js';
 
@@ -7048,19 +7050,27 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       } catch (_e) {}
     }
 
-    private _resolveCopyTarget(objectUuid?: string): Object3D | null {
+    private _resolveCopyTargets(objectUuid?: string): Object3D[] {
+      const selected = [
+        ...(((this as any).selectedObjects as Object3D[]) || []),
+      ];
+      const selectedRoots = this._normalizeDeletionRoots(selected).filter(
+        (node) => isClipboardCopyTarget(node)
+      );
+
       if (objectUuid) {
+        const matchesSelection = selectedRoots.some(
+          (node) => node.uuid === objectUuid
+        );
+        if (matchesSelection && selectedRoots.length > 0) {
+          return selectedRoots;
+        }
+
         const node = this.getPart(objectUuid);
-        return isClipboardCopyTarget(node) ? node : null;
+        return isClipboardCopyTarget(node) ? [node] : [];
       }
 
-      const selected = [...(((this as any).selectedObjects as Object3D[]) || [])];
-      if (selected.length === 0) return null;
-
-      const roots = this._normalizeDeletionRoots(selected);
-      if (roots.length !== 1) return null;
-      const root = roots[0];
-      return isClipboardCopyTarget(root) ? root : null;
+      return selectedRoots;
     }
 
     private _cancelActivePlacementForPaste(): void {
@@ -7112,8 +7122,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       objectUuid?: string,
       options?: CopyPartOptions
     ): PasteSession | void {
-      const target = this._resolveCopyTarget(objectUuid);
-      if (!target) return;
+      const targets = this._resolveCopyTargets(objectUuid);
+      if (targets.length === 0) return;
 
       this._cancelActivePlacementForPaste();
       this.cancelPaste();
@@ -7121,7 +7131,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this._clipboardEntry) {
         disposeClipboardEntry(this._clipboardEntry);
       }
-      const entry = snapshotClipboardEntry(target);
+      const entry = snapshotClipboardTargets(targets);
       if (!entry) return;
       this._clipboardEntry = entry;
       this._emitClipboardChange('copy');
@@ -7168,34 +7178,103 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!parent) return null;
 
       const sessionId = createSessionId();
-      const node = commitPasteClone(entry, sessionId);
+      const commits = commitPasteTargets(entry, sessionId);
+      if (commits.length === 0) return null;
 
-      const pose = applyPointerPlacementPose(
-        this as any,
-        node,
-        clientX,
-        clientY
-      );
+      const selectionItems = getSelectionClipboardItems(entry);
+      const leaderIndex = getSelectionLeaderIndex(entry);
+      const leader = commits[leaderIndex]?.node ?? commits[0].node;
+      const placementItems = commits.map((commit, index) => ({
+        object: commit.node,
+        requiresSurfaceSnap: commit.itemEntry.requiresSurfaceSnap,
+        anchorOffset: selectionItems[index]?.anchorOffset.clone() ?? new Vector3(),
+      }));
+
+      const pose =
+        placementItems.length > 1
+          ? applySelectionPointerPlacementPose(
+              this as any,
+              leader,
+              placementItems,
+              clientX,
+              clientY
+            )
+          : applyPointerPlacementPose(
+              this as any,
+              leader,
+              clientX,
+              clientY
+            );
+
       if (!pose.worldPoint) return null;
       if (entryRequiresSurfaceSnap(entry) && !pose.hasValidSurfaceSnap) {
         return null;
       }
 
       try {
-        parent.add(node);
+        for (const {node} of commits) {
+          parent.add(node);
+        }
       } catch (_e) {
         return null;
       }
 
-      return this._finalizePasteCommit(node, entry, {
+      if (commits.length > 1) {
+        return this._finalizePasteCommitMany(commits, {
+          select: options?.select,
+        });
+      }
+
+      return this._finalizePasteCommit(commits[0].node, commits[0].itemEntry, {
         select: options?.select,
       });
+    }
+
+    private _finalizePasteCommitMany(
+      commits: Array<{node: Object3D; itemEntry: ClipboardEntry}>,
+      options?: {select?: boolean}
+    ): PasteCommitResult {
+      const history = this._ensureUndoHistory();
+      const shouldBatch = commits.length > 1 && !history.isReplaying;
+      if (shouldBatch) {
+        history.beginBatch();
+      }
+
+      for (const commit of commits) {
+        this._finalizePasteCommit(commit.node, commit.itemEntry, {
+          select: false,
+          emitChange: false,
+        });
+      }
+
+      if (shouldBatch) {
+        history.endBatch('Paste selection');
+      }
+
+      const select = options?.select !== false;
+      if (select) {
+        try {
+          (this as any)._replaceSelection?.(commits.map((commit) => commit.node));
+        } catch (_e) {}
+      }
+
+      try {
+        (this as any)[$needsRender]();
+      } catch (_e) {}
+
+      this._emitClipboardChange('paste-commit');
+
+      return {
+        id: commits[0].node.name,
+        node: commits[0].node,
+        nodes: commits.map((commit) => commit.node),
+      };
     }
 
     private _finalizePasteCommit(
       node: Object3D,
       entry: ClipboardEntry,
-      options?: { select?: boolean }
+      options?: {select?: boolean; emitChange?: boolean}
     ): PasteCommitResult {
       try {
         this._markRoomWallVisibilityCacheDirty();
@@ -7227,7 +7306,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         (this as any)[$needsRender]();
       } catch (_e) {}
 
-      this._emitClipboardChange('paste-commit');
+      if (options?.emitChange !== false) {
+        this._emitClipboardChange('paste-commit');
+      }
 
       return {
         id: node.name,
