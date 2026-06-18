@@ -36,6 +36,7 @@ import {
   applySurfaceSnapTransform,
   clientToNdc,
   findSurfaceSnapHitForNdc,
+  findRoomSurfaceHitForNdc,
   findSurfaceSnapHitOnWall,
   getBaseModelObject,
   getRoomFloorY,
@@ -322,7 +323,8 @@ export declare interface LDModularInterface {
   disableZRotationControls: boolean;
   rotationControlsMajorStep: number;
   rotationControlsFineStep: number;
-  rotationControlsHighlightColor: string;
+  highlightColor: string;
+  cursor: boolean;
 
   setPosition(objectName: string, value: [number, number, number]): void;
   setPosition(value: [number, number, number]): void;
@@ -495,8 +497,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Number, attribute: 'rotation-controls-fine-step' })
     rotationControlsFineStep: number = 0;
 
-    @property({ type: String, attribute: 'rotation-controls-highlight-color' })
-    rotationControlsHighlightColor: string = '#3b82f6';
+    @property({ type: String, attribute: 'highlight-color' })
+    highlightColor: string = '#3b82f6';
+
+    @property({ type: Boolean, attribute: 'cursor' })
+    cursor: boolean = false;
 
     @property({ type: Number, attribute: 'max-undo-steps' })
     maxUndoSteps: number = 50;
@@ -532,6 +537,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _tmpWallWorldNormal: Vector3 = new Vector3();
     private _tmpMeshWorldQuat: Quaternion = new Quaternion();
     private _tmpWallWorldQuat: Quaternion = new Quaternion();
+
+    private _placementCursorMesh: PlacementCursor | null = null;
+    private _cursorWorldPosition: { x: number; y: number; z: number } | null =
+      null;
+    private _cursorPointerMoveRaf = 0;
+    private _pendingCursorPointerMove: {
+      clientX: number;
+      clientY: number;
+    } | null = null;
+    private _boundCursorPointerMove: ((e: PointerEvent) => void) | null = null;
+    private _boundCursorPointerLeave: ((e: PointerEvent) => void) | null = null;
 
     connectedCallback() {
       super.connectedCallback();
@@ -609,9 +625,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         changedProperties.has('disableYRotationControls') ||
         changedProperties.has('rotationControlsMajorStep') ||
         changedProperties.has('rotationControlsFineStep') ||
-        changedProperties.has('rotationControlsHighlightColor')
+        changedProperties.has('highlightColor')
       ) {
         this._syncRotationControlDiscLifecycle();
+      }
+
+      if (changedProperties.has('cursor')) {
+        this._syncCursorLifecycle();
+      }
+
+      if (changedProperties.has('highlightColor')) {
+        this._applyCursorHighlightColor();
       }
     }
 
@@ -684,6 +708,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.teardownDragHandlers();
       } catch (e) {}
       this._disposeRotationControlDisc();
+      this._detachCursorPointerListeners();
+      this._disposePlacementCursorMesh();
       try {
         // Use the slot maps and clearSlots helper so they are considered used
         this.clearSlots(this._snappingPointSlots);
@@ -941,7 +967,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._updateRoomAttachedVisibility();
       } catch (e) {}
       try {
-        this._activePlacementSession?.tickPlacementCursor(delta);
+        this._tickPlacementCursor(delta);
       } catch (e) {}
       try {
         this._updateRotationControlDisc();
@@ -2913,6 +2939,182 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _activePlacementSession: PlacementSession | null = null;
 
+    private _cursorTrackingActive(): boolean {
+      return (
+        this.cursor ||
+        (this._activePlacementSession?.state === 'placing') === true
+      );
+    }
+
+    private _syncCursorLifecycle() {
+      if (this._cursorTrackingActive()) {
+        this._ensurePlacementCursorMesh();
+        this._applyCursorHighlightColor();
+        this._attachCursorPointerListeners();
+      } else {
+        this._detachCursorPointerListeners();
+        this._placementCursorMesh?.hide();
+        this._cursorWorldPosition = null;
+      }
+    }
+
+    private _ensurePlacementCursorMesh() {
+      if (this._placementCursorMesh) return;
+      const scene = (this as any)[$scene];
+      const parent = scene?.target || scene;
+      if (!parent) return;
+
+      const cursor = new PlacementCursor(() => {
+        try {
+          (this as any)[$needsRender]();
+        } catch (e) {}
+      });
+      parent.add(cursor);
+      this._placementCursorMesh = cursor;
+      this._applyCursorHighlightColor();
+
+      const defaultWorld = new Vector3();
+      if (scene?.target) {
+        scene.target.getWorldPosition(defaultWorld);
+      }
+      cursor.showOnFloor(defaultWorld);
+      this._cursorWorldPosition = {
+        x: defaultWorld.x,
+        y: defaultWorld.y,
+        z: defaultWorld.z,
+      };
+    }
+
+    private _disposePlacementCursorMesh() {
+      if (!this._placementCursorMesh) return;
+      this._placementCursorMesh.dispose();
+      this._placementCursorMesh = null;
+      this._cursorWorldPosition = null;
+    }
+
+    private _applyCursorHighlightColor() {
+      this._placementCursorMesh?.setHighlightColor(this.highlightColor);
+    }
+
+    private _flushCursorPointerMove() {
+      this._cursorPointerMoveRaf = 0;
+      const pending = this._pendingCursorPointerMove;
+      this._pendingCursorPointerMove = null;
+      if (!pending) return;
+      this._updateCursorFromPointer(pending.clientX, pending.clientY);
+    }
+
+    private _attachCursorPointerListeners() {
+      if (!this.cursor || this._boundCursorPointerMove) return;
+
+      this._boundCursorPointerMove = (e: PointerEvent) => {
+        this._pendingCursorPointerMove = {
+          clientX: e.clientX,
+          clientY: e.clientY,
+        };
+        if (this._cursorPointerMoveRaf === 0) {
+          this._cursorPointerMoveRaf = requestAnimationFrame(() =>
+            this._flushCursorPointerMove()
+          );
+        }
+      };
+      this._boundCursorPointerLeave = () => {
+        if (this._cursorPointerMoveRaf !== 0) {
+          cancelAnimationFrame(this._cursorPointerMoveRaf);
+          this._cursorPointerMoveRaf = 0;
+        }
+        this._pendingCursorPointerMove = null;
+        this._cursorWorldPosition = null;
+        this._placementCursorMesh?.hide();
+        try {
+          (this as any)[$needsRender]();
+        } catch (e) {}
+      };
+
+      this.addEventListener('pointermove', this._boundCursorPointerMove);
+      this.addEventListener('pointerleave', this._boundCursorPointerLeave);
+    }
+
+    private _detachCursorPointerListeners() {
+      if (this._cursorPointerMoveRaf !== 0) {
+        cancelAnimationFrame(this._cursorPointerMoveRaf);
+        this._cursorPointerMoveRaf = 0;
+      }
+      this._pendingCursorPointerMove = null;
+      if (this._boundCursorPointerMove) {
+        this.removeEventListener('pointermove', this._boundCursorPointerMove);
+        this._boundCursorPointerMove = null;
+      }
+      if (this._boundCursorPointerLeave) {
+        this.removeEventListener('pointerleave', this._boundCursorPointerLeave);
+        this._boundCursorPointerLeave = null;
+      }
+    }
+
+    _updateCursorFromPointer(clientX: number, clientY: number) {
+      if (!this._cursorTrackingActive()) return;
+
+      this._ensurePlacementCursorMesh();
+      if (!this._placementCursorMesh) return;
+
+      const floorWorld = getMouseWorldPointOnPlacementPlane(
+        this as unknown as HTMLElement,
+        (this as any)[$scene],
+        clientX,
+        clientY
+      );
+
+      if (!floorWorld) {
+        this._cursorWorldPosition = null;
+        this._placementCursorMesh.hide();
+        return;
+      }
+
+      const scene = (this as any)[$scene];
+      const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
+      const roomObject = this._findRoomSurfaceObject();
+      let wallHit: SurfaceSnapHit | null = null;
+      if (camera && roomObject) {
+        const rect = this.getBoundingClientRect();
+        const ndc = clientToNdc(clientX, clientY, rect);
+        if (ndc) {
+          wallHit = findRoomSurfaceHitForNdc(camera, ndc, roomObject);
+        }
+      }
+
+      if (wallHit && wallHit.surfaceType === 'wall') {
+        this._placementCursorMesh.showOnSurface(
+          wallHit.point,
+          wallHit.normal
+        );
+        this._cursorWorldPosition = {
+          x: wallHit.point.x,
+          y: wallHit.point.y,
+          z: wallHit.point.z,
+        };
+      } else {
+        this._placementCursorMesh.showOnFloor(floorWorld);
+        this._cursorWorldPosition = {
+          x: floorWorld.x,
+          y: floorWorld.y,
+          z: floorWorld.z,
+        };
+      }
+
+      try {
+        (this as any)[$needsRender]();
+      } catch (e) {}
+    }
+
+    _getCursorWorldPosition(): { x: number; y: number; z: number } | null {
+      if (!this._cursorWorldPosition) return null;
+      return { ...this._cursorWorldPosition };
+    }
+
+    private _tickPlacementCursor(deltaMs: number) {
+      this._placementCursorMesh?.tick(deltaMs);
+    }
+
     // Selection change handler to react to selection changes from the selection mixin
     private _onSelectionChangeForPuzzler(event: Event) {
       const customEvent = event as CustomEvent<SelectionChangeDetail>;
@@ -4538,7 +4740,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportWidth: (this as any)[$scene].width,
         viewportHeight: (this as any)[$scene].height,
         floorY,
-        highlightColor: this.rotationControlsHighlightColor,
+        highlightColor: this.highlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
         lockSize,
@@ -4584,7 +4786,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportWidth: scene.width,
         viewportHeight: scene.height,
         floorY: this._getRotationDiscFloorY(targets[0]),
-        highlightColor: this.rotationControlsHighlightColor,
+        highlightColor: this.highlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
         lockSize: false,
@@ -6483,6 +6685,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       this._activePlacementSession = session;
       this._setPlacementCameraDragDisabled(true);
+      this._syncCursorLifecycle();
 
       // Ensure snapping slots are refreshed immediately when an interactive
       // placement session is started so snapping points for the placeholder
@@ -6497,6 +6700,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._activePlacementSession = null;
         }
         this._setPlacementCameraDragDisabled(false);
+        this._syncCursorLifecycle();
       };
 
       session.addEventListener('loaded', endPlacementSession, { once: true });
@@ -6598,7 +6802,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const onPointerUp = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
-            session.hidePlacementCursor();
             const requiresWallSurfaceSnap =
               (session as any).requiresSurfaceSnap?.() ?? false;
             const hasValidWallSurfaceSnap =
@@ -7015,7 +7218,6 @@ class PlacementSession extends EventTarget {
   private _targetBottomCenter: { x: number; y: number; z: number } | null =
     null;
   private _hasValidSurfaceSnap: boolean = false;
-  private _placementCursor: PlacementCursor | null = null;
 
   constructor(
     element: any,
@@ -7025,7 +7227,7 @@ class PlacementSession extends EventTarget {
     lowResSrc?: string,
     highResSrc?: string,
     options?: PlacementOptions,
-    immediatePlacement = false
+    _immediatePlacement = false
   ) {
     super();
     this.id = String(Date.now()) + '_' + Math.floor(Math.random() * 10000);
@@ -7036,47 +7238,9 @@ class PlacementSession extends EventTarget {
     this.log = log;
     this.warn = warn;
     this.error = error;
-    if (!immediatePlacement) {
-      this._ensurePlacementCursor();
-    }
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
-  }
-
-  private _ensurePlacementCursor() {
-    if (this._placementCursor || !this._element) return;
-    const scene = (this._element as any)[$scene];
-    const parent = scene?.target || scene;
-    if (!parent) return;
-
-    const cursor = new PlacementCursor(() => {
-      try {
-        (this._element as any)?.[$needsRender]();
-      } catch (e) {}
-    });
-    parent.add(cursor);
-    this._placementCursor = cursor;
-
-    const defaultWorld = new Vector3();
-    if (scene?.target) {
-      scene.target.getWorldPosition(defaultWorld);
-    }
-    cursor.showOnFloor(defaultWorld);
-  }
-
-  private _disposePlacementCursor() {
-    if (!this._placementCursor) return;
-    this._placementCursor.dispose();
-    this._placementCursor = null;
-  }
-
-  hidePlacementCursor() {
-    this._placementCursor?.hide();
-  }
-
-  tickPlacementCursor(deltaMs: number) {
-    this._placementCursor?.tick(deltaMs);
   }
 
   private _getWallCursorPointFromPlaceholder(
@@ -7104,27 +7268,6 @@ class PlacementSession extends EventTarget {
       Math.abs(normal.z) * halfSize.z;
 
     return center.addScaledVector(normal, -projectedHalfDepth);
-  }
-
-  private _updatePlacementCursor(
-    worldPoint: Vector3,
-    surfaceHit: SurfaceSnapHit | null,
-    snappedSurfacePoint: Vector3 | null = null
-  ) {
-    this._ensurePlacementCursor();
-    if (!this._placementCursor) return;
-    if (this.requiresSurfaceSnap() && !surfaceHit) {
-      this._placementCursor.hide();
-      return;
-    }
-    if (surfaceHit && surfaceHit.surfaceType === 'wall') {
-      this._placementCursor.showOnSurface(
-        snappedSurfacePoint || surfaceHit.point,
-        surfaceHit.normal
-      );
-      return;
-    }
-    this._placementCursor.showOnFloor(worldPoint);
   }
 
   requiresSurfaceSnap(): boolean {
@@ -7360,11 +7503,13 @@ class PlacementSession extends EventTarget {
   }
 
   // Update placeholder position. Accepts client coordinates and converts
-  // them to a world point using the LDCursor mixin's helper.
+  // them to a world point on the placement plane.
   updatePosition(clientX: number, clientY: number) {
     if (!this._element) return;
 
     try {
+      (this._element as any)._updateCursorFromPointer(clientX, clientY);
+
       const world = getMouseWorldPointOnPlacementPlane(
         this._element as unknown as HTMLElement,
         (this._element as any)[$scene],
@@ -7373,7 +7518,6 @@ class PlacementSession extends EventTarget {
       );
       if (!world) {
         this._hasValidSurfaceSnap = false;
-        this.hidePlacementCursor();
         // pointer outside or no valid ray intersection
         (this as any).dispatchEvent(
           new CustomEvent('update', {
@@ -7383,17 +7527,18 @@ class PlacementSession extends EventTarget {
         return;
       }
 
-      // Store cursor position for later use (even if no placeholder exists)
-      this._lastCursorPosition = { x: world.x, y: world.y, z: world.z };
+      const cursorPos = (this._element as any)._getCursorWorldPosition?.() as
+        | { x: number; y: number; z: number }
+        | null;
+      this._lastCursorPosition = cursorPos
+        ? { ...cursorPos }
+        : { x: world.x, y: world.y, z: world.z };
       // Also store this as the target bottom-center position
       this._targetBottomCenter = { x: world.x, y: world.y, z: world.z };
-
-      let placementSurfaceHit: SurfaceSnapHit | null = null;
 
       // If no placeholder exists, just track position and return
       if (!this.placeholder) {
         this._hasValidSurfaceSnap = false;
-        this._updatePlacementCursor(world, null);
         (this as any).dispatchEvent(
           new CustomEvent('update', {
             detail: {
@@ -7497,7 +7642,6 @@ class PlacementSession extends EventTarget {
             const surfaceHit = (
               this._element as any
             ).applySurfaceSnapForPlacement(this.placeholder, clientX, clientY);
-            placementSurfaceHit = surfaceHit;
             this._hasValidSurfaceSnap = !!surfaceHit;
             if (surfaceHit) {
               snappedSurfacePoint =
@@ -7596,11 +7740,6 @@ class PlacementSession extends EventTarget {
           // Ignore snapping errors during placement
         }
       }
-      this._updatePlacementCursor(
-        world,
-        placementSurfaceHit,
-        snappedSurfacePoint
-      );
 
       (this as any).dispatchEvent(
         new CustomEvent('update', {
@@ -7676,7 +7815,6 @@ class PlacementSession extends EventTarget {
       return Promise.reject(new Error('Session not placing'));
     }
 
-    this.hidePlacementCursor();
     this.state = 'loading';
 
     // Compute a reasonable center point for the placeholder so callers
@@ -7807,7 +7945,6 @@ class PlacementSession extends EventTarget {
   }
 
   private async _placeFinalGlb(element: any, srcToLoad: string) {
-    this._disposePlacementCursor();
     const loader = (element as any)[$renderer].loader;
     const scene = (element as any)[$scene];
 
@@ -8122,7 +8259,6 @@ class PlacementSession extends EventTarget {
   }
 
   cancel() {
-    this.hidePlacementCursor();
     this._cleanupPlaceholder();
     this.state = 'cancelled';
     (this as any).dispatchEvent(
@@ -8167,8 +8303,12 @@ class PlacementSession extends EventTarget {
   }
 
   private _endInteractive() {
-    this._disposePlacementCursor();
-    // Drop reference to element so caller may start another interactive session
+    const el = this._element;
     this._element = null;
+    if (el) {
+      try {
+        (el as any)._syncCursorLifecycle?.();
+      } catch (e) {}
+    }
   }
 }

@@ -2105,15 +2105,27 @@
         }
       },
       {
-        "name": "rotation-controls-highlight-color",
-        "htmlName": "rotationControlsHighlightColor",
-        "description": "Color used to render the floor rotation disc and tick marks.",
+        "name": "highlight-color",
+        "htmlName": "highlightColor",
+        "description": "Shared LD Modular accent color for the placement cursor and rotation control disc. Cursor ring uses this color at full strength; cursor fill uses the same color at lower opacity.",
         "links": [
           "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
         ],
         "default": {
           "default": "#3b82f6",
           "options": "CSS color"
+        }
+      },
+      {
+        "name": "cursor",
+        "htmlName": "cursor",
+        "description": "When enabled, shows a 3D placement cursor on the floor while the pointer is over the viewer. The cursor switches to a wall-aligned disc when the pointer hits a wall surface. Interactive <code>beginPlacement()</code> also shows the cursor for the duration of the session, even when this attribute is off.",
+        "links": [
+          "<a href=\"../examples/ld_modular/\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
         }
       },
       {

@@ -196,6 +196,36 @@ export function findSurfaceSnapHitForNdc(
   return null;
 }
 
+/** Raycast room geometry at NDC without snap-point constraints. */
+export function findRoomSurfaceHitForNdc(
+  camera: Camera,
+  ndc: Vector2,
+  roomObject: Object3D
+): SurfaceSnapHit | null {
+  SHARED_RAYCASTER.setFromCamera(ndc, camera);
+  const index = getRoomSurfaceIndex(roomObject);
+  const intersections = SHARED_RAYCASTER.intersectObjects(index.all, false);
+
+  for (const intersection of intersections) {
+    if (!intersection.face) continue;
+    TMP_WORLD_NORMAL.copy(intersection.face.normal)
+      .transformDirection(intersection.object.matrixWorld)
+      .normalize();
+    const surfaceType = classifySurfaceType(
+      intersection.object,
+      TMP_WORLD_NORMAL
+    );
+    return {
+      point: intersection.point.clone(),
+      normal: TMP_WORLD_NORMAL.clone(),
+      surfaceType,
+      object: intersection.object,
+    };
+  }
+
+  return null;
+}
+
 function getGeometryBounds(object: Object3D): Box3 | null {
   const geometry = (object as any)?.geometry;
   if (!geometry) return null;

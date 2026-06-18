@@ -47,9 +47,9 @@
                 <h4>
                   API buttons nudge the purple <code>Box</code> mesh by name (no
                   selection needed). Drag in the scene still records undo steps
-                  when using placed parts in modular scenes. Keyboard:
-                  <kbd>Ctrl</kbd>+<kbd>Z</kbd> /
-                  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.
+                  when using placed parts in modular scenes. Use the toolbar
+                  buttons or call <code>undo()</code> / <code>redo()</code> from
+                  your host app.
                 </h4>
               </div>
               <example-snippet stamp-to="history-demo" highlight-as="html">
@@ -178,17 +178,6 @@
                     });
                     clearBtn.addEventListener('click', () => {
                       viewer.clearUndoHistory();
-                    });
-
-                    window.addEventListener('keydown', (event) => {
-                      const mod = event.metaKey || event.ctrlKey;
-                      if (!mod || event.key.toLowerCase() !== 'z') return;
-                      event.preventDefault();
-                      if (event.shiftKey) {
-                        viewer.redo();
-                      } else {
-                        viewer.undo();
-                      }
                     });
                   </script>
                 </template>
