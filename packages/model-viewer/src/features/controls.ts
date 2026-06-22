@@ -14,7 +14,7 @@
  */
 
 import { property } from 'lit/decorators.js';
-import { Event, PerspectiveCamera, Spherical, Vector3 } from 'three';
+import { Event, OrthographicCamera, PerspectiveCamera, Spherical, Vector3 } from 'three';
 
 import { style } from '../decorators.js';
 import ModelViewerElementBase, {
@@ -981,20 +981,30 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const controls = this[$controls];
       const scene = this[$scene];
       const oldFramedFoV = scene.adjustedFoV(scene.framedFoVDeg);
+      const oldOrthographicHalfHeight =
+          scene.getCameraType() === 'orthographic' &&
+              scene.camera instanceof OrthographicCamera ?
+          scene.camera.top :
+          null;
 
       // The super of $onResize may update the scene's adjustedFoV, so we
       // compare the before and after to calculate the proper zoom.
       super[$onResize](event);
 
       const fovRatio = scene.adjustedFoV(scene.framedFoVDeg) / oldFramedFoV;
-      const fov =
-        controls.getFieldOfView() * (isFinite(fovRatio) ? fovRatio : 1);
+      const scaledFovRatio = isFinite(fovRatio) ? fovRatio : 1;
+      const fov = controls.getFieldOfView() * scaledFovRatio;
 
       controls.updateAspect(this[$scene].aspect);
 
       this.requestUpdate('maxFieldOfView', this.maxFieldOfView);
       await this.updateComplete;
       this[$controls].setFieldOfView(fov);
+
+      if (oldOrthographicHalfHeight != null) {
+        scene.updateOrthographicFrustum(
+            oldOrthographicHalfHeight * scaledFovRatio);
+      }
 
       this.jumpCameraToGoal();
     }
