@@ -2428,6 +2428,15 @@
         "signature": "getPlacementTree()"
       },
       {
+        "name": "getPointerInteractionTarget",
+        "htmlName": "getPointerInteractionTarget",
+        "description": "Classify what model-viewer would handle at viewport coordinates (<code>clientX</code>/<code>clientY</code>). Returns <code>{ kind, object? }</code> where <code>kind</code> is one of <code>none</code>, <code>rotation-control-y</code>, <code>selected-object-drag</code>, or <code>interactive-session</code>. Host overlay tools (e.g. box/rectangle select wrappers) should <b>not</b> capture pointer events when <code>kind !== 'none'</code>. Covers the Y rotation disc, selected-object drag in edit mode, and interactive placement/paste sessions. Does not report unselected hover targets — use <code>hover-change</code> for hover UI.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#multi-select\">Related examples</a>"
+        ],
+        "signature": "getPointerInteractionTarget(clientX: number, clientY: number): PointerInteractionTarget"
+      },
+      {
         "name": "copyPart",
         "htmlName": "copyPart",
         "description": "Snapshot the given part, snapped group, or current selection into an in-memory clipboard. When <code>objectUuid</code> is omitted, copies all selected roots. When <code>objectUuid</code> matches one of the selected roots, copies the entire selection. With <code>interactive: true</code>, starts a paste session immediately: semi-transparent ghost(s) follow the pointer and a click commits the copy. Returns a <code>PasteSession</code> when interactive; otherwise void.",

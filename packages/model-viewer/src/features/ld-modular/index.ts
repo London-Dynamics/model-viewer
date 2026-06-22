@@ -309,6 +309,18 @@ export type HoverChangeDetail = {
   } | null;
 };
 
+export type PointerInteractionKind =
+  | 'none'
+  | 'rotation-control-y'
+  | 'selected-object-drag'
+  | 'interactive-session';
+
+export type PointerInteractionTarget = {
+  kind: PointerInteractionKind;
+  /** Present when kind is selected-object-drag */
+  object?: {uuid: string; name: string};
+};
+
 export type CopyPartOptions = {
   interactive?: boolean;
   initialMouse?: { clientX: number; clientY: number };
@@ -449,6 +461,11 @@ export declare interface LDModularInterface {
   ) => Promise<void>;
 
   getPlacementTree(): PlacementGraphNode[];
+
+  getPointerInteractionTarget(
+    clientX: number,
+    clientY: number
+  ): PointerInteractionTarget;
 
   // Higher-level API functions
   getSelectedObject: () => Object3D | null;
@@ -4866,6 +4883,55 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         camera
       );
       return true;
+    }
+
+    private _resolveSelectedObjectDragTarget(
+      clientX: number,
+      clientY: number
+    ): Object3D | null {
+      if (!this.editMode) return null;
+      const selected = ((this as any).selectedObjects || []) as Object3D[];
+      if (selected.length === 0) return null;
+      if (!this._setPointerRayFromClient(clientX, clientY)) return null;
+      return (
+        selected.find((obj) =>
+          this.isPointOnObject(this.currentMousePosition, obj)
+        ) ?? null
+      );
+    }
+
+    private _classifyPointerInteractionTarget(
+      clientX: number,
+      clientY: number
+    ): PointerInteractionTarget {
+      if ((this as any)._isInteractivePlacementActive?.()) {
+        return {kind: 'interactive-session'};
+      }
+      if (
+        this._canShowYRotationControl() &&
+        this._intersectRotationControlFromClientPoint(clientX, clientY) != null
+      ) {
+        return {kind: 'rotation-control-y'};
+      }
+      const dragObject = this._resolveSelectedObjectDragTarget(clientX, clientY);
+      if (dragObject) {
+        return {
+          kind: 'selected-object-drag',
+          object: {uuid: dragObject.uuid, name: dragObject.name || ''},
+        };
+      }
+      return {kind: 'none'};
+    }
+
+    /**
+     * Classify what model-viewer would handle at viewport coordinates.
+     * Host overlay tools should not capture pointer events when kind !== 'none'.
+     */
+    getPointerInteractionTarget(
+      clientX: number,
+      clientY: number
+    ): PointerInteractionTarget {
+      return this._classifyPointerInteractionTarget(clientX, clientY);
     }
 
     private _getRotationPointerAngleRad(
