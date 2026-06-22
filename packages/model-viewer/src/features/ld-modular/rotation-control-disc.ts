@@ -26,6 +26,9 @@ export const ROTATION_CONTROLS_FINE_SNAP_MODIFIER_KEY = 'Shift' as const;
 /** Minimum on-screen disc radius in CSS pixels. */
 const ROTATION_DISC_MIN_RADIUS_PX = 96;
 
+/** Maximum on-screen disc width in CSS pixels (diameter). */
+const ROTATION_DISC_MAX_WIDTH_PX = 320;
+
 /** Fill behind the full disc annulus (the “frisbee” background). */
 const ROTATION_DISC_BASE_ARC_COLOR = '#ffffff';
 const ROTATION_DISC_BASE_ARC_OPACITY = 0.9;
@@ -57,7 +60,6 @@ const ROTATION_DISC_OUTER_TO_INNER_RATIO = 1.25;
 
 const rotationDiscRenderOrder = 9800;
 const tau = Math.PI * 2;
-const maxViewportRatio = 0.8;
 const innerRadiusFromBoundingSphere = 0.8;
 const baseArcOvershootRatio = 0.12;
 const maxAnnulusGapNorm = 1 - 1 / ROTATION_DISC_OUTER_TO_INNER_RATIO;
@@ -214,6 +216,14 @@ function worldUnitsPerPixelAtDepth(
   const ortho = camera as any;
   const worldHeight = Math.abs((ortho.top - ortho.bottom) / (ortho.zoom || 1));
   return worldHeight / Math.max(1, viewportHeight);
+}
+
+export function resolveRotationDiscMaxRadiusPx(viewportWidth: number): number {
+  const maxDiscWidthPx = Math.min(
+    Math.max(viewportWidth, 0),
+    ROTATION_DISC_MAX_WIDTH_PX
+  );
+  return maxDiscWidthPx / 2;
 }
 
 export class RotationControlDisc extends Object3D {
@@ -514,9 +524,7 @@ export class RotationControlDisc extends Object3D {
     );
     const minRadiusWorld = ROTATION_DISC_MIN_RADIUS_PX * unitsPerPixel;
     const maxRadiusWorld =
-      Math.min(viewportWidth, viewportHeight) *
-      maxViewportRatio *
-      unitsPerPixel;
+      resolveRotationDiscMaxRadiusPx(viewportWidth) * unitsPerPixel;
     const targetInnerRadius = this._lockedInnerRadiusWorld;
     const targetOuterRadius =
       targetInnerRadius * ROTATION_DISC_OUTER_TO_INNER_RATIO;
