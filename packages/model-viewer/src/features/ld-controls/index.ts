@@ -814,6 +814,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       case 'd':
       case 'arrowright':
         return 'right';
+      case 'e':
+        return 'up';
+      case 'q':
+        return 'down';
       default:
         return null;
     }
@@ -891,6 +895,12 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     }
     if (this._fpsKeys.has('left')) {
       move.sub(right);
+    }
+    if (this._fpsKeys.has('up')) {
+      move.y += 1;
+    }
+    if (this._fpsKeys.has('down')) {
+      move.y -= 1;
     }
 
     if (move.lengthSq() === 0) {

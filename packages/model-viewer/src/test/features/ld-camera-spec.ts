@@ -302,6 +302,44 @@ suite('LD Camera JSON', () => {
     expect(cc.camera.position.z).to.be.closeTo(-0.45, 0.001);
   });
 
+  test('FPS keyboard Q and E move straight down and up', async () => {
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+
+    (element as any).setCameraControlsMode('fps', {enableKeyboardMove: true});
+    await element.updateComplete;
+
+    const input = (element as any)[$userInputElement];
+    await cc.setLookAt(0, 0, 0, 0, 0.5, -1, false);
+    cc.update(0);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'e',
+      bubbles: true,
+      cancelable: true,
+    }));
+    controls.update(0, 1000);
+    input.dispatchEvent(new KeyboardEvent('keyup', {key: 'e', bubbles: true}));
+
+    expect(cc.camera.position.x).to.be.closeTo(0, 0.001);
+    expect(cc.camera.position.y).to.be.closeTo(0.45, 0.001);
+    expect(cc.camera.position.z).to.be.closeTo(0, 0.001);
+
+    await cc.setLookAt(0, 0, 0, 0, 0.5, -1, false);
+    cc.update(0);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'q',
+      bubbles: true,
+      cancelable: true,
+    }));
+    controls.update(0, 1000);
+
+    expect(cc.camera.position.x).to.be.closeTo(0, 0.001);
+    expect(cc.camera.position.y).to.be.closeTo(-0.45, 0.001);
+    expect(cc.camera.position.z).to.be.closeTo(0, 0.001);
+  });
+
   test('setCameraView accepts attribute-style camera settings', async () => {
     await (element as any).setCameraView({
       controlMode: 'orbit',
