@@ -1,0 +1,20 @@
+---
+description: LD modular undo/redo — manager, recording rules, extending history
+globs: packages/model-viewer/src/features/ld-modular/undo-history.ts,packages/model-viewer/src/features/ld-modular/index.ts,packages/model-viewer/src/features/ld-modular/transform-events.ts,packages/model-viewer/src/test/features/ld-modular-undo-spec.ts,packages/modelviewer.dev/examples/ld_history/**,packages/modelviewer.dev/examples/ld_transforms/**,packages/modelviewer.dev/examples/ld_clipboard/**,packages/modelviewer.dev/data/docs.json
+alwaysApply: false
+---
+
+# LD undo / redo
+
+Full reference → [`.cursor/docs/undo-redo.md`](../docs/undo-redo.md)
+
+## Quick rules
+
+- Core logic: `UndoHistoryManager` in `undo-history.ts`; scene adapter is `UndoHistoryHost` in `_ensureUndoHistory()`.
+- Entry kinds: `transform` | `add` | `remove` | `structure`. Pick by what changed (see doc table).
+- **Never record while `isReplaying`**; record on commit, not per pointer frame.
+- Structure edits: capture `_collectStructureNodes` **before** mutate, then `_recordStructureChange`.
+- Deletes: `detachToGraveyard` + `recordRemove`. Placements: `recordAdd` / `_recordPlacementAdd`.
+- Multi-step user gestures: `beginBatch` / `endBatch`; inner steps can use `skipHistory: true`.
+- New `userData` needed for restore → add to `STRUCTURE_USER_DATA_KEYS`.
+- Tests: `ld-modular-undo-spec.ts`. Public API/docs: `docs.json` + `history-change` in an `ld_*` example.
