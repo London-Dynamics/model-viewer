@@ -556,6 +556,10 @@
         "name": "Bulk placement"
       },
       {
+        "htmlId": "bulk-replace",
+        "name": "Bulk replace"
+      },
+      {
         "htmlId": "hover-anchor-metadata",
         "name": "Hover anchor metadata"
       }

@@ -2490,6 +2490,24 @@
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "signature": "removeSelectedObjects(options?: { animate?: boolean }): void"
+      },
+      {
+        "name": "replaceManyParts",
+        "htmlName": "replaceManyParts",
+        "description": "Replace multiple placed objects with new GLB models in parallel, preserving each object's transforms and grouping. Rotation and position are taken from the existing scene node (items do not carry a transform). Supports configurable concurrency (default 4), per-item <code>src</code> or <code>getHighResUrl</code>, aggregated <code>progress</code> events with <code>reason: 'bulk-replace-part'</code>, a <code>bulk-replace-part-complete</code> event, and a single batched undo step.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#bulk-replace\">Related examples</a>"
+        ],
+        "signature": "replaceManyParts(items: BulkReplaceItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkReplaceItem) => Promise<string | undefined> }): Promise<{ objectUuid: string; node: Object3D }[]>"
+      },
+      {
+        "name": "replacePart",
+        "htmlName": "replacePart",
+        "description": "Replace an existing placed object with a new GLB model, preserving position, rotation, scale, grouping, and merging <code>userData</code> (including <code>part</code> and top-level <code>selection</code>). Accepts a direct <code>src</code> URL or <code>options.getHighResUrl</code>. Emits <code>progress</code> with <code>reason: 'replace-part'</code> and <code>replace-part-complete</code> when finished. Records an undo step via structure mementos.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#bulk-replace\">Related examples</a>"
+        ],
+        "signature": "replacePart(objectUuid: string, src?: string, options?: PlacementOptions): Promise<void>"
       }
     ],
     "Events": [

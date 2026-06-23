@@ -126,6 +126,7 @@ import {
   type WallLayoutContext,
 } from './align-distribute.js';
 import { Selection } from '@london-dynamics/types/puzzler';
+import { tryCloneExistingGltfScene } from './gltf-reuse.js';
 
 export type {
   ActiveTransform,
@@ -267,6 +268,11 @@ export type BulkPlacementItem = {
     scale: [number, number, number];
   };
 };
+
+export type BulkReplaceItem = {
+  objectUuid: string;
+  src?: string;
+} & Omit<PlacementOptions, 'getLowResUrl' | 'getHighResUrl'>;
 
 type ImmediatePlacementTransform = {
   position?: [number, number, number];
@@ -459,6 +465,14 @@ export declare interface LDModularInterface {
     src?: string,
     options?: PlacementOptions
   ) => Promise<void>;
+
+  replaceManyParts: (
+    items: BulkReplaceItem[],
+    options?: {
+      concurrency?: number;
+      getHighResUrl?: (item: BulkReplaceItem) => Promise<string | undefined>;
+    }
+  ) => Promise<Array<{ objectUuid: string; node: Object3D }>>;
 
   getPlacementTree(): PlacementGraphNode[];
 
@@ -918,23 +932,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const total = items.length;
       if (total === 0) return [];
 
-      const results: Array<{ id: string; node: Object3D }> = new Array(total);
-      const concurrency = Math.max(1, options?.concurrency ?? 4);
-
       this._ensureUndoHistory().beginBatch();
 
-      let nextIndex = 0;
       let completed = 0;
+      const results = await this._runConcurrent(
+        total,
+        options?.concurrency ?? 4,
+        async (currentIndex) => {
+          const item = items[currentIndex];
 
-      const runNext = async (): Promise<void> => {
-        const currentIndex = nextIndex++;
-        if (currentIndex >= total) {
-          return;
-        }
-
-        const item = items[currentIndex];
-
-        try {
           let highResSrc: string | undefined;
           if (options?.getHighResUrl) {
             highResSrc = await options.getHighResUrl(item);
@@ -958,8 +964,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           };
 
           const placed = await this.placeGlb(highResSrc, placementOptions);
-          results[currentIndex] = { id: item.id, node: placed.node };
-        } finally {
           completed++;
           const totalProgress = total ? completed / total : 1;
           try {
@@ -975,17 +979,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             );
           } catch (e) {}
 
-          await runNext();
+          return { id: item.id, node: placed.node };
         }
-      };
-
-      const workers: Promise<void>[] = [];
-      const workerCount = Math.min(concurrency, total);
-      for (let i = 0; i < workerCount; i++) {
-        workers.push(runNext());
-      }
-
-      await Promise.all(workers);
+      );
 
       this._ensureUndoHistory().endBatch(
         total === 1 ? undefined : `Place ${total} objects`
@@ -7518,126 +7514,133 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
-    /**
-     * Replace an existing placed object with a new GLB model, preserving its
-     * position, transforms, grouping, and optionally merging userData.parts.
-     *
-     * @param objectUuid - The UUID of the object to replace
-     * @param src - Optional direct URL to the replacement GLB
-     * @param options - Optional PlacementOptions, including getHighResUrl callback
-     * @returns Promise that resolves when replacement is complete
-     */
-    async replacePart(
-      objectUuid: string,
-      src?: string,
-      options?: PlacementOptions
-    ): Promise<void> {
-      if (!objectUuid) {
-        throw new Error('objectUuid is required');
+    private async _runConcurrent<T>(
+      total: number,
+      concurrency: number,
+      worker: (index: number) => Promise<T>
+    ): Promise<T[]> {
+      if (total === 0) return [];
+      const results: T[] = new Array(total);
+      let nextIndex = 0;
+      const workerCount = Math.max(1, Math.min(concurrency, total));
+
+      const runNext = async (): Promise<void> => {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= total) {
+          return;
+        }
+        results[currentIndex] = await worker(currentIndex);
+        await runNext();
+      };
+
+      const workers: Promise<void>[] = [];
+      for (let i = 0; i < workerCount; i++) {
+        workers.push(runNext());
       }
+      await Promise.all(workers);
+      return results;
+    }
 
-      const scene = (this as any)[$scene];
-      if (!scene) {
-        throw new Error('Scene not available');
-      }
-
-      // Find the object to replace by UUID using Three.js built-in method
-      const objectToReplace = scene.getObjectByProperty('uuid', objectUuid) as
-        | Object3D
-        | undefined;
-
-      if (!objectToReplace) {
-        throw new Error(`Object with UUID "${objectUuid}" not found`);
-      }
-
-      // Resolve the URL: use src parameter or call getHighResUrl callback
+    private async _resolveReplacementSrc(
+      src: string | undefined,
+      getHighResUrl?: () => Promise<string | undefined>,
+      contextLabel = 'replacement'
+    ): Promise<string> {
       let srcToLoad = src;
-      if (!srcToLoad && options?.getHighResUrl) {
+      if (!srcToLoad && getHighResUrl) {
         try {
-          srcToLoad = await options.getHighResUrl();
+          srcToLoad = await getHighResUrl();
         } catch (error) {
           throw new Error(
-            `Failed to resolve URL via getHighResUrl: ${getErrorMessage(error)}`
+            `Failed to resolve URL via getHighResUrl for ${contextLabel}: ${getErrorMessage(
+              error
+            )}`
           );
         }
       }
-
       if (!srcToLoad) {
         throw new Error(
-          'No URL provided: src parameter or options.getHighResUrl is required'
+          `No URL provided for ${contextLabel}: src parameter or getHighResUrl is required`
         );
       }
+      return srcToLoad;
+    }
 
-      // Save the original object's transform, parent, and metadata
-      const originalParent = objectToReplace.parent;
-      const originalPosition = objectToReplace.position.clone();
-      const originalQuaternion = objectToReplace.quaternion.clone();
-      const originalScale = objectToReplace.scale.clone();
-      const originalUserData = { ...objectToReplace.userData };
-      const originalName = objectToReplace.name;
-
-      // Load the new GLB
+    private async _loadCachedGltf(
+      src: string,
+      onProgress?: (progress: number) => void
+    ): Promise<GLTF> {
       const loader = (this as any)[$renderer].loader;
-      let gltf: GLTF;
       try {
-        gltf = await loader.load(srcToLoad, this, (p: number) => {
-          // Emit progress events
+        return await loader.load(src, this, (p: number) => {
           try {
-            (this as any).dispatchEvent(
-              new CustomEvent('progress', {
-                detail: {
-                  totalProgress: p,
-                  reason: 'replace-part',
-                  objectUuid,
-                },
-              })
-            );
-          } catch (e) {
-            // ignore
-          }
+            onProgress?.(p);
+          } catch (e) {}
         });
       } catch (error) {
         throw new Error(
-          `Failed to load replacement GLB from "${srcToLoad}": ${getErrorMessage(
-            error
-          )}`
+          `Failed to load GLB from "${src}": ${getErrorMessage(error)}`
         );
       }
+    }
 
-      if (!gltf || !gltf.scene) {
-        throw new Error('Loaded GLTF missing scene');
+    async _acquireGltfSceneNode(
+      src: string,
+      options?: { partId?: string },
+      progressDetail?: Record<string, unknown>
+    ): Promise<Object3D> {
+      const scene = (this as any)[$scene];
+      const sceneRoot = scene?.target ?? scene ?? null;
+      if (!sceneRoot) {
+        throw new Error('Scene not available');
       }
 
-      const newObject = gltf.scene;
+      const cloned = tryCloneExistingGltfScene(src, sceneRoot, options);
+      if (cloned) {
+        return cloned;
+      }
 
-      // Apply the original transform to the new object
-      newObject.position.copy(originalPosition);
-      newObject.quaternion.copy(originalQuaternion);
-      newObject.scale.copy(originalScale);
+      const gltf = await this._loadCachedGltf(src, (p) => {
+        if (!progressDetail) return;
+        try {
+          (this as any).dispatchEvent(
+            new CustomEvent('progress', {
+              detail: {
+                ...progressDetail,
+                totalProgress: p,
+              },
+            })
+          );
+        } catch (e) {}
+      });
 
-      // Restore name
-      newObject.name = originalName;
+      if (!gltf?.scene) {
+        throw new Error('Loaded GLTF missing scene');
+      }
+      return gltf.scene;
+    }
 
-      // Merge userData: start with original, then apply new options
+    private _applyReplacementUserData(
+      newObject: Object3D,
+      originalUserData: Record<string, unknown>,
+      options?: PlacementOptions
+    ): void {
       newObject.userData = {
         ...originalUserData,
         ...newObject.userData,
       };
 
-      // If options.part is provided, merge it with existing userData.part
       if (options?.part) {
         try {
           if (originalUserData.part) {
-            // Merge the parts objects
             newObject.userData.part = {
-              ...originalUserData.part,
+              ...(originalUserData.part as object),
               ...options.part,
             };
           } else {
             newObject.userData.part = options.part;
           }
         } catch (e) {
-          // If merge fails, just use the new part
           newObject.userData.part = options.part;
         }
       }
@@ -7645,8 +7648,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (options?.selection) {
         newObject.userData.selection = options.selection;
       }
-
-      // Apply other options if provided
       if (options?.id !== undefined) {
         newObject.userData.id = options.id;
       }
@@ -7665,20 +7666,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (replacementSnapPoints) {
         newObject.userData.snapPoints = replacementSnapPoints;
       }
+    }
 
-      // Check if the target object is part of a group
+    private _swapReplacedObjectInScene(
+      objectToReplace: Object3D,
+      newObject: Object3D,
+      originalParent: Object3D | null
+    ): void {
+      const scene = (this as any)[$scene];
+      const originalName = objectToReplace.name;
+      const objectUuid = objectToReplace.uuid;
       const parentGroup = (this as any)._findEnclosingGroup(objectToReplace);
 
-      // Remove the old object from its parent
-      if (originalParent) {
-        originalParent.remove(objectToReplace);
-      }
-
-      // Add the new object to the same parent
       if (originalParent) {
         originalParent.add(newObject);
       } else {
-        // Fallback: add to scene target
         try {
           scene.target.add(newObject);
         } catch (e) {
@@ -7686,12 +7688,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      // If the object was in a group, update any snap connections that reference it
+      const history = this._ensureUndoHistory();
+      if (!history.isReplaying) {
+        history.detachToGraveyard(objectToReplace);
+      } else if (objectToReplace.parent) {
+        objectToReplace.parent.remove(objectToReplace);
+      }
+
       if (parentGroup && parentGroup.userData?.snapConnections) {
         try {
           const connections = parentGroup.userData.snapConnections;
           connections.forEach((connection: any) => {
-            // Update connections that reference the old object
             if (connection.a === originalName) {
               connection.a = newObject.name;
             }
@@ -7711,15 +7718,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               connection.objectB = newObject;
             }
           });
-
-          // Update group mesh cache
           this.updateGroupMeshCache(parentGroup);
-        } catch (e) {
-          // Ignore errors updating group metadata
-        }
+        } catch (e) {}
       }
 
-      // Update selection if the replaced object was selected
       try {
         const wasSelected =
           (this as any).selectedObjects &&
@@ -7731,28 +7733,207 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             (obj: any) => (obj.uuid === objectUuid ? newObject : obj)
           );
         }
-      } catch (e) {
-        // Ignore selection update errors
-      }
+      } catch (e) {}
 
-      // Request shadow update and render
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
+    }
 
-      // Emit completion event
+    private _recordPartReplacement(
+      before: StructureNodeMemento[],
+      newObject: Object3D
+    ): void {
+      const history = this._ensureUndoHistory();
+      if (history.isReplaying) return;
+      const after = history.captureNodesMemento([newObject]);
+      const displayName = getObjectDisplayName(newObject);
+      history.recordStructure(
+        before,
+        after,
+        `Replace ${displayName}`,
+        [displayName],
+        [newObject.uuid]
+      );
+    }
+
+    private async _replacePartCore(
+      objectUuid: string,
+      src?: string,
+      options?: PlacementOptions
+    ): Promise<{ oldObject: Object3D; newObject: Object3D }> {
+      if (!objectUuid) {
+        throw new Error('objectUuid is required');
+      }
+
+      const scene = (this as any)[$scene];
+      if (!scene) {
+        throw new Error('Scene not available');
+      }
+
+      const objectToReplace = scene.getObjectByProperty('uuid', objectUuid) as
+        | Object3D
+        | undefined;
+
+      if (!objectToReplace) {
+        throw new Error(`Object with UUID "${objectUuid}" not found`);
+      }
+
+      const srcToLoad = await this._resolveReplacementSrc(
+        src,
+        options?.getHighResUrl,
+        `object "${objectUuid}"`
+      );
+
+      const originalParent = objectToReplace.parent;
+      const originalPosition = objectToReplace.position.clone();
+      const originalQuaternion = objectToReplace.quaternion.clone();
+      const originalScale = objectToReplace.scale.clone();
+      const originalUserData = { ...objectToReplace.userData };
+      const originalName = objectToReplace.name;
+
+      const beforeMemento = this._ensureUndoHistory().captureNodesMemento([
+        objectToReplace,
+      ]);
+
+      const partId =
+        options?.id ??
+        (options?.part as { id?: string } | undefined)?.id ??
+        (originalUserData.part as { id?: string } | undefined)?.id;
+
+      const newObject = await this._acquireGltfSceneNode(
+        srcToLoad,
+        partId ? { partId: String(partId) } : undefined,
+        {
+          reason: 'replace-part',
+          objectUuid,
+        }
+      );
+
+      newObject.position.copy(originalPosition);
+      newObject.quaternion.copy(originalQuaternion);
+      newObject.scale.copy(originalScale);
+      newObject.name = originalName;
+
+      this._applyReplacementUserData(newObject, originalUserData, options);
+      this._swapReplacedObjectInScene(
+        objectToReplace,
+        newObject,
+        originalParent
+      );
+      this._recordPartReplacement(beforeMemento, newObject);
+
+      return { oldObject: objectToReplace, newObject };
+    }
+
+    /**
+     * Replace an existing placed object with a new GLB model, preserving its
+     * position, transforms, grouping, and optionally merging userData.parts.
+     *
+     * @param objectUuid - The UUID of the object to replace
+     * @param src - Optional direct URL to the replacement GLB
+     * @param options - Optional PlacementOptions, including getHighResUrl callback
+     * @returns Promise that resolves when replacement is complete
+     */
+    async replacePart(
+      objectUuid: string,
+      src?: string,
+      options?: PlacementOptions
+    ): Promise<void> {
+      const { oldObject, newObject } = await this._replacePartCore(
+        objectUuid,
+        src,
+        options
+      );
+
       try {
         (this as any).dispatchEvent(
           new CustomEvent('replace-part-complete', {
             detail: {
               objectUuid,
-              oldObject: objectToReplace,
+              oldObject,
               newObject,
             },
           })
         );
-      } catch (e) {
-        // ignore
+      } catch (e) {}
+    }
+
+    async replaceManyParts(
+      items: BulkReplaceItem[],
+      options?: {
+        concurrency?: number;
+        getHighResUrl?: (item: BulkReplaceItem) => Promise<string | undefined>;
       }
+    ): Promise<Array<{ objectUuid: string; node: Object3D }>> {
+      const total = items.length;
+      if (total === 0) return [];
+
+      this._ensureUndoHistory().beginBatch();
+
+      let completed = 0;
+      const results = await this._runConcurrent(
+        total,
+        options?.concurrency ?? 4,
+        async (currentIndex) => {
+          const item = items[currentIndex];
+          const srcToLoad = await this._resolveReplacementSrc(
+            item.src,
+            options?.getHighResUrl
+              ? () => options.getHighResUrl!(item)
+              : undefined,
+            `object "${item.objectUuid}"`
+          );
+
+          const { newObject } = await this._replacePartCore(item.objectUuid, srcToLoad, {
+            ...(item.part ? { part: item.part } : {}),
+            ...(item.selection ? { selection: item.selection } : {}),
+            ...(item.id !== undefined ? { id: item.id } : {}),
+            ...(item.name !== undefined ? { name: item.name } : {}),
+            ...(item.mass !== undefined ? { mass: item.mass } : {}),
+            ...(item.selectable !== undefined
+              ? { selectable: item.selectable }
+              : {}),
+            ...(item.editable !== undefined ? { editable: item.editable } : {}),
+            ...(item.snapPoints ? { snapPoints: item.snapPoints } : {}),
+          });
+
+          completed++;
+          const totalProgress = total ? completed / total : 1;
+          try {
+            (this as any).dispatchEvent(
+              new CustomEvent('progress', {
+                detail: {
+                  totalProgress,
+                  reason: 'bulk-replace-part',
+                  completed,
+                  total,
+                  objectUuid: item.objectUuid,
+                },
+              })
+            );
+          } catch (e) {}
+
+          return { objectUuid: item.objectUuid, node: newObject };
+        }
+      );
+
+      this._ensureUndoHistory().endBatch(
+        total === 1 ? undefined : `Replace ${total} objects`
+      );
+
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent('bulk-replace-part-complete', {
+            detail: {
+              total,
+              completed,
+              results,
+            },
+          })
+        );
+      } catch (e) {}
+
+      return results;
     }
   }
 
@@ -8507,32 +8688,29 @@ class PlacementSession extends EventTarget {
   }
 
   private async _placeFinalGlb(element: any, srcToLoad: string) {
-    const loader = (element as any)[$renderer].loader;
     const scene = (element as any)[$scene];
 
     try {
-      const gltf = await loader.load(srcToLoad, element, (p: number) => {
-        try {
-          (this as any).dispatchEvent(
-            new CustomEvent('progress', {
-              detail: { sessionId: this.id, phase: 'final', progress: p },
-            })
-          );
-        } catch (e) {}
-      });
-
-      if (!gltf || !gltf.scene) {
-        throw new Error('Loaded GLTF missing scene');
-      }
+      const partId =
+        this._options?.id ??
+        (this._options?.part as { id?: string } | undefined)?.id;
+      const placedNode = await element._acquireGltfSceneNode(
+        srcToLoad,
+        partId ? { partId: String(partId) } : undefined,
+        {
+          sessionId: this.id,
+          phase: 'final',
+        }
+      );
 
       const objectKey = getPlacementObjectKey(this.id, this._options);
 
       if (this.placeholder) {
-        gltf.scene.quaternion.copy(this.placeholder.quaternion);
-        gltf.scene.scale.copy(this.placeholder.scale);
-        gltf.scene.name = this.placeholder.name || objectKey;
+        placedNode.quaternion.copy(this.placeholder.quaternion);
+        placedNode.scale.copy(this.placeholder.scale);
+        placedNode.name = this.placeholder.name || objectKey;
       } else {
-        gltf.scene.name = objectKey;
+        placedNode.name = objectKey;
       }
 
       const hasSurfaceSnappedPlaceholder =
@@ -8540,26 +8718,26 @@ class PlacementSession extends EventTarget {
 
       if (this.placeholder && hasSurfaceSnappedPlaceholder) {
         // Preserve exact wall/surface placement transform from the placeholder.
-        gltf.scene.position.copy(this.placeholder.position);
+        placedNode.position.copy(this.placeholder.position);
       } else if (this._targetBottomCenter) {
         // Align final GLB bottom-center to the tracked placement anchor so
         // placeholder and final-model origin differences do not cause offsets.
-        const finalQuaternion = gltf.scene.quaternion.clone();
-        const finalScale = gltf.scene.scale.clone();
+        const finalQuaternion = placedNode.quaternion.clone();
+        const finalScale = placedNode.scale.clone();
 
-        gltf.scene.position.set(0, 0, 0);
-        gltf.scene.quaternion.set(0, 0, 0, 1);
-        gltf.scene.scale.set(1, 1, 1);
-        gltf.scene.updateMatrixWorld(true);
-        const bboxLocal = new Box3().setFromObject(gltf.scene);
+        placedNode.position.set(0, 0, 0);
+        placedNode.quaternion.set(0, 0, 0, 1);
+        placedNode.scale.set(1, 1, 1);
+        placedNode.updateMatrixWorld(true);
+        const bboxLocal = new Box3().setFromObject(placedNode);
         const bottomCenterLocal = new Vector3(
           (bboxLocal.min.x + bboxLocal.max.x) / 2,
           bboxLocal.min.y,
           (bboxLocal.min.z + bboxLocal.max.z) / 2
         );
 
-        gltf.scene.quaternion.copy(finalQuaternion);
-        gltf.scene.scale.copy(finalScale);
+        placedNode.quaternion.copy(finalQuaternion);
+        placedNode.scale.copy(finalScale);
 
         const target = (scene as any).target;
         if (target) {
@@ -8575,20 +8753,20 @@ class PlacementSession extends EventTarget {
           : anchorWorld.clone();
         const bottomOffsetLocal = bottomCenterLocal
           .clone()
-          .multiply(gltf.scene.scale)
-          .applyQuaternion(gltf.scene.quaternion);
-        gltf.scene.position.copy(anchorLocal.sub(bottomOffsetLocal));
+          .multiply(placedNode.scale)
+          .applyQuaternion(placedNode.quaternion);
+        placedNode.position.copy(anchorLocal.sub(bottomOffsetLocal));
       } else if (this.placeholder) {
-        gltf.scene.position.copy(this.placeholder.position);
+        placedNode.position.copy(this.placeholder.position);
       } else if (this._lastCursorPosition) {
-        gltf.scene.position.set(
+        placedNode.position.set(
           this._lastCursorPosition.x,
           this._lastCursorPosition.y,
           this._lastCursorPosition.z
         );
         this.log(
           '[puzzler] Placed object using cursor position:',
-          gltf.scene.position.toArray(),
+          placedNode.position.toArray(),
           'from cursor:',
           this._lastCursorPosition
         );
@@ -8600,10 +8778,10 @@ class PlacementSession extends EventTarget {
         }
       }
 
-      gltf.scene.userData = {
+      placedNode.userData = {
         selectable: getPlacementSelectable(this._options),
         selection: this._options?.selection || undefined,
-        ...gltf.scene.userData,
+        ...placedNode.userData,
         id: objectKey,
         name: getPlacementDisplayName(this._options) ?? objectKey,
         part: this._options?.part,
@@ -8613,70 +8791,70 @@ class PlacementSession extends EventTarget {
         typeof placeholderUserData.attachedSurfaceType === 'string' &&
         placeholderUserData.attachedSurfaceType.length > 0
       ) {
-        gltf.scene.userData.attachedSurfaceType =
+        placedNode.userData.attachedSurfaceType =
           placeholderUserData.attachedSurfaceType;
       }
       if (
         typeof placeholderUserData.attachedSurfaceName === 'string' &&
         placeholderUserData.attachedSurfaceName.length > 0
       ) {
-        gltf.scene.userData.attachedSurfaceName =
+        placedNode.userData.attachedSurfaceName =
           placeholderUserData.attachedSurfaceName;
       }
       if (
         typeof placeholderUserData.attachedSurfaceUuid === 'string' &&
         placeholderUserData.attachedSurfaceUuid.length > 0
       ) {
-        gltf.scene.userData.attachedSurfaceUuid =
+        placedNode.userData.attachedSurfaceUuid =
           placeholderUserData.attachedSurfaceUuid;
       }
       if (
         typeof placeholderUserData.attachedWallName === 'string' &&
         placeholderUserData.attachedWallName.length > 0
       ) {
-        gltf.scene.userData.attachedWallName =
+        placedNode.userData.attachedWallName =
           placeholderUserData.attachedWallName;
       }
       if (
         typeof placeholderUserData.attachedWallUuid === 'string' &&
         placeholderUserData.attachedWallUuid.length > 0
       ) {
-        gltf.scene.userData.attachedWallUuid =
+        placedNode.userData.attachedWallUuid =
           placeholderUserData.attachedWallUuid;
       }
       const placedSnapPoints = getPlacementSnapPoints(this._options);
       if (placedSnapPoints) {
         try {
-          gltf.scene.userData.snapPoints = placedSnapPoints;
+          placedNode.userData.snapPoints = placedSnapPoints;
         } catch (e) {}
       }
-      gltf.scene.userData.isPlacedObject = true;
+      placedNode.userData.isPlacedObject = true;
 
       try {
-        scene.target.add(gltf.scene);
+        scene.target.add(placedNode);
       } catch (e) {
-        scene.add(gltf.scene);
+        scene.add(placedNode);
       }
 
       if (
-        requiresSurfaceSnap(gltf.scene) &&
+        requiresSurfaceSnap(placedNode) &&
         !hasSurfaceSnappedPlaceholder
       ) {
         try {
           const roomObject = element._findRoomSurfaceObject?.();
           if (
             roomObject &&
-            tryResnapToNearestWall(gltf.scene, roomObject)
+            tryResnapToNearestWall(placedNode, roomObject)
           ) {
             element._markRoomWallVisibilityCacheDirty?.();
           }
         } catch (e) {}
       }
 
-      gltf.scene.userData.isSurfaceSnapped =
+      placedNode.userData.isSurfaceSnapped =
         this.requiresSurfaceSnap() &&
         (this._hasValidSurfaceSnap ||
-          gltf.scene.userData?.isSurfaceSnapped === true);
+          placedNode.userData?.isSurfaceSnapped === true);
 
       try {
         element._markRoomWallVisibilityCacheDirty?.();
@@ -8706,7 +8884,7 @@ class PlacementSession extends EventTarget {
           try {
             this.log(
               'ld-modular: PlacementSession.commit running fallback snap search for new node',
-              { node: gltf.scene.name }
+              { node: placedNode.name }
             );
           } catch (e) {}
 
@@ -8715,16 +8893,16 @@ class PlacementSession extends EventTarget {
             : (el as any)[$scene];
           if (targetObject) {
             const snappableObjects: Object3D[] = [];
-            if ((gltf.scene as any).userData?.isSnappedGroup) {
-              gltf.scene.traverse((child: any) => {
+            if ((placedNode as any).userData?.isSnappedGroup) {
+              placedNode.traverse((child: any) => {
                 if (
                   child.userData?.isPlacedObject &&
                   child.userData?.snapPoints
                 )
                   snappableObjects.push(child);
               });
-            } else if ((gltf.scene as any).userData?.snapPoints) {
-              snappableObjects.push(gltf.scene);
+            } else if ((placedNode as any).userData?.snapPoints) {
+              snappableObjects.push(placedNode);
             }
 
             let completed = false;
@@ -8785,7 +8963,7 @@ class PlacementSession extends EventTarget {
             let node = dragged;
             while (node) {
               if (node === this.placeholder) {
-                pending.draggedObject = gltf.scene;
+                pending.draggedObject = placedNode;
                 break;
               }
               node = node.parent;
@@ -8814,12 +8992,12 @@ class PlacementSession extends EventTarget {
       } catch (e) {}
 
       this.state = 'ended';
-      const detail = { sessionId: this.id, placedNode: gltf.scene };
+      const detail = { sessionId: this.id, placedNode };
       try {
-        element._recordPlacementAdd?.(gltf.scene);
+        element._recordPlacementAdd?.(placedNode);
       } catch (e) {}
       (this as any).dispatchEvent(new CustomEvent('loaded', { detail }));
-      return { id: objectKey, node: gltf.scene };
+      return { id: objectKey, node: placedNode };
     } catch (error) {
       this._cleanupPlaceholder(element);
       this.state = 'cancelled';
