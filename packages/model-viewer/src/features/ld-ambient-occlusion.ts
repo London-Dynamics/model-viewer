@@ -76,7 +76,7 @@ export const LDAmbientOcclusionMixin = <
     ambientOcclusion = false;
 
     @property({type: String, attribute: 'ao-algorithm'})
-    aoAlgorithm: AoAlgorithmName = 'gtao';
+    aoAlgorithm: AoAlgorithmName = 'sao';
 
     @property({type: Number, attribute: 'ao-radius'})
     aoRadius = 4;
@@ -100,7 +100,7 @@ export const LDAmbientOcclusionMixin = <
     aoSamples = 24;
 
     @property({type: Boolean, attribute: 'ao-screen-space-radius'})
-    aoScreenSpaceRadius = false;
+    aoScreenSpaceRadius = true;
 
     @property({type: String, attribute: 'ao-noise'})
     aoNoise: 'magic-square'|'random' = 'magic-square';
@@ -172,7 +172,7 @@ export const LDAmbientOcclusionMixin = <
 
     getAmbientOcclusionOptions(): AmbientOcclusionOptions {
       const algorithm =
-          algorithmMap[this.aoAlgorithm] ?? AOShader.ALGORITHM.GTAO;
+          algorithmMap[this.aoAlgorithm] ?? AOShader.ALGORITHM.SAO;
       const output = outputMap[this.aoOutput] ?? AO_OUTPUT.Default;
       const nvAligned = !(algorithm === AOShader.ALGORITHM.GTAO ||
                           algorithm === AOShader.ALGORITHM.HBAO);

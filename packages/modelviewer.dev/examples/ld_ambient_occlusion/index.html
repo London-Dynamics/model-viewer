@@ -111,7 +111,7 @@
                       exposure="1.15"
                       environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr"
                       ambient-occlusion
-                      ao-algorithm="gtao"
+                      ao-screen-space-radius
                       ao-radius="4"
                       ao-intensity="0.85"
                       ao-output="default"
@@ -188,9 +188,9 @@
                               id="ao-algorithm"
                               class="w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
                             >
-                              <option value="gtao" selected>GTAO</option>
+                              <option value="gtao">GTAO</option>
                               <option value="hbao">HBAO</option>
-                              <option value="sao">SAO</option>
+                              <option value="sao" selected>SAO</option>
                               <option value="ssao">SSAO</option>
                             </select>
                           </label>
@@ -241,6 +241,7 @@
                               id="ao-screen-space"
                               type="checkbox"
                               class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked
                             />
                             Screen-space Radius
                           </label>

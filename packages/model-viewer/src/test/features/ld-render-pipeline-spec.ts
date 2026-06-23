@@ -2,6 +2,7 @@ import {expect} from 'chai';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
+import {AOShader} from '../../three-components/postprocessing/ld-ambient-occlusion/AOShader.js';
 import {timePasses} from '../../utilities.js';
 
 type PipelineInternals = {
@@ -24,6 +25,15 @@ suite('LD Render Pipeline', () => {
 
   teardown(() => {
     element.remove();
+  });
+
+  test('defaults ambient occlusion to SAO with screen-space radius', () => {
+    expect(element.aoAlgorithm).to.equal('sao');
+    expect(element.aoScreenSpaceRadius).to.equal(true);
+
+    const options = element.getAmbientOcclusionOptions();
+    expect(options.algorithm).to.equal(AOShader.ALGORITHM.SAO);
+    expect(options.screenSpaceRadius).to.equal(true);
   });
 
   test('registers one pipeline when ambient occlusion is enabled', async () => {
