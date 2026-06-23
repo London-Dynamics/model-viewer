@@ -408,6 +408,16 @@
     ]
   },
   {
+    "name": "Car Demo",
+    "htmlName": "ld_car_demo",
+    "examples": [
+      {
+        "htmlId": "car-demo",
+        "name": "Car Demo"
+      }
+    ]
+  },
+  {
     "name": "LD AO+Bloom+Path Tracer",
     "htmlName": "ld_ao_bloom_path_tracer",
     "examples": [
