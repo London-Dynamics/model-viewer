@@ -125,6 +125,8 @@ export type DomRectLike = {
 
 export type RectangleSelectionMode = 'replace' | 'add' | 'remove' | 'toggle';
 
+export type ClickSelectionMode = 'replace' | 'toggle';
+
 export interface SelectionChangeDetail {
   selectedObjects: Object3D[];
   metadata: Array<Record<string, unknown>>;
@@ -173,6 +175,14 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({type: Boolean, attribute: 'disable-base-model-selection'})
     disableBaseModelSelection: boolean = false;
 
+    /**
+     * Single-click selection behavior. 'replace' selects one object at a time
+     * (Shift+click still toggles). 'toggle' treats every click like Shift+click
+     * (for touch hosts without a Shift key).
+     */
+    @property({type: String, attribute: 'click-selection-mode'})
+    clickSelectionMode: ClickSelectionMode = 'replace';
+
     // Track selected objects
     protected selectedObjects: Object3D[] = [];
     protected _selectedGroups: Set<Object3D> = new Set();
@@ -201,8 +211,11 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       return pasteSession?.state === 'previewing';
     }
 
-    protected _isMultiSelectModifierActive(e: PointerEvent | MouseEvent): boolean {
-      return e.getModifierState(MULTI_SELECT_MODIFIER_KEY);
+    protected _isClickSelectionToggleActive(e: Event): boolean {
+      if (this.clickSelectionMode === 'toggle') return true;
+      const getModifierState = (e as PointerEvent | MouseEvent).getModifierState;
+      if (typeof getModifierState !== 'function') return false;
+      return getModifierState.call(e, MULTI_SELECT_MODIFIER_KEY);
     }
 
     protected _isNodeSelectable(node: any): boolean {
@@ -373,7 +386,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (btn !== 0) return;
       if (this._isUIElement(e.target)) return;
       if (this._shouldDeferSelectionPointer(e)) return;
-      if (this._isMultiSelectModifierActive(e)) return;
+      if (this._isClickSelectionToggleActive(e)) return;
       try {
         this._performSelectionRaycast(e, {
           clearWhenNoHit: false,
@@ -484,7 +497,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       const clearWhenNoHit = options?.clearWhenNoHit !== false;
       const phase = options?.phase ?? 'pointerup';
-      const multiSelect = this._isMultiSelectModifierActive(e);
+      const multiSelect = this._isClickSelectionToggleActive(e);
 
       if (this._isInteractivePlacementActive()) {
         this.clearSelection();

@@ -2581,6 +2581,18 @@
           "default": "false",
           "options": "true, false"
         }
+      },
+      {
+        "name": "click-selection-mode",
+        "htmlName": "clickSelectionMode",
+        "description": "Single-click selection behavior. <code>replace</code> selects one object at a time (hold <b>Shift</b> to toggle items in multi-select). <code>toggle</code> treats every click like Shift+click—useful for touch devices without a Shift key.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "replace",
+          "options": "replace, toggle"
+        }
       }
     ],
     "Methods": [
