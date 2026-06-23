@@ -21,8 +21,16 @@ assert.match(
     'example should use the same car asset as the LD AO bloom environment');
 assert.match(
     html,
+    /environment-model-position="0m 0m 0m"[\s\S]*environment-model-orientation="0deg 0deg 0deg"[\s\S]*environment-model-scale="1 1 1"/,
+    'example should use the same environment model transform as LD AO bloom environment');
+assert.match(
+    html,
     /camera-control-mode="orbit"/,
     'example should launch declaratively in orbit control mode');
+assert.match(
+    html,
+    /camera-target="0m 0\.45m 0m"/,
+    'example should set a camera target without offsetting the environment model');
 assert.match(
     html,
     /fps-look-sensitivity="0\.5"/,

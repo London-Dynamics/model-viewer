@@ -5,6 +5,7 @@
 import {expect} from 'chai';
 import {BoxGeometry, Euler, Mesh, MeshBasicMaterial, Quaternion, Vector3} from 'three';
 
+import {$controls} from '../../features/controls.js';
 import {$scene, $tick} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {waitForEvent} from '../../utilities.js';
@@ -49,8 +50,7 @@ suite('LDEnvironment', () => {
     element.environmentModel = ENVIRONMENT_MODEL;
     element.addEventListener('load', () => events.push('load'));
     element.addEventListener(
-        'environment-model-load',
-        () => events.push('environment-model-load'));
+        'environment-model-load', () => events.push('environment-model-load'));
     element.src = MAIN_MODEL;
 
     await load;
@@ -60,21 +60,22 @@ suite('LDEnvironment', () => {
     expect(events).to.include('environment-model-load');
   });
 
-  test('does not fail the main model when the environment model fails',
-       async () => {
-         const load = waitForEvent(element, 'load');
-         const environmentError =
-             waitForEvent(element, 'environment-model-error');
+  test(
+      'does not fail the main model when the environment model fails',
+      async () => {
+        const load = waitForEvent(element, 'load');
+        const environmentError =
+            waitForEvent(element, 'environment-model-error');
 
-         element.environmentModel = assetPath('models/does-not-exist.glb');
-         element.src = MAIN_MODEL;
+        element.environmentModel = assetPath('models/does-not-exist.glb');
+        element.src = MAIN_MODEL;
 
-         await load;
-         await environmentError;
+        await load;
+        await environmentError;
 
-         expect(element.loaded).to.equal(true);
-         expect(element[$scene].currentGLTF).to.be.ok;
-       });
+        expect(element.loaded).to.equal(true);
+        expect(element[$scene].currentGLTF).to.be.ok;
+      });
 
   test('marks environment model nodes non-interactive', async () => {
     element.environmentModel = ENVIRONMENT_MODEL;
@@ -104,47 +105,67 @@ suite('LDEnvironment', () => {
     expect(element.loaded).to.equal(true);
   });
 
-  test('can hide the environment root for AR and restore it afterwards',
-       async () => {
-         const scene = element[$scene];
-         scene.setEnvironmentModel(new Mesh(
-             new BoxGeometry(1, 1, 1), new MeshBasicMaterial()));
+  test(
+      'can hide the environment root for AR and restore it afterwards',
+      async () => {
+        const scene = element[$scene];
+        scene.setEnvironmentModel(
+            new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()));
 
-         scene.setEnvironmentModelVisible(false);
-         expect(scene.environmentRoot.visible).to.equal(false);
+        scene.setEnvironmentModelVisible(false);
+        expect(scene.environmentRoot.visible).to.equal(false);
 
-         scene.setEnvironmentModelVisible(true);
-         expect(scene.environmentRoot.visible).to.equal(true);
-       });
+        scene.setEnvironmentModelVisible(true);
+        expect(scene.environmentRoot.visible).to.equal(true);
+      });
 
-  test('applies environment model transforms to the environment root',
-       async () => {
-         const scene = element[$scene];
+  test(
+      'applies environment model transforms to the environment root',
+      async () => {
+        const scene = element[$scene];
 
-         element.environmentModelPosition = '1m 2m 3m';
-         element.environmentModelOrientation = '10deg 20deg 30deg';
-         element.environmentModelScale = '2 3 4';
-         await element.updateComplete;
+        element.environmentModelPosition = '1m 2m 3m';
+        element.environmentModelOrientation = '10deg 20deg 30deg';
+        element.environmentModelScale = '2 3 4';
+        await element.updateComplete;
 
-         const expectedQuaternion = new Quaternion().setFromEuler(new Euler(
-             20 * Math.PI / 180,
-             30 * Math.PI / 180,
-             10 * Math.PI / 180,
-             'YXZ'));
+        const expectedQuaternion = new Quaternion().setFromEuler(new Euler(
+            20 * Math.PI / 180, 30 * Math.PI / 180, 10 * Math.PI / 180, 'YXZ'));
 
-         expect(scene.environmentRoot.position)
-             .to.eql(new Vector3(1, 2, 3));
-         expect(scene.environmentRoot.quaternion.x)
-             .to.be.closeTo(expectedQuaternion.x, 0.0001);
-         expect(scene.environmentRoot.quaternion.y)
-             .to.be.closeTo(expectedQuaternion.y, 0.0001);
-         expect(scene.environmentRoot.quaternion.z)
-             .to.be.closeTo(expectedQuaternion.z, 0.0001);
-         expect(scene.environmentRoot.quaternion.w)
-             .to.be.closeTo(expectedQuaternion.w, 0.0001);
-         expect(scene.environmentRoot.scale)
-             .to.eql(new Vector3(2, 3, 4));
-       });
+        expect(scene.environmentRoot.position).to.eql(new Vector3(1, 2, 3));
+        expect(scene.environmentRoot.quaternion.x)
+            .to.be.closeTo(expectedQuaternion.x, 0.0001);
+        expect(scene.environmentRoot.quaternion.y)
+            .to.be.closeTo(expectedQuaternion.y, 0.0001);
+        expect(scene.environmentRoot.quaternion.z)
+            .to.be.closeTo(expectedQuaternion.z, 0.0001);
+        expect(scene.environmentRoot.quaternion.w)
+            .to.be.closeTo(expectedQuaternion.w, 0.0001);
+        expect(scene.environmentRoot.scale).to.eql(new Vector3(2, 3, 4));
+      });
+
+  test(
+      'camera-target changes CameraControls target when environment-model is set',
+      async () => {
+        element.cameraControls = true;
+        element.environmentModel = ENVIRONMENT_MODEL;
+        await element.updateComplete;
+
+        const scene = element[$scene];
+        const controls = (element as any)[$controls];
+        const originalSceneTarget = scene.getTarget();
+
+        element.cameraTarget = '0m 0.45m 0m';
+        await element.updateComplete;
+
+        const controlsTarget = new Vector3();
+        controls.thirdPartyControls.getTarget(controlsTarget);
+
+        expect(scene.getTarget().x).to.be.closeTo(originalSceneTarget.x, 0.001);
+        expect(scene.getTarget().y).to.be.closeTo(originalSceneTarget.y, 0.001);
+        expect(scene.getTarget().z).to.be.closeTo(originalSceneTarget.z, 0.001);
+        expect(controlsTarget.y).to.be.closeTo(0.45, 0.001);
+      });
 
   test('applies skybox rotation to the visible skybox', async () => {
     element.skyboxRotation = '10deg 20deg 30deg';

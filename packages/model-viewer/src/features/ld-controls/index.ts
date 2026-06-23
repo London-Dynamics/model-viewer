@@ -2079,7 +2079,22 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$syncCameraTarget](style: EvaluatedStyle<Vector3Intrinsics>) {
       const [x, y, z] = style;
       if (!this[$renderer].arRenderer.isPresenting) {
-        this[$scene].setTarget(x, y, z);
+        if ((this as any).environmentModel != null) {
+          const camera = this[$scene].camera;
+          const target = new THREE.Vector3(x, y, z);
+          this[$scene].target.localToWorld(target);
+          (this[$controls] as any)
+              .setLookAt(
+                  camera.position.x,
+                  camera.position.y,
+                  camera.position.z,
+                  target.x,
+                  target.y,
+                  target.z,
+                  false);
+        } else {
+          this[$scene].setTarget(x, y, z);
+        }
       }
       this[$controls].changeSource = ChangeSource.NONE;
       this[$renderer].arRenderer.updateTarget();
