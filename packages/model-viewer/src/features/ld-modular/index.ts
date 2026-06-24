@@ -3300,6 +3300,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       this._syncRotationControlDiscLifecycle();
+      if (type === 'clear') {
+        this._setPointerHoverCameraDragDisabled(false);
+      }
       (this as any)[$needsRender]();
     }
 
@@ -3402,6 +3405,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _dragTargets: Object3D[] = [];
     private _dragStartPositions = new Map<string, Vector3>();
     private _dragOffsets = new Map<string, Vector3>();
+    /** Touch-only: defer object drag until movement exceeds a small threshold. */
+    private _touchObjectDragPending = false;
+    private _touchObjectDragStartClient = { clientX: 0, clientY: 0 };
+    private _touchObjectDragStartNdc = new Vector2();
 
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -5425,8 +5432,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._pointerDownOnSelectable = overSelectable;
       if (!overSelectable) {
         this._dispatchHoverChange(null);
+        // Re-enable orbit when starting a camera drag off-object (touch often
+        // has no pointermove between selecting and orbiting).
+        this._setPointerHoverCameraDragDisabled(false);
+        return;
       }
-      if (!overSelectable) return;
       this._setPointerHoverCameraDragDisabled(true);
     }
 
@@ -5513,32 +5523,77 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.editMode) return;
       if ((this as any)._isInteractivePlacementActive?.()) return;
 
-      if (event.touches.length === 1) {
-        const touch = event.touches[0];
-        this.updateMousePositionFromTouch(touch);
-
-        if ((this as any)._isClickSelectionToggleActive?.(event)) {
-          return;
-        }
-
-        if ((this as any).selectedObjects.length) {
-          const isOnSelectedObject = (this as any).selectedObjects.some(
-            (obj: any) => this.isPointOnObject(this.currentMousePosition, obj)
-          );
-          if (isOnSelectedObject) {
-            event.stopImmediatePropagation();
-            event.preventDefault();
-            this.startDragging();
-          }
-        }
+      if (event.touches.length !== 1) {
+        this._touchObjectDragPending = false;
+        return;
       }
+
+      const touch = event.touches[0];
+      this.updateMousePositionFromTouch(touch);
+
+      if ((this as any)._isClickSelectionToggleActive?.(event)) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      if (!(this as any).selectedObjects.length) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      const isOnSelectedObject = (this as any).selectedObjects.some(
+        (obj: any) => this.isPointOnObject(this.currentMousePosition, obj)
+      );
+      if (!isOnSelectedObject) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      // Defer drag until movement exceeds a threshold so tap-to-select does
+      // not briefly disable camera controls (problematic on touch devices).
+      this._touchObjectDragPending = true;
+      this._touchObjectDragStartClient.clientX = touch.clientX;
+      this._touchObjectDragStartClient.clientY = touch.clientY;
+      this._touchObjectDragStartNdc.copy(this.currentMousePosition);
     }
 
     private onTouchMove(event: TouchEvent) {
       // Only handle puzzler touch interactions when edit-mode is active.
       if (!this.editMode) return;
-      if (event.touches.length === 1 && (this as any).isDragging) {
-        const touch = event.touches[0];
+
+      if (event.touches.length !== 1) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      const touch = event.touches[0];
+
+      if (
+        this._touchObjectDragPending &&
+        !(this as any).isDragging &&
+        (this as any).selectedObjects.length
+      ) {
+        const dx = touch.clientX - this._touchObjectDragStartClient.clientX;
+        const dy = touch.clientY - this._touchObjectDragStartClient.clientY;
+        const TOUCH_DRAG_THRESHOLD_PX = 10;
+        if (dx * dx + dy * dy >= TOUCH_DRAG_THRESHOLD_PX * TOUCH_DRAG_THRESHOLD_PX) {
+          const isOnSelectedObject = (this as any).selectedObjects.some(
+            (obj: any) =>
+              this.isPointOnObject(this._touchObjectDragStartNdc, obj)
+          );
+          if (isOnSelectedObject) {
+            this._touchObjectDragPending = false;
+            this.updateMousePositionFromTouch(touch);
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            this.startDragging(event);
+          } else {
+            this._touchObjectDragPending = false;
+          }
+        }
+      }
+
+      if ((this as any).isDragging) {
         this.updateMousePositionFromTouch(touch);
         this.updateDragPosition();
         event.preventDefault();
@@ -5548,6 +5603,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private onTouchEnd(_event: TouchEvent) {
       if (!this.editMode) return;
 
+      this._touchObjectDragPending = false;
       if ((this as any).isDragging) {
         this.stopDragging();
       }
@@ -5686,8 +5742,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if ((this as any)[$controls]) {
         try {
-          (this as any)[$controls].disableInteraction &&
-            (this as any)[$controls].disableInteraction();
+          (this as any)[$controls].disableDragInteraction?.();
         } catch (e) {}
       }
 
@@ -5945,10 +6000,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if ((this as any)[$controls]) {
         try {
-          (this as any)[$controls].enableInteraction &&
-            (this as any)[$controls].enableInteraction();
+          (this as any)[$controls].enableDragInteraction?.();
         } catch (e) {}
       }
+      this._syncCameraDragDisabled();
 
       (this as any).style.cursor = '';
       try {
