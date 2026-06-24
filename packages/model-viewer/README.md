@@ -126,9 +126,30 @@ Command                         | Description
 ------------------------------- | -----------
 `npm run build`                 | Builds all `<model-viewer>` distributable files
 `npm run build:dev`             | Builds a subset of distributable files (faster than `npm run build`)
+`npm run build:pack`            | TypeScript compile only (~2s); enough for `npm pack` into bundler-based host apps
+`npm run pack:local`            | Runs `build:pack` and creates a `.tgz` tarball for local install
 `npm run test`                  | Run `<model-viewer>` unit tests
 `npm run clean`                 | Deletes all build artifacts
 `npm run dev`                   | Starts `tsc` and `rollup` in "watch" mode, causing artifacts to automatically rebuild upon incremental changes
+
+### Local tarball for host apps
+
+To test unpublished changes in a host app without running the full production build:
+
+```sh
+cd packages/model-viewer
+npm run pack:local
+```
+
+Then in the host app:
+
+```sh
+npm install /path/to/model-viewer/packages/model-viewer/london-dynamics-model-viewer-4.7.4.tgz
+```
+
+`build:pack` compiles TypeScript to `lib/` only (~2s). That is sufficient when the host app uses a bundler (Vite, webpack, etc.) and resolves the package via the `module` entry (`lib/model-viewer.js`). It skips rollup entirely, so no `dist/` bundles are included.
+
+Use `npm run build:dev` before packing if you need unminified `dist/` files (e.g. script-tag usage). Use `npm run build` for the full release artifact set.
 
 ## Releasing
 
