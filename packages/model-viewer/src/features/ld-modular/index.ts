@@ -274,11 +274,23 @@ export type BulkReplaceItem = {
   src?: string;
 } & Omit<PlacementOptions, 'getLowResUrl' | 'getHighResUrl'>;
 
-type ImmediatePlacementTransform = {
+export type PlacementSessionLike = EventTarget & {
+  id: string;
+  state: 'placing' | 'loading' | 'ended' | 'cancelled';
+  placeholder: Object3D | null;
+};
+
+export type ImmediatePlacementTransform = {
   position?: [number, number, number];
   // Rotation in radians (Three.js Euler order XYZ)
   rotation?: [number, number, number];
   scale?: [number, number, number];
+  /** Pointer coords for raycast placement. If omitted and no position, defaults to scene origin (0, y, 0). */
+  clientPosition?: { clientX: number; clientY: number };
+  /** Called synchronously so hosts can attach session listeners before async work. */
+  onSession?: (session: PlacementSessionLike) => void;
+  /** Skip visible placeholder and placeholder-loaded events (e.g. bulk restore). */
+  skipPlaceholderFeedback?: boolean;
 };
 
 type PositionOptions = {
@@ -840,84 +852,123 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         true
       );
 
-      // If explicit transforms are provided, prefer using a placeholder so the
-      // final model can simply copy its local transform from it. First try a
-      // bounds-based placeholder from part.bounds; if that is not available,
-      // fall back to an empty Object3D that just carries the desired transform.
-      if (options) {
-        const scene = (element as any)[$scene];
-        if (scene) {
-          let placeholder: Object3D | null = null;
+      options?.onSession?.(session);
 
-          if (options.part) {
-            placeholder = (session as any)._createPlaceholderFromBounds(
-              scene,
-              element
-            ) as Object3D | null;
-          }
+      if (options?.skipPlaceholderFeedback) {
+        this._attachImmediatePlacementPlaceholder(session, element, options);
+        const placed = await session.commit(highResSrc);
+        if (!placed) {
+          throw new Error('placeGlb: placement commit failed');
+        }
+        return placed;
+      }
 
-          if (
-            !placeholder &&
-            (options.position || options.rotation || options.scale)
-          ) {
-            placeholder = new Object3D();
-            applyPlacementObjectIdentity(placeholder, session.id, options);
-            markPlacementPlaceholderNonSelectable(placeholder);
-            try {
-              scene.target.add(placeholder);
-            } catch (e) {
-              scene.add(placeholder);
-            }
-          }
+      await session._ensurePlaceholderReady();
 
-          if (placeholder) {
-            session.placeholder = placeholder;
-            if (options.position) {
-              placeholder.position.set(
-                options.position[0],
-                options.position[1],
-                options.position[2]
-              );
-            }
-            if (options.rotation) {
-              placeholder.rotation.set(
-                options.rotation[0],
-                options.rotation[1],
-                options.rotation[2]
-              );
-            }
-            if (options.scale) {
-              placeholder.scale.set(
-                options.scale[0],
-                options.scale[1],
-                options.scale[2]
-              );
-            }
-          }
+      if (options?.position && session.placeholder) {
+        session.placeholder.position.set(
+          options.position[0],
+          options.position[1],
+          options.position[2]
+        );
+        try {
+          session.placeholder.visible = true;
+        } catch (e) {}
+      } else if (options?.clientPosition) {
+        session.updatePosition(
+          options.clientPosition.clientX,
+          options.clientPosition.clientY
+        );
+      } else {
+        session.applyFallbackCommitPosition();
+        if (session.placeholder) {
+          try {
+            session.placeholder.visible = true;
+          } catch (e) {}
         }
       }
 
-      // Compute center detail from explicit position (if provided)
-      let centerDetail: { x: number; y: number; z: number } | null = null;
-      if (options?.position) {
-        centerDetail = {
-          x: options.position[0],
-          y: options.position[1],
-          z: options.position[2],
-        };
+      if (session.placeholder) {
+        if (options?.rotation) {
+          session.placeholder.rotation.set(
+            options.rotation[0],
+            options.rotation[1],
+            options.rotation[2]
+          );
+        }
+        if (options?.scale) {
+          session.placeholder.scale.set(
+            options.scale[0],
+            options.scale[1],
+            options.scale[2]
+          );
+        }
       }
 
-      (this as any).dispatchEvent(
-        new CustomEvent('loading-start', {
-          detail: {
-            sessionId: session.id,
-            src: highResSrc,
-            center: centerDetail,
-          },
-        })
-      );
+      const placed = await session.commit(highResSrc);
+      if (!placed) {
+        throw new Error('placeGlb: placement commit failed');
+      }
+      return placed;
+    }
 
-      return (session as any)._placeFinalGlb(this, highResSrc || '');
+    private _attachImmediatePlacementPlaceholder(
+      session: PlacementSession,
+      element: any,
+      options?: PlacementOptions & ImmediatePlacementTransform
+    ): void {
+      if (!options) return;
+
+      const scene = element[$scene];
+      if (!scene) return;
+
+      let placeholder: Object3D | null = null;
+
+      if (options.part) {
+        placeholder = (session as any)._createPlaceholderFromBounds(
+          scene,
+          element
+        ) as Object3D | null;
+      }
+
+      if (
+        !placeholder &&
+        (options.position || options.rotation || options.scale)
+      ) {
+        placeholder = new Object3D();
+        applyPlacementObjectIdentity(placeholder, session.id, options);
+        markPlacementPlaceholderNonSelectable(placeholder);
+        try {
+          scene.target.add(placeholder);
+        } catch (e) {
+          scene.add(placeholder);
+        }
+      }
+
+      if (!placeholder) return;
+
+      session.placeholder = placeholder;
+      if (options.position) {
+        placeholder.position.set(
+          options.position[0],
+          options.position[1],
+          options.position[2]
+        );
+      }
+      if (options.rotation) {
+        placeholder.rotation.set(
+          options.rotation[0],
+          options.rotation[1],
+          options.rotation[2]
+        );
+      }
+      if (options.scale) {
+        placeholder.scale.set(
+          options.scale[0],
+          options.scale[1],
+          options.scale[2]
+        );
+      }
     }
 
     async placeManyGlb(
@@ -961,6 +1012,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             rotation: transform.rotation,
             scale: transform.scale,
             selection: item.selection,
+            skipPlaceholderFeedback: true,
           };
 
           const placed = await this.placeGlb(highResSrc, placementOptions);
@@ -7597,6 +7649,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const cloned = tryCloneExistingGltfScene(src, sceneRoot, options);
       if (cloned) {
+        if (progressDetail) {
+          try {
+            (this as any).dispatchEvent(
+              new CustomEvent('progress', {
+                detail: {
+                  ...progressDetail,
+                  totalProgress: 1,
+                  progress: 1,
+                },
+              })
+            );
+          } catch (e) {}
+          const onProgress = progressDetail.onProgress;
+          if (typeof onProgress === 'function') {
+            try {
+              onProgress(1);
+            } catch (e) {}
+          }
+        }
         return cloned;
       }
 
@@ -7608,10 +7679,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               detail: {
                 ...progressDetail,
                 totalProgress: p,
+                progress: p,
               },
             })
           );
         } catch (e) {}
+        const onProgress = progressDetail.onProgress;
+        if (typeof onProgress === 'function') {
+          try {
+            onProgress(p);
+          } catch (e) {}
+        }
       });
 
       if (!gltf?.scene) {
@@ -7961,6 +8039,7 @@ class PlacementSession extends EventTarget {
   private _targetBottomCenter: { x: number; y: number; z: number } | null =
     null;
   private _hasValidSurfaceSnap: boolean = false;
+  private _placeholderLoadEmitted: boolean = false;
 
   constructor(
     element: any,
@@ -7984,6 +8063,27 @@ class PlacementSession extends EventTarget {
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
+  }
+
+  private _emitPlaceholderLoaded(): void {
+    if (this._placeholderLoadEmitted || !this.placeholder) return;
+    this._placeholderLoadEmitted = true;
+    (this as any).dispatchEvent(
+      new CustomEvent('placeholder-loaded', {
+        detail: { sessionId: this.id, placeholder: this.placeholder },
+      })
+    );
+  }
+
+  async _ensurePlaceholderReady(): Promise<void> {
+    if (this.placeholder) {
+      this._emitPlaceholderLoaded();
+      return;
+    }
+    await this._loadPlaceholder();
+    if (!this.placeholder) {
+      throw new Error('Placeholder failed to load');
+    }
   }
 
   private _getWallCursorPointFromPlaceholder(
@@ -8146,11 +8246,7 @@ class PlacementSession extends EventTarget {
         const placeholder = this._createPlaceholderFromBounds(scene, element);
         if (placeholder) {
           this.placeholder = placeholder;
-          (this as any).dispatchEvent(
-            new CustomEvent('placeholder-loaded', {
-              detail: { sessionId: this.id, placeholder },
-            })
-          );
+          this._emitPlaceholderLoaded();
           return;
         }
 
@@ -8159,11 +8255,7 @@ class PlacementSession extends EventTarget {
         // (especially surfaceSnap) still works in getHighResUrl-only flows.
         const anchorPlaceholder = this._createPlaceholderAnchor(scene, element);
         this.placeholder = anchorPlaceholder;
-        (this as any).dispatchEvent(
-          new CustomEvent('placeholder-loaded', {
-            detail: { sessionId: this.id, placeholder: anchorPlaceholder },
-          })
-        );
+        this._emitPlaceholderLoaded();
         this.log(
           '[puzzler] PlacementSession: No low-res URL provided, using anchor placeholder'
         );
@@ -8224,11 +8316,7 @@ class PlacementSession extends EventTarget {
         // ignore if property not present
       }
 
-      (this as any).dispatchEvent(
-        new CustomEvent('placeholder-loaded', {
-          detail: { sessionId: this.id, placeholder },
-        })
-      );
+      this._emitPlaceholderLoaded();
       if (!this._element) return;
       (this._element as any)[$needsRender]();
     } catch (error) {
@@ -8690,7 +8778,30 @@ class PlacementSession extends EventTarget {
   private async _placeFinalGlb(element: any, srcToLoad: string) {
     const scene = (element as any)[$scene];
 
+    if (!srcToLoad || !String(srcToLoad).trim()) {
+      const error = new Error('No GLB URL provided for placement');
+      this.state = 'cancelled';
+      (this as any).dispatchEvent(
+        new CustomEvent('error', {
+          detail: {
+            type: 'placementfailure',
+            sessionId: this.id,
+            sourceError: error,
+          },
+        })
+      );
+      return Promise.reject(error);
+    }
+
     try {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent('progress', {
+            detail: { sessionId: this.id, phase: 'final', progress: 0 },
+          })
+        );
+      } catch (e) {}
+
       const partId =
         this._options?.id ??
         (this._options?.part as { id?: string } | undefined)?.id;
@@ -8700,6 +8811,19 @@ class PlacementSession extends EventTarget {
         {
           sessionId: this.id,
           phase: 'final',
+          onProgress: (p: number) => {
+            try {
+              (this as any).dispatchEvent(
+                new CustomEvent('progress', {
+                  detail: {
+                    sessionId: this.id,
+                    phase: 'final',
+                    progress: p,
+                  },
+                })
+              );
+            } catch (e) {}
+          },
         }
       );
 

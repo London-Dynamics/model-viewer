@@ -2271,11 +2271,11 @@
       {
         "name": "placeGlb",
         "htmlName": "placeGlb",
-        "description": "Immediately place a GLB into the scene at a known transform. Rotation values are interpreted as radians (Three.js Euler XYZ). Shares behavior with beginPlacement/PlacementSession.commit for loading events, bounds-based placeholders, snapping, and userData. Returns a Promise that resolves with the created node.",
+        "description": "Immediately place a GLB into the scene. When <code>position</code> and <code>clientPosition</code> are omitted, the bounds placeholder is shown at scene origin <code>(0, y, 0)</code> on <code>scene.target</code> before the high-res model loads. Emits the same <code>PlacementSession</code> events as interactive placement: <code>start</code>, <code>placeholder-loaded</code>, <code>loading-start</code>, <code>progress</code>, <code>loaded</code>, <code>error</code>. Use <code>onSession</code> to attach listeners synchronously. Pass <code>getHighResUrl</code> when <code>highResSrc</code> is omitted. Rotation values are radians (Three.js Euler XYZ). Set <code>skipPlaceholderFeedback: true</code> for bulk restore without visible placeholder UX.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "signature": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; }): Promise<{ id: string; node: Object3D }>"
+        "signature": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; clientPosition?: {clientX:number,clientY:number}; onSession?: (session) => void; skipPlaceholderFeedback?: boolean }): Promise<{ id: string; node: Object3D }>"
       },
       {
         "name": "setPosition",
