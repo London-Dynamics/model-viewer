@@ -1,0 +1,497 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Ambient Occlusion</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Ambient Occlusion example"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      #ld-ambient-occlusion example-snippet,
+      #ld-ambient-occlusion example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-ao-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .ld-ao-stage > model-viewer {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+      }
+
+      .ld-ao-controls {
+        flex: 0 0 auto;
+      }
+    </style>
+
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="ld-ambient-occlusion" class="demo"></div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="ld-ambient-occlusion-content"
+            >
+              Info & code
+            </button>
+            <div id="ld-ambient-occlusion-content" class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Ambient Occlusion</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page shows how to drive the new ambient occlusion mixin
+                using controls that match a typical tooling workflow.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Real-time AO</h2>
+                <h4>
+                  Toggle the built-in screen-space occlusion pass and tweak its
+                  parameters live on the selected AO test scene.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="ld-ambient-occlusion"
+                highlight-as="html"
+              >
+                <template>
+                  <div class="ld-ao-stage">
+                    <model-viewer
+                      id="ld-ao-demo"
+                      camera-controls
+                      min-camera-orbit="auto auto 0.01m"
+                      max-camera-orbit="auto auto 1000m"
+                      interaction-prompt="none"
+                      autoplay
+                      ar
+                      ar-modes="webxr scene-viewer"
+                      shadow-intensity="1"
+                      exposure="1.15"
+                      environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr"
+                      ambient-occlusion
+                      ao-algorithm="gtao"
+                      ao-radius="4"
+                      ao-intensity="0.85"
+                      ao-output="default"
+                      ao-noise="magic-square"
+                      src="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/AO_TestScene.glb"
+                      alt="AO test scene lit with real-time ambient occlusion"
+                    ></model-viewer>
+                    <div class="ld-ao-controls p-2">
+                      <form
+                        id="ao-control-panel"
+                        class="bg-white shadow-sm rounded-lg px-4 py-5 flex flex-col gap-3"
+                      >
+                        <div class="grid grid-cols-[minmax(0,12rem)_1fr_1fr_auto] gap-3 items-end">
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Test case
+                            <select
+                              id="test-case-select"
+                              class="w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            >
+                              <option value="test-scene" selected>
+                                Test scene
+                              </option>
+                              <option value="car">Car</option>
+                              <option value="bag">Bag</option>
+                            </select>
+                          </label>
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Model URL
+                            <input
+                              id="model-src-input"
+                              type="text"
+                              class="w-full rounded-md bg-white py-1.5 px-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            />
+                          </label>
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Environment URL
+                            <input
+                              id="environment-src-input"
+                              type="text"
+                              class="w-full rounded-md bg-white py-1.5 px-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            />
+                          </label>
+                          <button
+                            id="reload-sources"
+                            type="submit"
+                            class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                          >
+                            Load
+                          </button>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                          <div>
+                            <h3 class="text-sm font-semibold text-gray-900 m-0">
+                              Ambient Occlusion
+                            </h3>
+                            <p class="text-xs text-gray-500 m-0">
+                              Powered by Rabbid76/three-js-ao-pass
+                            </p>
+                          </div>
+                          <label class="inline-flex items-center gap-2 text-sm">
+                            <span class="text-gray-600">Enabled</span>
+                            <input
+                              id="toggle-ao"
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              checked
+                            />
+                          </label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Algorithm
+                            <select
+                              id="ao-algorithm"
+                              class="w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            >
+                              <option value="gtao" selected>GTAO</option>
+                              <option value="hbao">HBAO</option>
+                              <option value="sao">SAO</option>
+                              <option value="ssao">SSAO</option>
+                            </select>
+                          </label>
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Output
+                            <select
+                              id="ao-output"
+                              class="w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            >
+                              <option value="default" selected>Composite</option>
+                              <option value="ao">AO Only</option>
+                              <option value="denoise">AO + Denoise</option>
+                              <option value="diffuse">Diffuse</option>
+                              <option value="depth">Depth</option>
+                              <option value="normal">Normals</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Radius <span id="ao-radius-value">4.0</span>m
+                            <input
+                              id="ao-radius"
+                              type="range"
+                              min="0.5"
+                              max="8"
+                              step="0.1"
+                              value="4"
+                              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </label>
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Intensity <span id="ao-intensity-value">0.85</span>
+                            <input
+                              id="ao-intensity"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value="0.85"
+                              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                            />
+                          </label>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                          <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              id="ao-screen-space"
+                              type="checkbox"
+                              class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            Screen-space Radius
+                          </label>
+                          <label class="text-xs text-gray-500 flex flex-col gap-1">
+                            Noise
+                            <select
+                              id="ao-noise"
+                              class="w-full appearance-none rounded-md bg-white py-1.5 pl-3 pr-3 text-sm text-gray-900 outline outline-1 -outline-offset-1 outline-gray-300 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-blue-600"
+                            >
+                              <option value="magic-square" selected>
+                                Magic Square
+                              </option>
+                              <option value="random">Random</option>
+                            </select>
+                          </label>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                  <script type="module">
+                    (() => {
+                      const TEST_CASES = {
+                        'test-scene': {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/AO_TestScene.glb',
+                        },
+                        car: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb',
+                        },
+                        bag: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/019dfd85-606d-770c-9854-43a16af56055/puzzledefault/e14d1a56-44bb-dc4a-e1e8-87b0513324d8.glb',
+                        },
+                      };
+                      const DEFAULT_MODEL_SRC =
+                        TEST_CASES['test-scene'].modelSrc;
+                      const DEFAULT_ENVIRONMENT_IMAGE =
+                        'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr';
+                      const modelViewer =
+                        document.querySelector('#ld-ao-demo');
+                      const controlPanel =
+                        document.querySelector('#ao-control-panel');
+                      const modelSrcInput =
+                        document.querySelector('#model-src-input');
+                      const environmentSrcInput = document.querySelector(
+                        '#environment-src-input'
+                      );
+                      const testCaseSelect =
+                        document.querySelector('#test-case-select');
+                      const aoToggle = document.querySelector('#toggle-ao');
+                      const radiusInput = document.querySelector('#ao-radius');
+                      const radiusLabel =
+                        document.querySelector('#ao-radius-value');
+                      const intensityInput =
+                        document.querySelector('#ao-intensity');
+                      const intensityLabel = document.querySelector(
+                        '#ao-intensity-value'
+                      );
+                      const algorithmSelect =
+                        document.querySelector('#ao-algorithm');
+                      const outputSelect =
+                        document.querySelector('#ao-output');
+                      const noiseSelect = document.querySelector('#ao-noise');
+                      const screenSpaceToggle = document.querySelector(
+                        '#ao-screen-space'
+                      );
+                      const waitFrame = () =>
+                        new Promise((resolve) =>
+                          requestAnimationFrame(() =>
+                            requestAnimationFrame(resolve)
+                          )
+                        );
+                      const waitFrames = async (count = 1) => {
+                        for (let i = 0; i < count; i++) {
+                          await waitFrame();
+                        }
+                      };
+                      const waitForLoadOrTimeout = async (timeoutMs = 5000) => {
+                        if (modelViewer.loaded) {
+                          return;
+                        }
+
+                        await Promise.race([
+                          new Promise((resolve) =>
+                            modelViewer.addEventListener('load', resolve, {
+                              once: true,
+                            })
+                          ),
+                          new Promise((resolve) =>
+                            setTimeout(resolve, timeoutMs)
+                          ),
+                        ]);
+                      };
+                      const rebuildAmbientOcclusion = async () => {
+                        if (!aoToggle.checked) {
+                          return;
+                        }
+
+                        modelViewer.removeAttribute('ambient-occlusion');
+                        await waitFrames(2);
+                        modelViewer.setAttribute('ambient-occlusion', '');
+                        await waitFrames(2);
+                      };
+
+                      const applySourceOverrides = async () => {
+                        const modelSrc =
+                          modelSrcInput.value.trim() || DEFAULT_MODEL_SRC;
+                        const environmentSrc =
+                          environmentSrcInput.value.trim() ||
+                          DEFAULT_ENVIRONMENT_IMAGE;
+                        const didModelChange =
+                          modelViewer.getAttribute('src') !== modelSrc;
+
+                        modelSrcInput.value = modelSrc;
+                        environmentSrcInput.value = environmentSrc;
+                        modelViewer.setAttribute('src', modelSrc);
+                        modelViewer.setAttribute(
+                          'environment-image',
+                          environmentSrc
+                        );
+
+                        if (didModelChange) {
+                          await waitForLoadOrTimeout();
+                        } else {
+                          await waitFrames(2);
+                        }
+
+                        await rebuildAmbientOcclusion();
+                      };
+
+                      const ensureAoAttribute = () => {
+                        if (aoToggle.checked) {
+                          modelViewer.setAttribute('ambient-occlusion', '');
+                        } else {
+                          modelViewer.removeAttribute('ambient-occlusion');
+                        }
+                      };
+
+                      aoToggle.addEventListener('change', ensureAoAttribute);
+
+                      controlPanel.addEventListener('submit', async (event) => {
+                        event.preventDefault();
+                        await applySourceOverrides();
+                      });
+
+                      testCaseSelect.addEventListener('change', async (event) => {
+                        const testCase = TEST_CASES[event.target.value];
+                        if (testCase === undefined) {
+                          return;
+                        }
+
+                        modelSrcInput.value = testCase.modelSrc;
+                        await applySourceOverrides();
+                      });
+
+                      algorithmSelect.addEventListener('change', (event) => {
+                        modelViewer.setAttribute(
+                          'ao-algorithm',
+                          event.target.value
+                        );
+                      });
+
+                      outputSelect.addEventListener('change', (event) => {
+                        modelViewer.setAttribute('ao-output', event.target.value);
+                      });
+
+                      radiusInput.addEventListener('input', (event) => {
+                        const value = Number(event.target.value).toFixed(1);
+                        radiusLabel.textContent = value;
+                        modelViewer.setAttribute('ao-radius', value);
+                      });
+
+                      intensityInput.addEventListener('input', (event) => {
+                        const value = Number(event.target.value).toFixed(2);
+                        intensityLabel.textContent = value;
+                        modelViewer.setAttribute('ao-intensity', value);
+                      });
+
+                      noiseSelect.addEventListener('change', (event) => {
+                        modelViewer.setAttribute('ao-noise', event.target.value);
+                      });
+
+                      screenSpaceToggle.addEventListener('change', (event) => {
+                        modelViewer.toggleAttribute(
+                          'ao-screen-space-radius',
+                          event.target.checked
+                        );
+                      });
+
+                      modelSrcInput.value =
+                        modelViewer.getAttribute('src') || DEFAULT_MODEL_SRC;
+                      environmentSrcInput.value =
+                        modelViewer.getAttribute('environment-image') ||
+                        DEFAULT_ENVIRONMENT_IMAGE;
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+              <p class="text-sm text-gray-600 mt-6">
+                Source model: <code>AO_TestScene.glb</code> from the
+                <code>Test scene</code> AO test case.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld-ambient-occlusion');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+      (() => {
+        const sample = document
+          .querySelector('#ld-ambient-occlusion')
+          ?.closest('.sample');
+        const toggle = sample?.querySelector('.content-toggle');
+        if (sample == null || toggle == null) {
+          return;
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = sample.classList.toggle('content-expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>
+

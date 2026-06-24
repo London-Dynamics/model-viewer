@@ -1,0 +1,370 @@
+<!--
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Environment</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Environment model example"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      #environment-model example-snippet,
+      #environment-model example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-environment-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .ld-environment-stage > model-viewer {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+      }
+
+      .ld-environment-controls {
+        background: rgba(255, 255, 255, 0.94);
+        border-radius: 0.5rem;
+        bottom: 1rem;
+        box-shadow:
+          0 10px 15px -3px rgb(0 0 0 / 0.1),
+          0 4px 6px -4px rgb(0 0 0 / 0.1);
+        left: 1rem;
+        padding: 1rem;
+        position: absolute;
+        width: min(19rem, calc(100% - 2rem));
+      }
+
+      .ld-environment-controls form {
+        display: grid;
+        gap: 0.75rem;
+        margin: 0;
+      }
+
+      .ld-environment-controls label {
+        color: #4b5563;
+        display: grid;
+        gap: 0.25rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .ld-environment-controls input,
+      .ld-environment-controls select {
+        border: 1px solid #d1d5db;
+        border-radius: 0.375rem;
+        color: #111827;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', 'Courier New', monospace;
+        font-size: 0.75rem;
+        min-width: 0;
+        padding: 0.375rem 0.5rem;
+        width: 100%;
+      }
+
+      .ld-environment-controls input[type='checkbox'] {
+        width: auto;
+      }
+
+      .ld-environment-controls fieldset {
+        border: 0;
+        display: grid;
+        gap: 0.75rem;
+        margin: 0;
+        padding: 0;
+      }
+
+      .ld-environment-controls legend {
+        color: #111827;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+      }
+
+      .ld-environment-control-grid {
+        display: grid;
+        gap: 0.5rem;
+        grid-template-columns: minmax(0, 1fr);
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="environment-model" class="demo"></div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="environment-model-content"
+            >
+              Info & code
+            </button>
+            <div id="environment-model-content" class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Environment</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page shows an authored environment GLB rendered around a
+                regular model without affecting camera framing, measurements, or
+                AR.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">
+                  Environment model with
+                  <span class="attribute">environment-model</span>
+                </h2>
+                <h4>
+                  The road GLB is visible scene dressing loaded after the main
+                  car model. The HDR is used for lighting and as a visible
+                  skybox.
+                </h4>
+              </div>
+              <example-snippet stamp-to="environment-model" highlight-as="html">
+                <template>
+                  <div class="ld-environment-stage">
+                    <model-viewer
+                      id="environment-model-demo"
+                      camera-controls
+                      touch-action="pan-y"
+                      interaction-prompt="none"
+                      min-camera-orbit="auto auto 0.01m"
+                      max-camera-orbit="auto auto 1000m"
+                      camera-orbit="45deg 75deg auto"
+                      shadow-intensity="1"
+                      shadow-softness="1"
+                      exposure="1"
+                      environment-image="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/industrial_sunset_puresky_4k%201.hdr"
+                      skybox-image="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/industrial_sunset_puresky_4k%201.hdr"
+                      skybox-rotation="0deg 0deg 0deg"
+                      skybox-rotation-animation
+                      skybox-rotation-axis="y"
+                      skybox-rotation-speed="5deg/s"
+                      environment-model="https://assets.v2.londondynamics.com/1995f8ab-6b6d-4c17-a241-69dd88ae53bd/00000000-0000-0000-0000-000000000000/Road.glb"
+                      environment-model-position="0m -0.82m 0m"
+                      environment-model-orientation="0deg 0deg 0deg"
+                      environment-model-scale="1 1 1"
+                      src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
+                      alt="A car rendered on a decorative road environment"
+                    >
+                    </model-viewer>
+                    <div class="ld-environment-controls">
+                      <form id="environment-transform-controls">
+                        <fieldset>
+                          <legend>Environment Model</legend>
+                          <label>
+                            Environment Model Position
+                            <input
+                              id="environment-model-position"
+                              type="text"
+                              value="0m -0.82m 0m"
+                            />
+                          </label>
+                          <label>
+                            Environment Model Orientation
+                            <input
+                              id="environment-model-orientation"
+                              type="text"
+                              value="0deg 0deg 0deg"
+                            />
+                          </label>
+                          <label>
+                            Environment Model Scale
+                            <input
+                              id="environment-model-scale"
+                              type="text"
+                              value="1 1 1"
+                            />
+                          </label>
+                        </fieldset>
+                        <fieldset>
+                          <legend>Skybox Environment</legend>
+                          <label>
+                            Skybox Rotation
+                            <input
+                              id="skybox-rotation"
+                              type="text"
+                              value="0deg 0deg 0deg"
+                            />
+                          </label>
+                          <div class="ld-environment-control-grid">
+                            <label>
+                              Skybox Rotation Axis
+                              <select id="skybox-rotation-axis">
+                                <option value="x">x</option>
+                                <option value="y" selected>y</option>
+                                <option value="z">z</option>
+                              </select>
+                            </label>
+                            <label>
+                              Skybox Rotation Speed
+                              <input
+                                id="skybox-rotation-speed"
+                                type="text"
+                                value="5deg/s"
+                              />
+                            </label>
+                            <label>
+                              Skybox Rotation Animation
+                              <input
+                                id="skybox-rotation-animation"
+                                type="checkbox"
+                                checked
+                              />
+                            </label>
+                          </div>
+                        </fieldset>
+                        <div class="ld-environment-control-grid">
+                          <label>
+                            Main
+                            <input value="LD_Car1.glb" readonly />
+                          </label>
+                          <label>
+                            Environment
+                            <input value="Road.glb" readonly />
+                          </label>
+                          <label>
+                            Skybox
+                            <input
+                              value="industrial_sunset_puresky_4k 1.hdr"
+                              readonly
+                            />
+                          </label>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#environment-model-demo'
+                      );
+                      const bindTransformInput = (id, attribute) => {
+                        const input = document.getElementById(id);
+                        input.addEventListener('input', () => {
+                          modelViewer.setAttribute(attribute, input.value);
+                        });
+                      };
+
+                      bindTransformInput(
+                        'environment-model-position',
+                        'environment-model-position'
+                      );
+                      bindTransformInput(
+                        'environment-model-orientation',
+                        'environment-model-orientation'
+                      );
+                      bindTransformInput(
+                        'environment-model-scale',
+                        'environment-model-scale'
+                      );
+                      bindTransformInput('skybox-rotation', 'skybox-rotation');
+                      bindTransformInput(
+                        'skybox-rotation-axis',
+                        'skybox-rotation-axis'
+                      );
+                      bindTransformInput(
+                        'skybox-rotation-speed',
+                        'skybox-rotation-speed'
+                      );
+
+                      const skyboxRotationAnimation = document.getElementById(
+                        'skybox-rotation-animation'
+                      );
+                      skyboxRotationAnimation.addEventListener('change', () => {
+                        modelViewer.toggleAttribute(
+                          'skybox-rotation-animation',
+                          skyboxRotationAnimation.checked
+                        );
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2026 London Dynamics. Licensed under the Apache License
+            2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_environment');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+      (() => {
+        const sample = document
+          .querySelector('#environment-model')
+          ?.closest('.sample');
+        const toggle = sample?.querySelector('.content-toggle');
+        if (sample == null || toggle == null) {
+          return;
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = sample.classList.toggle('content-expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>

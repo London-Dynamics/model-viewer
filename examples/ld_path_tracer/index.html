@@ -1,0 +1,1603 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Path Tracer</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Path Tracer example"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      #ld-path-tracer example-snippet,
+      #ld-path-tracer example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-path-tracer-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .ld-path-tracer-stage > model-viewer {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+      }
+
+      .ld-path-tracer-controls {
+        flex: 0 0 auto;
+      }
+
+      .ld-path-tracer-controls form {
+        font-size: 0.75rem;
+        line-height: 1rem;
+      }
+
+      .ld-path-tracer-controls label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        min-width: 0;
+      }
+
+      .ld-path-tracer-controls input,
+      .ld-path-tracer-controls select,
+      .ld-path-tracer-controls textarea {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        min-height: 1.875rem;
+      }
+
+      .ld-path-tracer-controls textarea {
+        resize: vertical;
+      }
+
+      .ld-path-tracer-controls input[type='range'],
+      .ld-path-tracer-controls input[type='checkbox'] {
+        min-height: 0;
+      }
+
+      .ld-path-tracer-control-grid {
+        display: grid;
+        gap: 0.5rem;
+        grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+      }
+
+      .ld-path-tracer-source-grid {
+        display: grid;
+        gap: 0.5rem;
+        grid-template-columns: minmax(8rem, 0.7fr) minmax(14rem, 1.4fr) minmax(14rem, 1.4fr) auto;
+      }
+
+      .ld-path-tracer-export-overlay {
+        align-items: end;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 0.375rem;
+        display: inline-flex;
+        gap: 0.5rem;
+        left: 0.75rem;
+        padding: 0.5rem;
+        position: absolute;
+        top: 0.75rem;
+        z-index: 2;
+      }
+
+      .ld-path-tracer-export-overlay label {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        width: 8rem;
+      }
+
+      .ld-path-tracer-export-overlay button {
+        flex: 0 0 auto;
+        width: auto;
+      }
+
+      .server-ai-denoise-overlay {
+        height: 100%;
+        inset: 0;
+        object-fit: cover;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        transition: opacity 0.6s ease;
+        width: 100%;
+        z-index: 1;
+      }
+
+      .server-ai-denoise-overlay-visible {
+        opacity: 1;
+      }
+
+      .server-ai-denoise-status {
+        color: #4b5563;
+        font-size: 0.6875rem;
+        line-height: 1rem;
+        white-space: nowrap;
+      }
+
+      .ld-path-tracer-control-box {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        order: 99;
+        padding: 0.5rem;
+      }
+
+      .ld-path-tracer-control-box summary {
+        cursor: pointer;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1rem;
+      }
+
+      .ld-path-tracer-control-box[open] summary {
+        margin-bottom: 0.5rem;
+      }
+
+      .ld-path-tracer-setting-value {
+        color: #4b5563;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', 'Courier New', monospace;
+      }
+
+      .ld-path-tracer-viewer-wrap {
+        flex: 1 1 auto;
+        min-height: 0;
+        position: relative;
+        width: 100%;
+      }
+
+      .ld-path-tracer-viewer-wrap-fixed {
+        align-self: center;
+        flex: 0 0 auto;
+      }
+
+      .ld-path-tracer-viewer-wrap > model-viewer {
+        background-color: transparent;
+        height: 100%;
+        width: 100%;
+      }
+
+      .ld-path-tracer-performance-overlay {
+        background: rgba(17, 24, 39, 0.78);
+        border-radius: 0.375rem;
+        color: white;
+        font-size: 0.75rem;
+        line-height: 1rem;
+        max-width: min(24rem, calc(100% - 1.5rem));
+        padding: 0.5rem;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.75rem;
+        z-index: 1;
+      }
+
+      .performance-analyser {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .performance-analyser-header {
+        align-items: center;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: space-between;
+      }
+
+      .performance-analyser h3 {
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1rem;
+        margin: 0;
+      }
+
+      .performance-analyser-actions {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .performance-analyser-actions button {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        font-size: 0.6875rem;
+        line-height: 1rem;
+        padding: 0.125rem 0.375rem;
+      }
+
+      .performance-analyser-grid {
+        display: grid;
+        gap: 0.25rem 0.75rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .performance-analyser-row {
+        align-items: baseline;
+        display: flex;
+        gap: 0.5rem;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .performance-analyser-row span {
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+
+      .performance-analyser-row strong {
+        color: white;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', 'Courier New', monospace;
+        font-weight: 500;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="ld-path-tracer" class="demo"></div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="ld-path-tracer-content"
+            >
+              Info & code
+            </button>
+            <div id="ld-path-tracer-content" class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Path Tracer</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page shows the path tracing mixin powered by
+                <a
+                  href="https://gkjohnson.github.io/three-gpu-pathtracer"
+                  target="_blank"
+                  >three-gpu-pathtracer</a
+                >.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Progressive Path Tracing</h2>
+                <h4>
+                  Toggle high-quality progressive rendering and tune the sample
+                  count, bounce count, render scale, and tile grid.
+                </h4>
+              </div>
+              <example-snippet stamp-to="ld-path-tracer" highlight-as="html">
+                <template>
+                  <div class="ld-path-tracer-stage">
+                    <div class="ld-path-tracer-viewer-wrap">
+                      <model-viewer
+                        id="ld-path-tracer-demo"
+                        camera-controls
+                        min-camera-orbit="auto auto 0.01m"
+                        max-camera-orbit="auto auto 1000m"
+                        interaction-prompt="none"
+                        shadow-intensity="1"
+                        shadow-softness="1"
+                        exposure="1"
+                        environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr"
+                        path-tracer
+                        path-tracer-samples="32"
+                        path-tracer-samples-threshold="6"
+                        path-tracer-bounces="5"
+                        path-tracer-render-scale="1"
+                        path-tracer-tiles="3 3"
+                        path-tracer-focal-length="50"
+                        path-tracer-f-stop="1.8"
+                        path-tracer-focus-distance="5"
+                        path-tracer-denoise
+                        path-tracer-denoise-sigma="5"
+                        path-tracer-denoise-threshold="0.1"
+                        path-tracer-denoise-k-sigma="1"
+                        field-of-view="30deg"
+                        shadow-mode="soft-shadow"
+                        src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
+                        alt="A car rendered with progressive path tracing"
+                      ></model-viewer>
+                      <img
+                        id="server-ai-denoise-overlay"
+                        class="server-ai-denoise-overlay"
+                        hidden
+                        alt=""
+                      />
+                      <div
+                        id="path-tracer-performance-analyser"
+                        class="ld-path-tracer-performance-overlay"
+                      ></div>
+                      <div class="ld-path-tracer-export-overlay">
+                        <label>
+                          Aspect ratio
+                          <select id="path-tracer-aspect-ratio">
+                            <option value="free" selected>Free</option>
+                            <option value="1 / 1">1:1</option>
+                            <option value="16 / 9">16:9</option>
+                            <option value="4 / 3">4:3</option>
+                          </select>
+                        </label>
+                        <button
+                          id="path-tracer-save-path-traced"
+                          type="button"
+                          class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                        >
+                          Save path traced
+                        </button>
+                        <button
+                          id="path-tracer-save-final"
+                          type="button"
+                          class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                        >
+                          Save Final
+                        </button>
+                        <span
+                          id="server-ai-denoise-status"
+                          class="server-ai-denoise-status"
+                          >Server AI off</span
+                        >
+                      </div>
+                    </div>
+                    <div class="ld-path-tracer-controls p-1">
+                      <form
+                        id="path-tracer-control-panel"
+                        class="bg-white shadow-sm rounded-lg px-3 py-3 flex flex-col gap-2"
+                      >
+                        <div class="ld-path-tracer-source-grid items-end">
+                          <label>
+                            Test case
+                            <select id="path-tracer-test-case">
+                              <option value="car" selected>Car</option>
+                              <option value="bag">Bag</option>
+                              <option value="centurion">Centurion</option>
+                              <option value="southbay">Southbay</option>
+                              <option value="gym-planer">Gym Planer</option>
+                            </select>
+                          </label>
+                          <label>
+                            Model URL
+                            <input id="path-tracer-model-url" type="text" />
+                          </label>
+                          <label>
+                            Environment URL
+                            <input
+                              id="path-tracer-environment-url"
+                              type="text"
+                            />
+                          </label>
+                          <button
+                            id="path-tracer-load-sources"
+                            type="submit"
+                            class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                          >
+                            Load
+                          </button>
+                        </div>
+                        <details class="ld-path-tracer-control-box">
+                          <summary>Camera settings</summary>
+                          <div class="ld-path-tracer-control-grid">
+                            <label>
+                              Camera preset
+                              <select id="path-tracer-camera-preset">
+                                <option value="none" selected>None</option>
+                                <option value="50mm-f18">50mm f/1.8</option>
+                                <option value="35mm-f28">35mm f/2.8</option>
+                                <option value="85mm-f18">
+                                  85mm f/1.8 portrait
+                                </option>
+                                <option value="100mm-f28">
+                                  100mm f/2.8 macro
+                                </option>
+                                <option value="70mm-f8">
+                                  70mm f/8 product
+                                </option>
+                              </select>
+                            </label>
+                            <label>
+                              FOV
+                              <span class="ld-path-tracer-setting-value">
+                                <span id="fov-value">30</span>°
+                              </span>
+                              <input
+                                id="path-tracer-fov"
+                                type="range"
+                                min="10"
+                                max="90"
+                                step="1"
+                                value="30"
+                              />
+                            </label>
+                            <label>
+                              Exposure
+                              <input
+                                id="path-tracer-exposure"
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value="1"
+                              />
+                            </label>
+                            <label>
+                              Focus distance
+                              <input
+                                id="path-tracer-focus-distance"
+                                type="number"
+                                min="0.01"
+                                step="any"
+                                value="5"
+                              />
+                            </label>
+                            <label>
+                              Focal length
+                              <input
+                                id="path-tracer-focal-length"
+                                type="number"
+                                min="1"
+                                step="1"
+                                value="50"
+                              />
+                            </label>
+                            <label>
+                              F-stop
+                              <input
+                                id="path-tracer-f-stop"
+                                type="number"
+                                min="0.1"
+                                step="0.1"
+                                value="1.8"
+                              />
+                            </label>
+                            <label>
+                              Aperture blades
+                              <input
+                                id="path-tracer-aperture-blades"
+                                type="number"
+                                min="0"
+                                step="1"
+                                value="0"
+                              />
+                            </label>
+                            <label>
+                              Anamorphic
+                              <input
+                                id="path-tracer-anamorphic-ratio"
+                                type="number"
+                                min="0.1"
+                                step="0.05"
+                                value="1"
+                              />
+                            </label>
+                          </div>
+                        </details>
+                        <div class="ld-path-tracer-control-grid">
+                          <label class="justify-end">
+                            Path Tracer
+                            <span class="inline-flex items-center gap-2">
+                              <input
+                                id="toggle-path-tracer"
+                                type="checkbox"
+                                checked
+                              />
+                              Enabled
+                            </span>
+                          </label>
+                          <label>
+                            Shadow mode
+                            <select id="path-tracer-shadow-mode">
+                              <option value="path-tracer">
+                                Path tracer plane (opaque)
+                              </option>
+                              <option value="soft-shadow" selected>
+                                Built-in soft shadow (transparent)
+                              </option>
+                              <option value="none">None</option>
+                            </select>
+                          </label>
+                          <label>
+                            Soft shadow intensity
+                            <span
+                              id="shadow-intensity-value"
+                              class="ld-path-tracer-setting-value"
+                              >1.0</span
+                            >
+                            <input
+                              id="path-tracer-shadow-intensity"
+                              type="range"
+                              min="0"
+                              max="2"
+                              step="0.05"
+                              value="1"
+                            />
+                          </label>
+                          <label>
+                            Soft shadow softness
+                            <span
+                              id="shadow-softness-value"
+                              class="ld-path-tracer-setting-value"
+                              >1.0</span
+                            >
+                            <input
+                              id="path-tracer-shadow-softness"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value="1"
+                            />
+                          </label>
+                          <label>
+                            Samples
+                            <span
+                              id="samples-value"
+                              class="ld-path-tracer-setting-value"
+                              >32</span
+                            >
+                            <input
+                              id="path-tracer-samples"
+                              type="range"
+                              min="1"
+                              max="1024"
+                              step="1"
+                              value="32"
+                            />
+                          </label>
+                          <label>
+                            Display threshold
+                            <span
+                              id="samples-threshold-value"
+                              class="ld-path-tracer-setting-value"
+                              >6</span
+                            >
+                            <input
+                              id="path-tracer-samples-threshold"
+                              type="range"
+                              min="1"
+                              max="64"
+                              step="1"
+                              value="6"
+                            />
+                          </label>
+                          <label>
+                            Bounces
+                            <span
+                              id="bounces-value"
+                              class="ld-path-tracer-setting-value"
+                              >5</span
+                            >
+                            <input
+                              id="path-tracer-bounces"
+                              type="range"
+                              min="1"
+                              max="10"
+                              step="1"
+                              value="5"
+                            />
+                          </label>
+                          <label>
+                            Render scale
+                            <span
+                              id="render-scale-value"
+                              class="ld-path-tracer-setting-value"
+                              >1.0</span
+                            >
+                            <input
+                              id="path-tracer-render-scale"
+                              type="range"
+                              min="0.25"
+                              max="1"
+                              step="0.05"
+                              value="1"
+                            />
+                          </label>
+                        </div>
+                        <div class="ld-path-tracer-control-grid">
+                          <label>
+                            Denoise
+                            <select id="path-tracer-denoise-mode">
+                              <option value="off">Off</option>
+                              <option value="gpu" selected>GPU</option>
+                              <option value="server-ai">Server AI</option>
+                            </select>
+                          </label>
+                          <label>
+                            Scene description
+                            <textarea
+                              id="server-ai-denoise-scene-description"
+                              rows="2"
+                              placeholder="Optional: place the subject on a marble counter in a sunlit cafe"
+                            ></textarea>
+                          </label>
+                          <label>
+                            Denoise sigma
+                            <input
+                              id="path-tracer-denoise-sigma"
+                              type="number"
+                              min="0.001"
+                                step="any"
+                              value="5"
+                            />
+                          </label>
+                          <label>
+                            Denoise threshold
+                            <input
+                              id="path-tracer-denoise-threshold"
+                              type="number"
+                              min="0.0001"
+                                step="any"
+                              value="0.1"
+                            />
+                          </label>
+                          <label>
+                            Denoise k-sigma
+                            <input
+                              id="path-tracer-denoise-k-sigma"
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value="1"
+                            />
+                          </label>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                  <script type="module">
+                    import { createPerformanceAnalyser } from '../built/performance-analyser.js';
+
+                    (() => {
+                      const TEST_CASES = {
+                        car: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb',
+                          environmentImage:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+                        },
+                        bag: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/019dfd85-606d-770c-9854-43a16af56055/puzzledefault/e14d1a56-44bb-dc4a-e1e8-87b0513324d8.glb',
+                          environmentImage:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+                        },
+                        centurion: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/6af0a537-d743-58be-c09d-8adcc9da0bd2.glb',
+                          environmentImage:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+                        },
+                        southbay: {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/63f6e242-8f0e-4e8d-9362-ff0fd7cea4bb/puzzle/4094cca3-32f4-249b-b30f-90725cce1347.glb',
+                          environmentImage:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+                        },
+                        'gym-planer': {
+                          modelSrc:
+                            'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/00000000-0000-0000-0000-000000000000/Planner-Demo.glb',
+                          environmentImage:
+                            'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+                        },
+                      };
+                      const CAMERA_PRESETS = {
+                        none: {
+                          depthOfField: false,
+                          fov: 30,
+                          exposure: 1,
+                          focalLength: 50,
+                          fStop: 1.8,
+                          focusDistance: 5,
+                          apertureBlades: 0,
+                          anamorphicRatio: 1,
+                        },
+                        '50mm-f18': {
+                          depthOfField: true,
+                          fov: 39,
+                          exposure: 2.5,
+                          focalLength: 50,
+                          fStop: 1.8,
+                          focusDistance: 4,
+                          apertureBlades: 7,
+                          anamorphicRatio: 1,
+                        },
+                        '35mm-f28': {
+                          depthOfField: true,
+                          fov: 54,
+                          exposure: 2.2,
+                          focalLength: 35,
+                          fStop: 2.8,
+                          focusDistance: 5,
+                          apertureBlades: 7,
+                          anamorphicRatio: 1,
+                        },
+                        '85mm-f18': {
+                          depthOfField: true,
+                          fov: 24,
+                          exposure: 3,
+                          focalLength: 85,
+                          fStop: 1.8,
+                          focusDistance: 3,
+                          apertureBlades: 9,
+                          anamorphicRatio: 1,
+                        },
+                        '100mm-f28': {
+                          depthOfField: true,
+                          fov: 20,
+                          exposure: 3.5,
+                          focalLength: 100,
+                          fStop: 2.8,
+                          focusDistance: 1.5,
+                          apertureBlades: 9,
+                          anamorphicRatio: 1,
+                        },
+                        '70mm-f8': {
+                          depthOfField: true,
+                          fov: 29,
+                          exposure: 4,
+                          focalLength: 70,
+                          fStop: 8,
+                          focusDistance: 6,
+                          apertureBlades: 7,
+                          anamorphicRatio: 1,
+                        },
+                      };
+                      const DEFAULT_TEST_CASE = TEST_CASES.car;
+                      const modelViewer = document.querySelector(
+                        '#ld-path-tracer-demo'
+                      );
+                      const stage = document.querySelector(
+                        '.ld-path-tracer-stage'
+                      );
+                      const viewerWrap = document.querySelector(
+                        '.ld-path-tracer-viewer-wrap'
+                      );
+                      const controlPanel = document.querySelector(
+                        '#path-tracer-control-panel'
+                      );
+                      const testCaseSelect = document.querySelector(
+                        '#path-tracer-test-case'
+                      );
+                      const modelUrlInput = document.querySelector(
+                        '#path-tracer-model-url'
+                      );
+                      const environmentUrlInput = document.querySelector(
+                        '#path-tracer-environment-url'
+                      );
+                      const aspectRatio = document.querySelector(
+                        '#path-tracer-aspect-ratio'
+                      );
+                      const savePathTraced = document.querySelector(
+                        '#path-tracer-save-path-traced'
+                      );
+                      const saveFinal = document.querySelector(
+                        '#path-tracer-save-final'
+                      );
+                      const serverAIDenoiseOverlay = document.querySelector(
+                        '#server-ai-denoise-overlay'
+                      );
+                      const serverAIDenoiseStatus = document.querySelector(
+                        '#server-ai-denoise-status'
+                      );
+                      const cameraPresetSelect = document.querySelector(
+                        '#path-tracer-camera-preset'
+                      );
+                      const fovInput =
+                        document.querySelector('#path-tracer-fov');
+                      const fovValue = document.querySelector('#fov-value');
+                      const focalLengthInput = document.querySelector(
+                        '#path-tracer-focal-length'
+                      );
+                      const exposureInput = document.querySelector(
+                        '#path-tracer-exposure'
+                      );
+                      const fStopInput =
+                        document.querySelector('#path-tracer-f-stop');
+                      const focusDistanceInput = document.querySelector(
+                        '#path-tracer-focus-distance'
+                      );
+                      const apertureBladesInput = document.querySelector(
+                        '#path-tracer-aperture-blades'
+                      );
+                      const anamorphicRatioInput = document.querySelector(
+                        '#path-tracer-anamorphic-ratio'
+                      );
+                      const toggle = document.querySelector(
+                        '#toggle-path-tracer'
+                      );
+                      const shadowMode = document.querySelector(
+                        '#path-tracer-shadow-mode'
+                      );
+                      const shadowIntensity = document.querySelector(
+                        '#path-tracer-shadow-intensity'
+                      );
+                      const shadowIntensityValue = document.querySelector(
+                        '#shadow-intensity-value'
+                      );
+                      const shadowSoftness = document.querySelector(
+                        '#path-tracer-shadow-softness'
+                      );
+                      const shadowSoftnessValue = document.querySelector(
+                        '#shadow-softness-value'
+                      );
+                      const samples = document.querySelector(
+                        '#path-tracer-samples'
+                      );
+                      const samplesValue =
+                        document.querySelector('#samples-value');
+                      const samplesThreshold = document.querySelector(
+                        '#path-tracer-samples-threshold'
+                      );
+                      const samplesThresholdValue = document.querySelector(
+                        '#samples-threshold-value'
+                      );
+                      const performanceAnalyserMount = document.querySelector(
+                        '#path-tracer-performance-analyser'
+                      );
+                      const bounces = document.querySelector(
+                        '#path-tracer-bounces'
+                      );
+                      const bouncesValue =
+                        document.querySelector('#bounces-value');
+                      const renderScale = document.querySelector(
+                        '#path-tracer-render-scale'
+                      );
+                      const renderScaleValue = document.querySelector(
+                        '#render-scale-value'
+                      );
+                      const denoiseMode = document.querySelector(
+                        '#path-tracer-denoise-mode'
+                      );
+                      const serverAIDenoiseSceneDescription =
+                        document.querySelector(
+                          '#server-ai-denoise-scene-description'
+                        );
+                      const denoiseSigma = document.querySelector(
+                        '#path-tracer-denoise-sigma'
+                      );
+                      const denoiseThreshold = document.querySelector(
+                        '#path-tracer-denoise-threshold'
+                      );
+                      const denoiseKSigma = document.querySelector(
+                        '#path-tracer-denoise-k-sigma'
+                      );
+                      const waitFrame = () =>
+                        new Promise((resolve) =>
+                          requestAnimationFrame(() =>
+                            requestAnimationFrame(resolve)
+                          )
+                        );
+                      const waitFrames = async (count = 1) => {
+                        for (let i = 0; i < count; i++) {
+                          await waitFrame();
+                        }
+                      };
+                      let serverAIDenoiseRequestId = 0;
+                      let serverAIDenoiseRunning = false;
+                      let serverAIDenoiseAbortController = null;
+                      let serverAIDenoiseCompletedThreshold = 0;
+                      let serverAIDenoiseSavedSamplesTarget = null;
+                      const setServerAIDenoiseStatus = (message) => {
+                        serverAIDenoiseStatus.textContent = message;
+                        serverAIDenoiseStatus.title = message;
+                      };
+                      const restoreServerAISamplingTarget = () => {
+                        if (serverAIDenoiseSavedSamplesTarget == null) {
+                          return;
+                        }
+
+                        modelViewer.setAttribute(
+                          'path-tracer-samples',
+                          serverAIDenoiseSavedSamplesTarget
+                        );
+                        serverAIDenoiseSavedSamplesTarget = null;
+                      };
+                      const pauseServerAISampling = () => {
+                        if (serverAIDenoiseSavedSamplesTarget == null) {
+                          serverAIDenoiseSavedSamplesTarget =
+                            modelViewer.getAttribute('path-tracer-samples') ||
+                            samples.value;
+                        }
+
+                        const currentSamples = Math.max(
+                          1,
+                          Math.floor(
+                            Number(modelViewer.pathTracerRenderedSamples || 0)
+                          )
+                        );
+                        modelViewer.setAttribute(
+                          'path-tracer-samples',
+                          String(currentSamples)
+                        );
+                      };
+                      const waitForServerAIDenoiseOverlay = async () => {
+                        if (serverAIDenoiseOverlay.complete) {
+                          await serverAIDenoiseOverlay.decode?.();
+                          return;
+                        }
+
+                        await new Promise((resolve, reject) => {
+                          serverAIDenoiseOverlay.addEventListener(
+                            'load',
+                            resolve,
+                            {once: true}
+                          );
+                          serverAIDenoiseOverlay.addEventListener(
+                            'error',
+                            reject,
+                            {once: true}
+                          );
+                        });
+                      };
+                      const clearServerAIDenoise = () => {
+                        serverAIDenoiseRequestId++;
+                        serverAIDenoiseAbortController?.abort();
+                        serverAIDenoiseAbortController = null;
+                        serverAIDenoiseRunning = false;
+                        serverAIDenoiseCompletedThreshold = 0;
+                        restoreServerAISamplingTarget();
+                        serverAIDenoiseOverlay.classList.remove(
+                          'server-ai-denoise-overlay-visible'
+                        );
+                        serverAIDenoiseOverlay.hidden = true;
+                        serverAIDenoiseOverlay.removeAttribute('src');
+                        setServerAIDenoiseStatus(
+                          denoiseMode.value === 'server-ai'
+                            ? 'Waiting for target samples'
+                            : 'Server AI off'
+                        );
+                      };
+                      const applyDenoiseMode = () => {
+                        const mode = denoiseMode.value;
+                        modelViewer.setAttribute(
+                          'path-tracer-denoise-mode',
+                          mode
+                        );
+                        if (mode === 'server-ai') {
+                          applyServerAIAspectRatio();
+                          clearServerAIDenoise();
+                        } else {
+                          applyAspectRatio();
+                          clearServerAIDenoise();
+                        }
+                      };
+                      const handleServerAICameraChange = (event) => {
+                        if (event.detail?.source !== 'user-interaction') {
+                          return;
+                        }
+
+                        clearServerAIDenoise();
+                      };
+                      const maybeRunServerAIDenoise = async () => {
+                        if (
+                          denoiseMode.value !== 'server-ai' ||
+                          serverAIDenoiseRunning
+                        ) {
+                          return;
+                        }
+
+                        if (!serverAIDenoiseOverlay.hidden) {
+                          return;
+                        }
+
+                        const serverAIDenoiseTargetSamples =
+                          Number(samples.value);
+                        const requestId = ++serverAIDenoiseRequestId;
+                        serverAIDenoiseAbortController = new AbortController();
+                        serverAIDenoiseRunning = true;
+                        setServerAIDenoiseStatus(
+                          `Waiting for ${serverAIDenoiseTargetSamples} path traced samples`
+                        );
+
+                        try {
+                          if (serverAIDenoiseSavedSamplesTarget == null) {
+                            serverAIDenoiseSavedSamplesTarget =
+                              modelViewer.getAttribute(
+                                'path-tracer-samples'
+                              ) || samples.value;
+                          }
+                          const sceneDescription =
+                            serverAIDenoiseSceneDescription.value.trim();
+                          const imageUrl =
+                            await modelViewer.pathTracerServerAIDenoise({
+                              samples: serverAIDenoiseTargetSamples,
+                              sceneDescription:
+                                sceneDescription || undefined,
+                              signal: serverAIDenoiseAbortController.signal,
+                            });
+                          if (requestId !== serverAIDenoiseRequestId) {
+                            return;
+                          }
+
+                          serverAIDenoiseOverlay.classList.remove(
+                            'server-ai-denoise-overlay-visible'
+                          );
+                          serverAIDenoiseOverlay.src = imageUrl;
+                          await waitForServerAIDenoiseOverlay();
+                          if (requestId !== serverAIDenoiseRequestId) {
+                            return;
+                          }
+
+                          serverAIDenoiseOverlay.hidden = false;
+                          await waitFrame();
+                          if (requestId !== serverAIDenoiseRequestId) {
+                            return;
+                          }
+
+                          serverAIDenoiseOverlay.classList.add(
+                            'server-ai-denoise-overlay-visible'
+                          );
+                          pauseServerAISampling();
+                          serverAIDenoiseCompletedThreshold =
+                            serverAIDenoiseTargetSamples;
+                          setServerAIDenoiseStatus(
+                            'Showing server denoised image; sampling paused'
+                          );
+                        } catch (error) {
+                          if (requestId !== serverAIDenoiseRequestId) {
+                            return;
+                          }
+                          if (error.name === 'AbortError') {
+                            return;
+                          }
+                          console.error(error);
+                          setServerAIDenoiseStatus(
+                            `Server AI failed: ${error.message || error}`
+                          );
+                        } finally {
+                          if (requestId === serverAIDenoiseRequestId) {
+                            serverAIDenoiseRunning = false;
+                            serverAIDenoiseAbortController = null;
+                          }
+                        }
+                      };
+                      const waitForLoadOrTimeout = async (timeoutMs = 5000) => {
+                        if (modelViewer.loaded) {
+                          return;
+                        }
+
+                        await Promise.race([
+                          new Promise((resolve) =>
+                            modelViewer.addEventListener('load', resolve, {
+                              once: true,
+                            })
+                          ),
+                          new Promise((resolve) =>
+                            setTimeout(resolve, timeoutMs)
+                          ),
+                        ]);
+                      };
+                      const applySourceOverrides = async () => {
+                        const modelSrc =
+                          modelUrlInput.value.trim() ||
+                          DEFAULT_TEST_CASE.modelSrc;
+                        const environmentSrc =
+                          environmentUrlInput.value.trim();
+                        const didModelChange =
+                          modelViewer.getAttribute('src') !== modelSrc;
+
+                        modelUrlInput.value = modelSrc;
+                        modelViewer.setAttribute('src', modelSrc);
+
+                        if (environmentSrc) {
+                          environmentUrlInput.value = environmentSrc;
+                          modelViewer.setAttribute(
+                            'environment-image',
+                            environmentSrc
+                          );
+                        } else {
+                          environmentUrlInput.value = '';
+                          modelViewer.removeAttribute('environment-image');
+                        }
+
+                        if (didModelChange) {
+                          await waitForLoadOrTimeout();
+                        } else {
+                          await waitFrames(2);
+                        }
+                      };
+                      const applyAspectRatioValue = (value) => {
+                        if (value === 'free') {
+                          viewerWrap.classList.remove(
+                            'ld-path-tracer-viewer-wrap-fixed'
+                          );
+                          viewerWrap.style.removeProperty('aspect-ratio');
+                          viewerWrap.style.removeProperty('height');
+                          viewerWrap.style.removeProperty('width');
+                          modelViewer.resize?.();
+                          return;
+                        }
+
+                        const [widthRatio, heightRatio] = value
+                          .split('/')
+                          .map((part) => Number(part.trim()));
+                        const availableWidth = stage.clientWidth;
+                        const availableHeight =
+                          stage.clientHeight - controlPanel.offsetHeight;
+                        const ratio = widthRatio / heightRatio;
+                        const width = Math.min(
+                          availableWidth,
+                          availableHeight * ratio
+                        );
+                        const height = width / ratio;
+
+                        viewerWrap.classList.add(
+                          'ld-path-tracer-viewer-wrap-fixed'
+                        );
+                        viewerWrap.style.aspectRatio = value;
+                        viewerWrap.style.width = `${Math.max(1, width)}px`;
+                        viewerWrap.style.height = `${Math.max(1, height)}px`;
+                        modelViewer.resize?.();
+                      };
+                      const applyAspectRatio = () => {
+                        applyAspectRatioValue(aspectRatio.value);
+                      };
+                      const applyServerAIAspectRatio = () => {
+                        applyAspectRatioValue('free');
+                        if (aspectRatio.value === 'free') {
+                          modelViewer.removeAttribute(
+                            'server-ai-denoise-aspect-ratio'
+                          );
+                          return;
+                        }
+                        modelViewer.setAttribute(
+                          'server-ai-denoise-aspect-ratio',
+                          aspectRatio.value
+                        );
+                      };
+                      const createExportCanvas = async () => {
+                        const canvas =
+                          modelViewer.shadowRoot?.querySelector('canvas');
+                        if (canvas == null) {
+                          alert('No rendered canvas is available to save yet.');
+                          return null;
+                        }
+
+                        const blob = await modelViewer.toBlob({
+                          mimeType: 'image/png',
+                        });
+                        const image = await createImageBitmap(blob);
+                        const exportCanvas = document.createElement('canvas');
+                        exportCanvas.width = image.width;
+                        exportCanvas.height = image.height;
+                        const context = exportCanvas.getContext('2d');
+                        context.fillStyle = 'white';
+                        context.fillRect(
+                          0,
+                          0,
+                          exportCanvas.width,
+                          exportCanvas.height
+                        );
+                        context.drawImage(image, 0, 0);
+                        image.close?.();
+
+                        return exportCanvas;
+                      };
+                      const downloadExportCanvas = (exportCanvas, filename) => {
+                        const dataUrl = exportCanvas.toDataURL('image/png');
+                        const link = document.createElement('a');
+                        link.href = dataUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        setTimeout(() => {
+                          document.body.removeChild(link);
+                        }, 250);
+                      };
+                      const downloadPathTracedCanvas = async () => {
+                        try {
+                          const exportCanvas = await createExportCanvas();
+                          if (exportCanvas == null) {
+                            return;
+                          }
+                          downloadExportCanvas(
+                            exportCanvas,
+                            'model-viewer-path-tracer.png'
+                          );
+                        } catch {
+                          alert(
+                            'The browser blocked image export for this canvas.'
+                          );
+                        }
+                      };
+                      const downloadFinalCanvas = async () => {
+                        try {
+                          const exportCanvas = await createExportCanvas();
+                          if (exportCanvas == null) {
+                            return;
+                          }
+                          if (
+                            !serverAIDenoiseOverlay.hidden &&
+                            serverAIDenoiseOverlay.classList.contains(
+                              'server-ai-denoise-overlay-visible'
+                            )
+                          ) {
+                            const context = exportCanvas.getContext('2d');
+                            context.drawImage(
+                              serverAIDenoiseOverlay,
+                              0,
+                              0,
+                              exportCanvas.width,
+                              exportCanvas.height
+                            );
+                          }
+                          downloadExportCanvas(
+                            exportCanvas,
+                            'model-viewer-final.png'
+                          );
+                        } catch {
+                          alert(
+                            'The browser blocked image export for this canvas.'
+                          );
+                        }
+                      };
+                      const applyCameraSettings = (settings) => {
+                        fovInput.value = String(settings.fov);
+                        fovValue.textContent = String(settings.fov);
+                        exposureInput.value = String(settings.exposure);
+                        focalLengthInput.value = String(settings.focalLength);
+                        fStopInput.value = String(settings.fStop);
+                        focusDistanceInput.value =
+                          String(settings.focusDistance);
+                        apertureBladesInput.value =
+                          String(settings.apertureBlades);
+                        anamorphicRatioInput.value =
+                          String(settings.anamorphicRatio);
+
+                        modelViewer.setAttribute(
+                          'field-of-view',
+                          `${settings.fov}deg`
+                        );
+                        modelViewer.setAttribute(
+                          'exposure',
+                          String(settings.exposure)
+                        );
+                        modelViewer.toggleAttribute(
+                          'path-tracer-depth-of-field',
+                          settings.depthOfField
+                        );
+                        modelViewer.setAttribute(
+                          'path-tracer-focal-length',
+                          String(settings.focalLength)
+                        );
+                        modelViewer.setAttribute(
+                          'path-tracer-f-stop',
+                          String(settings.fStop)
+                        );
+                        modelViewer.setAttribute(
+                          'path-tracer-focus-distance',
+                          String(settings.focusDistance)
+                        );
+                        modelViewer.setAttribute(
+                          'path-tracer-aperture-blades',
+                          String(settings.apertureBlades)
+                        );
+                        modelViewer.setAttribute(
+                          'path-tracer-anamorphic-ratio',
+                          String(settings.anamorphicRatio)
+                        );
+                      };
+
+                      controlPanel.addEventListener('submit', async (event) => {
+                        event.preventDefault();
+                        clearServerAIDenoise();
+                        await applySourceOverrides();
+                      });
+                      aspectRatio.addEventListener('change', () => {
+                        if (denoiseMode.value !== 'server-ai') {
+                          applyAspectRatio();
+                          return;
+                        }
+
+                        applyServerAIAspectRatio();
+                        clearServerAIDenoise();
+                      });
+                      savePathTraced.addEventListener(
+                        'click',
+                        downloadPathTracedCanvas
+                      );
+                      saveFinal.addEventListener('click', downloadFinalCanvas);
+                      window.addEventListener('resize', () => {
+                        if (denoiseMode.value === 'server-ai') {
+                          applyServerAIAspectRatio();
+                          return;
+                        }
+
+                        applyAspectRatio();
+                      });
+                      cameraPresetSelect.addEventListener('change', (event) => {
+                        const preset = CAMERA_PRESETS[event.target.value];
+                        if (preset !== undefined) {
+                          applyCameraSettings(preset);
+                        }
+                      });
+                      testCaseSelect.addEventListener('change', async (event) => {
+                        const testCase = TEST_CASES[event.target.value];
+                        if (testCase === undefined) {
+                          return;
+                        }
+
+                        modelUrlInput.value = testCase.modelSrc;
+                        environmentUrlInput.value =
+                          testCase.environmentImage || '';
+                        await applySourceOverrides();
+                      });
+                      toggle.addEventListener('change', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.toggleAttribute(
+                          'path-tracer',
+                          event.target.checked
+                        );
+                      });
+                      shadowMode.addEventListener('change', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'shadow-mode',
+                          event.target.value
+                        );
+                      });
+                      shadowIntensity.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        const value = Number(event.target.value).toFixed(2);
+                        shadowIntensityValue.textContent = value;
+                        modelViewer.setAttribute('shadow-intensity', value);
+                      });
+                      shadowSoftness.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        const value = Number(event.target.value).toFixed(2);
+                        shadowSoftnessValue.textContent = value;
+                        modelViewer.setAttribute('shadow-softness', value);
+                      });
+                      samples.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        samplesValue.textContent = event.target.value;
+                        modelViewer.setAttribute(
+                          'path-tracer-samples',
+                          event.target.value
+                        );
+                      });
+                      samplesThreshold.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        samplesThresholdValue.textContent = event.target.value;
+                        modelViewer.setAttribute(
+                          'path-tracer-samples-threshold',
+                          event.target.value
+                        );
+                      });
+                      bounces.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        bouncesValue.textContent = event.target.value;
+                        modelViewer.setAttribute(
+                          'path-tracer-bounces',
+                          event.target.value
+                        );
+                      });
+                      renderScale.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        const value = Number(event.target.value).toFixed(2);
+                        renderScaleValue.textContent = value;
+                        modelViewer.setAttribute(
+                          'path-tracer-render-scale',
+                          value
+                        );
+                      });
+                      denoiseMode.addEventListener('change', applyDenoiseMode);
+                      serverAIDenoiseSceneDescription.addEventListener(
+                        'input',
+                        clearServerAIDenoise
+                      );
+                      denoiseSigma.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-denoise-sigma',
+                          event.target.value
+                        );
+                      });
+                      denoiseThreshold.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-denoise-threshold',
+                          event.target.value
+                        );
+                      });
+                      denoiseKSigma.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-denoise-k-sigma',
+                          event.target.value
+                        );
+                      });
+                      fovInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        const value = event.target.value;
+                        fovValue.textContent = value;
+                        modelViewer.setAttribute('field-of-view', `${value}deg`);
+                      });
+                      focalLengthInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-focal-length',
+                          event.target.value
+                        );
+                      });
+                      exposureInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'exposure',
+                          event.target.value
+                        );
+                      });
+                      fStopInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-f-stop',
+                          event.target.value
+                        );
+                      });
+                      focusDistanceInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-focus-distance',
+                          event.target.value
+                        );
+                      });
+                      apertureBladesInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-aperture-blades',
+                          event.target.value
+                        );
+                      });
+                      anamorphicRatioInput.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        modelViewer.setAttribute(
+                          'path-tracer-anamorphic-ratio',
+                          event.target.value
+                        );
+                      });
+                      modelUrlInput.value =
+                        modelViewer.getAttribute('src') ||
+                        DEFAULT_TEST_CASE.modelSrc;
+                      environmentUrlInput.value =
+                        modelViewer.getAttribute('environment-image') ||
+                        DEFAULT_TEST_CASE.environmentImage ||
+                        '';
+                      createPerformanceAnalyser({
+                        target: modelViewer,
+                        mount: performanceAnalyserMount,
+                        title: 'Performance',
+                        extraMetrics: [
+                          {
+                            label: 'Samples',
+                            read: () =>
+                              String(
+                                Math.floor(
+                                  Number(
+                                    modelViewer.pathTracerRenderedSamples || 0
+                                  )
+                                )
+                              ),
+                          },
+                          {
+                            label: 'Target',
+                            read: () =>
+                              String(
+                                Number(
+                                  serverAIDenoiseSavedSamplesTarget ??
+                                    samples.value
+                                )
+                              ),
+                          },
+                          {
+                            label: 'Threshold',
+                            read: () =>
+                              String(
+                                Number(
+                                  modelViewer.getAttribute(
+                                    'path-tracer-samples-threshold'
+                                  ) || 0
+                                )
+                              ),
+                          },
+                        ],
+                      });
+                      modelViewer.addEventListener(
+                        'camera-change',
+                        handleServerAICameraChange
+                      );
+                      modelViewer.addEventListener('load', clearServerAIDenoise);
+                      setInterval(maybeRunServerAIDenoise, 500);
+                      applyDenoiseMode();
+                      applyCameraSettings(CAMERA_PRESETS.none);
+                      applyAspectRatio();
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld-path-tracer');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+      (() => {
+        const sample = document
+          .querySelector('#ld-path-tracer')
+          ?.closest('.sample');
+        const toggle = sample?.querySelector('.content-toggle');
+        if (sample == null || toggle == null) {
+          return;
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = sample.classList.toggle('content-expanded');
+          toggle.setAttribute('aria-expanded', String(expanded));
+        });
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>

@@ -1,0 +1,461 @@
+<!--
+/* @license
+ * Copyright 2020 Google Inc. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Floating Object Anchor</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; floating object anchor examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <style>
+      #sphere-anchor-visual {
+        pointer-events: none;
+        display: none;
+      }
+
+      #sphere-anchor-visual svg {
+        overflow: visible;
+      }
+
+      #sphere-anchor-visual circle {
+        fill: none;
+        stroke: rgba(22, 93, 252, 0.85);
+        stroke-width: 4;
+        stroke-dasharray: 6 4;
+      }
+
+      #floating-ui-anchor-ref {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #165dfc;
+        pointer-events: none;
+      }
+
+      #floating-ui-panel {
+        position: absolute;
+        z-index: 40;
+        pointer-events: auto;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="floating-anchor-sphere" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Floating Object Anchor</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. The <code>floating-object-anchor</code> slot tracks the
+                selected object&apos;s bounding sphere in screen space. The slot
+                is centered on the sphere; <code>data-sphere-radius-px</code>
+                reports the projected radius in pixels.
+              </h4>
+
+              <div class="heading">
+                <h2 class="demo-title">Bounding sphere visualization</h2>
+                <h4>
+                  <span class="attribute">slot="floating-object-anchor"</span>
+                </h4>
+                <p>
+                  Place a modular object on the floor, select it, and orbit the
+                  camera. The dashed circle follows the projected bounding
+                  sphere. A future step is to pair this anchor with
+                  <a href="https://floating-ui.com/" target="_blank"
+                    >Floating UI</a
+                  >, using the center as the reference point and the radius as
+                  the placement offset.
+                </p>
+              </div>
+
+              <example-snippet
+                stamp-to="floating-anchor-sphere"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="floating-anchor-demo"
+                    src="../../shared-assets/models/empty.glb"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    snapping-enabled
+                    highlight-selected
+                    selection-scope="group"
+                    edit
+                    disable-base-model-selection
+                  >
+                    <div
+                      slot="floating-object-anchor"
+                      id="sphere-anchor-visual"
+                      data-no-raycast
+                    >
+                      <svg aria-hidden="true">
+                        <circle></circle>
+                      </svg>
+                    </div>
+
+                    <div class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow">
+                      Click “Place duck”, then click the floor and drag slightly
+                      to commit. Select the object to see the sphere. Radius:
+                      <span id="sphere-radius-readout">—</span> px
+                    </div>
+
+                    <div class="ld-card absolute bottom-3 left-3 z-30">
+                      <div class="ld-card-toolbar">
+                      <button type="button" id="place-duck" class="ld-button-sm">
+                        Place duck
+                      </button>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.getElementById(
+                        'floating-anchor-demo'
+                      );
+                      const placeBtn = document.getElementById('place-duck');
+                      const anchor = document.getElementById(
+                        'sphere-anchor-visual'
+                      );
+                      const circle = anchor.querySelector('circle');
+                      const svg = anchor.querySelector('svg');
+                      const radiusReadout = document.getElementById(
+                        'sphere-radius-readout'
+                      );
+                      const PLACE_SRC =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf';
+                      let placementArmed = false;
+
+                      const updateSphereVisual = () => {
+                        const radiusPx = Number(anchor.dataset.sphereRadiusPx);
+
+                        if (!Number.isFinite(radiusPx) || radiusPx <= 0) {
+                          anchor.style.display = 'none';
+                          radiusReadout.textContent = '—';
+                          return;
+                        }
+
+                        const size = Math.max(2, Math.round(radiusPx * 2));
+                        anchor.style.display = 'block';
+                        anchor.style.width = `${size}px`;
+                        anchor.style.height = `${size}px`;
+
+                        svg.setAttribute('width', String(size));
+                        svg.setAttribute('height', String(size));
+                        svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+
+                        circle.setAttribute('cx', String(radiusPx));
+                        circle.setAttribute('cy', String(radiusPx));
+                        circle.setAttribute('r', String(radiusPx));
+
+                        radiusReadout.textContent = String(
+                          Math.round(radiusPx)
+                        );
+                      };
+
+                      const observer = new MutationObserver(updateSphereVisual);
+                      observer.observe(anchor, {
+                        attributes: true,
+                        attributeFilter: ['data-sphere-radius-px'],
+                      });
+
+                      placeBtn.addEventListener('click', () => {
+                        placementArmed = true;
+                        placeBtn.textContent =
+                          'Click the floor, drag to place…';
+                      });
+
+                      modelViewer.addEventListener('pointerdown', (event) => {
+                        if (!placementArmed) {
+                          return;
+                        }
+                        placementArmed = false;
+                        placeBtn.textContent = 'Place duck';
+
+                        const session = modelViewer.beginPlacement(
+                          undefined,
+                          PLACE_SRC,
+                          {
+                            part: {
+                              type: 'scene',
+                              snapPoints: [],
+                            },
+                          },
+                          {
+                            clientX: event.clientX,
+                            clientY: event.clientY,
+                          }
+                        );
+                        session.updatePosition(event.clientX, event.clientY);
+                      });
+
+                      modelViewer.addEventListener('load', updateSphereVisual);
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="floating-anchor-floating-ui" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Floating UI with radius offset</h2>
+                <h4>
+                  <span class="attribute">placement: "bottom"</span> with
+                  <span class="attribute">offset: sphereRadiusPx</span>
+                </h4>
+                <p>
+                  This uses an arbitrary HTML panel with Floating UI. The slot
+                  center is the reference, and
+                  <code>data-sphere-radius-px</code> is used as offset.
+                </p>
+              </div>
+              <example-snippet
+                stamp-to="floating-anchor-floating-ui"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="floating-ui-demo"
+                    src="../../shared-assets/models/empty.glb"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    snapping-enabled
+                    highlight-selected
+                    selection-scope="group"
+                    edit
+                    disable-base-model-selection
+                  >
+                    <div
+                      slot="floating-object-anchor"
+                      id="floating-ui-anchor-ref"
+                      data-no-raycast
+                    ></div>
+
+                    <div id="floating-ui-panel" class="ld-card ld-card-toolbar">
+                      <button type="button" class="ld-button-pill">Do Thing</button>
+                      <button type="button" class="ld-button-pill">Do Other Thing</button>
+                    </div>
+
+                    <div class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow">
+                      Click “Place duck”, then click the floor and drag slightly
+                      to commit. Bottom placement + radius offset:
+                      <span id="radius-readout">—</span> px.
+                    </div>
+
+                    <div class="ld-card absolute bottom-3 left-3 z-30">
+                      <div class="ld-card-toolbar">
+                      <button
+                        type="button"
+                        id="place-duck-ui"
+                        class="ld-button-sm"
+                      >
+                        Place duck
+                      </button>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    import {
+                      autoUpdate,
+                      computePosition,
+                      flip,
+                      limitShift,
+                      offset,
+                      shift,
+                    } from 'https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.6.13/+esm';
+
+                    (() => {
+                      const modelViewer =
+                        document.getElementById('floating-ui-demo');
+                      const placeBtn = document.getElementById('place-duck-ui');
+                      const anchorRef = document.getElementById(
+                        'floating-ui-anchor-ref'
+                      );
+                      const panel =
+                        document.getElementById('floating-ui-panel');
+                      const radiusReadout =
+                        document.getElementById('radius-readout');
+                      const PLACE_SRC =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf';
+                      let placementArmed = false;
+
+                      const updateFloatingPanel = async () => {
+                        const raw = Number(anchorRef.dataset.sphereRadiusPx);
+                        const radiusPx = Number.isFinite(raw)
+                          ? Math.max(0, raw)
+                          : 0;
+                        radiusReadout.textContent = String(
+                          Math.round(radiusPx)
+                        );
+                        const hidden =
+                          radiusPx <= 0 || !anchorRef.dataset.objectUuid;
+                        panel.style.display = hidden ? 'none' : 'flex';
+                        if (hidden) return;
+
+                        const result = await computePosition(anchorRef, panel, {
+                          placement: 'bottom',
+                          middleware: [
+                            offset(({ placement, rects }) => {
+                              const verticalBudget =
+                                modelViewer.clientHeight * 0.5 -
+                                rects.floating.height * 0.5 -
+                                8;
+                              const horizontalBudget =
+                                modelViewer.clientWidth * 0.5 -
+                                rects.floating.width * 0.5 -
+                                8;
+                              const mainAxisBudget =
+                                placement.startsWith('top') ||
+                                placement.startsWith('bottom')
+                                  ? verticalBudget
+                                  : horizontalBudget;
+                              return Math.min(
+                                radiusPx,
+                                Math.max(0, mainAxisBudget)
+                              );
+                            }),
+                            flip({
+                              padding: 24,
+                              fallbackPlacements: ['top', 'right', 'left'],
+                            }),
+                            shift({ padding: 24, limiter: limitShift() }),
+                          ],
+                        });
+                        panel.style.left = `${result.x}px`;
+                        panel.style.top = `${result.y}px`;
+                      };
+
+                      new MutationObserver(
+                        () => void updateFloatingPanel()
+                      ).observe(anchorRef, {
+                        attributes: true,
+                        attributeFilter: [
+                          'data-sphere-radius-px',
+                          'data-object-uuid',
+                          'style',
+                        ],
+                      });
+                      autoUpdate(
+                        anchorRef,
+                        panel,
+                        () => void updateFloatingPanel()
+                      );
+
+                      placeBtn.addEventListener('click', () => {
+                        placementArmed = true;
+                        placeBtn.textContent =
+                          'Click the floor, drag to place…';
+                      });
+
+                      modelViewer.addEventListener('pointerdown', (event) => {
+                        if (!placementArmed) return;
+                        placementArmed = false;
+                        placeBtn.textContent = 'Place duck';
+                        const session = modelViewer.beginPlacement(
+                          undefined,
+                          PLACE_SRC,
+                          { part: { type: 'scene', snapPoints: [] } },
+                          { clientX: event.clientX, clientY: event.clientY }
+                        );
+                        session.updatePosition(event.clientX, event.clientY);
+                      });
+
+                      modelViewer.addEventListener(
+                        'load',
+                        () => void updateFloatingPanel()
+                      );
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_floating_anchor');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <script type="module" src="../built/dependencies.js"></script>
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>

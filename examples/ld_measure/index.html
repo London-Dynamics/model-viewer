@@ -1,0 +1,957 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Measure Examples</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; scene graph examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="measure" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Measure </span>by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. Give the user the ability to measure the size of objects in
+                the scene.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Display measurements</h2>
+                <p>
+                  <b>How measurement works:</b> By default, the measurement
+                  overlay shows the total bounding box of the entire scene. To
+                  enable interactive measurement of individual objects, use the
+                  <span class="attribute">measure-objects</span> attribute.
+                </p>
+                <p>
+                  <b>measure-objects</b> can be set to <code>*</code> to allow
+                  clicking any selectable object, or to a comma-separated list
+                  of object names (e.g. <code>name1,name2</code>) to restrict
+                  measurement to those objects. If left empty, only the scene
+                  bounding box is measured.
+                </p>
+                <p>
+                  <b>Selection scope:</b> The
+                  <span class="attribute">selection-scope</span> attribute
+                  controls what can be selected for measurement:
+                </p>
+                <ul>
+                  <li><b>scene</b>: Only the whole scene can be measured.</li>
+                  <li>
+                    <b>group</b>: Groups or the whole scene can be measured.
+                  </li>
+                  <li>
+                    <b>part</b>: Individual parts, groups, or the scene can be
+                    measured.
+                  </li>
+                </ul>
+                <p>
+                  The selection logic now supports both placed objects (from
+                  modular scenes) and regular model nodes.
+                </p>
+                <p>
+                  <b>Tip:</b> If your model uses modular/placed objects (e.g.
+                  with the Puzzler feature), measurement and selection will work
+                  for those objects. Otherwise, it will work for any named node
+                  in the model.
+                </p>
+              </div>
+              <example-snippet stamp-to="measure" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/textureCubes.gltf"
+                    alt="An animated 3D model a bedside lamp"
+                    selection-scope="scene"
+                  >
+                    <!-- <div slot="ruler-width" class="ld-ruler"></div>
+                    <div slot="ruler-height" class="ld-ruler"></div>
+                    <div slot="ruler-depth" class="ld-ruler"></div> -->
+
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3
+                            class="ld-panel-title"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="ld-sections-loose"
+                          >
+                            <div
+                              class="text-sm text-gray-500 grid grid-cols-2 gap-4"
+                            >
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-rulers"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="enable-rulers-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-rulers-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Enable</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-grid"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-labelledby="enable-grid-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-grid-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-lines"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-lines-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-lines-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Dimension Lines</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="ld-label">
+                                  Unit
+                                </h4>
+                                <span
+                                  class="ld-button-group"
+                                >
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn-first"
+                                    data-unit="m"
+                                    aria-checked="true"
+                                  >
+                                    m
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn"
+                                    data-unit="cm"
+                                  >
+                                    cm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn"
+                                    data-unit="mm"
+                                  >
+                                    mm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn"
+                                    data-unit="yd"
+                                  >
+                                    yd
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn"
+                                    data-unit="ft"
+                                  >
+                                    ft
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn"
+                                    data-unit="in"
+                                  >
+                                    in
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-unit ld-button-group-btn-last"
+                                    data-unit="ft-in"
+                                  >
+                                    ft/in
+                                  </button>
+                                </span>
+                              </div>
+                              <div class="flex w-1/2 items-center gap-4">
+                                <h4 class="ld-label">
+                                  Precision
+                                </h4>
+
+                                <input
+                                  id="measurePrecision"
+                                  type="number"
+                                  name="measurePrecision"
+                                  class="ld-input"
+                                  placeholder="42"
+                                  value="2"
+                                  min="0"
+                                />
+                              </div>
+                            </div>
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="ld-label">
+                                  Scope
+                                </h4>
+                                <span
+                                  class="ld-button-group"
+                                >
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope ld-button-group-btn-first"
+                                    data-value="scene"
+                                    aria-checked="true"
+                                  >
+                                    Scene
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope ld-button-group-btn"
+                                    data-value="group"
+                                  >
+                                    Any Group
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope ld-button-group-btn-last"
+                                    data-value="part"
+                                  >
+                                    Any Part
+                                  </button>
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="ld-label">
+                                  Grid
+                                </h4>
+                                <span
+                                  class="ld-button-group"
+                                >
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope ld-button-group-btn-first"
+                                    data-value="scene"
+                                    aria-checked="true"
+                                  >
+                                    Scene
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope ld-button-group-btn"
+                                    data-value="group"
+                                  >
+                                    Any Group
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="relative selection-scope ld-button-group-btn-last"
+                                    data-value="part"
+                                  >
+                                    Any Part
+                                  </button>
+                                </span>
+                              </div>
+                            </div>
+                            <div
+                              class="text-sm text-gray-500 flex gap-4 items-center"
+                            >
+                              <div class="flex items-center gap-4">
+                                <h4 class="ld-label">
+                                  Dimensions
+                                </h4>
+                                <span
+                                  class="ld-button-group"
+                                >
+                                  <button
+                                    type="button"
+                                    class="measure-override ld-button-group-btn-first"
+                                    data-dimensions=""
+                                  >
+                                    Auto
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="measure-override ld-button-group-btn"
+                                    data-dimensions="4.96 2 2"
+                                  >
+                                    Scene 2X
+                                  </button>
+                                  <button
+                                    type="button"
+                                    id="setBoxDimensions"
+                                    class="ld-button-group-btn-last"
+                                  >
+                                    Box L ½
+                                  </button>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector('#three-demo');
+
+                      document
+                        .getElementById('toggle-rulers')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('measure');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('measure', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-grid')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-lines')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.setAttribute(
+                              'disable-measurement-lines',
+                              ''
+                            );
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.removeAttribute(
+                              'disable-measurement-lines'
+                            );
+                          }
+                        });
+
+                      document
+                        .querySelectorAll('button.selection-scope')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            // toggle aria-checked states for this button, and unset for siblings
+                            document
+                              .querySelectorAll('button.selection-scope')
+                              .forEach((sibling) => {
+                                sibling.setAttribute('aria-checked', 'false');
+                              });
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute(
+                              'selection-scope',
+                              e.target.getAttribute('data-value')
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('setBoxDimensions')
+                        .addEventListener('click', () => {
+                          modelViewer.setAttribute('measure-objects', 'Box');
+
+                          modelViewer.setAttribute(
+                            'measurement-overrides',
+                            '0.5 0.5 0.5'
+                          );
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-override')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            modelViewer.setAttribute(
+                              'measurement-overrides',
+                              e.target.getAttribute('data-dimensions')
+                            );
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('button.measure-unit')
+                        .forEach((el) => {
+                          el.addEventListener('click', (e) => {
+                            document
+                              .querySelectorAll('button.measure-unit')
+                              .forEach((sibling) => {
+                                sibling.setAttribute('aria-checked', 'false');
+                              });
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute(
+                              'measurement-unit',
+                              e.target.getAttribute('data-unit')
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('measurePrecision')
+                        .addEventListener('change', (e) => {
+                          modelViewer.setAttribute(
+                            'measurement-precision',
+                            e.target.value
+                          );
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="slots" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Customise labels</h2>
+                <p>
+                  Add slots to customise the labels for the measurements. The
+                  slots are named "ruler-width", "ruler-height", and
+                  "ruler-depth".
+                </p>
+              </div>
+              <example-snippet stamp-to="slots" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo-2"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/textureCubes.gltf"
+                    alt="An animated 3D model a bedside lamp"
+                    measure
+                  >
+                    <div
+                      slot="ruler-width"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                    <div
+                      slot="ruler-height"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                    <div
+                      slot="ruler-depth"
+                      class="absolute px-4 py-1 rounded text-sm text-white text-semibold bg-blue-400 shadow-sm whitespace-nowrap"
+                    ></div>
+                  </model-viewer>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="grid-shapes" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Grid shape lines</h2>
+                <p>
+                  Add custom line shapes on top of the LD Measure grid using the
+                  new grid-shape API.
+                </p>
+              </div>
+              <example-snippet stamp-to="grid-shapes" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo-grid-shapes"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/textureCubes.gltf"
+                    alt="A model with custom grid shape lines"
+                    grid
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3
+                            class="ld-panel-title"
+                          >
+                            Control Panel
+                          </h3>
+                          <div
+                            class="ld-sections-loose"
+                          >
+                            <div
+                              class="text-sm text-gray-500 grid grid-cols-2 gap-4"
+                            >
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-grid-shapes-demo"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="enable-grid-shapes-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="enable-grid-shapes-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid Shapes</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#three-demo-grid-shapes'
+                      );
+
+                      modelViewer.addEventListener('load', () => {
+                        const squarePath = [
+                          [0, 0],
+                          [1.1, 0],
+                          [1.1, 1.1],
+                          [0, 1.1],
+                        ];
+
+                        const circleEdges = 32;
+
+                        const circlePath = Array.from(
+                          { length: circleEdges },
+                          (_, index) => {
+                            const angle = (Math.PI * 2 * index) / circleEdges;
+                            return [Math.cos(angle), Math.sin(angle)];
+                          }
+                        );
+
+                        const circlePlusPaths = [
+                          circlePath,
+                          [
+                            [-0.4, 0],
+                            [0.4, 0],
+                          ],
+                          [
+                            [0, -0.4],
+                            [0, 0.4],
+                          ],
+                        ];
+
+                        modelViewer.addGridShapeLines(squarePath, {
+                          id: 'square-1m',
+                        });
+
+                        modelViewer.addGridShapeLines(circlePlusPaths, {
+                          id: 'circle-2m',
+                          coordinate: [1.5, 1.5],
+                        });
+                      });
+
+                      document
+                        .getElementById('toggle-grid-shapes-demo')
+                        .addEventListener('click', (e) => {
+                          const el = e.currentTarget;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid-shapes');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid-shapes', '');
+                          }
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="room-measure-grid" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Room measure and grid</h2>
+                <p>
+                  With <span class="attribute">src-is-room</span>, use
+                  <span class="attribute">walls</span> and
+                  <span class="attribute">floor</span> (Lit booleans, default
+                  <code>false</code>) to show tagged <code>wall_*</code> nodes,
+                  a <code>walls</code> group, a <code>floor</code> node, or
+                  <code>floor_*</code> nodes. This example starts with both on.
+                  Enable <span class="attribute">debug</span> to log effective
+                  flags on load and when toggling. Use the
+                  <strong>Measurements</strong> switch to hide dimension lines
+                  and measure UI while keeping the grid. Measurement and grid
+                  are independent of room shell visibility.
+                </p>
+              </div>
+              <example-snippet stamp-to="room-measure-grid" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="room-measure-grid-demo"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Room with measurement grid and shell toggles"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    min-camera-orbit="auto auto 0.5m"
+                    max-camera-orbit="auto auto auto"
+                    selection-scope="scene"
+                    measure
+                    grid
+                    src-is-room
+                    walls
+                    floor
+                    debug
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3
+                            class="ld-panel-title"
+                          >
+                            Room shell, measure, and grid
+                          </h3>
+                          <div
+                            class="ld-sections-loose"
+                          >
+                            <div
+                              class="text-sm text-gray-500 grid grid-cols-2 gap-4"
+                            >
+                              <div class="ld-switch-row">
+                                <button
+                                  id="room-measure-toggle-grid"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-grid-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-grid-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <button
+                                  id="room-measure-toggle-measure"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-measure-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-measure-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Measurements</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <button
+                                  id="room-measure-toggle-grid-shapes"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="room-measure-grid-shapes-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-grid-shapes-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Grid shapes</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <button
+                                  id="room-measure-toggle-walls"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-walls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-walls-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Walls</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <button
+                                  id="room-measure-toggle-floor"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-measure-floor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-3 text-sm"
+                                  id="room-measure-floor-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Floor</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#room-measure-grid-demo'
+                      );
+
+                      const bindBoolAttrToggle = (buttonId, attrName) => {
+                        document
+                          .getElementById(buttonId)
+                          .addEventListener('click', (e) => {
+                            const el = e.currentTarget;
+                            const on =
+                              el.getAttribute('aria-checked') === 'true';
+                            if (on) {
+                              el.setAttribute('aria-checked', 'false');
+                              modelViewer.removeAttribute(attrName);
+                            } else {
+                              el.setAttribute('aria-checked', 'true');
+                              modelViewer.setAttribute(attrName, '');
+                            }
+                          });
+                      };
+
+                      bindBoolAttrToggle('room-measure-toggle-walls', 'walls');
+                      bindBoolAttrToggle('room-measure-toggle-floor', 'floor');
+                      bindBoolAttrToggle(
+                        'room-measure-toggle-measure',
+                        'measure'
+                      );
+
+                      document
+                        .getElementById('room-measure-toggle-grid')
+                        .addEventListener('click', (e) => {
+                          const el = e.currentTarget;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('room-measure-toggle-grid-shapes')
+                        .addEventListener('click', (e) => {
+                          const el = e.currentTarget;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('grid-shapes');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('grid-shapes', '');
+                          }
+                        });
+
+                      modelViewer.addEventListener('load', () => {
+                        const squarePath = [
+                          [0, 0],
+                          [1.1, 0],
+                          [1.1, 1.1],
+                          [0, 1.1],
+                        ];
+                        modelViewer.addGridShapeLines(squarePath, {
+                          id: 'room-measure-square',
+                        });
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_measure');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>

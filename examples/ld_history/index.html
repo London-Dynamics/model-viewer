@@ -1,0 +1,218 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD History</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD History undo / redo examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style type="text/tailwindcss"></style>
+    <script
+      src="../../styles/ld-ui-loader.js"
+      data-href="../../styles/ld-ui.css"
+    ></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="history-demo" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD History</span> records committed
+                transforms, placements, deletions, and group/snap operations.
+                Subscribe to <code>history-change</code> to drive toolbar UI.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Undo / Redo</h2>
+                <h4>
+                  API buttons nudge the purple <code>Box</code> mesh by name (no
+                  selection needed). Drag in the scene still records undo steps
+                  when using placed parts in modular scenes. Use the toolbar
+                  buttons or call <code>undo()</code> / <code>redo()</code> from
+                  your host app.
+                </h4>
+              </div>
+              <example-snippet stamp-to="history-demo" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="history-demo-viewer"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    edit
+                    snapping-enabled
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="Two cubes for transform undo demo"
+                  >
+                    <div class="absolute top-2 left-2 z-30 flex gap-2">
+                      <button
+                        type="button"
+                        id="undo-btn"
+                        class="ld-button-sm disabled:opacity-40"
+                        disabled
+                      >
+                        Undo
+                      </button>
+                      <button
+                        type="button"
+                        id="redo-btn"
+                        class="ld-button-sm disabled:opacity-40"
+                        disabled
+                      >
+                        Redo
+                      </button>
+                    </div>
+                    <div
+                      id="history-status"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
+                    >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-toolbar">
+                          <button
+                            type="button"
+                            id="nudge-x"
+                            class="ld-button-sm"
+                            disabled
+                          >
+                            Nudge purple box +X
+                          </button>
+                          <button
+                            type="button"
+                            id="rotate-y"
+                            class="ld-button-sm"
+                            disabled
+                          >
+                            Rotate purple box +22.5°
+                          </button>
+                          <button
+                            type="button"
+                            id="clear-history"
+                            class="ld-button-sm"
+                          >
+                            Clear history
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    const viewer = document.getElementById(
+                      'history-demo-viewer'
+                    );
+                    const undoBtn = document.getElementById('undo-btn');
+                    const redoBtn = document.getElementById('redo-btn');
+                    const status = document.getElementById('history-status');
+                    const nudgeBtn = document.getElementById('nudge-x');
+                    const rotateBtn = document.getElementById('rotate-y');
+                    const clearBtn = document.getElementById('clear-history');
+                    const DEMO_BOX_NAME = 'Box';
+                    const NUDGE_X = 0.25;
+
+                    const applyHistoryUi = (state) => {
+                      undoBtn.disabled = !state.canUndo;
+                      redoBtn.disabled = !state.canRedo;
+                      undoBtn.textContent = state.undoLabel
+                        ? `Undo: ${state.undoLabel}`
+                        : 'Undo';
+                      redoBtn.textContent = state.redoLabel
+                        ? `Redo: ${state.redoLabel}`
+                        : 'Redo';
+                      status.textContent = [
+                        `undo: ${state.undoSize}`,
+                        `redo: ${state.redoSize}`,
+                        state.reason ? `last: ${state.reason}` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' | ');
+                    };
+
+                    applyHistoryUi(viewer.getHistoryState());
+                    viewer.addEventListener('history-change', (event) => {
+                      applyHistoryUi(event.detail);
+                    });
+
+                    undoBtn.addEventListener('click', () => viewer.undo());
+                    redoBtn.addEventListener('click', () => viewer.redo());
+
+                    const enableTransformButtons = () => {
+                      nudgeBtn.disabled = false;
+                      rotateBtn.disabled = false;
+                    };
+
+                    viewer.addEventListener('load', enableTransformButtons, {
+                      once: true,
+                    });
+                    if (viewer.loaded) {
+                      enableTransformButtons();
+                    }
+
+                    nudgeBtn.addEventListener('click', () => {
+                      const [x, y, z] = viewer.getPosition(DEMO_BOX_NAME);
+                      viewer.setPosition(DEMO_BOX_NAME, [x + NUDGE_X, y, z]);
+                    });
+                    rotateBtn.addEventListener('click', () => {
+                      viewer.setRotationY(DEMO_BOX_NAME, '+=22.5');
+                    });
+                    clearBtn.addEventListener('click', () => {
+                      viewer.clearUndoHistory();
+                    });
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_history');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <script type="module" src="../built/dependencies.js"></script>
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer.min.js"
+    ></script>
+  </body>
+</html>

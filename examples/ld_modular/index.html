@@ -1,0 +1,2958 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Modular</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Modular examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <!-- ES-Shims for older browsers -->
+    <script
+      async
+      src="https://ga.jspm.io/npm:es-module-shims@1.7.1/dist/es-module-shims.js"
+    ></script>
+
+    <!-- Import Three.js using an import-map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <!-- Import the <model-viewer> component without three bundled -->
+
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer-module.min.js"
+    ></script>
+
+    <!-- Import the <model-viewer-effects> addon -->
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.min.js"
+    ></script>
+
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/fontawesome.min.css"
+    />
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/solid.min.css"
+    />
+
+    <style>
+      /* Light DOM CSS classes for custom slot content */
+
+      /* CSS Parts - Style shadow DOM elements from light DOM */
+      #modular-demo::part(ld-snapping-point) {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background-color: #fefefe;
+        box-shadow:
+          0 0 2px rgba(0, 0, 0, 0.5),
+          0 0 4px rgba(0, 0, 0, 0.5);
+        pointer-events: none;
+      }
+
+      #modular-demo::part(ld-rotation-control) {
+        height: 24px;
+        width: 24px;
+        border-radius: 50%;
+        color: #333;
+        background-color: #fefefe;
+        box-shadow:
+          0 0 2px rgba(0, 0, 0, 0.5),
+          0 0 4px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #modular-demo::part(ld-rotation-icon) {
+        font-size: 16px;
+        line-height: 1;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      #modular-demo::part(ld-break-link) {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        color: #333;
+        background-color: #fefefe;
+        box-shadow:
+          0 0 2px rgba(0, 0, 0, 0.5),
+          0 0 4px rgba(0, 0, 0, 0.5);
+        pointer-events: auto;
+        cursor: pointer;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      #modular-demo::part(ld-break-link):hover {
+        background-color: cornflowerblue;
+        color: white;
+      }
+
+      #modular-demo::part(ld-break-link-icon) {
+        font-size: 16px;
+
+        line-height: 1;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample">
+          <div id="modular" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Modular</span> by
+                <a href="https://londondynamics.com" target="_blank"
+                  >London Dynamics</a
+                >. This page showcases the LD Modular API through practical
+                examples for placing GLBs into a scene, selecting and editing
+                modular entities, and managing scene content throughout an
+                interactive workflow.
+              </h4>
+
+              <div class="heading">
+                <h2 class="demo-title">Place a GLB into the scene</h2>
+                <h4>
+                  <span class="attribute">placeGLB()</span> – place and register a
+                  GLB in the modular scene.
+                </h4>
+                <p>
+                  Interactively place a model, select it, and use the control
+                  strip while transform events stream in the debug readout. The
+                  code demonstrates how to configure a modular-ready
+                  <code>&lt;model-viewer&gt;</code>, call
+                  <code>placeGLB()</code>, and wire UI actions to placement and
+                  editing behavior.
+                </p>
+              </div>
+              <example-snippet stamp-to="modular" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="modular-demo"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    snapping-enabled
+                    highlight-selected
+                    selection-scope="group"
+                    measure
+                    edit
+                    debug
+                    disable-base-model-selection
+                    disable-base-model-shadows
+                    viewport-gizmo
+                  >
+                    <div slot="floating-object-anchor">
+                      <div
+                        id="floating-control-strip"
+                        class="flex items-center bg-white justify-between rounded-full p-0.5 shadow-sm text-sm font-semibold"
+                        data-no-raycast
+                      >
+                        <button
+                          type="button"
+                          id="rotate-left"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                        >
+                          <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                        <button
+                          type="button"
+                          id="rotate-right"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                        >
+                          <i class="fa-solid fa-rotate-right"></i>
+                        </button>
+                        <button
+                          type="button"
+                          id="undo-action"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-40 disabled:pointer-events-none"
+                          title="Undo"
+                        >
+                          <i class="fa-solid fa-undo"></i>
+                        </button>
+                        <button
+                          type="button"
+                          id="redo-action"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-40 disabled:pointer-events-none"
+                          title="Redo"
+                        >
+                          <i class="fa-solid fa-redo"></i>
+                        </button>
+                        <button
+                          type="button"
+                          id="delete-selected"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          title="Delete selected objects"
+                        >
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                      <color-grade-effect></color-grade-effect>
+                    </effect-composer>
+                    <div
+                      id="placeglb-transform-events"
+                      class="ld-hud ld-hud-top-left ld-hud-passive"
+                    >
+                      transform: idle
+                    </div>
+                    <div class="ld-panel" id="control-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Control Panel
+                          </h3>
+                          <div class="ld-sections-loose">
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="place-glb ld-button-sm"
+                                data-filename="sofa_corner_left.glb"
+                                data-name="corner-l"
+                                data-mass="20"
+                              >
+                                L Corner
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb ld-button-sm"
+                                data-filename="sofa_corner_right.glb"
+                                data-name="corner-r"
+                                data-mass="20"
+                              >
+                                R Corner
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb ld-button-sm"
+                                data-filename="sofa_middle.glb"
+                                data-name="middle"
+                                data-mass="20"
+                              >
+                                Middle
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb ld-button-sm"
+                                data-filename="sofa_chaise.glb"
+                                data-name="chaise"
+                                data-mass="20"
+                              >
+                                Chaise
+                              </button>
+                              <button
+                                type="button"
+                                class="place-glb ld-button-sm"
+                                data-filename="glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf"
+                                data-name="duck"
+                                data-mass="20"
+                                data-selectable="false"
+                              >
+                                Permanent Duck
+                              </button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                              <div class="ld-switch-row">
+                                <span
+                                  class="mr-2 text-sm"
+                                  id="camera-type-label-left"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Perspective</span
+                                  >
+                                </span>
+                                <button
+                                  id="camera-type"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="false"
+                                  aria-labelledby="camera-type-label-right"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-2 text-sm"
+                                  id="camera-type-label-right"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Orthographic</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row"></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                              <div class="ld-switch-row">
+                                <button
+                                  id="edit-mode"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="edit-mode-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span class="ml-2 text-sm" id="edit-mode-label">
+                                  <span class="font-medium text-gray-900"
+                                    >Edit Mode</span
+                                  >
+                                </span>
+                              </div>
+                              <div class="ld-switch-row">
+                                <div class="ld-switch-row">
+                                  <span
+                                    class="mr-2 text-sm"
+                                    id="selection-scope-label"
+                                  >
+                                    <span class="font-medium text-gray-900"
+                                      >Group</span
+                                    >
+                                  </span>
+                                  <button
+                                    id="selection-scope"
+                                    type="button"
+                                    class="ld-switch"
+                                    role="switch"
+                                    aria-checked="false"
+                                    aria-labelledby="selection-scope-label"
+                                  >
+                                    <span
+                                      aria-hidden="true"
+                                      class="ld-switch-thumb"
+                                    ></span>
+                                  </button>
+                                  <span
+                                    class="ml-2 text-sm"
+                                    id="selection-scope-label"
+                                  >
+                                    <span class="font-medium text-gray-900"
+                                      >Part</span
+                                    >
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-snapping-points"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-labelledby="enable-snappoints-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-2 text-sm"
+                                  id="enable-snappoints-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Snap Points</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-snapping"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-snappoints-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-2 text-sm"
+                                  id="enable-snappoints-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Snapping</span
+                                  >
+                                </span>
+                              </div>
+
+                              <div class="ld-switch-row">
+                                <button
+                                  id="toggle-controls"
+                                  type="button"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="enable-snappoints-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="ml-2 text-sm"
+                                  id="enable-snappoints-label"
+                                >
+                                  <span class="font-medium text-gray-900"
+                                    >Control Strip</span
+                                  >
+                                </span>
+                              </div>
+                            </div>
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="ld-button-sm"
+                                id="log-scene-graph"
+                              >
+                                Log current scene graph
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#modular-demo');
+                      const transformEventLabel = document.getElementById(
+                        'placeglb-transform-events'
+                      );
+                      const formatTriplet = (values) =>
+                        (Array.isArray(values) ? values : [])
+                          .slice(0, 3)
+                          .map((val) => Number(val).toFixed(3))
+                          .join(', ');
+
+                      const formatTransform = (eventName, detail) => {
+                        if (!detail?.transform) {
+                          return `${eventName}\n(no payload)`;
+                        }
+                        const {target, transform, active} = detail;
+                        const lines = [
+                          eventName,
+                          `target: ${target?.name || '(unnamed)'} (${target?.uuid || '?'})`,
+                          `position: ${formatTriplet(transform.position)}`,
+                          `rotation: ${formatTriplet(transform.rotation)}`,
+                          `scale: ${formatTriplet(transform.scale)}`,
+                        ];
+                        if (active) {
+                          const axes = (active.components || [])
+                            .map((component) => {
+                              const componentAxes = active.axes?.[component];
+                              return componentAxes?.length
+                                ? `${component}[${componentAxes.join(',')}]`
+                                : component;
+                            })
+                            .join(', ');
+                          lines.push(
+                            `active: ${active.source}${axes ? ` (${axes})` : ''}`
+                          );
+                          if (active.source === 'rotation-disc-y') {
+                            const deltaY = active.delta?.rotation?.[1] ?? 0;
+                            const currentY = transform.rotation?.[1] ?? 0;
+                            lines.push(
+                              `rotation Y: ${Number(currentY).toFixed(3)}° (Δ ${Number(deltaY).toFixed(3)}°)`
+                            );
+                          }
+                        }
+                        return lines.join('\n');
+                      };
+
+                      const updateTransformLabel = (eventName, detail) => {
+                        if (!transformEventLabel) return;
+                        transformEventLabel.textContent = formatTransform(
+                          eventName,
+                          detail
+                        );
+                      };
+
+                      modelViewer.addEventListener(
+                        'transformstart',
+                        (event) => {
+                          updateTransformLabel('transformstart', event.detail);
+                        }
+                      );
+                      modelViewer.addEventListener('transform', (event) => {
+                        updateTransformLabel('transform', event.detail);
+                      });
+                      modelViewer.addEventListener('transformend', (event) => {
+                        updateTransformLabel('transformend', event.detail);
+                      });
+
+                      const relativeMouseCoordinates = (e) => {
+                        const rect = modelViewer.getBoundingClientRect();
+                        return {
+                          x: e.clientX - rect.left,
+                          y: e.clientY - rect.top,
+                        };
+                      };
+
+                      // --- Loader-hotspot management ---
+                      // Map sessionId -> hotspot wrapper element
+                      const activeLoaders = new Map();
+
+                      // Inject minimal styles for the loader UI
+                      const loaderStyle = document.createElement('style');
+                      loaderStyle.textContent = `
+                        .ld-loader {
+                          width: 36px;
+                          height: 36px;
+                          border-radius: 50%;
+                          background: conic-gradient(#3b82f6 0deg, #3b82f6 0deg, #e5e7eb 0deg);
+                          display:flex;
+                          align-items:center;
+                          justify-content:center;
+                          color:#111;
+                          font-size:10px;
+                          box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+                        }
+                        .ld-loader-label{ font-size:10px; }
+                      `;
+                      document.head.appendChild(loaderStyle);
+
+                      function vec3ToPositionString(v) {
+                        if (!v) return undefined;
+                        // three.js Vector3 -> "Xm Ym Zm" format
+                        return `${v.x}m ${v.y}m ${v.z}m`;
+                      }
+
+                      function createLoaderHotspot(sessionId, positionVector) {
+                        const slotName = `hotspot-loader-${sessionId}`;
+                        const wrapper = document.createElement('div');
+                        wrapper.setAttribute('slot', slotName);
+                        const posStr = vec3ToPositionString(positionVector);
+                        if (posStr) wrapper.dataset.position = posStr;
+                        // zero normal keeps the hotspot always visible
+                        wrapper.dataset.normal = '0m 0m 0m';
+
+                        const inner = document.createElement('div');
+                        inner.className = 'ld-loader';
+                        inner.innerHTML = `<div class="ld-loader-label">0%</div>`;
+                        wrapper.appendChild(inner);
+
+                        // Attach session id for lookup
+                        wrapper.dataset.sessionId = sessionId;
+
+                        modelViewer.appendChild(wrapper);
+                        activeLoaders.set(sessionId, wrapper);
+                        return wrapper;
+                      }
+
+                      function updateLoaderProgress(sessionId, progress) {
+                        const wrapper = activeLoaders.get(sessionId);
+                        if (!wrapper) return;
+                        const inner = wrapper.querySelector('.ld-loader');
+                        if (!inner) return;
+                        const pct = Math.round(progress * 100);
+                        const label = inner.querySelector('.ld-loader-label');
+                        if (label) label.textContent = `${pct}%`;
+                        // Update conic-gradient to reflect progress (0..360deg)
+                        const deg = Math.round(progress * 360);
+                        inner.style.background = `conic-gradient(#3b82f6 0deg, #3b82f6 ${deg}deg, #e5e7eb ${deg}deg)`;
+                        // rely on model-viewer's annotation/slot plumbing to update render
+                      }
+
+                      function removeLoaderHotspot(sessionId) {
+                        const wrapper = activeLoaders.get(sessionId);
+                        if (!wrapper) return;
+                        try {
+                          wrapper.remove();
+                        } catch (e) {}
+                        activeLoaders.delete(sessionId);
+                        // rely on model-viewer's annotation/slot plumbing to update render
+                      }
+                      // --- end loader-hotspot management ---
+
+                      modelViewer.addEventListener('progress', (e) => {
+                        const progress = e.detail;
+                        console.log('Loading progress:', progress);
+                      });
+
+                      modelViewer.addEventListener('load', () => {
+                        //modelViewer.deleteObjectByFileName('empty.glb');
+                      });
+
+                      const snapPointsMap = {
+                        'corner-l': [
+                          {
+                            id: 'front',
+                            transform: {
+                              position: [0, 0.5, 0.5],
+                              rotation: [0, 0, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['chaise'],
+                            provides: ['corner-left-front'],
+                          },
+                          {
+                            id: 'right',
+                            transform: {
+                              position: [0.5, 0.5, 0],
+                              rotation: [0, 1.5707963267948966, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['seat-left'],
+                            provides: ['seat-right'],
+                          },
+                        ],
+                        'corner-r': [
+                          {
+                            id: 'front',
+                            transform: {
+                              position: [0, 0.5, 0.5],
+                              rotation: [0, 0, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['chaise'],
+                            provides: ['corner-right-front'],
+                          },
+                          {
+                            id: 'left',
+                            transform: {
+                              position: [-0.5, 0.5, 0],
+                              rotation: [0, -1.5707963267948966, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['seat-right'],
+                            provides: ['seat-left'],
+                          },
+                        ],
+                        middle: [
+                          {
+                            id: 'front',
+                            transform: {
+                              position: [-1.3877787807814457e-17, 0.5, 0.5],
+                              rotation: [0, 0, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['chaise'],
+                          },
+                          {
+                            id: 'right',
+                            transform: {
+                              position: [0.5, 0.5, 0],
+                              rotation: [0, 1.5707963267948966, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['seat-left'],
+                            provides: ['seat-right', 'middle-right'],
+                          },
+                          {
+                            id: 'left',
+                            transform: {
+                              position: [-0.5, 0.5, 0],
+                              rotation: [0, -1.5707963267948966, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: ['seat-right'],
+                            provides: ['seat-left', 'middle-left'],
+                          },
+                        ],
+                        chaise: [
+                          {
+                            id: 'back',
+                            transform: {
+                              position: [0, 0.25, -0.5],
+                              rotation: [0, 3.141592653589793, 0],
+                            },
+                            snapRadius: 0.2,
+                            accepts: [],
+                            provides: ['chaise'],
+                          },
+                        ],
+                      };
+
+                      const logSceneGraph = () => {
+                        const sceneGraph = modelViewer.getPlacementTree();
+
+                        console.log('Current scene graph:', sceneGraph);
+                      };
+
+                      document
+                        .getElementById('log-scene-graph')
+                        .addEventListener('click', (e) => {
+                          logSceneGraph();
+                        });
+
+                      document
+                        .querySelectorAll('.place-glb')
+                        .forEach((button) => {
+                          let session = null;
+
+                          // Global mouse up listener to handle drop
+                          const handleGlobalMouseUp = async (e) => {
+                            // Cleanup
+
+                            document.removeEventListener(
+                              'mouseup',
+                              handleGlobalMouseUp
+                            );
+                          };
+
+                          button.addEventListener('mousedown', (e) => {
+                            const dataset = Object.assign({}, e.target.dataset);
+                            const snapPoints =
+                              snapPointsMap[dataset.name] || [];
+
+                            const { filename, ...placementOptions } = dataset;
+
+                            const lowresSrc = `../../shared-assets/models/${filename}`;
+                            const highResSrc = lowresSrc;
+
+                            // Capture initial mouse position so the placeholder
+                            // can be positioned immediately even if it loads
+                            // synchronously.
+                            const initialMouse = {
+                              clientX: e.clientX,
+                              clientY: e.clientY,
+                            };
+
+                            placementOptions.part = {
+                              type: 'scene',
+                              snapPoints,
+                              bounds: {
+                                center: [
+                                  2.384185791015625e-7, 0.4542551338672638,
+                                  0.00022783875465393066,
+                                ],
+                                max: [
+                                  0.5236807465553284, 0.9086406826972961,
+                                  1.3349015712738037,
+                                ],
+                                min: [
+                                  -0.5232250690460205, -0.00013043890066910535,
+                                  -1.3349010944366455,
+                                ],
+                                radius: 1.459686040878296,
+                              },
+                            };
+
+                            // Pass undefined as lowResSrc to skip placeholder loading
+                            // and directly place the highres model on commit
+                            session = modelViewer.beginPlacement(
+                              undefined,
+                              highResSrc,
+                              placementOptions,
+                              initialMouse
+                            );
+
+                            session.addEventListener(
+                              'placeholder-loaded',
+                              (e) => {}
+                            );
+
+                            session.addEventListener('loading-start', (e) => {
+                              console.log('Loading placed object', e.detail);
+                              const sessionId = e.detail.sessionId;
+                              // Prefer computed center from session if available
+                              const center =
+                                e.detail && e.detail.center
+                                  ? e.detail.center
+                                  : null;
+                              const pos = center
+                                ? center
+                                : session.placeholder
+                                  ? session.placeholder.position
+                                  : null;
+                              createLoaderHotspot(sessionId, pos);
+                              // When placeholder becomes available later, update hotspot position
+                              session.addEventListener(
+                                'placeholder-loaded',
+                                (pl) => {
+                                  try {
+                                    const ph = pl.detail.placeholder;
+                                    const posStr = `${ph.position.x}m ${ph.position.y}m ${ph.position.z}m`;
+                                    const slotName = `hotspot-loader-${sessionId}`;
+                                    // Update the DOM node if present
+                                    const wrapper =
+                                      activeLoaders.get(sessionId);
+                                    if (wrapper) {
+                                      wrapper.dataset.position = posStr;
+                                    }
+
+                                    // Inform model-viewer to update the hotspot position
+                                    try {
+                                      modelViewer.updateHotspot?.({
+                                        name: slotName,
+                                        position: posStr,
+                                        normal: '0m 0m 0m',
+                                      });
+                                    } catch (e) {}
+                                  } catch (e) {}
+                                },
+                                { once: true }
+                              );
+                            });
+
+                            session.addEventListener('loaded', (e) => {
+                              console.log('Loaded placed object');
+                              removeLoaderHotspot(e.detail.sessionId);
+                              logSceneGraph();
+                              session = null;
+                            });
+
+                            session.addEventListener('progress', (ev) => {
+                              const detail = ev.detail;
+                              // console.log('Placement progress', detail);
+                              updateLoaderProgress(
+                                detail.sessionId,
+                                detail.progress
+                              );
+                            });
+
+                            session.addEventListener('error', (e) => {
+                              console.error(
+                                'Error during placement:',
+                                e.detail
+                              );
+
+                              // Clean up loader if load failed
+                              removeLoaderHotspot(e.detail.sessionId);
+                            });
+
+                            session.addEventListener('cancel', (e) => {
+                              removeLoaderHotspot(e.detail.sessionId);
+                            });
+
+                            document.addEventListener(
+                              'mouseup',
+                              handleGlobalMouseUp
+                            );
+                          });
+                        });
+
+                      document
+                        .getElementById('edit-mode')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('edit-mode');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('edit-mode', '');
+                          }
+                        });
+
+                      document
+                        .getElementById('selection-scope')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.setAttribute(
+                              'selection-scope',
+                              'group'
+                            );
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+                            modelViewer.setAttribute('selection-scope', 'part');
+                          }
+                        });
+
+                      document
+                        .getElementById('camera-type')
+                        .addEventListener('click', () => {
+                          modelViewer.toggleCameraType();
+                          const btn = document.getElementById('camera-type');
+                          const isOrthographic =
+                            modelViewer.getCameraType() === 'orthographic';
+
+                          if (isOrthographic) {
+                            modelViewer.rotateCamera(0, 0, true);
+                            modelViewer.removeAttribute('camera-controls');
+                          } else if (
+                            !modelViewer.hasAttribute('camera-controls')
+                          ) {
+                            modelViewer.setAttribute('camera-controls', '');
+                          }
+
+                          btn.setAttribute(
+                            'aria-checked',
+                            isOrthographic ? 'true' : 'false'
+                          );
+                        });
+
+                      // Snapping toggle handler
+                      document
+                        .getElementById('toggle-snapping')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+                            modelViewer.removeAttribute('snapping-enabled');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.setAttribute('snapping-enabled', '');
+                          }
+                        });
+                      document
+                        .getElementById('toggle-snapping-points')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.removeAttribute(
+                              'snapping-points-visible'
+                            );
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.setAttribute(
+                              'snapping-points-visible',
+                              ''
+                            );
+                          }
+                        });
+
+                      document
+                        .getElementById('toggle-controls')
+                        .addEventListener('click', (e) => {
+                          const el = e.target;
+
+                          if (el.getAttribute('aria-checked') === 'true') {
+                            el.setAttribute('aria-checked', 'false');
+
+                            modelViewer.setAttribute(
+                              'disable-floating-controls',
+                              ''
+                            );
+                            console.log('Floating controls disabled');
+                          } else {
+                            el.setAttribute('aria-checked', 'true');
+
+                            modelViewer.removeAttribute(
+                              'disable-floating-controls'
+                            );
+                            console.log('Floating controls enabled');
+                          }
+                        });
+
+                      const controlStrip = document.getElementById(
+                        'floating-control-strip'
+                      );
+
+                      const getObjectFromControlStrip = () => {
+                        if (!controlStrip) return null;
+
+                        const dataset = controlStrip.parentNode.dataset;
+
+                        return dataset
+                          ? {
+                              name: dataset.objectName,
+                              uuid: dataset.objectUuid,
+                            }
+                          : null;
+                      };
+
+                      // Stop propagation on all clicks within the control strip
+                      // so that clicks in empty areas don't deselect the object
+                      if (controlStrip) {
+                        controlStrip.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                        });
+                        controlStrip.addEventListener('mousedown', (e) => {
+                          e.stopPropagation();
+                        });
+                        controlStrip.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const rotateLeftButton =
+                        document.getElementById('rotate-left');
+                      if (rotateLeftButton) {
+                        rotateLeftButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+
+                          modelViewer.setRotationY(`+=90`, {
+                            animate: true,
+                          });
+                        });
+                        rotateLeftButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const rotateRightButton =
+                        document.getElementById('rotate-right');
+                      if (rotateLeftButton) {
+                        rotateRightButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+
+                          modelViewer.setRotationY(`-=90`, {
+                            animate: true,
+                          });
+                        });
+                        rotateRightButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const deleteSelectedButton =
+                        document.getElementById('delete-selected');
+                      if (deleteSelectedButton) {
+                        deleteSelectedButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+
+                          const { name } = getObjectFromControlStrip() || {};
+                          if (name) {
+                            modelViewer.removeObject(name, {
+                              animate: true,
+                            });
+                            return;
+                          }
+                        });
+                        deleteSelectedButton.addEventListener(
+                          'mouseup',
+                          (e) => {
+                            e.stopPropagation();
+                          }
+                        );
+                      }
+
+                      const undoButton = document.getElementById('undo-action');
+                      const redoButton = document.getElementById('redo-action');
+                      const applyHistoryUi = (state) => {
+                        if (undoButton) {
+                          undoButton.disabled = !state.canUndo;
+                          undoButton.title = state.undoLabel || 'Undo';
+                        }
+                        if (redoButton) {
+                          redoButton.disabled = !state.canRedo;
+                          redoButton.title = state.redoLabel || 'Redo';
+                        }
+                      };
+                      applyHistoryUi(modelViewer.getHistoryState());
+                      modelViewer.addEventListener('history-change', (event) => {
+                        applyHistoryUi(event.detail);
+                      });
+                      undoButton?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        modelViewer.undo();
+                      });
+                      redoButton?.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        modelViewer.redo();
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="multi-select" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Multi-select</h2>
+                <h4>
+                  <span class="attribute">selectAll()</span> /
+                  <span class="attribute">deselectAll()</span> /
+                  <span class="attribute">applyRectangleSelection()</span>
+                  with Shift-click toggling.
+                </h4>
+                <p>
+                  Click objects to select one at a time, hold
+                  <kbd>Shift</kbd> while clicking to add or remove items from the
+                  selection, then drag or rotate the selection as a group. Seeded
+                  models use the Khronos Duck (offset origin) so rotation-disc
+                  behaviour matches the Rotation Controls example. Use
+                  <strong>Select all</strong> and <strong>Deselect all</strong>
+                  to exercise the programmatic APIs, or toggle the fixed
+                  selection rectangle and click <strong>Apply selection</strong>
+                  to call
+                  <span class="attribute">applyRectangleSelection()</span> with
+                  its client coordinates. Switch between
+                  <span class="attribute">group</span> and
+                  <span class="attribute">part</span> scope to change what a
+                  click targets.
+                </p>
+              </div>
+              <example-snippet stamp-to="multi-select" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="multi-select-demo"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    highlight-selected
+                    selection-scope="group"
+                    edit
+                    disable-base-model-selection
+                    disable-base-model-shadows
+                    viewport-gizmo
+                    rotation-controls
+                  >
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
+                    <div
+                      id="multi-select-readout"
+                      class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow"
+                    >
+                      selection: idle
+                    </div>
+                    <div
+                      id="multi-select-rect"
+                      data-no-raycast
+                      hidden
+                      class="absolute left-1/2 top-1/2 z-20 pointer-events-none -translate-x-1/2 -translate-y-1/2 border-2 border-[#165dfc] bg-[rgba(22,93,252,0.15)]"
+                      style="width: 240px; height: 180px"
+                    ></div>
+                    <div class="ld-panel" data-no-raycast>
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Multi-select
+                          </h3>
+                          <div class="ld-sections-loose">
+                            <div class="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                id="multi-select-seed"
+                                class="ld-button-sm"
+                              >
+                                Seed objects
+                              </button>
+                              <button
+                                type="button"
+                                id="multi-select-all"
+                                class="ld-button-sm"
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                id="multi-select-none"
+                                class="ld-button-sm"
+                              >
+                                Deselect all
+                              </button>
+                              <button
+                                type="button"
+                                id="multi-select-rect-toggle"
+                                class="ld-button-sm"
+                                aria-pressed="false"
+                              >
+                                Toggle rectangle
+                              </button>
+                              <button
+                                type="button"
+                                id="multi-select-rect-apply"
+                                class="ld-button-sm"
+                              >
+                                Apply selection
+                              </button>
+                            </div>
+                            <div class="ld-switch-row">
+                              <span
+                                class="mr-2 text-sm"
+                                id="multi-select-scope-label-left"
+                              >
+                                <span class="font-medium text-gray-900"
+                                  >Group</span
+                                >
+                              </span>
+                              <button
+                                id="multi-select-scope"
+                                type="button"
+                                class="ld-switch"
+                                role="switch"
+                                aria-checked="false"
+                                aria-labelledby="multi-select-scope-label-right"
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  class="ld-switch-thumb"
+                                ></span>
+                              </button>
+                              <span
+                                class="ml-2 text-sm"
+                                id="multi-select-scope-label-right"
+                              >
+                                <span class="font-medium text-gray-900"
+                                  >Part</span
+                                >
+                              </span>
+                            </div>
+                            <div class="ld-switch-row">
+                              <button
+                                id="multi-select-measure"
+                                type="button"
+                                class="ld-switch"
+                                role="switch"
+                                aria-checked="false"
+                                aria-labelledby="multi-select-measure-label"
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  class="ld-switch-thumb"
+                                ></span>
+                              </button>
+                              <span class="ml-3 text-sm" id="multi-select-measure-label">
+                                <span class="font-medium text-gray-900"
+                                  >Measurement</span
+                                >
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#multi-select-demo'
+                      );
+                      const readout = document.getElementById(
+                        'multi-select-readout'
+                      );
+                      const seedButton =
+                        document.getElementById('multi-select-seed');
+                      const selectAllButton =
+                        document.getElementById('multi-select-all');
+                      const deselectAllButton =
+                        document.getElementById('multi-select-none');
+                      const scopeToggle =
+                        document.getElementById('multi-select-scope');
+                      const measureToggle = document.getElementById(
+                        'multi-select-measure'
+                      );
+                      const rectToggle = document.getElementById(
+                        'multi-select-rect-toggle'
+                      );
+                      const rectApplyButton = document.getElementById(
+                        'multi-select-rect-apply'
+                      );
+                      const rectEl = document.getElementById('multi-select-rect');
+
+                      if (!modelViewer) return;
+
+                      const DUCK_URL =
+                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF/Duck.gltf';
+                      const ASTRONAUT_URL =
+                        '../../shared-assets/models/Astronaut.glb';
+
+                      const SEED_ITEMS = [
+                        {
+                          id: 'ms-duck-a',
+                          part: {
+                            type: 'scene',
+                            id: 'duck',
+                            name: 'Duck A',
+                          },
+                          transform: {
+                            position: [-1.4, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                        {
+                          id: 'ms-astronaut-b',
+                          part: {
+                            type: 'scene',
+                            id: 'astronaut',
+                            name: 'Astronaut',
+                          },
+                          transform: {
+                            position: [0, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                        {
+                          id: 'ms-duck-c',
+                          part: {
+                            type: 'scene',
+                            id: 'duck',
+                            name: 'Duck C',
+                          },
+                          transform: {
+                            position: [1.4, 0, 0],
+                            rotation: [0, Math.PI / 4, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                      ];
+
+                      const getHighResUrl = async (item) => {
+                        const partId = item?.part?.id;
+                        if (partId === 'astronaut') {
+                          return ASTRONAUT_URL;
+                        }
+                        return DUCK_URL;
+                      };
+
+                      const formatSelectionReadout = (detail) => {
+                        if (!detail) {
+                          return 'selection: idle';
+                        }
+                        const {selectedObjects, type, scope} = detail;
+                        const count = selectedObjects?.length ?? 0;
+                        const names = (selectedObjects || [])
+                          .map(
+                            (object) =>
+                              object?.name ||
+                              object?.userData?.name ||
+                              object?.uuid ||
+                              '?'
+                          )
+                          .join('\n  ');
+                        return [
+                          `event: ${type}`,
+                          `scope: ${scope}`,
+                          `count: ${count}`,
+                          count > 0 ? `items:\n  ${names}` : 'items: (none)',
+                        ].join('\n');
+                      };
+
+                      const updateReadout = (detail) => {
+                        if (!readout) return;
+                        readout.textContent = formatSelectionReadout(detail);
+                      };
+
+                      modelViewer.addEventListener(
+                        'selection-change',
+                        (event) => {
+                          updateReadout(event.detail);
+                        }
+                      );
+
+                      const seedLayout = async () => {
+                        if (seedButton) seedButton.disabled = true;
+                        try {
+                          modelViewer.deselectAll?.();
+                          await modelViewer.placeManyGlb(SEED_ITEMS, {
+                            getHighResUrl,
+                          });
+                        } catch (error) {
+                          console.error('Failed to seed multi-select demo', error);
+                        } finally {
+                          if (seedButton) seedButton.disabled = false;
+                        }
+                      };
+
+                      seedButton?.addEventListener('click', () => {
+                        seedLayout();
+                      });
+
+                      selectAllButton?.addEventListener('click', () => {
+                        modelViewer.selectAll?.();
+                      });
+
+                      deselectAllButton?.addEventListener('click', () => {
+                        modelViewer.deselectAll?.();
+                      });
+
+                      rectToggle?.addEventListener('click', (e) => {
+                        const button = e.currentTarget;
+                        const isVisible = !rectEl?.hasAttribute('hidden');
+                        if (isVisible) {
+                          rectEl?.setAttribute('hidden', '');
+                          button.setAttribute('aria-pressed', 'false');
+                        } else {
+                          rectEl?.removeAttribute('hidden');
+                          button.setAttribute('aria-pressed', 'true');
+                        }
+                      });
+
+                      rectApplyButton?.addEventListener('click', () => {
+                        if (!rectEl || rectEl.hasAttribute('hidden')) return;
+                        const bounds = rectEl.getBoundingClientRect();
+                        modelViewer.applyRectangleSelection?.({
+                          left: bounds.left,
+                          top: bounds.top,
+                          right: bounds.right,
+                          bottom: bounds.bottom,
+                        });
+                      });
+
+                      scopeToggle?.addEventListener('click', (e) => {
+                        const el = e.currentTarget;
+                        if (el.getAttribute('aria-checked') === 'true') {
+                          el.setAttribute('aria-checked', 'false');
+                          modelViewer.setAttribute('selection-scope', 'group');
+                        } else {
+                          el.setAttribute('aria-checked', 'true');
+                          modelViewer.setAttribute('selection-scope', 'part');
+                        }
+                      });
+
+                      measureToggle?.addEventListener('click', (e) => {
+                        const el = e.currentTarget;
+                        if (el.getAttribute('aria-checked') === 'true') {
+                          el.setAttribute('aria-checked', 'false');
+                          modelViewer.removeAttribute('measure');
+                        } else {
+                          el.setAttribute('aria-checked', 'true');
+                          modelViewer.setAttribute('measure', '');
+                        }
+                      });
+
+                      modelViewer.addEventListener(
+                        'load',
+                        () => {
+                          seedLayout();
+                        },
+                        {once: true}
+                      );
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="room-surface-snap" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Room Surface Snap (Walls)</h2>
+                <h4>
+                  Constrain dragging with
+                  <span class="attribute">surfaceSnap</span> so parts snap to
+                  valid wall surfaces.
+                </h4>
+                <p>
+                  Interactively drag window and door parts around the room and
+                  observe that placement is accepted only on supported walls.
+                  The code demonstrates room-aware model configuration,
+                  per-object snap options, and event wiring for constrained
+                  surface placement.
+                </p>
+              </div>
+              <example-snippet stamp-to="room-surface-snap" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    id="room-surface-snap-demo"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    floating-controls
+                    min-camera-orbit="auto auto 0.5m"
+                    max-camera-orbit="auto auto auto"
+                    autoplay
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    snapping-enabled
+                    edit
+                    selection-scope="part"
+                    highlight-selected
+                    edit
+                    src-is-room
+                    walls
+                    floor
+                    viewport-gizmo
+                  >
+                    <div slot="floating-object-anchor">
+                      <div
+                        id="room-floating-control-strip"
+                        class="flex items-center bg-white justify-between rounded-full p-0.5 shadow-sm text-sm font-semibold"
+                        data-no-raycast
+                      >
+                        <button
+                          type="button"
+                          id="room-delete-selected"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          title="Delete selected objects"
+                        >
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Room Surface Snap
+                          </h3>
+                          <div class="ld-sections-loose">
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="place-room-part ld-button-sm"
+                                data-src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/8189a62c-6567-407a-a9a3-9164426a9f12/Window.glb"
+                                data-name="window"
+                              >
+                                Place Window
+                              </button>
+                              <button
+                                type="button"
+                                class="place-room-part ld-button-sm"
+                                data-src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/9c9d4302-1733-4b62-8a2d-d5d199afbb6f/SingleDoor_Closed.glb"
+                                data-name="door"
+                              >
+                                Place Door
+                              </button>
+                            </div>
+                            <div
+                              class="text-sm text-gray-600 flex flex-wrap gap-6 items-center"
+                            >
+                              <div class="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  id="room-surface-toggle-walls"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-surface-walls-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="text-xs font-medium text-gray-900"
+                                  id="room-surface-walls-label"
+                                  >Walls</span
+                                >
+                              </div>
+                              <div class="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  id="room-surface-toggle-floor"
+                                  class="ld-switch"
+                                  role="switch"
+                                  aria-checked="true"
+                                  aria-labelledby="room-surface-floor-label"
+                                >
+                                  <span
+                                    aria-hidden="true"
+                                    class="ld-switch-thumb"
+                                  ></span>
+                                </button>
+                                <span
+                                  class="text-xs font-medium text-gray-900"
+                                  id="room-surface-floor-label"
+                                  >Floor</span
+                                >
+                              </div>
+                            </div>
+                            <p class="ld-helper-text m-0">
+                              Release over a wall to commit placement.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#room-surface-snap-demo'
+                      );
+
+                      const bindBoolAttrToggle = (buttonId, attrName) => {
+                        document
+                          .getElementById(buttonId)
+                          .addEventListener('click', (event) => {
+                            const el = event.currentTarget;
+                            const on =
+                              el.getAttribute('aria-checked') === 'true';
+                            if (on) {
+                              el.setAttribute('aria-checked', 'false');
+                              modelViewer.removeAttribute(attrName);
+                            } else {
+                              el.setAttribute('aria-checked', 'true');
+                              modelViewer.setAttribute(attrName, '');
+                            }
+                          });
+                      };
+
+                      bindBoolAttrToggle('room-surface-toggle-walls', 'walls');
+                      bindBoolAttrToggle('room-surface-toggle-floor', 'floor');
+
+                      const snapPointsByPart = {
+                        window: [
+                          {
+                            id: 'wall-anchor-window',
+                            transform: {
+                              position: [0, 0, 0],
+                              rotation: [0, 0, 0],
+                            },
+                            allowedSurfaces: ['wall'],
+                            surfaceSnap: {
+                              offset: 0.02,
+                              edgeClearance: {
+                                horizontal: {
+                                  min: 0.1,
+                                },
+                              },
+                              normal: 'inward',
+                              align: 'keep-upright',
+                            },
+                            verticalConstraint: {
+                              reference: 'bottom',
+                              minFromFloor: 0.8,
+                            },
+                          },
+                        ],
+                        door: [
+                          {
+                            id: 'wall-anchor-door',
+                            transform: {
+                              position: [0, 0, 0],
+                              rotation: [0, 0, 0],
+                            },
+                            allowedSurfaces: ['wall'],
+                            surfaceSnap: {
+                              offset: 0.01,
+                              normal: 'inward',
+                              align: 'keep-upright',
+                            },
+                            verticalConstraint: {
+                              reference: 'bottom',
+                              maxFromFloor: 0,
+                            },
+                          },
+                        ],
+                      };
+                      const boundsByPart = {
+                        window: {
+                          min: [
+                            -0.6118119359016418, -1.3969838619232178e-8,
+                            -0.05527731031179428,
+                          ],
+                          max: [
+                            0.6118119955062866, 1.4524229764938354,
+                            0.1190357431769371,
+                          ],
+                        },
+                        door: {
+                          min: [
+                            -0.4841478338397186, -2.984302072547815e-8,
+                            -0.04106838019338431,
+                          ],
+                          max: [
+                            0.4840838776973738, 2.052496018033463,
+                            0.07476986552067244,
+                          ],
+                        },
+                      };
+
+                      document
+                        .querySelectorAll('.place-room-part')
+                        .forEach((button) => {
+                          button.addEventListener('mousedown', (event) => {
+                            const { src, name } = event.currentTarget.dataset;
+                            if (!src) return;
+
+                            const placementOptions = {
+                              name,
+                              part: {
+                                type: 'scene',
+                                editable: true,
+                                snapPoints: snapPointsByPart[name] || [],
+                                bounds: boundsByPart[name],
+                              },
+                              getHighResUrl: async () => {
+                                console.log(
+                                  'Requesting high-res URL for part',
+                                  src
+                                );
+                                return src;
+                              },
+                            };
+
+                            modelViewer.beginPlacement(
+                              undefined,
+                              undefined,
+                              placementOptions,
+                              {
+                                clientX: event.clientX,
+                                clientY: event.clientY,
+                              }
+                            );
+                          });
+                        });
+
+                      const controlStrip = document.getElementById(
+                        'room-floating-control-strip'
+                      );
+
+                      const getObjectFromControlStrip = () => {
+                        if (!controlStrip) return null;
+                        const dataset = controlStrip.parentNode?.dataset || {};
+                        return dataset.objectName
+                          ? {
+                              name: dataset.objectName,
+                              uuid: dataset.objectUuid,
+                            }
+                          : null;
+                      };
+
+                      if (controlStrip) {
+                        controlStrip.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                        });
+                        controlStrip.addEventListener('mousedown', (e) => {
+                          e.stopPropagation();
+                        });
+                        controlStrip.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const rotateLeftButton =
+                        document.getElementById('room-rotate-left');
+                      if (rotateLeftButton) {
+                        rotateLeftButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          modelViewer.setRotationY(`+=90`, { animate: true });
+                        });
+                        rotateLeftButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const rotateRightButton =
+                        document.getElementById('room-rotate-right');
+                      if (rotateRightButton) {
+                        rotateRightButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          modelViewer.setRotationY(`-=90`, { animate: true });
+                        });
+                        rotateRightButton.addEventListener('mouseup', (e) => {
+                          e.stopPropagation();
+                        });
+                      }
+
+                      const deleteSelectedButton = document.getElementById(
+                        'room-delete-selected'
+                      );
+                      if (deleteSelectedButton) {
+                        deleteSelectedButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          const { name } = getObjectFromControlStrip() || {};
+                          if (name) {
+                            modelViewer.removeObject(name, { animate: true });
+                          }
+                        });
+                        deleteSelectedButton.addEventListener(
+                          'mouseup',
+                          (e) => {
+                            e.stopPropagation();
+                          }
+                        );
+                      }
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="transforms" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Transform objects and scene</h2>
+                <h4>
+                  Call <span class="attribute">rotate()</span>,
+                  <span class="attribute">translate()</span>, and
+                  <span class="attribute">scale()</span> with an object's name
+                  to manipulate its transform. The name "scene" can be used to
+                  manipulate the entire model.
+                </h4>
+                <p>
+                  Use the sliders to rotate selected nodes and the full scene in
+                  real time. The code demonstrates mapping UI inputs to modular
+                  transform APIs and targeting either specific object names or
+                  the root scene node.
+                </p>
+              </div>
+              <example-snippet stamp-to="transforms" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    id="transforms-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Control Panel
+                          </h3>
+                          <div class="ld-sections">
+                            <div class="ld-field-row-between">
+                              <label
+                                for="rotate-scene"
+                                class="ld-label-muted flex-1"
+                                >Rotate Scene</label
+                              >
+                              <input
+                                type="range"
+                                id="rotate-scene"
+                                data-object-name="Scene"
+                                data-axis="x"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate ld-range w-1/3 shrink-0"
+                              />
+                              <input
+                                type="range"
+                                data-object-name="Scene"
+                                data-axis="y"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate ld-range w-1/3 shrink-0"
+                              />
+                            </div>
+                            <div class="ld-field-row-between">
+                              <label
+                                for="rotate-p-box"
+                                class="ld-label-muted flex-1"
+                                >Rotate Purple Box</label
+                              >
+                              <input
+                                type="range"
+                                id="rotate-p-box"
+                                data-object-name="Box"
+                                data-axis="x"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate ld-range w-1/3 shrink-0"
+                              />
+                              <input
+                                type="range"
+                                data-object-name="Box"
+                                data-axis="y"
+                                min="-180"
+                                max="180"
+                                step="1"
+                                value="0"
+                                class="rotate ld-range w-1/3 shrink-0"
+                              />
+                            </div>
+                            <div class="ld-field-row-between">
+                              <label
+                                for="translate-y-box"
+                                class="ld-label-muted flex-1"
+                                >Move Yellow Box</label
+                              >
+                              <input
+                                type="range"
+                                id="translate-y-box"
+                                data-object-name="Box_1"
+                                data-axis="x"
+                                min="-2"
+                                max="2"
+                                step="0.01"
+                                value="0"
+                                class="translate ld-range w-1/4 shrink-0"
+                              />
+                              <input
+                                type="range"
+                                id="translate-y-box"
+                                data-object-name="Box_1"
+                                data-axis="y"
+                                min="-2"
+                                max="2"
+                                step="0.01"
+                                value="0"
+                                class="translate ld-range w-1/4 shrink-0"
+                              />
+                              <input
+                                type="range"
+                                data-object-name="Box_1"
+                                data-axis="z"
+                                min="-2"
+                                max="2"
+                                step="0.01"
+                                value="0"
+                                class="translate ld-range w-1/4 shrink-0"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#transforms-demo');
+
+                      document.querySelectorAll('.rotate').forEach((el) => {
+                        el.addEventListener('input', (e) => {
+                          const { objectName, axis } = e.target.dataset;
+                          const val = parseFloat(el.value);
+
+                          if (axis === 'x') {
+                            modelViewer.setRotationX(objectName, val);
+                          } else if (axis === 'y') {
+                            modelViewer.setRotationY(objectName, val);
+                          } else if (axis === 'z') {
+                            modelViewer.setRotationZ(objectName, val);
+                          }
+                        });
+                      });
+
+                      document.querySelectorAll('.translate').forEach((el) => {
+                        el.addEventListener('input', (e) => {
+                          const { objectName, axis } = e.target.dataset;
+                          const val = parseFloat(el.value);
+
+                          if (axis === 'x') {
+                            modelViewer.setPositionX(objectName, val);
+                          } else if (axis === 'y') {
+                            modelViewer.setPositionY(objectName, val);
+                          } else if (axis === 'z') {
+                            modelViewer.setPositionZ(objectName, val);
+                          }
+                        });
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="rotation-mode" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Rotation modes and snapping</h2>
+                <h4>
+                  Call <span class="attribute">rotate()</span>, with an object's
+                  name to manipulate its rotation. The name "scene" can be used
+                  to manipulate the entire model. The rotation mode can be set
+                  to "relative" or "snapToClosest".
+                </h4>
+                <p>
+                  Click preset angle buttons to compare exact, relative, and
+                  snap-to-closest rotations on the same object. The code
+                  demonstrates passing rotation mode options into
+                  <code>rotate()</code> and building predictable snapping
+                  controls for editor-style workflows.
+                </p>
+              </div>
+              <example-snippet stamp-to="rotation-mode" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    id="rotation-mode-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Control Panel
+                          </h3>
+
+                          <div class="ld-sections-loose">
+                            <div class="flex gap-4">
+                              <label
+                                class="ld-label-muted"
+                                >Exact</label
+                              >
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="-90"
+                              >
+                                -90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="0"
+                              >
+                                0°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="90"
+                              >
+                                90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="180"
+                              >
+                                180°
+                              </button>
+                            </div>
+                            <div class="flex gap-4">
+                              <label
+                                class="ld-label-muted"
+                                >Relative</label
+                              >
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="-=90"
+                              >
+                                -90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="-=45"
+                              >
+                                -45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="-=10"
+                              >
+                                -10°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="+=10"
+                              >
+                                +10°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="+=45"
+                              >
+                                +45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="+=90"
+                              >
+                                +90°
+                              </button>
+                            </div>
+                            <div class="flex gap-4">
+                              <label
+                                class="ld-label-muted"
+                                >Relative (Snap to Closest)</label
+                              >
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="-=90"
+                                data-mode="snapToClosest"
+                              >
+                                -90°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="-=45"
+                                data-mode="snapToClosest"
+                              >
+                                -45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="+=45"
+                                data-mode="snapToClosest"
+                              >
+                                +45°
+                              </button>
+                              <button
+                                type="button"
+                                class="rotate ld-button-sm"
+                                data-value="+=90"
+                                data-mode="snapToClosest"
+                              >
+                                +90°
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#rotation-mode-demo'
+                      );
+
+                      document.querySelectorAll('.rotate').forEach((el) => {
+                        el.addEventListener('click', (e) => {
+                          const { value, mode } = e.target.dataset;
+
+                          const objectName = 'Scene';
+
+                          if (mode === 'snapToClosest') {
+                            modelViewer.setRotationY(objectName, value, {
+                              mode: 'snapToClosest',
+                              animate: true,
+                            });
+                          } else {
+                            modelViewer.setRotationY(objectName, value, {
+                              animate: true,
+                            });
+                          }
+                        });
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="set-src-from-buffer" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Load model source from buffer</h2>
+                <h4>
+                  <span class="attribute">setSrcFromBuffer()</span> – replace the
+                  active model from an <code>ArrayBuffer</code> instead of a URL.
+                </h4>
+                <p>
+                  Interactively swap between preloaded model buffers using the
+                  control buttons and watch the viewer update without changing
+                  the source URL. The code demonstrates fetching serialized
+                  buffer payloads, converting them to <code>ArrayBuffer</code>,
+                  and calling <code>setSrcFromBuffer()</code>.
+                </p>
+              </div>
+              <example-snippet
+                stamp-to="set-src-from-buffer"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="modular-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Control Panel
+                          </h3>
+                          <div class="ld-sections-loose">
+                            <div class="flex">
+                              <button
+                                type="button"
+                                class="load-buffer ld-button-pill"
+                                data-filename="model_size_485.buffer"
+                              >
+                                📼 Load 485
+                              </button>
+                              <button
+                                type="button"
+                                class="load-buffer ld-button-pill"
+                                data-filename="model_size_510.buffer"
+                              >
+                                📼 Load 510
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script>
+                    function parseArrayBufferString(string) {
+                      return new Uint8Array(string.split(',')).buffer;
+                    }
+                  </script>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#modular-demo');
+
+                      document
+                        .querySelectorAll('.load-buffer')
+                        .forEach((button) => {
+                          button.addEventListener('click', async (e) => {
+                            const { filename } = e.target.dataset;
+
+                            console.log(
+                              'Fetching buffer string from file: ',
+                              filename
+                            );
+
+                            const bufferString = await fetch(
+                              `../../shared-assets/buffers/${filename}`
+                            ).then((response) => response.text());
+
+                            console.log(
+                              'Buffer string fetched: ',
+                              bufferString.length,
+                              'bytes'
+                            );
+                            console.log(
+                              'Converting to ArrayBuffer before passing to function...'
+                            );
+
+                            const arrayBuffer =
+                              parseArrayBufferString(bufferString);
+
+                            console.log('Done');
+
+                            modelViewer.setSrcFromBuffer(arrayBuffer);
+                          });
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="sample">
+          <div id="bulk-placement" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Bulk Placement</h2>
+                <h4>
+                  <span class="attribute">placeManyGlb()</span> – place multiple
+                  GLBs at once using known transforms.
+                </h4>
+                <p>
+                  Run bulk placement to instantiate a full layout and track
+                  progress in the panel while optional tree logging verifies the
+                  result. The code demonstrates preparing batched placement
+                  payloads and executing <code>placeManyGlb()</code> for
+                  deterministic multi-object scene setup.
+                </p>
+              </div>
+              <example-snippet stamp-to="bulk-placement" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="bulk-placement-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    snapping-enabled
+                    highlight-selected
+                    selection-scope="group"
+                    measure
+                    edit
+                    debug
+                    disable-base-model-selection
+                    disable-base-model-shadows
+                    viewport-gizmo
+                  >
+                    <div class="ld-panel" id="bulk-control-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">
+                            Bulk Placement
+                          </h3>
+                          <div class="ld-sections-loose">
+                            <div class="ld-field-row-between">
+                              <button
+                                type="button"
+                                id="run-bulk-placement"
+                                class="ld-button-sm"
+                              >
+                                Place cardio layout
+                              </button>
+                              <span
+                                id="bulk-progress-label"
+                                class="ld-helper-text"
+                              >
+                                Idle
+                              </span>
+                            </div>
+                            <div class="ld-field-row-between">
+                              <button
+                                type="button"
+                                id="log-bulk-placement-tree"
+                                class="ld-button-sm"
+                              >
+                                Log placement tree
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#bulk-placement-demo'
+                      );
+                      const button =
+                        document.getElementById('run-bulk-placement');
+                      const logTreeButton = document.getElementById(
+                        'log-bulk-placement-tree'
+                      );
+                      const progressLabel = document.getElementById(
+                        'bulk-progress-label'
+                      );
+
+                      /** Example bulk placement data based on real-world parts. */
+                      const bulkItems = [
+                        {
+                          id: 'be0fd2f7-6827-488d-bfdb-26b6a1b33f37',
+                          part: {
+                            type: 'scene',
+                            productId: '4b72831d-2930-4133-8790-46334d051d9d',
+                            id: 'aspt-se4',
+                            name: 'Aspire Treadmill',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              -4.069798681219307, 0.00001140888999910911,
+                              -3.288539294758341,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: '45de85d3-c076-432a-b2e1-3e52a7aa3af3',
+                          part: {
+                            type: 'scene',
+                            productId: '4b72831d-2930-4133-8790-46334d051d9d',
+                            id: 'aspt-se4',
+                            name: 'Aspire Treadmill',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              -2.711704599973312, 0.00001140888999910911,
+                              -3.545503974423621,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: 'a387b38c-6e01-4ebe-923f-25ec15d717ab',
+                          part: {
+                            type: 'scene',
+                            productId: '4b72831d-2930-4133-8790-46334d051d9d',
+                            id: 'aspt-se4',
+                            name: 'Aspire Treadmill',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              -1.388032350207621, 0.00001140888999910911,
+                              -3.627649398436148,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: '2851849c-dbbc-4177-befa-dabb3f3630a4',
+                          part: {
+                            type: 'scene',
+                            productId: '011fa601-16eb-4058-831b-f5830b8ab8a9',
+                            id: 'aspx-se416',
+                            name: 'ASPX-SE416_Aspire-Elliptical',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [
+                              3.63316398338498, 0, -0.5882094464445888,
+                            ],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: 'c08f2de5-60fd-4931-bfe0-ae6f95895048',
+                          part: {
+                            type: 'scene',
+                            productId: '011fa601-16eb-4058-831b-f5830b8ab8a9',
+                            id: 'aspx-se416',
+                            name: 'ASPX-SE416_Aspire-Elliptical',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [3.609296036695866, 0, 1.772037822345647],
+                            rotation: [0, 0, 0],
+                          },
+                        },
+                        {
+                          id: 'ff69d111-3d28-4202-9007-d167bf8bf0c5',
+                          part: {
+                            type: 'scene',
+                            productId: '011fa601-16eb-4058-831b-f5830b8ab8a9',
+                            id: 'aspx-se416',
+                            name: 'ASPX-SE416_Aspire-Elliptical',
+                            partGroup: 'Cardio - Aspire',
+                            editable: true,
+                          },
+                          transform: {
+                            scale: [1, 1, 1],
+                            position: [-3.454572417897237, 0, 3.98017226650312],
+                            rotation: [
+                              -3.141592653589793, 4.440892098500626e-16,
+                              -3.141592653589793,
+                            ],
+                          },
+                        },
+                      ];
+
+                      /** Map part ids to example GLB URLs in shared-assets. */
+                      const partToUrl = {
+                        'aspt-se4':
+                          '../../shared-assets/models/sofa_middle.glb',
+                        'aspx-se416':
+                          '../../shared-assets/models/sofa_chaise.glb',
+                      };
+
+                      async function getHighResUrl(item) {
+                        const partId = item.part && item.part.id;
+                        if (partId && partToUrl[partId]) {
+                          return partToUrl[partId];
+                        }
+                        return '../../shared-assets/models/sofa_middle.glb';
+                      }
+
+                      let running = false;
+
+                      button?.addEventListener('click', async () => {
+                        if (running) return;
+                        running = true;
+                        if (button) button.disabled = true;
+                        if (progressLabel)
+                          progressLabel.textContent = 'Starting…';
+
+                        try {
+                          const results = await modelViewer.placeManyGlb(
+                            bulkItems,
+                            {
+                              concurrency: 4,
+                              getHighResUrl,
+                            }
+                          );
+                          console.log('Bulk placement complete', results);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Completed';
+                        } catch (e) {
+                          console.error('Bulk placement error', e);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Error';
+                        } finally {
+                          running = false;
+                          if (button) button.disabled = false;
+                        }
+                      });
+
+                      modelViewer.addEventListener('progress', (e) => {
+                        const detail = e.detail || {};
+                        if (detail.reason !== 'bulk-placement') return;
+                        const { totalProgress, completed, total } = detail;
+                        const pct = Math.round((totalProgress || 0) * 100);
+                        if (progressLabel) {
+                          progressLabel.textContent = `${completed}/${total} (${pct}%)`;
+                        }
+                      });
+
+                      logTreeButton?.addEventListener('click', () => {
+                        try {
+                          const tree = modelViewer.getPlacementTree();
+                          console.log('Bulk placement tree:', tree);
+                        } catch (e) {
+                          console.error('Failed to read placement tree', e);
+                        }
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="bulk-replace" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Bulk Replace</h2>
+                <h4>
+                  <span class="attribute">replaceManyParts()</span> – swap multiple
+                  placed GLBs while preserving transforms.
+                </h4>
+                <p>
+                  Seed two floor items, then run bulk replace to load alternate
+                  models at the same positions. Progress is reported via
+                  <code>reason: 'bulk-replace-part'</code>; undo restores all
+                  replaced objects in one step.
+                </p>
+              </div>
+              <example-snippet stamp-to="bulk-replace" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="bulk-replace-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    edit
+                    disable-base-model-selection
+                    disable-base-model-shadows
+                  >
+                    <div class="ld-panel" id="bulk-replace-control-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">Bulk Replace</h3>
+                          <div class="ld-sections-loose">
+                            <div class="ld-field-row-between">
+                              <button
+                                type="button"
+                                id="seed-bulk-replace"
+                                class="ld-button-sm"
+                              >
+                                Seed items
+                              </button>
+                              <button
+                                type="button"
+                                id="run-bulk-replace"
+                                class="ld-button-sm"
+                                disabled
+                              >
+                                Replace with alternates
+                              </button>
+                            </div>
+                            <span
+                              id="bulk-replace-progress-label"
+                              class="ld-helper-text"
+                            >
+                              Idle
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#bulk-replace-demo'
+                      );
+                      const seedButton =
+                        document.getElementById('seed-bulk-replace');
+                      const replaceButton =
+                        document.getElementById('run-bulk-replace');
+                      const progressLabel = document.getElementById(
+                        'bulk-replace-progress-label'
+                      );
+
+                      const SOFA_URL =
+                        '../../shared-assets/models/sofa_middle.glb';
+                      const ASTRONAUT_URL =
+                        '../../shared-assets/models/Astronaut.glb';
+                      const DUCK_URL =
+                        '../../shared-assets/models/Duck.glb';
+
+                      const seedItems = [
+                        {
+                          id: 'bulk-replace-a',
+                          part: { id: 'bulk-replace-a', name: 'Item A' },
+                          transform: {
+                            position: [-1.5, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                        {
+                          id: 'bulk-replace-b',
+                          part: { id: 'bulk-replace-b', name: 'Item B' },
+                          transform: {
+                            position: [1.5, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                      ];
+
+                      const placedUuids = [];
+
+                      const getSeedUrl = async (item) => SOFA_URL;
+
+                      const getReplaceUrl = async (item) => {
+                        const partId = item?.part?.id;
+                        if (partId === 'bulk-replace-a') return ASTRONAUT_URL;
+                        if (partId === 'bulk-replace-b') return DUCK_URL;
+                        return ASTRONAUT_URL;
+                      };
+
+                      seedButton?.addEventListener('click', async () => {
+                        seedButton.disabled = true;
+                        placedUuids.length = 0;
+                        try {
+                          const results = await modelViewer.placeManyGlb(
+                            seedItems,
+                            { getHighResUrl: getSeedUrl }
+                          );
+                          for (const entry of results) {
+                            placedUuids.push(entry.node.uuid);
+                          }
+                          if (replaceButton) replaceButton.disabled = false;
+                          if (progressLabel)
+                            progressLabel.textContent = 'Seeded';
+                        } catch (error) {
+                          console.error('Bulk replace seed failed', error);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Seed error';
+                        } finally {
+                          seedButton.disabled = false;
+                        }
+                      });
+
+                      replaceButton?.addEventListener('click', async () => {
+                        if (!placedUuids.length) return;
+                        replaceButton.disabled = true;
+                        try {
+                          const items = placedUuids.map((objectUuid, index) => ({
+                            objectUuid,
+                            part: seedItems[index]?.part,
+                          }));
+                          const results = await modelViewer.replaceManyParts(
+                            items,
+                            { getHighResUrl: getReplaceUrl }
+                          );
+                          placedUuids.length = 0;
+                          for (const entry of results) {
+                            placedUuids.push(entry.node.uuid);
+                          }
+                          if (progressLabel)
+                            progressLabel.textContent = 'Replaced';
+                        } catch (error) {
+                          console.error('Bulk replace failed', error);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Replace error';
+                        } finally {
+                          replaceButton.disabled = placedUuids.length > 0;
+                        }
+                      });
+
+                      modelViewer.addEventListener('progress', (e) => {
+                        const detail = e.detail || {};
+                        if (detail.reason !== 'bulk-replace-part') return;
+                        const { totalProgress, completed, total } = detail;
+                        const pct = Math.round((totalProgress || 0) * 100);
+                        if (progressLabel) {
+                          progressLabel.textContent = `${completed}/${total} (${pct}%)`;
+                        }
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+          <div class="sample">
+            <div id="hover-anchor-metadata" class="demo"></div>
+            <div class="content">
+              <div class="wrapper">
+                <div class="heading">
+                  <h4>Hover anchor metadata</h4>
+                  <p>
+                    Listen for <code>hover-change</code> and render
+                    <code>metadata.id</code> (fallback <code>metadata.part.id</code>)
+                    at the reported anchor center while hovering placed objects.
+                  </p>
+                </div>
+                <example-snippet stamp-to="hover-anchor-metadata" highlight-as="html">
+                  <template>
+                    <model-viewer
+                      src="../../shared-assets/models/empty.glb"
+                      id="hover-anchor-metadata-demo"
+                      camera-controls
+                      touch-action="pan-y"
+                      interaction-prompt="none"
+                      autoplay
+                      environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                      selection-scope="part"
+                      edit
+                      disable-base-model-selection
+                      style="--poster-color: transparent; position: relative;"
+                    >
+                      <div
+                        id="hover-anchor-id-label"
+                        class="rounded bg-blue-600 px-2 py-1 text-xs font-semibold text-white shadow-sm pointer-events-none"
+                        style="
+                          position: absolute;
+                          z-index: 30;
+                          display: none;
+                          transform: translate(-50%, -50%);
+                        "
+                      ></div>
+                      <div
+                        style="position: absolute; left: 8px; top: 8px; z-index: 30"
+                      >
+                        <button
+                          type="button"
+                          id="place-hover-anchor-item"
+                          class="ld-button-sm"
+                        >
+                          Place sample object
+                        </button>
+                      </div>
+                    </model-viewer>
+
+                    <script type="module">
+                      (() => {
+                        const modelViewer = document.getElementById(
+                          'hover-anchor-metadata-demo'
+                        );
+                        const placeButton = document.getElementById(
+                          'place-hover-anchor-item'
+                        );
+                        const hoverLabel = document.getElementById(
+                          'hover-anchor-id-label'
+                        );
+                        if (!modelViewer || !placeButton || !hoverLabel) return;
+
+                        const PLACE_ITEMS = [
+                          {
+                            id: 'hover-item-01',
+                            part: { type: 'scene', id: 'part-hover-item-01' },
+                            transform: {
+                              position: [0, 0, 0],
+                              rotation: [0, 0, 0],
+                              scale: [1, 1, 1],
+                            },
+                          },
+                        ];
+                        const partToUrl = {
+                          'part-hover-item-01':
+                            '../../shared-assets/models/sofa_middle.glb',
+                        };
+
+                        const getHighResUrl = async (item) => {
+                          const partId = item?.part?.id;
+                          return (
+                            (partId && partToUrl[partId]) ||
+                            '../../shared-assets/models/sofa_middle.glb'
+                          );
+                        };
+
+                        placeButton.addEventListener('click', async () => {
+                          placeButton.disabled = true;
+                          try {
+                            await modelViewer.placeManyGlb(PLACE_ITEMS, {
+                              getHighResUrl,
+                            });
+                          } finally {
+                            placeButton.disabled = false;
+                          }
+                        });
+
+                        modelViewer.addEventListener('hover-change', (event) => {
+                          const detail = event.detail || {};
+                          if (!detail.hovered || !detail.anchor) {
+                            hoverLabel.style.display = 'none';
+                            hoverLabel.textContent = '';
+                            return;
+                          }
+
+                          const metadata = detail.metadata || {};
+                          const idText =
+                            metadata.id || metadata?.part?.id || detail.uuid;
+                          if (!idText) {
+                            hoverLabel.style.display = 'none';
+                            hoverLabel.textContent = '';
+                            return;
+                          }
+
+                          hoverLabel.textContent = String(idText);
+                          hoverLabel.style.left = `${detail.anchor.centerX}px`;
+                          hoverLabel.style.top = `${detail.anchor.centerY}px`;
+                          hoverLabel.style.display = detail.anchor.isVisible
+                            ? 'block'
+                            : 'none';
+                        });
+                      })();
+                    </script>
+                  </template>
+                </example-snippet>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld-modular');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+  </body>
+</html>
