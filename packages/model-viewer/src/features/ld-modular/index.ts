@@ -250,6 +250,14 @@ function getPlacementSelectable(options?: PlacementOptions): boolean {
   return true;
 }
 
+function getPlacementPartTags(object: Object3D): string[] {
+  const part = object.userData?.part as { tags?: string[] } | undefined;
+  if (!Array.isArray(part?.tags)) return [];
+  return part.tags.filter(
+    (tag): tag is string => typeof tag === 'string' && tag.length > 0
+  );
+}
+
 function markPlacementPlaceholderNonSelectable(placeholder: Object3D): void {
   placeholder.traverse((child) => {
     child.userData.isPlacementPlaceholder = true;
@@ -533,6 +541,9 @@ export declare interface LDModularInterface {
   getClipboardState: () => ClipboardState;
 
   alignObjects(action: AlignAction): boolean;
+
+  showByTag(tag: string, filter?: (object: Object3D) => boolean): void;
+  hideByTag(tag: string, filter?: (object: Object3D) => boolean): void;
 }
 
 export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -626,6 +637,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _tmpWallWorldNormal: Vector3 = new Vector3();
     private _tmpMeshWorldQuat: Quaternion = new Quaternion();
     private _tmpWallWorldQuat: Quaternion = new Quaternion();
+
+    private _objectsByTag: Map<string, Set<Object3D>> = new Map();
+    private _hiddenTags: Set<string> = new Set();
 
     private _placementCursorMesh: PlacementCursor | null = null;
     private _cursorWorldPosition: { x: number; y: number; z: number } | null =
@@ -1224,6 +1238,111 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             'Wall attachments follow `walls` and camera backface; floor-surface attachments follow `floor`.'
         );
       }
+    }
+
+    private _resolvePlacedObjectVisible(
+      object: Object3D,
+      contextualVisible: boolean
+    ): void {
+      object.visible = contextualVisible && object.userData?.tagHidden !== true;
+    }
+
+    private _applyHiddenTagsToObject(object: Object3D): void {
+      const tags = getPlacementPartTags(object);
+      const shouldHide = tags.some((tag) => this._hiddenTags.has(tag));
+      if (shouldHide) {
+        object.userData.tagHidden = true;
+        object.visible = false;
+      }
+    }
+
+    _indexPlacedObjectTags(object: Object3D): void {
+      if (object.userData?.isPlacedObject !== true) return;
+      for (const tag of getPlacementPartTags(object)) {
+        let set = this._objectsByTag.get(tag);
+        if (!set) {
+          set = new Set();
+          this._objectsByTag.set(tag, set);
+        }
+        set.add(object);
+      }
+      this._applyHiddenTagsToObject(object);
+    }
+
+    private _unindexPlacedObjectTags(object: Object3D): void {
+      for (const tag of getPlacementPartTags(object)) {
+        const set = this._objectsByTag.get(tag);
+        if (!set) continue;
+        set.delete(object);
+        if (set.size === 0) {
+          this._objectsByTag.delete(tag);
+        }
+      }
+    }
+
+    private _reindexPlacedObjectTags(
+      oldObject: Object3D,
+      newObject: Object3D
+    ): void {
+      const tagHidden = oldObject.userData?.tagHidden === true;
+      this._unindexPlacedObjectTags(oldObject);
+      if (tagHidden) {
+        newObject.userData.tagHidden = true;
+      }
+      this._indexPlacedObjectTags(newObject);
+      if (tagHidden) {
+        newObject.visible = false;
+      }
+    }
+
+    public hideByTag(
+      tag: string,
+      filter?: (object: Object3D) => boolean
+    ): void {
+      if (!tag) return;
+
+      if (!filter) {
+        this._hiddenTags.add(tag);
+      }
+
+      const objects = this._objectsByTag.get(tag);
+      if (!objects || objects.size === 0) {
+        (this as any)[$needsRender]();
+        return;
+      }
+
+      objects.forEach((object) => {
+        if (filter && !filter(object)) return;
+        object.userData.tagHidden = true;
+        object.visible = false;
+      });
+
+      (this as any)[$needsRender]();
+    }
+
+    public showByTag(
+      tag: string,
+      filter?: (object: Object3D) => boolean
+    ): void {
+      if (!tag) return;
+
+      if (!filter) {
+        this._hiddenTags.delete(tag);
+      }
+
+      const objects = this._objectsByTag.get(tag);
+      if (!objects || objects.size === 0) {
+        (this as any)[$needsRender]();
+        return;
+      }
+
+      objects.forEach((object) => {
+        if (filter && !filter(object)) return;
+        object.userData.tagHidden = false;
+        this._resolvePlacedObjectVisible(object, true);
+      });
+
+      (this as any)[$needsRender]();
     }
 
     private _puzzleRegistry: Map<string, GLTF> = new Map();
@@ -4524,7 +4643,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const attached = this._roomAttachedObjectsByWallName.get(wallName);
       if (attached) {
         attached.forEach((object) => {
-          object.visible = visible;
+          this._resolvePlacedObjectVisible(object, visible);
           if (visible) this._roomHiddenAttachedObjects.delete(object);
           else this._roomHiddenAttachedObjects.add(object);
         });
@@ -4540,7 +4659,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _resetRoomAttachedVisibility() {
       this._roomHiddenAttachedObjects.forEach((object) => {
-        object.visible = true;
+        this._resolvePlacedObjectVisible(object, true);
       });
       this._roomHiddenSkirtings.forEach((object) => {
         object.visible = true;
@@ -4595,7 +4714,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this._roomFloorAttachedObjects.forEach((object: Object3D) => {
         const visible = this.floor;
-        object.visible = visible;
+        this._resolvePlacedObjectVisible(object, visible);
         if (visible) this._roomHiddenAttachedObjects.delete(object);
         else this._roomHiddenAttachedObjects.add(object);
       });
@@ -6509,6 +6628,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     deleteNode(node: Object3D): boolean {
       if (!node) return false;
       try {
+        if (node.userData?.isPlacedObject === true) {
+          this._unindexPlacedObjectTags(node);
+        }
         this._purgeSelectionForDeletedNode(node);
 
         if (!this._ensureUndoHistory().isReplaying) {
@@ -7953,6 +8075,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         newObject,
         originalParent
       );
+      if (objectToReplace.userData?.isPlacedObject === true) {
+        this._reindexPlacedObjectTags(objectToReplace, newObject);
+      }
       this._recordPartReplacement(beforeMemento, newObject);
 
       return { oldObject: objectToReplace, newObject };
@@ -9008,6 +9133,10 @@ class PlacementSession extends EventTarget {
         } catch (e) {}
       }
       placedNode.userData.isPlacedObject = true;
+
+      try {
+        element._indexPlacedObjectTags?.(placedNode);
+      } catch (e) {}
 
       try {
         scene.target.add(placedNode);

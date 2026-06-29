@@ -77,8 +77,6 @@ const boundsPart = {
   bounds: {
     min: [-0.5, 0, -0.5] as [number, number, number],
     max: [0.5, 1, 0.5] as [number, number, number],
-    center: [0, 0.5, 0] as [number, number, number],
-    radius: 1,
   },
 };
 
