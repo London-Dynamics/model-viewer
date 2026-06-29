@@ -1,14 +1,17 @@
-import {Box3, Object3D, Quaternion, Vector3} from 'three';
-import type {Part, SnapPoint} from '@london-dynamics/types/planner';
-import type {Selection} from '@london-dynamics/types/puzzler';
+import { Box3, Object3D, Quaternion, Vector3 } from 'three';
+import type { Part, SnapPoint } from '@london-dynamics/types/planner';
+import type { Selection } from '@london-dynamics/types/puzzler';
 import {
   allowsSurfaceType,
   requiresSurfaceSnap,
   type SurfaceType,
 } from '../../utilities/snapping-points.js';
-import {getObjectDisplayName} from './transform-events.js';
-import {cloneMeshMaterials, restoreCommittedMeshRendering} from './overlay-rendering.js';
-import {scrubSelectionOutlineLayers} from '../ld-selection/selection-outline-layers.js';
+import { getObjectDisplayName } from './transform-events.js';
+import {
+  cloneMeshMaterials,
+  restoreCommittedMeshRendering,
+} from './overlay-rendering.js';
+import { scrubSelectionOutlineLayers } from '../ld-selection/selection-outline-layers.js';
 
 export type ClipboardEntryKind = 'part' | 'group' | 'selection';
 
@@ -95,7 +98,9 @@ function cloneSnapConnections(
   connections: unknown[] | undefined
 ): Record<string, unknown>[] {
   if (!Array.isArray(connections)) return [];
-  return connections.map((connection) => clonePlain(connection) as Record<string, unknown>);
+  return connections.map(
+    (connection) => clonePlain(connection) as Record<string, unknown>
+  );
 }
 
 function collectAllowedSurfaces(object: Object3D): SurfaceType[] {
@@ -103,7 +108,7 @@ function collectAllowedSurfaces(object: Object3D): SurfaceType[] {
   const snapPoints = object.userData?.snapPoints as SnapPoint[] | undefined;
   if (Array.isArray(snapPoints)) {
     for (const snapPoint of snapPoints) {
-      const allowed = (snapPoint as {allowedSurfaces?: SurfaceType[]})
+      const allowed = (snapPoint as { allowedSurfaces?: SurfaceType[] })
         .allowedSurfaces;
       if (Array.isArray(allowed)) {
         for (const surface of allowed) surfaces.add(surface);
@@ -131,7 +136,9 @@ function snapshotPartUserData(source: Object3D): {
     selection: clonePlain(userData.selection as Selection | undefined),
     snapPoints: clonePlain(userData.snapPoints as SnapPoint[] | undefined),
     selectable:
-      typeof userData.selectable === 'boolean' ? userData.selectable : undefined,
+      typeof userData.selectable === 'boolean'
+        ? userData.selectable
+        : undefined,
   };
 }
 
@@ -141,7 +148,8 @@ function applyPartUserData(
 ): void {
   target.userData = target.userData || {};
   if (payload.part !== undefined) target.userData.part = payload.part;
-  if (payload.selection !== undefined) target.userData.selection = payload.selection;
+  if (payload.selection !== undefined)
+    target.userData.selection = payload.selection;
   if (payload.snapPoints !== undefined) {
     target.userData.snapPoints = payload.snapPoints;
   }
@@ -236,10 +244,12 @@ export function snapshotClipboardTargets(
 
   const leaderIndex = pickSelectionLeaderIndex(itemEntries);
   const anchorWorld = getObjectBottomCenterWorld(roots[leaderIndex]);
-  const items: SelectionClipboardItem[] = itemEntries.map((itemEntry, index) => ({
-    itemEntry,
-    anchorOffset: getObjectBottomCenterWorld(roots[index]).sub(anchorWorld),
-  }));
+  const items: SelectionClipboardItem[] = itemEntries.map(
+    (itemEntry, index) => ({
+      itemEntry,
+      anchorOffset: getObjectBottomCenterWorld(roots[index]).sub(anchorWorld),
+    })
+  );
 
   const displayName = `${itemEntries.length} items`;
 
@@ -257,7 +267,9 @@ export function snapshotClipboardTargets(
   };
 }
 
-export function snapshotClipboardEntry(source: Object3D): ClipboardEntry | null {
+export function snapshotClipboardEntry(
+  source: Object3D
+): ClipboardEntry | null {
   if (!isClipboardCopyTarget(source)) return null;
 
   const isGroup = source.userData?.isSnappedGroup === true;
@@ -317,7 +329,10 @@ export function disposeClipboardEntry(entry: ClipboardEntry | null): void {
     }
   }
   entry.prototype.traverse((child) => {
-    const mesh = child as {isMesh?: boolean; geometry?: {dispose?: () => void}};
+    const mesh = child as {
+      isMesh?: boolean;
+      geometry?: { dispose?: () => void };
+    };
     if (mesh.isMesh && mesh.geometry?.dispose) {
       // Shared geometry — do not dispose buffers; only drop references.
     }
@@ -360,8 +375,7 @@ export function applyCommittedPasteIdentity(
   object.userData = object.userData || {};
   object.userData.id = objectKey;
   const displayName =
-    options?.name ??
-    (options?.part as {name?: string} | undefined)?.name;
+    options?.name ?? (options?.part as { name?: string } | undefined)?.name;
   if (displayName !== undefined) {
     object.userData.name = displayName;
   }
@@ -428,7 +442,7 @@ export function commitPasteClone(
 
     const remappedConnections = entry.groupPayload.snapConnections.map(
       (connection) => {
-        const next = {...connection};
+        const next = { ...connection };
         if (typeof next.a === 'string' && nameMap.has(next.a)) {
           next.a = nameMap.get(next.a)!;
         }
@@ -456,7 +470,7 @@ export function commitPasteClone(
 export function commitPasteTargets(
   entry: ClipboardEntry,
   sessionId: string
-): Array<{node: Object3D; itemEntry: ClipboardEntry}> {
+): Array<{ node: Object3D; itemEntry: ClipboardEntry }> {
   if (entry.kind === 'selection' && entry.selectionPayload) {
     return entry.selectionPayload.items.map((item, index) => ({
       node: commitPasteClone(item.itemEntry, `${sessionId}_${index}`),
@@ -464,7 +478,7 @@ export function commitPasteTargets(
     }));
   }
 
-  return [{node: commitPasteClone(entry, sessionId), itemEntry: entry}];
+  return [{ node: commitPasteClone(entry, sessionId), itemEntry: entry }];
 }
 
 export function getSelectionClipboardItems(
@@ -473,7 +487,7 @@ export function getSelectionClipboardItems(
   if (entry.kind === 'selection' && entry.selectionPayload) {
     return entry.selectionPayload.items;
   }
-  return [{itemEntry: entry, anchorOffset: new Vector3()}];
+  return [{ itemEntry: entry, anchorOffset: new Vector3() }];
 }
 
 export function getSelectionLeaderIndex(entry: ClipboardEntry): number {
@@ -487,19 +501,25 @@ export function entryRequiresSurfaceSnap(entry: ClipboardEntry): boolean {
   return entry.requiresSurfaceSnap;
 }
 
-export function getEntryPrimarySnapPoint(entry: ClipboardEntry): SnapPoint | null {
+export function getEntryPrimarySnapPoint(
+  entry: ClipboardEntry
+): SnapPoint | null {
   const snapPoints = entry.prototype.userData?.snapPoints as
     | SnapPoint[]
     | undefined;
   if (Array.isArray(snapPoints) && snapPoints.length > 0) {
-    const surfacePoint = snapPoints.find((point) => !!(point as any)?.surfaceSnap);
+    const surfacePoint = snapPoints.find(
+      (point) => !!(point as any)?.surfaceSnap
+    );
     return surfacePoint ?? snapPoints[0];
   }
   if (entry.kind === 'group') {
     for (const child of entry.groupPayload?.children ?? []) {
       const points = child.snapPoints;
       if (!Array.isArray(points) || points.length === 0) continue;
-      const surfacePoint = points.find((point) => !!(point as any)?.surfaceSnap);
+      const surfacePoint = points.find(
+        (point) => !!(point as any)?.surfaceSnap
+      );
       return surfacePoint ?? points[0];
     }
   }
