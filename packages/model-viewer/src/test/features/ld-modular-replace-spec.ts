@@ -13,6 +13,10 @@ import {
 import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {tryCloneExistingGltfScene} from '../../features/ld-modular/gltf-reuse.js';
+import {
+  hasGltfLifecycle,
+  LD_GLTF_SRC,
+} from '../../features/ld-modular/gltf-lifecycle.js';
 
 const prepareSceneHarness = (element: ModelViewerElement) => {
   const target = new Object3D();
@@ -44,6 +48,7 @@ const prepareSceneHarness = (element: ModelViewerElement) => {
 
 const installMockLoader = (element: ModelViewerElement) => {
   let loadCount = 0;
+  let disposeCount = 0;
   const renderer = (element as any)[$renderer];
   const originalLoad = renderer.loader.load.bind(renderer.loader);
   renderer.loader.load = async (src: string) => {
@@ -55,10 +60,16 @@ const installMockLoader = (element: ModelViewerElement) => {
       new MeshBasicMaterial()
     );
     sceneNode.add(mesh);
-    return {scene: sceneNode};
+    return {
+      scene: sceneNode,
+      dispose: () => {
+        disposeCount += 1;
+      },
+    };
   };
   return {
     getLoadCount: () => loadCount,
+    getDisposeCount: () => disposeCount,
     restore: () => {
       renderer.loader.load = originalLoad;
     },
@@ -201,5 +212,38 @@ suite('ld-modular replacePart / replaceManyParts', () => {
     expect(element.undo()).to.equal(true);
     expect(element.getPart(first.uuid)).to.not.equal(null);
     expect(element.getPart(second.uuid)).to.not.equal(null);
+  });
+
+  test('replacePart attaches gltf lifecycle and releases on clearUndoHistory', async () => {
+    const original = addPlacedPart(target, 'lifecycle-chair', [0, 1, 0], {
+      displayName: 'Lifecycle Chair',
+    });
+
+    await element.replacePart(original.uuid, 'replacement.glb');
+    expect(loader.getLoadCount()).to.equal(1);
+    expect(loader.getDisposeCount()).to.equal(0);
+
+    const nodes: Object3D[] = [];
+    target.traverse((child) => {
+      if (child.userData?.isPlacedObject && child !== target) {
+        nodes.push(child);
+      }
+    });
+    expect(nodes).to.have.length(1);
+    const newNode = nodes[0];
+    expect(hasGltfLifecycle(newNode)).to.equal(true);
+    expect(newNode.userData[LD_GLTF_SRC]).to.equal('replacement.glb');
+
+    // Live replacement must keep its retain; clearing history only releases
+    // the replaced (graveyard) node — which had no lifecycle in this harness.
+    element.clearUndoHistory();
+    expect(hasGltfLifecycle(newNode)).to.equal(true);
+    expect(loader.getDisposeCount()).to.equal(0);
+
+    expect(element.deleteNode!(newNode)).to.equal(true);
+    expect(hasGltfLifecycle(newNode)).to.equal(true);
+    element.clearUndoHistory();
+    expect(loader.getDisposeCount()).to.equal(1);
+    expect(hasGltfLifecycle(newNode)).to.equal(false);
   });
 });

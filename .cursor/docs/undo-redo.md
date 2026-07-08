@@ -131,7 +131,8 @@ If a new feature relies on `userData` not in `STRUCTURE_USER_DATA_KEYS`, add the
 ### 6. Graveyard lifecycle
 
 - Deleted nodes go to graveyard via `detachToGraveyard`.
-- Pruning oldest undo entries or `clear()` disposes graveyard nodes no longer referenced by either stack.
+- Pruning oldest undo entries or `clear()` permanently discards graveyard nodes no longer referenced by either stack.
+- Permanent discard **releases** the `CachingGLTFLoader` URL retain (via `releaseGltfLifecycle`) and disposes **per-instance materials only**. It must **not** call `geometry.dispose()` — geometry buffers are shared across placements of the same URL (`SkeletonUtils.clone` / `Object3D.clone(true)`).
 - Do not hold external references to graveyard nodes.
 
 ### 7. Keep manager scene-agnostic

@@ -44,7 +44,7 @@ import {
   tryResnapToNearestWall,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
-import { PlacementCursor } from './placement-cursor.js';
+import {PlacementCursor} from './placement-cursor.js';
 import {
   type ClipboardChangeDetail,
   type ClipboardChangeReason,
@@ -60,6 +60,10 @@ import {
   getSelectionClipboardItems,
   getSelectionLeaderIndex,
 } from './clipboard.js';
+import {
+  attachGltfLifecycle,
+  releaseGltfLifecycle,
+} from './gltf-lifecycle.js';
 import {PasteSession, type PasteCommitResult, type PasteSessionHost} from './paste-session.js';
 import { applyPointerPlacementPose, applySelectionPointerPlacementPose } from './placement-pose.js';
 
@@ -1414,33 +1418,39 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       const gltf = await loader.load(src, this, () => {});
-      if (!gltf?.scene) {
-        throw new Error('Loaded GLTF missing scene');
-      }
-
-      gltf.scene.updateMatrixWorld(true);
-      const bbox = new Box3().setFromObject(gltf.scene);
-      if (
-        !Number.isFinite(bbox.min.x) ||
-        !Number.isFinite(bbox.min.y) ||
-        !Number.isFinite(bbox.min.z) ||
-        !Number.isFinite(bbox.max.x) ||
-        !Number.isFinite(bbox.max.y) ||
-        !Number.isFinite(bbox.max.z)
-      ) {
-        throw new Error('Computed GLB bounds are invalid');
-      }
-
-      let filename = src;
       try {
-        filename = new URL(src).pathname.split('/').pop() || src;
-      } catch (e) {}
+        if (!gltf?.scene) {
+          throw new Error('Loaded GLTF missing scene');
+        }
 
-      return {
-        filename,
-        min: [bbox.min.x, bbox.min.y, bbox.min.z],
-        max: [bbox.max.x, bbox.max.y, bbox.max.z],
-      };
+        gltf.scene.updateMatrixWorld(true);
+        const bbox = new Box3().setFromObject(gltf.scene);
+        if (
+          !Number.isFinite(bbox.min.x) ||
+          !Number.isFinite(bbox.min.y) ||
+          !Number.isFinite(bbox.min.z) ||
+          !Number.isFinite(bbox.max.x) ||
+          !Number.isFinite(bbox.max.y) ||
+          !Number.isFinite(bbox.max.z)
+        ) {
+          throw new Error('Computed GLB bounds are invalid');
+        }
+
+        let filename = src;
+        try {
+          filename = new URL(src).pathname.split('/').pop() || src;
+        } catch (e) {}
+
+        return {
+          filename,
+          min: [bbox.min.x, bbox.min.y, bbox.min.z],
+          max: [bbox.max.x, bbox.max.y, bbox.max.z],
+        };
+      } finally {
+        try {
+          gltf?.dispose?.();
+        } catch (e) {}
+      }
     }
 
     async getGlbBoundsMany(srcs: string[]): Promise<GlbBoundsResult[]> {
@@ -7872,6 +7882,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!gltf?.scene) {
         throw new Error('Loaded GLTF missing scene');
       }
+      attachGltfLifecycle(gltf.scene, src, () => {
+        try {
+          (gltf as {dispose?: () => void}).dispose?.();
+        } catch (e) {}
+      });
       return gltf.scene;
     }
 
@@ -8464,6 +8479,12 @@ class PlacementSession extends EventTarget {
       // Use the low-res model as the interactive placeholder
       const placeholder = gltf.scene;
       if (!placeholder) return;
+
+      attachGltfLifecycle(placeholder, lowResUrl, () => {
+        try {
+          (gltf as {dispose?: () => void}).dispose?.();
+        } catch (e) {}
+      });
 
       this.placeholder = placeholder;
       applyPlacementObjectIdentity(placeholder, this.id, this._options);
@@ -9341,12 +9362,9 @@ class PlacementSession extends EventTarget {
     try {
       if (this.placeholder.parent)
         this.placeholder.parent.remove(this.placeholder);
-      this.placeholder.traverse((child: any) => {
-        if (child.dispose)
-          try {
-            child.dispose();
-          } catch (_) {}
-      });
+      // Geometry may be shared with the loader cache / other instances —
+      // release the retain handle only; do not dispose shared buffers.
+      releaseGltfLifecycle(placeholderRef);
     } catch (e) {
       // ignore
     }
