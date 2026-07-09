@@ -39,7 +39,13 @@ const watchFiles = ['lib/**'];
 
 const createModelViewerOutput =
     (file, format, plugins = commonPlugins, external = []) => {
-      const globals = external.reduce((acc, mod) => {
+      const rendererExternals =
+          external.includes('three') ? ['three/webgpu'] : [];
+      const waterExternals =
+          external.includes('three') ? ['threejs-water-pro'] : [];
+      const outputExternal = Array.from(
+          new Set([...external, ...rendererExternals, ...waterExternals]));
+      const globals = outputExternal.reduce((acc, mod) => {
         acc[mod] =
             mod;  // Assuming global variable names are the same as module names
         return acc;
@@ -52,9 +58,10 @@ const createModelViewerOutput =
           format,
           sourcemap: true,
           name: 'ModelViewerElement',
+          inlineDynamicImports: outputExternal.length === 0,
           globals
         },
-        external,
+        external: outputExternal,
         watch: {include: watchFiles},
         plugins,
         onwarn

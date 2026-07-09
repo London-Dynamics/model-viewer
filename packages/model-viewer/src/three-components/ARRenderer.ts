@@ -211,6 +211,7 @@ export class ARRenderer extends EventDispatcher<
 
     scene.setHotspotsVisibility(false);
     scene.setEnvironmentModelVisible(false);
+    scene.setWaterVisible(false);
     scene.queueRender();
     // Render a frame to turn off the hotspots
     await waitForAnimationFrame;
@@ -513,6 +514,7 @@ export class ARRenderer extends EventDispatcher<
         scene.setShadowIntensity(intensity);
       }
       scene.setEnvironmentModelVisible(true);
+      scene.setWaterVisible(true);
       scene.setEnvironmentAndSkybox(
           (element as any)[$currentEnvironmentMap],
           (element as any)[$currentBackground]);

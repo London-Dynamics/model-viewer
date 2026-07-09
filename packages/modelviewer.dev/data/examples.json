@@ -388,6 +388,26 @@
     ]
   },
   {
+    "name": "LD Water",
+    "htmlName": "ld_water",
+    "examples": [
+      {
+        "htmlId": "water",
+        "name": "Water"
+      }
+    ]
+  },
+  {
+    "name": "LD Water Real Scale",
+    "htmlName": "ld_water_real_scale",
+    "examples": [
+      {
+        "htmlId": "water-real-scale",
+        "name": "Real Scale Water"
+      }
+    ]
+  },
+  {
     "name": "LD AO+Env",
     "htmlName": "ld_ao_env",
     "examples": [

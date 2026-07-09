@@ -1,0 +1,1 @@
+{"version":3,"file":"builtInFoamTextures.d.ts","sourceRoot":"","sources":["../../src/shaders/builtInFoamTextures.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;GAUG;AACH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAC;AAOtC,2DAA2D;AAC3D,MAAM,MAAM,eAAe,GAAG,OAAO,GAAG,OAAO,GAAG,OAAO,GAAG,OAAO,CAAC;AAYpE;;;;GAIG;AACH,wBAAgB,sBAAsB,CAAC,IAAI,EAAE,eAAe,GAAG,KAAK,CAAC,OAAO,CAS3E"}

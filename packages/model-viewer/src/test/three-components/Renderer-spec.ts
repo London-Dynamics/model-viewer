@@ -99,6 +99,33 @@ suite('Renderer with two scenes', () => {
     expect(otherScene.renderCount).to.be.equal(0, 'otherScene first render');
   });
 
+  test('sizes a replaced 3D canvas even when scene dimensions are unchanged',
+       () => {
+         const originalCanvas = renderer.canvas3D;
+         scene.element[$onResize]({width: 320, height: 180});
+         renderer.render(performance.now());
+         const expectedWidth = originalCanvas.width;
+         const expectedHeight = originalCanvas.height;
+
+         const replacementCanvas = document.createElement('canvas');
+         const originalSetSize = renderer.threeRenderer.setSize;
+         renderer.threeRenderer.setSize = ((width: number, height: number) => {
+           replacementCanvas.width = width;
+           replacementCanvas.height = height;
+         }) as any;
+         renderer.canvas3D = replacementCanvas;
+
+         try {
+           (renderer as any).updateRendererSize();
+
+           expect(replacementCanvas.width).to.equal(expectedWidth);
+           expect(replacementCanvas.height).to.equal(expectedHeight);
+         } finally {
+           renderer.canvas3D = originalCanvas;
+           renderer.threeRenderer.setSize = originalSetSize;
+         }
+       });
+
   suite('and an externally-rendered scene', () => {
     let externalScene: ModelScene;
     let externalElement: ModelViewerElement;

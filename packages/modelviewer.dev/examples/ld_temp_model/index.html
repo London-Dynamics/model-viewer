@@ -1,0 +1,176 @@
+<!--
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Temporary Model</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="Temporary London Dynamics model-viewer page"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #f8fafc;
+      }
+
+      model-viewer {
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
+
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+        left: 1rem;
+        position: fixed;
+        top: 1rem;
+        z-index: 1;
+      }
+
+      .controls button {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(148, 163, 184, 0.65);
+        border-radius: 999px;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+        color: #0f172a;
+        cursor: pointer;
+        font: 600 0.875rem/1.25 system-ui, sans-serif;
+        padding: 0.5rem 0.875rem;
+      }
+
+      .controls button[aria-pressed='true'] {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <button type="button" id="toggle-ao">AO On</button>
+      <button type="button" id="toggle-bloom">Bloom On</button>
+    </div>
+
+    <model-viewer
+      name="ld-model-viewer"
+      src="https://assets.v2.londondynamics.com/c26e0816-1594-4164-a4ca-20fc6c8bf05b/puzzle/133163fa-7473-d0e2-8ec0-fe726e9bf86f.glb"
+      ios-src=""
+      id="ld-model-viewer"
+      camera-controls="true"
+      shadow-intensity="0.87"
+      shadow-softness="0.82"
+      ar="true"
+      ar-scale="auto"
+      ar-modes="webxr scene-viewer quick-look"
+      quick-look-browsers="safari chrome"
+      orbit-sensitivity="1"
+      interpolation-decay="120"
+      interaction-prompt="auto"
+      interaction-prompt-style="basic"
+      bounds="tight"
+      touch-action="pan-y"
+      tone-mapping="aces"
+      measurement-unit="mm"
+      measurement-precision="0"
+      environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/aircraft_workshop_3.hdr"
+      ambient-occlusion=""
+      ao-algorithm="gtao"
+      ao-radius="1"
+      ao-intensity="1"
+      ao-bias="0.01"
+      ao-thickness="10"
+      ao-samples="24"
+      ao-noise="magic-square"
+      ao-screen-space-radius="false"
+      ao-output="default"
+      ao-distance-exponent="2"
+      ao-distance-falloff="1"
+      ao-denoise-radius="4"
+      ao-denoise-rings="2"
+      ao-denoise-samples="16"
+      ao-denoise-luma-phi="10"
+      ao-denoise-depth-phi="2"
+      ao-denoise-normal-phi="3"
+      ao-denoise-radius-exponent="1"
+      bloom=""
+      bloom-mode="unreal"
+      bloom-quality="quality"
+      bloom-strength="0.9"
+      bloom-radius="0.2"
+      bloom-threshold="0.12"
+      bloom-msaa="4"
+      bloom-soft-shadow="false"
+      bloom-targets='[{"material":"GlassLights_Neutral","color":"#ffffff","intensity":0.7,"enabled":true}]'
+      ar-placement="floor"
+      lights="true"
+      alt="3D model of tes where ."
+      ar-status="not-presenting"
+    ></model-viewer>
+
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer.js"
+    ></script>
+    <script type="module">
+      const modelViewer = document.querySelector('#ld-model-viewer');
+      const aoButton = document.querySelector('#toggle-ao');
+      const bloomButton = document.querySelector('#toggle-bloom');
+
+      const syncButton = (button, attribute, label) => {
+        const enabled = modelViewer.hasAttribute(attribute);
+        button.setAttribute('aria-pressed', String(enabled));
+        button.textContent = `${label} ${enabled ? 'On' : 'Off'}`;
+      };
+
+      const toggleAttribute = (button, attribute, label) => {
+        if (modelViewer.hasAttribute(attribute)) {
+          modelViewer.removeAttribute(attribute);
+        } else {
+          modelViewer.setAttribute(attribute, '');
+        }
+        syncButton(button, attribute, label);
+      };
+
+      aoButton.addEventListener('click', () => {
+        toggleAttribute(aoButton, 'ambient-occlusion', 'AO');
+      });
+
+      bloomButton.addEventListener('click', () => {
+        toggleAttribute(bloomButton, 'bloom', 'Bloom');
+      });
+
+      syncButton(aoButton, 'ambient-occlusion', 'AO');
+      syncButton(bloomButton, 'bloom', 'Bloom');
+    </script>
+  </body>
+</html>

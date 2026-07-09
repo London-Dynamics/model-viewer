@@ -1,0 +1,3 @@
+Foam textures are AI generated
+sand_x_1k.jpg (CC0): https://ambientcg.com/a/Ground054
+rocky_x_1k.jpg (CC0): https://polyhaven.com/a/rocky_terrain

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three.js Water Pro</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #000;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #performance {
+      display: none;
+      position: absolute;
+      z-index: 10;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+      pointer-events: none;
+      min-width: 180px;
+    }
+
+    #performance .title {
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    #performance .title .version {
+      font-weight: normal;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-left: 6px;
+    }
+
+    #performance .row {
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0;
+    }
+
+    #performance .label {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    #performance .value {
+      color: #4fc3f7;
+      font-weight: bold;
+    }
+
+    #performance .value.good {
+      color: #81c784;
+    }
+
+    #performance .value.warn {
+      color: #ffb74d;
+    }
+
+    #performance .value.bad {
+      color: #e57373;
+    }
+
+    #performance .fps-large {
+      font-size: 32px;
+      font-weight: bold;
+      color: #4fc3f7;
+      text-align: center;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    #performance .fps-large .fps-label {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: normal;
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    #performance .value.webgpu {
+      color: #81c784;
+    }
+
+    #performance .value.webgl {
+      color: #ffb74d;
+    }
+
+    #loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.15s ease-out, visibility 0.15s ease-out;
+    }
+
+    #loading-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    #loading-overlay .loading-text {
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 18px;
+      font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="performance">
+    <div class="fps-large">
+      <span class="fps-label">FPS</span>
+      <span id="fps">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Frame Time</span>
+      <span class="value" id="frame-time">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Draw Calls</span>
+      <span class="value" id="draw-calls">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Triangles</span>
+      <span class="value" id="triangles">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Renderer</span>
+      <span class="value" id="renderer">--</span>
+    </div>
+    <div class="row">
+      <span class="label">Pixel Ratio</span>
+      <span class="value" id="pixel-ratio">--</span>
+    </div>
+  </div>
+  <div id="loading-overlay">
+    <span class="loading-text">Rebuilding Shaders...</span>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+
+</html>

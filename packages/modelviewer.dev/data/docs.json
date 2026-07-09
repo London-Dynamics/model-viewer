@@ -1565,47 +1565,11 @@
     "htmlName": "ld_environment",
     "Attributes": [
       {
-        "name": "water-texture",
-        "htmlName": "waterTexture",
-        "description": "Activate a water texture on the ground plane by providing a normals texture file.",
+        "name": "water",
+        "htmlName": "water",
+        "description": "Enables LD Water. The water system is owned by London Dynamics mixins and uses the checked-in <code>threejs-water-pro</code> package when a compatible WebGPU renderer is available.",
         "links": [
-          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
-        ],
-        "default": {
-          "default": "empty string",
-          "options": "URL to a .jpg file"
-        }
-      },
-      {
-        "name": "water-distortion-scale",
-        "htmlName": "waterDistortionScale",
-        "description": "Sets the distortion of the model's reflextion in the water texture.",
-        "links": [
-          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
-        ],
-        "default": {
-          "default": 3.7,
-          "options": "any number >= 0.0"
-        }
-      },
-      {
-        "name": "water-size",
-        "htmlName": "waterSize",
-        "description": "Sets the size of the waves in the water texture. A large value will make the waves smaller.",
-        "links": [
-          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
-        ],
-        "default": {
-          "default": 1,
-          "options": "any number >= 0.0"
-        }
-      },
-      {
-        "name": "sky",
-        "htmlName": "envsky",
-        "description": "Add a skybox with option to set the position of the sun.",
-        "links": [
-          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+          "<a href=\"../examples/ld_water/#water\">Related examples</a>"
         ],
         "default": {
           "default": "false",
@@ -1613,27 +1577,51 @@
         }
       },
       {
-        "name": "sun-elevation",
-        "htmlName": "sunElevation",
-        "description": "If sky is set, this attribute sets the elevation of the sun in degrees.",
+        "name": "water-preset",
+        "htmlName": "waterPreset",
+        "description": "Selects a built-in <code>threejs-water-pro</code> water preset. Water presets only affect water; they do not set <code>environment-image</code>, <code>skybox-image</code>, or environment models.",
         "links": [
-          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+          "<a href=\"../examples/ld_water/#water\">Related examples</a>"
         ],
         "default": {
-          "default": "2",
-          "options": "any number between 0 and 90"
+          "default": "sunset",
+          "options": "arctic, blackFlag, dusk, foggy, moonlit, seaOfThieves, storm, sunset"
         }
       },
       {
-        "name": "sun-azimuth",
-        "htmlName": "sunAzimuth",
-        "description": "If sky is set, this attribute sets the azimuth of the sun in degrees.",
+        "name": "water-quality",
+        "htmlName": "waterQuality",
+        "description": "Sets the quality tier passed to the LD Water system.",
         "links": [
-          "<a href=\"../examples/ld-environment/#water\">Related examples</a>"
+          "<a href=\"../examples/ld_water/#water\">Related examples</a>"
         ],
         "default": {
-          "default": "180",
-          "options": "any number between -180 and 180"
+          "default": "medium",
+          "options": "low, medium, high, ultra"
+        }
+      },
+      {
+        "name": "water-elevation",
+        "htmlName": "waterElevation",
+        "description": "Sets the LD Water elevation in meters relative to the model-viewer scene.",
+        "links": [
+          "<a href=\"../examples/ld_water/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": 0,
+          "options": "any number"
+        }
+      },
+      {
+        "name": "water-seed",
+        "htmlName": "waterSeed",
+        "description": "Sets an optional deterministic seed for LD Water waves. Remove the attribute to use the package default seed behavior.",
+        "links": [
+          "<a href=\"../examples/ld_water/#water\">Related examples</a>"
+        ],
+        "default": {
+          "default": "empty",
+          "options": "any number"
         }
       },
       {

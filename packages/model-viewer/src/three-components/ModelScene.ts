@@ -159,6 +159,7 @@ export class ModelScene extends Scene {
   public pivot = new Object3D();
   public target = new Object3D();
   public environmentRoot = new Object3D();
+  public waterRoot = new Object3D();
   public animationNames: Array<string> = [];
   public boundingBox = new Box3();
   public boundingSphere = new Sphere();
@@ -190,6 +191,8 @@ export class ModelScene extends Scene {
   private _model: Object3D | null = null;
   private _environmentModel: Object3D | null = null;
   private environmentModelDispose: (() => void) | null = null;
+  private _water: Object3D | null = null;
+  private waterDispose: (() => void) | null = null;
   private mixer: AnimationMixer;
   private cancelPendingSourceChange: (() => void) | null = null;
   private animationsByName: Map<string, AnimationClip> = new Map();
@@ -216,6 +219,9 @@ export class ModelScene extends Scene {
 
     this.add(this.environmentRoot);
     this.environmentRoot.name = 'EnvironmentRoot';
+
+    this.add(this.waterRoot);
+    this.waterRoot.name = 'WaterRoot';
 
     this.pivot.add(this.target);
 
@@ -459,6 +465,42 @@ export class ModelScene extends Scene {
     this.queueRender();
   }
 
+  setWater(water: Object3D | null, dispose?: () => void) {
+    this.clearWater();
+
+    if (water == null) {
+      return;
+    }
+
+    this._water = water;
+    this.waterDispose = dispose ?? null;
+    this.waterRoot.add(water);
+    this.queueRender();
+  }
+
+  clearWater() {
+    if (this._water != null) {
+      this._water.removeFromParent();
+      this._water = null;
+    }
+
+    if (this.waterDispose != null) {
+      this.waterDispose();
+      this.waterDispose = null;
+    }
+
+    this.queueRender();
+  }
+
+  setWaterVisible(visible: boolean) {
+    if (this.waterRoot.visible === visible) {
+      return;
+    }
+
+    this.waterRoot.visible = visible;
+    this.queueRender();
+  }
+
   setEnvironmentModelVisible(visible: boolean) {
     if (this.environmentRoot.visible === visible) {
       return;
@@ -471,6 +513,7 @@ export class ModelScene extends Scene {
   dispose() {
     this.reset();
     this.clearEnvironmentModel();
+    this.clearWater();
     if (this.shadow != null) {
       this.shadow.dispose();
       this.shadow = null;

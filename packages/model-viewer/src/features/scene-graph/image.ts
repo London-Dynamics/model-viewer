@@ -38,6 +38,14 @@ export class Image extends ThreeDOMElement implements ImageInterface {
     return this[$correlatedObjects]?.values().next().value as ThreeTexture;
   }
 
+  private get imageData() {
+    return this[$threeTexture].image as {
+      src?: string,
+      name?: string,
+      bufferView?: number
+    };
+  }
+
   get[$threeTextures](): Set<ThreeTexture> {
     return this[$correlatedObjects] as Set<ThreeTexture>;
   }
@@ -45,28 +53,29 @@ export class Image extends ThreeDOMElement implements ImageInterface {
   constructor(onUpdate: () => void, texture: ThreeTexture) {
     super(onUpdate, new Set<ThreeTexture>(texture ? [texture] : []));
 
-    if (!this[$threeTexture].image.src) {
-      this[$threeTexture].image.src =
+    if (!this.imageData.src) {
+      this.imageData.src =
           texture.name ? texture.name : 'adhoc_image' + adhocNum++;
     }
-    if (!this[$threeTexture].image.name) {
-      this[$threeTexture].image.name =
-          (texture && texture.image && texture.image.src) ?
-          texture.image.src.split('/').pop() :
+    if (!this.imageData.name) {
+      const textureImage = texture.image as {src?: string}|undefined;
+      this.imageData.name =
+          (texture && textureImage && textureImage.src) ?
+          textureImage.src.split('/').pop() :
           'adhoc_image';
     }
   }
 
   get name(): string {
-    return this[$threeTexture].image.name || '';
+    return this.imageData.name || '';
   }
 
   get uri(): string|undefined {
-    return this[$threeTexture].image.src;
+    return this.imageData.src;
   }
 
   get bufferView(): number|undefined {
-    return this[$threeTexture].image.bufferView;
+    return this.imageData.bufferView;
   }
 
   get element(): HTMLVideoElement|HTMLCanvasElement|undefined {
@@ -91,7 +100,7 @@ export class Image extends ThreeDOMElement implements ImageInterface {
 
   set name(name: string) {
     for (const texture of this[$threeTextures]) {
-      texture.image.name = name;
+      (texture.image as {name?: string}).name = name;
     }
   }
 

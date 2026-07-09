@@ -32,6 +32,12 @@
       type="image/png"
       href="../../assets/favicon.png"
     />
+    <style type="text/tailwindcss"></style>
+    <script
+      src="../../styles/ld-ui-loader.js"
+      data-href="../../styles/ld-ui.css"
+    ></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
     <style>
       #environment-model example-snippet,
       #environment-model example-snippet > template ~ * {
@@ -343,17 +349,16 @@
         initFooterLinks();
       })();
       (() => {
-        const sample = document
-          .querySelector('#environment-model')
-          ?.closest('.sample');
-        const toggle = sample?.querySelector('.content-toggle');
-        if (sample == null || toggle == null) {
-          return;
-        }
+        document.querySelectorAll('.sample').forEach((sample) => {
+          const toggle = sample.querySelector('.content-toggle');
+          if (toggle == null) {
+            return;
+          }
 
-        toggle.addEventListener('click', () => {
-          const expanded = sample.classList.toggle('content-expanded');
-          toggle.setAttribute('aria-expanded', String(expanded));
+          toggle.addEventListener('click', () => {
+            const expanded = sample.classList.toggle('content-expanded');
+            toggle.setAttribute('aria-expanded', String(expanded));
+          });
         });
       })();
     </script>

@@ -39,6 +39,7 @@ import { LDRenderPipelineMixin } from './features/ld-render-pipeline.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
 import { LDServerAIDenoiseMixin } from './features/ld-server-ai-denoise.js';
 import { LDSkyboxRotationMixin } from './features/ld-skybox-rotation.js';
+import { LDWaterMixin } from './features/ld-water.js';
 
 // Import custom effects to register them
 import './features/ld-selection/selection-outline-effect.js';
@@ -63,17 +64,19 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
                       LDImageCaptureMixin(
                         LDCameraMixin(
                           LDSkyboxRotationMixin(
-                            LDEnvironmentMixin(
-                              LDAnimationMixin(
-                                LDDebugMixin(
-                                  AnnotationMixin(
-                                    SceneGraphMixin(
-                                      StagingMixin(
-                                        EnvironmentMixin(
-                                          LDControlsMixin(
-                                            ARMixin(
-                                              LoadingMixin(
-                                                AnimationMixin(ModelViewerElementBase)
+                            LDWaterMixin(
+                              LDEnvironmentMixin(
+                                LDAnimationMixin(
+                                  LDDebugMixin(
+                                    AnnotationMixin(
+                                      SceneGraphMixin(
+                                        StagingMixin(
+                                          EnvironmentMixin(
+                                            LDControlsMixin(
+                                              ARMixin(
+                                                LoadingMixin(
+                                                  AnimationMixin(ModelViewerElementBase)
+                                                )
                                               )
                                             )
                                           )

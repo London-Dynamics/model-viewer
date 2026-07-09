@@ -1,0 +1,1 @@
+{"version":3,"file":"types.d.ts","sourceRoot":"","sources":["../../../src/components/sky/types.ts"],"names":[],"mappings":"AAAA;;GAEG;AACH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAC;AAEtC,MAAM,WAAW,aAAa;IAC5B,MAAM,EAAE,MAAM,CAAC;IACf,KAAK,EAAE,KAAK,CAAC,KAAK,CAAC;IACnB,aAAa,CAAC,EAAE,KAAK,CAAC,KAAK,CAAC;IAC5B,iBAAiB,EAAE,MAAM,CAAC;CAC3B"}

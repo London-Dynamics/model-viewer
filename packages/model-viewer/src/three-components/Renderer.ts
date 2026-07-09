@@ -14,6 +14,7 @@
  */
 
 import {Event, EventDispatcher, NeutralToneMapping, Vector2, WebGLRenderer} from 'three';
+import {WebGPURenderer} from 'three/webgpu';
 
 import {$updateEnvironment} from '../features/environment.js';
 import {ModelViewerGlobalConfig} from '../features/loading.js';
@@ -35,6 +36,8 @@ export interface ContextLostEvent extends Event {
   type: 'contextlost';
   sourceEvent: WebGLContextEvent;
 }
+
+export type RendererBackend = 'webgl'|'webgpu';
 
 // Between 0 and 1: larger means the average responds faster and is less smooth.
 const DURATION_DECAY = 0.2;
@@ -59,7 +62,10 @@ const COMMERCE_EXPOSURE = 1.3;
  * the texture.
  */
 export class Renderer extends
-    EventDispatcher<{contextlost: {sourceEvent: WebGLContextEvent}}> {
+    EventDispatcher<{
+      contextlost: {sourceEvent: WebGLContextEvent},
+      'renderer-backend-change': {backend: RendererBackend}
+    }> {
   private static _singleton: Renderer;
 
   static get singleton() {
@@ -95,6 +101,7 @@ export class Renderer extends
   }
 
   public threeRenderer!: WebGLRenderer;
+  public backend: RendererBackend = 'webgl';
   public canvas3D: HTMLCanvasElement;
   public textureUtils: TextureUtils|null;
   public arRenderer: ARRenderer;
@@ -111,6 +118,8 @@ export class Renderer extends
   private lastStep = DEFAULT_LAST_STEP;
   private avgFrameDuration =
       (HIGH_FRAME_DURATION_MS + LOW_FRAME_DURATION_MS) / 2;
+  private backendChange: Promise<void>|null = null;
+  private options: RendererOptions;
 
   get canRender() {
     return this.threeRenderer != null;
@@ -134,6 +143,8 @@ export class Renderer extends
   constructor(options: RendererOptions) {
     super();
 
+    this.options = options;
+    this.backend = 'webgl';
     this.dpr = window.devicePixelRatio;
 
     this.canvas3D = document.createElement('canvas');
@@ -173,6 +184,118 @@ export class Renderer extends
         'webglcontextrestored', this.onWebGLContextRestored);
 
     this.updateRendererSize();
+  }
+
+  async requestBackend(backend: RendererBackend): Promise<void> {
+    if (this.backend === backend) {
+      if (backend === 'webgpu' &&
+          (this.threeRenderer as any)?.isWebGPURenderer !== true) {
+        this.backend = 'webgl';
+      } else {
+        return;
+      }
+    }
+
+    if (this.backend === backend) {
+      return;
+    }
+
+    if (backend !== 'webgpu') {
+      throw new Error(`Unsupported renderer backend: ${backend}`);
+    }
+
+    if (this.backendChange != null) {
+      await this.backendChange;
+      if (this.backend === backend) {
+        return;
+      }
+    }
+
+    this.backendChange = this.enableWebGPU(this.options);
+    try {
+      await this.backendChange;
+      if ((this.threeRenderer as any)?.isWebGPURenderer !== true) {
+        throw new Error(
+            'WebGPU is not available in this browser. LD Water requires a ' +
+            'WebGPU-capable browser and renderer.');
+      }
+    } finally {
+      this.backendChange = null;
+    }
+  }
+
+  private async enableWebGPU(options: RendererOptions): Promise<void> {
+    if ((navigator as any).gpu == null) {
+      throw new Error(
+          'WebGPU is not available in this browser. LD Water requires a ' +
+          'WebGPU-capable browser and renderer.');
+    }
+
+    const oldRenderer = this.threeRenderer;
+    const oldCanvas = this.canvas3D;
+    const parent = oldCanvas.parentElement;
+    const nextCanvas = document.createElement('canvas');
+    nextCanvas.id = oldCanvas.id;
+    nextCanvas.className = oldCanvas.className;
+
+    const nextRenderer = new WebGPURenderer({
+      canvas: nextCanvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: options.powerPreference as GPUPowerPreference,
+    } as any);
+    await (nextRenderer as any).init();
+    (nextRenderer as any).autoClear = true;
+    nextRenderer.setPixelRatio(1);
+    (nextRenderer as any).debug = {
+      checkShaderErrors: !!options.debug,
+      onShaderError: null,
+    };
+    nextRenderer.toneMapping = NeutralToneMapping;
+
+    oldCanvas.removeEventListener('webglcontextlost', this.onWebGLContextLost);
+    oldCanvas.removeEventListener(
+        'webglcontextrestored', this.onWebGLContextRestored);
+    if (oldRenderer != null) {
+      oldRenderer.setAnimationLoop(null);
+      oldRenderer.dispose();
+    }
+
+    this.canvas3D = nextCanvas;
+    this.threeRenderer = nextRenderer as unknown as WebGLRenderer;
+    this.backend = 'webgpu';
+    if (parent != null) {
+      parent.appendChild(nextCanvas);
+      oldCanvas.remove();
+    }
+
+    this.canvas3D.addEventListener(
+        'webglcontextlost', this.onWebGLContextLost);
+    this.canvas3D.addEventListener(
+        'webglcontextrestored', this.onWebGLContextRestored);
+
+    this.arRenderer = new ARRenderer(this);
+    this.textureUtils?.dispose();
+    this.textureUtils =
+        this.canRender ? new TextureUtils(this.threeRenderer) : null;
+    try {
+      CachingGLTFLoader.initializeKTX2Loader(this.threeRenderer);
+    } catch (error) {
+      console.warn(error);
+    }
+
+    this.updateRendererSize();
+    for (const scene of this.scenes) {
+      scene.forceRescale();
+      scene.effectRenderer?.setRenderer(this.threeRenderer);
+      (scene.element as any)[$updateEnvironment]();
+      scene.queueRender();
+    }
+    if (this.canRender && this.scenes.size > 0) {
+      this.threeRenderer.setAnimationLoop(
+          (time: number, frame?: any) => this.render(time, frame));
+    }
+    this.dispatchEvent({type: 'renderer-backend-change', backend: this.backend});
   }
 
   registerScene(scene: ModelScene) {
@@ -267,14 +390,21 @@ export class Renderer extends
       height = Math.max(height, scene.height);
     }
 
-    if (width === this.width && height === this.height && dpr === this.dpr) {
+    const pixelWidth = Math.ceil(width * dpr);
+    const pixelHeight = Math.ceil(height * dpr);
+    const canvasMatchesSize =
+        this.canvas3D.width === pixelWidth &&
+        this.canvas3D.height === pixelHeight;
+
+    if (width === this.width && height === this.height && dpr === this.dpr &&
+        canvasMatchesSize) {
       return;
     }
     this.width = width;
     this.height = height;
     this.dpr = dpr;
-    width = Math.ceil(width * dpr);
-    height = Math.ceil(height * dpr);
+    width = pixelWidth;
+    height = pixelHeight;
 
     if (this.canRender) {
       this.threeRenderer.setSize(width, height, false);

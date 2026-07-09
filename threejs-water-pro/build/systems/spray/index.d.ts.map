@@ -1,0 +1,1 @@
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../../src/systems/spray/index.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,WAAW,EAAE,KAAK,WAAW,EAAE,MAAM,eAAe,CAAC;AAC9D,OAAO,EACL,sBAAsB,EACtB,KAAK,iBAAiB,EACtB,KAAK,aAAa,EAClB,KAAK,kBAAkB,EACvB,KAAK,UAAU,EACf,KAAK,UAAU,GAChB,MAAM,mBAAmB,CAAC;AAC3B,OAAO,EACL,oBAAoB,EACpB,KAAK,gBAAgB,GACtB,MAAM,wBAAwB,CAAC"}

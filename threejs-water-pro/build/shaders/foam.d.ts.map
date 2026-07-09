@@ -1,0 +1,1 @@
+{"version":3,"file":"foam.d.ts","sourceRoot":"","sources":["../../src/shaders/foam.ts"],"names":[],"mappings":"AAcA,OAAO,KAAK,EAAE,eAAe,EAAE,UAAU,EAAE,MAAM,aAAa,CAAC;AAE/D;;;;;;GAMG;AACH,qBAAa,IAAI;IACf;;;;;;;;OAQG;IACH,KAAK,CAAC,MAAM,EAAE,eAAe,GAAG,UAAU;CAiG3C"}
