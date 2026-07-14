@@ -434,13 +434,6 @@
                       redoBtn.addEventListener('click', () =>
                         modelViewer.redo()
                       );
-                      window.addEventListener('keydown', (event) => {
-                        const mod = event.metaKey || event.ctrlKey;
-                        if (!mod || event.key.toLowerCase() !== 'z') return;
-                        event.preventDefault();
-                        if (event.shiftKey) modelViewer.redo();
-                        else modelViewer.undo();
-                      });
 
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
@@ -819,13 +812,6 @@
                       redoBtn.addEventListener('click', () =>
                         modelViewer.redo()
                       );
-                      window.addEventListener('keydown', (event) => {
-                        const mod = event.metaKey || event.ctrlKey;
-                        if (!mod || event.key.toLowerCase() !== 'z') return;
-                        event.preventDefault();
-                        if (event.shiftKey) modelViewer.redo();
-                        else modelViewer.undo();
-                      });
 
                       modelViewer.addEventListener('load', () => {
                         console.group('Model Loaded');
@@ -869,6 +855,7 @@
                     shadow-intensity="1"
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Room with placed duck rotation controls demo"
+                    cursor
                   >
                     <effect-composer render-mode="quality">
                       <selection-outline-effect
@@ -971,7 +958,7 @@
                           Number(majorStepInput.value) || 0;
                         modelViewer.rotationControlsFineStep =
                           Number(fineStepInput.value) || 0;
-                        modelViewer.rotationControlsHighlightColor =
+                        modelViewer.highlightColor =
                           colorInput.value || '#3b82f6';
                       };
                       const DUCK_URL =
@@ -1338,15 +1325,6 @@
                           });
                         });
 
-                      window.addEventListener('keydown', (event) => {
-                        const mod = event.metaKey || event.ctrlKey;
-                        if (!mod || event.key.toLowerCase() !== 'z') return;
-                        if (!viewer.matches(':hover')) return;
-                        event.preventDefault();
-                        if (event.shiftKey) viewer.redo();
-                        else viewer.undo();
-                      });
-
                       const placeFloorDucks = async () => {
                         if (viewer.dataset.ducksPlaced === 'true') return;
                         viewer.dataset.ducksPlaced = 'true';
@@ -1647,15 +1625,6 @@
                             if (action) viewer.alignObjects(action);
                           });
                         });
-
-                      window.addEventListener('keydown', (event) => {
-                        const mod = event.metaKey || event.ctrlKey;
-                        if (!mod || event.key.toLowerCase() !== 'z') return;
-                        if (!viewer.matches(':hover')) return;
-                        event.preventDefault();
-                        if (event.shiftKey) viewer.redo();
-                        else viewer.undo();
-                      });
                     })();
                   </script>
                 </template>

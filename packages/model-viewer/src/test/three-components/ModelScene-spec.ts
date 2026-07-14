@@ -14,7 +14,7 @@
  */
 
 import {expect} from 'chai';
-import {Matrix4, Mesh, SphereGeometry, Vector3} from 'three';
+import {Matrix4, Mesh, OrthographicCamera, SphereGeometry, Vector3} from 'three';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
@@ -101,6 +101,47 @@ suite('ModelScene', () => {
       scene.setSize(0, 0);
       expect(scene.width).to.be.equal(1);
       expect(scene.height).to.be.equal(1);
+    });
+  });
+
+  suite('orthographic resize', () => {
+    setup(async () => {
+      scene.setSize(800, 600);
+      await scene.setObject(dummyMesh);
+      scene.camera.position.set(0, 0, 5);
+      scene.setCameraType('orthographic');
+    });
+
+    test('setCameraType produces world-unit frustum, not pixel dimensions', () => {
+      const camera = scene.camera as OrthographicCamera;
+      expect(camera.top).to.be.lessThan(50);
+      expect(camera.top).to.not.be.closeTo(scene.height / 2, 1);
+    });
+
+    test('resize preserves vertical extent and adjusts horizontal for aspect', () => {
+      const camera = scene.camera as OrthographicCamera;
+      const topBefore = camera.top;
+      const bottomBefore = camera.bottom;
+
+      scene.setSize(801, 600);
+
+      expect(camera.top).to.be.closeTo(topBefore, 0.0001);
+      expect(camera.bottom).to.be.closeTo(bottomBefore, 0.0001);
+      expect(camera.right - camera.left)
+          .to.be.closeTo((camera.top - camera.bottom) * scene.aspect, 0.0001);
+    });
+
+    test('updateOrthographicFrustum scales vertical extent by fovRatio', () => {
+      const camera = scene.camera as OrthographicCamera;
+      const halfHeightBefore = camera.top;
+      const fovRatio = 1.25;
+
+      scene.updateOrthographicFrustum(halfHeightBefore * fovRatio);
+
+      expect(camera.top).to.be.closeTo(halfHeightBefore * fovRatio, 0.0001);
+      expect(camera.bottom).to.be.closeTo(-halfHeightBefore * fovRatio, 0.0001);
+      expect(camera.right - camera.left)
+          .to.be.closeTo(2 * halfHeightBefore * fovRatio * scene.aspect, 0.0001);
     });
   });
 });

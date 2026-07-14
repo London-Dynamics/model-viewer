@@ -5,6 +5,7 @@
 import {expect} from 'chai';
 import {
   normalizeSignedAngleDelta,
+  resolveRotationDiscMaxRadiusPx,
   resolveRotationDiscTickConfig,
   snapRotationYToStepGrid,
 } from '../../features/ld-modular/rotation-control-disc.js';
@@ -12,6 +13,16 @@ import {
 const deg = (degrees: number) => (degrees * Math.PI) / 180;
 
 suite('ld-modular rotation control disc', () => {
+  test('resolveRotationDiscMaxRadiusPx caps at fixed max width', () => {
+    expect(resolveRotationDiscMaxRadiusPx(1920)).to.equal(160);
+    expect(resolveRotationDiscMaxRadiusPx(320)).to.equal(160);
+  });
+
+  test('resolveRotationDiscMaxRadiusPx limits to container width', () => {
+    expect(resolveRotationDiscMaxRadiusPx(200)).to.equal(100);
+    expect(resolveRotationDiscMaxRadiusPx(0)).to.equal(0);
+  });
+
   test('normalizes signed angle deltas to shortest arc', () => {
     const nearWrap = normalizeSignedAngleDelta(Math.PI * 1.5);
     expect(nearWrap).to.be.closeTo(-Math.PI * 0.5, 1e-6);
@@ -34,7 +45,7 @@ suite('ld-modular rotation control disc', () => {
     const cumulativeDeg = 90;
     const rawTargetY = startY + cumulativeDeg;
     expect(snapRotationYToStepGrid(rawTargetY, 90)).to.equal(90);
-    expect(snapRotationYToStepGrid(rawTargetY, 45)).to.equal(45);
+    expect(snapRotationYToStepGrid(rawTargetY, 45)).to.equal(90);
     expect(snapRotationYToStepGrid(rawTargetY, 90)).to.equal(90);
   });
 

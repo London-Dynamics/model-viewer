@@ -36,13 +36,36 @@ import {
   applySurfaceSnapTransform,
   clientToNdc,
   findSurfaceSnapHitForNdc,
+  findRoomSurfaceHitForNdc,
   findSurfaceSnapHitOnWall,
   getBaseModelObject,
   getRoomFloorY,
   invalidateRoomSurfaceIndexCache,
+  tryResnapToNearestWall,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
-import { PlacementCursor } from './placement-cursor.js';
+import {PlacementCursor} from './placement-cursor.js';
+import {
+  type ClipboardChangeDetail,
+  type ClipboardChangeReason,
+  type ClipboardEntry,
+  type ClipboardState,
+  createSessionId,
+  disposeClipboardEntry,
+  entryRequiresSurfaceSnap,
+  isClipboardCopyTarget,
+  snapshotClipboardTargets,
+  toClipboardStateEntry,
+  commitPasteTargets,
+  getSelectionClipboardItems,
+  getSelectionLeaderIndex,
+} from './clipboard.js';
+import {
+  attachGltfLifecycle,
+  releaseGltfLifecycle,
+} from './gltf-lifecycle.js';
+import {PasteSession, type PasteCommitResult, type PasteSessionHost} from './paste-session.js';
+import { applyPointerPlacementPose, applySelectionPointerPlacementPose } from './placement-pose.js';
 
 import { getErrorMessage } from '../../utilities/errors.js';
 
@@ -107,6 +130,7 @@ import {
   type WallLayoutContext,
 } from './align-distribute.js';
 import { Selection } from '@london-dynamics/types/puzzler';
+import { tryCloneExistingGltfScene } from './gltf-reuse.js';
 
 export type {
   ActiveTransform,
@@ -118,7 +142,7 @@ export type {
   TransformTarget,
   TransformValues,
 } from './transform-events.js';
-export type {AlignAction} from './align-distribute.js';
+export {PasteSession} from './paste-session.js';
 export {
   computeTransformDelta,
   getObjectDisplayName,
@@ -230,6 +254,14 @@ function getPlacementSelectable(options?: PlacementOptions): boolean {
   return true;
 }
 
+function getPlacementPartTags(object: Object3D): string[] {
+  const part = object.userData?.part as { tags?: string[] } | undefined;
+  if (!Array.isArray(part?.tags)) return [];
+  return part.tags.filter(
+    (tag): tag is string => typeof tag === 'string' && tag.length > 0
+  );
+}
+
 function markPlacementPlaceholderNonSelectable(placeholder: Object3D): void {
   placeholder.traverse((child) => {
     child.userData.isPlacementPlaceholder = true;
@@ -249,11 +281,28 @@ export type BulkPlacementItem = {
   };
 };
 
-type ImmediatePlacementTransform = {
+export type BulkReplaceItem = {
+  objectUuid: string;
+  src?: string;
+} & Omit<PlacementOptions, 'getLowResUrl' | 'getHighResUrl'>;
+
+export type PlacementSessionLike = EventTarget & {
+  id: string;
+  state: 'placing' | 'loading' | 'ended' | 'cancelled';
+  placeholder: Object3D | null;
+};
+
+export type ImmediatePlacementTransform = {
   position?: [number, number, number];
   // Rotation in radians (Three.js Euler order XYZ)
   rotation?: [number, number, number];
   scale?: [number, number, number];
+  /** Pointer coords for raycast placement. If omitted and no position, defaults to scene origin (0, y, 0). */
+  clientPosition?: { clientX: number; clientY: number };
+  /** Called synchronously so hosts can attach session listeners before async work. */
+  onSession?: (session: PlacementSessionLike) => void;
+  /** Skip visible placeholder and placeholder-loaded events (e.g. bulk restore). */
+  skipPlaceholderFeedback?: boolean;
 };
 
 type PositionOptions = {
@@ -290,6 +339,37 @@ export type HoverChangeDetail = {
   } | null;
 };
 
+export type PointerInteractionKind =
+  | 'none'
+  | 'rotation-control-y'
+  | 'selected-object-drag'
+  | 'interactive-session';
+
+export type PointerInteractionTarget = {
+  kind: PointerInteractionKind;
+  /** Present when kind is selected-object-drag */
+  object?: {uuid: string; name: string};
+};
+
+export type CopyPartOptions = {
+  interactive?: boolean;
+  initialMouse?: { clientX: number; clientY: number };
+};
+
+export type PasteOptions = {
+  clientX?: number;
+  clientY?: number;
+  select?: boolean;
+};
+
+export type PasteResult = PasteCommitResult;
+
+export type {
+  ClipboardChangeDetail,
+  ClipboardChangeReason,
+  ClipboardState,
+} from './clipboard.js';
+
 type RotationOptions = {
   order?: EulerOrder;
   animate?: boolean;
@@ -322,7 +402,8 @@ export declare interface LDModularInterface {
   disableZRotationControls: boolean;
   rotationControlsMajorStep: number;
   rotationControlsFineStep: number;
-  rotationControlsHighlightColor: string;
+  highlightColor: string;
+  cursor: boolean;
 
   setPosition(objectName: string, value: [number, number, number]): void;
   setPosition(value: [number, number, number]): void;
@@ -409,7 +490,20 @@ export declare interface LDModularInterface {
     options?: PlacementOptions
   ) => Promise<void>;
 
+  replaceManyParts: (
+    items: BulkReplaceItem[],
+    options?: {
+      concurrency?: number;
+      getHighResUrl?: (item: BulkReplaceItem) => Promise<string | undefined>;
+    }
+  ) => Promise<Array<{ objectUuid: string; node: Object3D }>>;
+
   getPlacementTree(): PlacementGraphNode[];
+
+  getPointerInteractionTarget(
+    clientX: number,
+    clientY: number
+  ): PointerInteractionTarget;
 
   // Higher-level API functions
   getSelectedObject: () => Object3D | null;
@@ -441,7 +535,19 @@ export declare interface LDModularInterface {
   clearUndoHistory(): void;
   getHistoryState(): HistoryState;
 
+  copyPart: (
+    objectUuid?: string,
+    options?: CopyPartOptions
+  ) => PasteSession | void;
+  paste: (options?: PasteOptions) => Promise<PasteResult | null>;
+  cancelPaste: () => void;
+  clearClipboard: () => void;
+  getClipboardState: () => ClipboardState;
+
   alignObjects(action: AlignAction): boolean;
+
+  showByTag(tag: string, filter?: (object: Object3D) => boolean): void;
+  hideByTag(tag: string, filter?: (object: Object3D) => boolean): void;
 }
 
 export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -495,8 +601,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Number, attribute: 'rotation-controls-fine-step' })
     rotationControlsFineStep: number = 0;
 
-    @property({ type: String, attribute: 'rotation-controls-highlight-color' })
-    rotationControlsHighlightColor: string = '#3b82f6';
+    @property({ type: String, attribute: 'highlight-color' })
+    highlightColor: string = '#3b82f6';
+
+    @property({ type: Boolean, attribute: 'cursor' })
+    cursor: boolean = false;
 
     @property({ type: Number, attribute: 'max-undo-steps' })
     maxUndoSteps: number = 50;
@@ -532,6 +641,26 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _tmpWallWorldNormal: Vector3 = new Vector3();
     private _tmpMeshWorldQuat: Quaternion = new Quaternion();
     private _tmpWallWorldQuat: Quaternion = new Quaternion();
+
+    private _objectsByTag: Map<string, Set<Object3D>> = new Map();
+    private _hiddenTags: Set<string> = new Set();
+
+    private _placementCursorMesh: PlacementCursor | null = null;
+    private _cursorWorldPosition: { x: number; y: number; z: number } | null =
+      null;
+    private _cursorPointerMoveRaf = 0;
+    private _pendingCursorPointerMove: {
+      clientX: number;
+      clientY: number;
+    } | null = null;
+    private _boundCursorPointerMove: ((e: PointerEvent) => void) | null = null;
+    private _boundCursorPointerLeave: ((e: PointerEvent) => void) | null = null;
+
+    private _clipboardEntry: ClipboardEntry | null = null;
+    private _activePasteSession: PasteSession | null = null;
+    private _pastePointerTeardown: (() => void) | null = null;
+    private _lastCursorClient: { clientX: number; clientY: number } | null =
+      null;
 
     connectedCallback() {
       super.connectedCallback();
@@ -609,9 +738,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         changedProperties.has('disableYRotationControls') ||
         changedProperties.has('rotationControlsMajorStep') ||
         changedProperties.has('rotationControlsFineStep') ||
-        changedProperties.has('rotationControlsHighlightColor')
+        changedProperties.has('highlightColor')
       ) {
         this._syncRotationControlDiscLifecycle();
+      }
+
+      if (changedProperties.has('cursor')) {
+        this._syncCursorLifecycle();
+      }
+
+      if (changedProperties.has('highlightColor')) {
+        this._applyCursorHighlightColor();
       }
     }
 
@@ -684,6 +821,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.teardownDragHandlers();
       } catch (e) {}
       this._disposeRotationControlDisc();
+      this._detachCursorPointerListeners();
+      this._disposePlacementCursorMesh();
+      this.clearClipboard();
       try {
         // Use the slot maps and clearSlots helper so they are considered used
         this.clearSlots(this._snappingPointSlots);
@@ -730,84 +870,123 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         true
       );
 
-      // If explicit transforms are provided, prefer using a placeholder so the
-      // final model can simply copy its local transform from it. First try a
-      // bounds-based placeholder from part.bounds; if that is not available,
-      // fall back to an empty Object3D that just carries the desired transform.
-      if (options) {
-        const scene = (element as any)[$scene];
-        if (scene) {
-          let placeholder: Object3D | null = null;
+      options?.onSession?.(session);
 
-          if (options.part) {
-            placeholder = (session as any)._createPlaceholderFromBounds(
-              scene,
-              element
-            ) as Object3D | null;
-          }
+      if (options?.skipPlaceholderFeedback) {
+        this._attachImmediatePlacementPlaceholder(session, element, options);
+        const placed = await session.commit(highResSrc);
+        if (!placed) {
+          throw new Error('placeGlb: placement commit failed');
+        }
+        return placed;
+      }
 
-          if (
-            !placeholder &&
-            (options.position || options.rotation || options.scale)
-          ) {
-            placeholder = new Object3D();
-            applyPlacementObjectIdentity(placeholder, session.id, options);
-            markPlacementPlaceholderNonSelectable(placeholder);
-            try {
-              scene.target.add(placeholder);
-            } catch (e) {
-              scene.add(placeholder);
-            }
-          }
+      await session._ensurePlaceholderReady();
 
-          if (placeholder) {
-            session.placeholder = placeholder;
-            if (options.position) {
-              placeholder.position.set(
-                options.position[0],
-                options.position[1],
-                options.position[2]
-              );
-            }
-            if (options.rotation) {
-              placeholder.rotation.set(
-                options.rotation[0],
-                options.rotation[1],
-                options.rotation[2]
-              );
-            }
-            if (options.scale) {
-              placeholder.scale.set(
-                options.scale[0],
-                options.scale[1],
-                options.scale[2]
-              );
-            }
-          }
+      if (options?.position && session.placeholder) {
+        session.placeholder.position.set(
+          options.position[0],
+          options.position[1],
+          options.position[2]
+        );
+        try {
+          session.placeholder.visible = true;
+        } catch (e) {}
+      } else if (options?.clientPosition) {
+        session.updatePosition(
+          options.clientPosition.clientX,
+          options.clientPosition.clientY
+        );
+      } else {
+        session.applyFallbackCommitPosition();
+        if (session.placeholder) {
+          try {
+            session.placeholder.visible = true;
+          } catch (e) {}
         }
       }
 
-      // Compute center detail from explicit position (if provided)
-      let centerDetail: { x: number; y: number; z: number } | null = null;
-      if (options?.position) {
-        centerDetail = {
-          x: options.position[0],
-          y: options.position[1],
-          z: options.position[2],
-        };
+      if (session.placeholder) {
+        if (options?.rotation) {
+          session.placeholder.rotation.set(
+            options.rotation[0],
+            options.rotation[1],
+            options.rotation[2]
+          );
+        }
+        if (options?.scale) {
+          session.placeholder.scale.set(
+            options.scale[0],
+            options.scale[1],
+            options.scale[2]
+          );
+        }
       }
 
-      (this as any).dispatchEvent(
-        new CustomEvent('loading-start', {
-          detail: {
-            sessionId: session.id,
-            src: highResSrc,
-            center: centerDetail,
-          },
-        })
-      );
+      const placed = await session.commit(highResSrc);
+      if (!placed) {
+        throw new Error('placeGlb: placement commit failed');
+      }
+      return placed;
+    }
 
-      return (session as any)._placeFinalGlb(this, highResSrc || '');
+    private _attachImmediatePlacementPlaceholder(
+      session: PlacementSession,
+      element: any,
+      options?: PlacementOptions & ImmediatePlacementTransform
+    ): void {
+      if (!options) return;
+
+      const scene = element[$scene];
+      if (!scene) return;
+
+      let placeholder: Object3D | null = null;
+
+      if (options.part) {
+        placeholder = (session as any)._createPlaceholderFromBounds(
+          scene,
+          element
+        ) as Object3D | null;
+      }
+
+      if (
+        !placeholder &&
+        (options.position || options.rotation || options.scale)
+      ) {
+        placeholder = new Object3D();
+        applyPlacementObjectIdentity(placeholder, session.id, options);
+        markPlacementPlaceholderNonSelectable(placeholder);
+        try {
+          scene.target.add(placeholder);
+        } catch (e) {
+          scene.add(placeholder);
+        }
+      }
+
+      if (!placeholder) return;
+
+      session.placeholder = placeholder;
+      if (options.position) {
+        placeholder.position.set(
+          options.position[0],
+          options.position[1],
+          options.position[2]
+        );
+      }
+      if (options.rotation) {
+        placeholder.rotation.set(
+          options.rotation[0],
+          options.rotation[1],
+          options.rotation[2]
+        );
+      }
+      if (options.scale) {
+        placeholder.scale.set(
+          options.scale[0],
+          options.scale[1],
+          options.scale[2]
+        );
+      }
     }
 
     async placeManyGlb(
@@ -822,23 +1001,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const total = items.length;
       if (total === 0) return [];
 
-      const results: Array<{ id: string; node: Object3D }> = new Array(total);
-      const concurrency = Math.max(1, options?.concurrency ?? 4);
-
       this._ensureUndoHistory().beginBatch();
 
-      let nextIndex = 0;
       let completed = 0;
+      const results = await this._runConcurrent(
+        total,
+        options?.concurrency ?? 4,
+        async (currentIndex) => {
+          const item = items[currentIndex];
 
-      const runNext = async (): Promise<void> => {
-        const currentIndex = nextIndex++;
-        if (currentIndex >= total) {
-          return;
-        }
-
-        const item = items[currentIndex];
-
-        try {
           let highResSrc: string | undefined;
           if (options?.getHighResUrl) {
             highResSrc = await options.getHighResUrl(item);
@@ -859,11 +1030,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             rotation: transform.rotation,
             scale: transform.scale,
             selection: item.selection,
+            skipPlaceholderFeedback: true,
           };
 
           const placed = await this.placeGlb(highResSrc, placementOptions);
-          results[currentIndex] = { id: item.id, node: placed.node };
-        } finally {
           completed++;
           const totalProgress = total ? completed / total : 1;
           try {
@@ -879,17 +1049,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             );
           } catch (e) {}
 
-          await runNext();
+          return { id: item.id, node: placed.node };
         }
-      };
-
-      const workers: Promise<void>[] = [];
-      const workerCount = Math.min(concurrency, total);
-      for (let i = 0; i < workerCount; i++) {
-        workers.push(runNext());
-      }
-
-      await Promise.all(workers);
+      );
 
       this._ensureUndoHistory().endBatch(
         total === 1 ? undefined : `Place ${total} objects`
@@ -941,7 +1103,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._updateRoomAttachedVisibility();
       } catch (e) {}
       try {
-        this._activePlacementSession?.tickPlacementCursor(delta);
+        this._tickPlacementCursor(delta);
       } catch (e) {}
       try {
         this._updateRotationControlDisc();
@@ -1082,6 +1244,111 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    private _resolvePlacedObjectVisible(
+      object: Object3D,
+      contextualVisible: boolean
+    ): void {
+      object.visible = contextualVisible && object.userData?.tagHidden !== true;
+    }
+
+    private _applyHiddenTagsToObject(object: Object3D): void {
+      const tags = getPlacementPartTags(object);
+      const shouldHide = tags.some((tag) => this._hiddenTags.has(tag));
+      if (shouldHide) {
+        object.userData.tagHidden = true;
+        object.visible = false;
+      }
+    }
+
+    _indexPlacedObjectTags(object: Object3D): void {
+      if (object.userData?.isPlacedObject !== true) return;
+      for (const tag of getPlacementPartTags(object)) {
+        let set = this._objectsByTag.get(tag);
+        if (!set) {
+          set = new Set();
+          this._objectsByTag.set(tag, set);
+        }
+        set.add(object);
+      }
+      this._applyHiddenTagsToObject(object);
+    }
+
+    private _unindexPlacedObjectTags(object: Object3D): void {
+      for (const tag of getPlacementPartTags(object)) {
+        const set = this._objectsByTag.get(tag);
+        if (!set) continue;
+        set.delete(object);
+        if (set.size === 0) {
+          this._objectsByTag.delete(tag);
+        }
+      }
+    }
+
+    private _reindexPlacedObjectTags(
+      oldObject: Object3D,
+      newObject: Object3D
+    ): void {
+      const tagHidden = oldObject.userData?.tagHidden === true;
+      this._unindexPlacedObjectTags(oldObject);
+      if (tagHidden) {
+        newObject.userData.tagHidden = true;
+      }
+      this._indexPlacedObjectTags(newObject);
+      if (tagHidden) {
+        newObject.visible = false;
+      }
+    }
+
+    public hideByTag(
+      tag: string,
+      filter?: (object: Object3D) => boolean
+    ): void {
+      if (!tag) return;
+
+      if (!filter) {
+        this._hiddenTags.add(tag);
+      }
+
+      const objects = this._objectsByTag.get(tag);
+      if (!objects || objects.size === 0) {
+        (this as any)[$needsRender]();
+        return;
+      }
+
+      objects.forEach((object) => {
+        if (filter && !filter(object)) return;
+        object.userData.tagHidden = true;
+        object.visible = false;
+      });
+
+      (this as any)[$needsRender]();
+    }
+
+    public showByTag(
+      tag: string,
+      filter?: (object: Object3D) => boolean
+    ): void {
+      if (!tag) return;
+
+      if (!filter) {
+        this._hiddenTags.delete(tag);
+      }
+
+      const objects = this._objectsByTag.get(tag);
+      if (!objects || objects.size === 0) {
+        (this as any)[$needsRender]();
+        return;
+      }
+
+      objects.forEach((object) => {
+        if (filter && !filter(object)) return;
+        object.userData.tagHidden = false;
+        this._resolvePlacedObjectVisible(object, true);
+      });
+
+      (this as any)[$needsRender]();
+    }
+
     private _puzzleRegistry: Map<string, GLTF> = new Map();
 
     private _currentObject: Object3D | undefined = undefined;
@@ -1151,33 +1418,39 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       const gltf = await loader.load(src, this, () => {});
-      if (!gltf?.scene) {
-        throw new Error('Loaded GLTF missing scene');
-      }
-
-      gltf.scene.updateMatrixWorld(true);
-      const bbox = new Box3().setFromObject(gltf.scene);
-      if (
-        !Number.isFinite(bbox.min.x) ||
-        !Number.isFinite(bbox.min.y) ||
-        !Number.isFinite(bbox.min.z) ||
-        !Number.isFinite(bbox.max.x) ||
-        !Number.isFinite(bbox.max.y) ||
-        !Number.isFinite(bbox.max.z)
-      ) {
-        throw new Error('Computed GLB bounds are invalid');
-      }
-
-      let filename = src;
       try {
-        filename = new URL(src).pathname.split('/').pop() || src;
-      } catch (e) {}
+        if (!gltf?.scene) {
+          throw new Error('Loaded GLTF missing scene');
+        }
 
-      return {
-        filename,
-        min: [bbox.min.x, bbox.min.y, bbox.min.z],
-        max: [bbox.max.x, bbox.max.y, bbox.max.z],
-      };
+        gltf.scene.updateMatrixWorld(true);
+        const bbox = new Box3().setFromObject(gltf.scene);
+        if (
+          !Number.isFinite(bbox.min.x) ||
+          !Number.isFinite(bbox.min.y) ||
+          !Number.isFinite(bbox.min.z) ||
+          !Number.isFinite(bbox.max.x) ||
+          !Number.isFinite(bbox.max.y) ||
+          !Number.isFinite(bbox.max.z)
+        ) {
+          throw new Error('Computed GLB bounds are invalid');
+        }
+
+        let filename = src;
+        try {
+          filename = new URL(src).pathname.split('/').pop() || src;
+        } catch (e) {}
+
+        return {
+          filename,
+          min: [bbox.min.x, bbox.min.y, bbox.min.z],
+          max: [bbox.max.x, bbox.max.y, bbox.max.z],
+        };
+      } finally {
+        try {
+          gltf?.dispose?.();
+        } catch (e) {}
+      }
     }
 
     async getGlbBoundsMany(srcs: string[]): Promise<GlbBoundsResult[]> {
@@ -2913,6 +3186,184 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _activePlacementSession: PlacementSession | null = null;
 
+    private _cursorTrackingActive(): boolean {
+      return (
+        this.cursor ||
+        (this._activePlacementSession?.state === 'placing') === true ||
+        this._activePasteSession?.state === 'previewing'
+      );
+    }
+
+    private _syncCursorLifecycle() {
+      if (this._cursorTrackingActive()) {
+        this._ensurePlacementCursorMesh();
+        this._applyCursorHighlightColor();
+        this._attachCursorPointerListeners();
+      } else {
+        this._detachCursorPointerListeners();
+        this._placementCursorMesh?.hide();
+        this._cursorWorldPosition = null;
+      }
+    }
+
+    private _ensurePlacementCursorMesh() {
+      if (this._placementCursorMesh) return;
+      const scene = (this as any)[$scene];
+      const parent = scene?.target || scene;
+      if (!parent) return;
+
+      const cursor = new PlacementCursor(() => {
+        try {
+          (this as any)[$needsRender]();
+        } catch (e) {}
+      });
+      parent.add(cursor);
+      this._placementCursorMesh = cursor;
+      this._applyCursorHighlightColor();
+
+      const defaultWorld = new Vector3();
+      if (scene?.target) {
+        scene.target.getWorldPosition(defaultWorld);
+      }
+      cursor.showOnFloor(defaultWorld);
+      this._cursorWorldPosition = {
+        x: defaultWorld.x,
+        y: defaultWorld.y,
+        z: defaultWorld.z,
+      };
+    }
+
+    private _disposePlacementCursorMesh() {
+      if (!this._placementCursorMesh) return;
+      this._placementCursorMesh.dispose();
+      this._placementCursorMesh = null;
+      this._cursorWorldPosition = null;
+    }
+
+    private _applyCursorHighlightColor() {
+      this._placementCursorMesh?.setHighlightColor(this.highlightColor);
+    }
+
+    private _flushCursorPointerMove() {
+      this._cursorPointerMoveRaf = 0;
+      const pending = this._pendingCursorPointerMove;
+      this._pendingCursorPointerMove = null;
+      if (!pending) return;
+      this._updateCursorFromPointer(pending.clientX, pending.clientY);
+    }
+
+    private _attachCursorPointerListeners() {
+      if (!this.cursor || this._boundCursorPointerMove) return;
+
+      this._boundCursorPointerMove = (e: PointerEvent) => {
+        this._pendingCursorPointerMove = {
+          clientX: e.clientX,
+          clientY: e.clientY,
+        };
+        if (this._cursorPointerMoveRaf === 0) {
+          this._cursorPointerMoveRaf = requestAnimationFrame(() =>
+            this._flushCursorPointerMove()
+          );
+        }
+      };
+      this._boundCursorPointerLeave = () => {
+        if (this._cursorPointerMoveRaf !== 0) {
+          cancelAnimationFrame(this._cursorPointerMoveRaf);
+          this._cursorPointerMoveRaf = 0;
+        }
+        this._pendingCursorPointerMove = null;
+        this._cursorWorldPosition = null;
+        this._placementCursorMesh?.hide();
+        try {
+          (this as any)[$needsRender]();
+        } catch (e) {}
+      };
+
+      this.addEventListener('pointermove', this._boundCursorPointerMove);
+      this.addEventListener('pointerleave', this._boundCursorPointerLeave);
+    }
+
+    private _detachCursorPointerListeners() {
+      if (this._cursorPointerMoveRaf !== 0) {
+        cancelAnimationFrame(this._cursorPointerMoveRaf);
+        this._cursorPointerMoveRaf = 0;
+      }
+      this._pendingCursorPointerMove = null;
+      if (this._boundCursorPointerMove) {
+        this.removeEventListener('pointermove', this._boundCursorPointerMove);
+        this._boundCursorPointerMove = null;
+      }
+      if (this._boundCursorPointerLeave) {
+        this.removeEventListener('pointerleave', this._boundCursorPointerLeave);
+        this._boundCursorPointerLeave = null;
+      }
+    }
+
+    _updateCursorFromPointer(clientX: number, clientY: number) {
+      this._lastCursorClient = { clientX, clientY };
+      if (!this._cursorTrackingActive()) return;
+
+      this._ensurePlacementCursorMesh();
+      if (!this._placementCursorMesh) return;
+
+      const floorWorld = getMouseWorldPointOnPlacementPlane(
+        this as unknown as HTMLElement,
+        (this as any)[$scene],
+        clientX,
+        clientY
+      );
+
+      if (!floorWorld) {
+        this._cursorWorldPosition = null;
+        this._placementCursorMesh.hide();
+        return;
+      }
+
+      const scene = (this as any)[$scene];
+      const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
+      const roomObject = this._findRoomSurfaceObject();
+      let wallHit: SurfaceSnapHit | null = null;
+      if (camera && roomObject) {
+        const rect = this.getBoundingClientRect();
+        const ndc = clientToNdc(clientX, clientY, rect);
+        if (ndc) {
+          wallHit = findRoomSurfaceHitForNdc(camera, ndc, roomObject);
+        }
+      }
+
+      if (wallHit && wallHit.surfaceType === 'wall') {
+        this._placementCursorMesh.showOnSurface(
+          wallHit.point,
+          wallHit.normal
+        );
+        this._cursorWorldPosition = {
+          x: wallHit.point.x,
+          y: wallHit.point.y,
+          z: wallHit.point.z,
+        };
+      } else {
+        this._placementCursorMesh.showOnFloor(floorWorld);
+        this._cursorWorldPosition = {
+          x: floorWorld.x,
+          y: floorWorld.y,
+          z: floorWorld.z,
+        };
+      }
+
+      try {
+        (this as any)[$needsRender]();
+      } catch (e) {}
+    }
+
+    _getCursorWorldPosition(): { x: number; y: number; z: number } | null {
+      if (!this._cursorWorldPosition) return null;
+      return { ...this._cursorWorldPosition };
+    }
+
+    private _tickPlacementCursor(deltaMs: number) {
+      this._placementCursorMesh?.tick(deltaMs);
+    }
+
     // Selection change handler to react to selection changes from the selection mixin
     private _onSelectionChangeForPuzzler(event: Event) {
       const customEvent = event as CustomEvent<SelectionChangeDetail>;
@@ -2978,6 +3429,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       this._syncRotationControlDiscLifecycle();
+      if (type === 'clear') {
+        this._setPointerHoverCameraDragDisabled(false);
+      }
       (this as any)[$needsRender]();
     }
 
@@ -3080,6 +3534,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _dragTargets: Object3D[] = [];
     private _dragStartPositions = new Map<string, Vector3>();
     private _dragOffsets = new Map<string, Vector3>();
+    /** Touch-only: defer object drag until movement exceeds a small threshold. */
+    private _touchObjectDragPending = false;
+    private _touchObjectDragStartClient = { clientX: 0, clientY: 0 };
+    private _touchObjectDragStartNdc = new Vector2();
 
     // Slot maps for UI (snapping points, break-link/ungroup)
     private _snappingPointSlots: Map<string, HTMLElement> = new Map();
@@ -4195,7 +4653,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const attached = this._roomAttachedObjectsByWallName.get(wallName);
       if (attached) {
         attached.forEach((object) => {
-          object.visible = visible;
+          this._resolvePlacedObjectVisible(object, visible);
           if (visible) this._roomHiddenAttachedObjects.delete(object);
           else this._roomHiddenAttachedObjects.add(object);
         });
@@ -4211,7 +4669,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private _resetRoomAttachedVisibility() {
       this._roomHiddenAttachedObjects.forEach((object) => {
-        object.visible = true;
+        this._resolvePlacedObjectVisible(object, true);
       });
       this._roomHiddenSkirtings.forEach((object) => {
         object.visible = true;
@@ -4266,7 +4724,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       this._roomFloorAttachedObjects.forEach((object: Object3D) => {
         const visible = this.floor;
-        object.visible = visible;
+        this._resolvePlacedObjectVisible(object, visible);
         if (visible) this._roomHiddenAttachedObjects.delete(object);
         else this._roomHiddenAttachedObjects.add(object);
       });
@@ -4538,7 +4996,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportWidth: (this as any)[$scene].width,
         viewportHeight: (this as any)[$scene].height,
         floorY,
-        highlightColor: this.rotationControlsHighlightColor,
+        highlightColor: this.highlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
         lockSize,
@@ -4584,7 +5042,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportWidth: scene.width,
         viewportHeight: scene.height,
         floorY: this._getRotationDiscFloorY(targets[0]),
-        highlightColor: this.rotationControlsHighlightColor,
+        highlightColor: this.highlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
         lockSize: false,
@@ -4609,6 +5067,55 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         camera
       );
       return true;
+    }
+
+    private _resolveSelectedObjectDragTarget(
+      clientX: number,
+      clientY: number
+    ): Object3D | null {
+      if (!this.editMode) return null;
+      const selected = ((this as any).selectedObjects || []) as Object3D[];
+      if (selected.length === 0) return null;
+      if (!this._setPointerRayFromClient(clientX, clientY)) return null;
+      return (
+        selected.find((obj) =>
+          this.isPointOnObject(this.currentMousePosition, obj)
+        ) ?? null
+      );
+    }
+
+    private _classifyPointerInteractionTarget(
+      clientX: number,
+      clientY: number
+    ): PointerInteractionTarget {
+      if ((this as any)._isInteractivePlacementActive?.()) {
+        return {kind: 'interactive-session'};
+      }
+      if (
+        this._canShowYRotationControl() &&
+        this._intersectRotationControlFromClientPoint(clientX, clientY) != null
+      ) {
+        return {kind: 'rotation-control-y'};
+      }
+      const dragObject = this._resolveSelectedObjectDragTarget(clientX, clientY);
+      if (dragObject) {
+        return {
+          kind: 'selected-object-drag',
+          object: {uuid: dragObject.uuid, name: dragObject.name || ''},
+        };
+      }
+      return {kind: 'none'};
+    }
+
+    /**
+     * Classify what model-viewer would handle at viewport coordinates.
+     * Host overlay tools should not capture pointer events when kind !== 'none'.
+     */
+    getPointerInteractionTarget(
+      clientX: number,
+      clientY: number
+    ): PointerInteractionTarget {
+      return this._classifyPointerInteractionTarget(clientX, clientY);
     }
 
     private _getRotationPointerAngleRad(
@@ -5054,8 +5561,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._pointerDownOnSelectable = overSelectable;
       if (!overSelectable) {
         this._dispatchHoverChange(null);
+        // Re-enable orbit when starting a camera drag off-object (touch often
+        // has no pointermove between selecting and orbiting).
+        this._setPointerHoverCameraDragDisabled(false);
+        return;
       }
-      if (!overSelectable) return;
       this._setPointerHoverCameraDragDisabled(true);
     }
 
@@ -5084,6 +5594,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (this._rotationGestureActive) {
         return;
       }
+      if ((this as any)._isInteractivePlacementActive?.()) {
+        return;
+      }
       // Only handle puzzler mouse interactions when edit-mode is active.
       if (!this.editMode) {
         return;
@@ -5098,6 +5611,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       this.updateMousePosition(event as any);
+
+      // Shift-click toggles selection; don't start a drag that swallows pointerup.
+      if ((this as any)._isClickSelectionToggleActive?.(event)) {
+        return;
+      }
 
       // Only start dragging if clicking on an already-selected object
       if ((this as any).selectedObjects.length) {
@@ -5132,29 +5650,79 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     private onTouchStart(event: TouchEvent) {
       if (!this.editMode) return;
+      if ((this as any)._isInteractivePlacementActive?.()) return;
 
-      if (event.touches.length === 1) {
-        const touch = event.touches[0];
-        this.updateMousePositionFromTouch(touch);
-
-        if ((this as any).selectedObjects.length) {
-          const isOnSelectedObject = (this as any).selectedObjects.some(
-            (obj: any) => this.isPointOnObject(this.currentMousePosition, obj)
-          );
-          if (isOnSelectedObject) {
-            event.stopImmediatePropagation();
-            event.preventDefault();
-            this.startDragging();
-          }
-        }
+      if (event.touches.length !== 1) {
+        this._touchObjectDragPending = false;
+        return;
       }
+
+      const touch = event.touches[0];
+      this.updateMousePositionFromTouch(touch);
+
+      if ((this as any)._isClickSelectionToggleActive?.(event)) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      if (!(this as any).selectedObjects.length) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      const isOnSelectedObject = (this as any).selectedObjects.some(
+        (obj: any) => this.isPointOnObject(this.currentMousePosition, obj)
+      );
+      if (!isOnSelectedObject) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      // Defer drag until movement exceeds a threshold so tap-to-select does
+      // not briefly disable camera controls (problematic on touch devices).
+      this._touchObjectDragPending = true;
+      this._touchObjectDragStartClient.clientX = touch.clientX;
+      this._touchObjectDragStartClient.clientY = touch.clientY;
+      this._touchObjectDragStartNdc.copy(this.currentMousePosition);
     }
 
     private onTouchMove(event: TouchEvent) {
       // Only handle puzzler touch interactions when edit-mode is active.
       if (!this.editMode) return;
-      if (event.touches.length === 1 && (this as any).isDragging) {
-        const touch = event.touches[0];
+
+      if (event.touches.length !== 1) {
+        this._touchObjectDragPending = false;
+        return;
+      }
+
+      const touch = event.touches[0];
+
+      if (
+        this._touchObjectDragPending &&
+        !(this as any).isDragging &&
+        (this as any).selectedObjects.length
+      ) {
+        const dx = touch.clientX - this._touchObjectDragStartClient.clientX;
+        const dy = touch.clientY - this._touchObjectDragStartClient.clientY;
+        const TOUCH_DRAG_THRESHOLD_PX = 10;
+        if (dx * dx + dy * dy >= TOUCH_DRAG_THRESHOLD_PX * TOUCH_DRAG_THRESHOLD_PX) {
+          const isOnSelectedObject = (this as any).selectedObjects.some(
+            (obj: any) =>
+              this.isPointOnObject(this._touchObjectDragStartNdc, obj)
+          );
+          if (isOnSelectedObject) {
+            this._touchObjectDragPending = false;
+            this.updateMousePositionFromTouch(touch);
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            this.startDragging(event);
+          } else {
+            this._touchObjectDragPending = false;
+          }
+        }
+      }
+
+      if ((this as any).isDragging) {
         this.updateMousePositionFromTouch(touch);
         this.updateDragPosition();
         event.preventDefault();
@@ -5164,6 +5732,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private onTouchEnd(_event: TouchEvent) {
       if (!this.editMode) return;
 
+      this._touchObjectDragPending = false;
       if ((this as any).isDragging) {
         this.stopDragging();
       }
@@ -5226,6 +5795,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private startDragging(_event?: MouseEvent | TouchEvent) {
+      if ((this as any)._isInteractivePlacementActive?.()) {
+        return;
+      }
       if (!(this as any).selectedObjects.length) {
         return;
       }
@@ -5299,8 +5871,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if ((this as any)[$controls]) {
         try {
-          (this as any)[$controls].disableInteraction &&
-            (this as any)[$controls].disableInteraction();
+          (this as any)[$controls].disableDragInteraction?.();
         } catch (e) {}
       }
 
@@ -5558,10 +6129,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if ((this as any)[$controls]) {
         try {
-          (this as any)[$controls].enableInteraction &&
-            (this as any)[$controls].enableInteraction();
+          (this as any)[$controls].enableDragInteraction?.();
         } catch (e) {}
       }
+      this._syncCameraDragDisabled();
 
       (this as any).style.cursor = '';
       try {
@@ -6067,6 +6638,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     deleteNode(node: Object3D): boolean {
       if (!node) return false;
       try {
+        if (node.userData?.isPlacedObject === true) {
+          this._unindexPlacedObjectTags(node);
+        }
         this._purgeSelectionForDeletedNode(node);
 
         if (!this._ensureUndoHistory().isReplaying) {
@@ -6461,6 +7035,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       initialMouse?: { clientX: number; clientY: number }
     ): PlacementSession {
       // Enforce single interactive session
+      this.cancelPaste();
       if (
         this._activePlacementSession &&
         this._activePlacementSession.state === 'placing'
@@ -6483,6 +7058,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       this._activePlacementSession = session;
       this._setPlacementCameraDragDisabled(true);
+      this._syncCursorLifecycle();
 
       // Ensure snapping slots are refreshed immediately when an interactive
       // placement session is started so snapping points for the placeholder
@@ -6497,6 +7073,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._activePlacementSession = null;
         }
         this._setPlacementCameraDragDisabled(false);
+        this._syncCursorLifecycle();
       };
 
       session.addEventListener('loaded', endPlacementSession, { once: true });
@@ -6598,7 +7175,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const onPointerUp = (e: PointerEvent) => {
         try {
           if (session.state === 'placing') {
-            session.hidePlacementCursor();
             const requiresWallSurfaceSnap =
               (session as any).requiresSurfaceSnap?.() ?? false;
             const hasValidWallSurfaceSnap =
@@ -6753,126 +7329,588 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
     }
 
-    /**
-     * Replace an existing placed object with a new GLB model, preserving its
-     * position, transforms, grouping, and optionally merging userData.parts.
-     *
-     * @param objectUuid - The UUID of the object to replace
-     * @param src - Optional direct URL to the replacement GLB
-     * @param options - Optional PlacementOptions, including getHighResUrl callback
-     * @returns Promise that resolves when replacement is complete
-     */
-    async replacePart(
-      objectUuid: string,
-      src?: string,
-      options?: PlacementOptions
-    ): Promise<void> {
-      if (!objectUuid) {
-        throw new Error('objectUuid is required');
+    getClipboardState(): ClipboardState {
+      const entry = this._clipboardEntry;
+      const pasteSession = this._activePasteSession;
+      return {
+        hasClipboard: !!entry,
+        entry: entry ? toClipboardStateEntry(entry) : undefined,
+        pasteSession: pasteSession
+          ? {
+              active:
+                pasteSession.state === 'previewing' ||
+                pasteSession.state === 'committing',
+              state:
+                pasteSession.state === 'committing'
+                  ? 'committing'
+                  : 'previewing',
+              validTarget: pasteSession.hasValidSurfaceSnap,
+            }
+          : undefined,
+      };
+    }
+
+    private _emitClipboardChange(reason: ClipboardChangeReason): void {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent<ClipboardChangeDetail>('clipboard-change', {
+            detail: {...this.getClipboardState(), reason},
+          })
+        );
+      } catch (_e) {}
+    }
+
+    private _resolveCopyTargets(objectUuid?: string): Object3D[] {
+      const selected = [
+        ...(((this as any).selectedObjects as Object3D[]) || []),
+      ];
+      const selectedRoots = this._normalizeDeletionRoots(selected).filter(
+        (node) => isClipboardCopyTarget(node)
+      );
+
+      if (objectUuid) {
+        const matchesSelection = selectedRoots.some(
+          (node) => node.uuid === objectUuid
+        );
+        if (matchesSelection && selectedRoots.length > 0) {
+          return selectedRoots;
+        }
+
+        const node = this.getPart(objectUuid);
+        return isClipboardCopyTarget(node) ? [node] : [];
       }
+
+      return selectedRoots;
+    }
+
+    private _cancelActivePlacementForPaste(): void {
+      const session = this._activePlacementSession;
+      if (session && session.state === 'placing') {
+        try {
+          session.cancel();
+        } catch (_e) {}
+      }
+    }
+
+    private _teardownPastePointerListeners(): void {
+      if (this._pastePointerTeardown) {
+        try {
+          this._pastePointerTeardown();
+        } catch (_e) {}
+        this._pastePointerTeardown = null;
+      }
+    }
+
+    private _endActivePasteSession(): void {
+      if (this._activePasteSession === null) return;
+      this._teardownPastePointerListeners();
+      try {
+        this._activePasteSession.dispose();
+      } catch (_e) {}
+      this._activePasteSession = null;
+      this._setPlacementCameraDragDisabled(false);
+      this._syncCursorLifecycle();
+    }
+
+    cancelPaste(): void {
+      const session = this._activePasteSession;
+      if (!session) return;
+      session.cancel();
+      this._endActivePasteSession();
+    }
+
+    clearClipboard(): void {
+      this.cancelPaste();
+      if (this._clipboardEntry) {
+        disposeClipboardEntry(this._clipboardEntry);
+        this._clipboardEntry = null;
+      }
+      this._emitClipboardChange('clear');
+    }
+
+    copyPart(
+      objectUuid?: string,
+      options?: CopyPartOptions
+    ): PasteSession | void {
+      const targets = this._resolveCopyTargets(objectUuid);
+      if (targets.length === 0) return;
+
+      this._cancelActivePlacementForPaste();
+      this.cancelPaste();
+
+      if (this._clipboardEntry) {
+        disposeClipboardEntry(this._clipboardEntry);
+      }
+      const entry = snapshotClipboardTargets(targets);
+      if (!entry) return;
+      this._clipboardEntry = entry;
+      this._emitClipboardChange('copy');
+
+      if (!options?.interactive) return;
+
+      try {
+        (this as any).clearSelection?.();
+      } catch (_e) {}
+
+      const session = new PasteSession(this as unknown as PasteSessionHost, entry);
+      this._activePasteSession = session;
+      this._setPlacementCameraDragDisabled(true);
+      this._syncCursorLifecycle();
+      session.createGhost();
+      const seedMouse =
+        options.initialMouse ??
+        (this._lastCursorClient
+          ? {
+              clientX: this._lastCursorClient.clientX,
+              clientY: this._lastCursorClient.clientY,
+            }
+          : undefined);
+      if (seedMouse) {
+        try {
+          session.updatePosition(seedMouse.clientX, seedMouse.clientY);
+        } catch (_e) {}
+      }
+      this._wirePasteSessionPointers(session, seedMouse);
+      this._emitClipboardChange('paste-start');
+      return session;
+    }
+
+    async paste(options?: PasteOptions): Promise<PasteResult | null> {
+      const entry = this._clipboardEntry;
+      if (!entry) return null;
+
+      const clientX = options?.clientX ?? this._lastCursorClient?.clientX;
+      const clientY = options?.clientY ?? this._lastCursorClient?.clientY;
+      if (clientX === undefined || clientY === undefined) return null;
 
       const scene = (this as any)[$scene];
-      if (!scene) {
-        throw new Error('Scene not available');
+      const parent = scene?.target || scene;
+      if (!parent) return null;
+
+      const sessionId = createSessionId();
+      const commits = commitPasteTargets(entry, sessionId);
+      if (commits.length === 0) return null;
+
+      const selectionItems = getSelectionClipboardItems(entry);
+      const leaderIndex = getSelectionLeaderIndex(entry);
+      const leader = commits[leaderIndex]?.node ?? commits[0].node;
+      const placementItems = commits.map((commit, index) => ({
+        object: commit.node,
+        requiresSurfaceSnap: commit.itemEntry.requiresSurfaceSnap,
+        anchorOffset: selectionItems[index]?.anchorOffset.clone() ?? new Vector3(),
+      }));
+
+      const pose =
+        placementItems.length > 1
+          ? applySelectionPointerPlacementPose(
+              this as any,
+              leader,
+              placementItems,
+              clientX,
+              clientY
+            )
+          : applyPointerPlacementPose(
+              this as any,
+              leader,
+              clientX,
+              clientY
+            );
+
+      if (!pose.worldPoint) return null;
+      if (entryRequiresSurfaceSnap(entry) && !pose.hasValidSurfaceSnap) {
+        return null;
       }
 
-      // Find the object to replace by UUID using Three.js built-in method
-      const objectToReplace = scene.getObjectByProperty('uuid', objectUuid) as
-        | Object3D
-        | undefined;
-
-      if (!objectToReplace) {
-        throw new Error(`Object with UUID "${objectUuid}" not found`);
+      try {
+        for (const {node} of commits) {
+          parent.add(node);
+        }
+      } catch (_e) {
+        return null;
       }
 
-      // Resolve the URL: use src parameter or call getHighResUrl callback
-      let srcToLoad = src;
-      if (!srcToLoad && options?.getHighResUrl) {
+      const selectPasted = options?.select === true;
+
+      if (commits.length > 1) {
+        return this._finalizePasteCommitMany(commits, {
+          select: selectPasted,
+        });
+      }
+
+      return this._finalizePasteCommit(commits[0].node, commits[0].itemEntry, {
+        select: selectPasted,
+      });
+    }
+
+    private _finalizePasteCommitMany(
+      commits: Array<{node: Object3D; itemEntry: ClipboardEntry}>,
+      options?: {select?: boolean; emitChange?: boolean}
+    ): PasteCommitResult {
+      const history = this._ensureUndoHistory();
+      const shouldBatch = commits.length > 1 && !history.isReplaying;
+      if (shouldBatch) {
+        history.beginBatch();
+      }
+
+      for (const commit of commits) {
+        this._finalizePasteCommit(commit.node, commit.itemEntry, {
+          select: false,
+          emitChange: false,
+        });
+      }
+
+      if (shouldBatch) {
+        history.endBatch('Paste selection');
+      }
+
+      const select = options?.select !== false;
+      if (select) {
         try {
-          srcToLoad = await options.getHighResUrl();
+          (this as any)._replaceSelection?.(commits.map((commit) => commit.node));
+        } catch (_e) {}
+      }
+
+      try {
+        (this as any)[$needsRender]();
+      } catch (_e) {}
+
+      if (options?.emitChange !== false) {
+        this._emitClipboardChange('paste-commit');
+      }
+
+      return {
+        id: commits[0].node.name,
+        node: commits[0].node,
+        nodes: commits.map((commit) => commit.node),
+      };
+    }
+
+    private _finalizePasteCommit(
+      node: Object3D,
+      entry: ClipboardEntry,
+      options?: {select?: boolean; emitChange?: boolean}
+    ): PasteCommitResult {
+      try {
+        this._markRoomWallVisibilityCacheDirty();
+      } catch (_e) {}
+
+      if (entry.kind === 'group') {
+        try {
+          this.updateGroupMeshCache(node);
+        } catch (_e) {}
+        this._recordStructureChange([], this._collectStructureNodes(node), 'Paste group');
+      } else {
+        this._recordPlacementAdd(node);
+      }
+
+      this._firePartsStateEvents(node, 'paste', {});
+
+      const select = options?.select !== false;
+      if (select) {
+        try {
+          if (entry.kind === 'group') {
+            (this as any).selectGroup?.(node);
+          } else {
+            (this as any).selectPart?.(node);
+          }
+        } catch (_e) {}
+      }
+
+      try {
+        (this as any)[$needsRender]();
+      } catch (_e) {}
+
+      if (options?.emitChange !== false) {
+        this._emitClipboardChange('paste-commit');
+      }
+
+      return {
+        id: node.name,
+        node,
+      };
+    }
+
+    private _wirePasteSessionPointers(
+      session: PasteSession,
+      initialMouse?: { clientX: number; clientY: number }
+    ): void {
+      this._teardownPastePointerListeners();
+
+      const DRAG_THRESHOLD_PX = 10;
+      let startClientX: number | null = initialMouse?.clientX ?? null;
+      let startClientY: number | null = initialMouse?.clientY ?? null;
+      let maxDistanceSq = 0;
+      let pointerMoveRaf = 0;
+      let pendingPointerMove: { clientX: number; clientY: number } | null = null;
+      let placementPointerId: number | null = null;
+      let suppressPointerUpUntil = 0;
+
+      const isPointerInViewer = (clientX: number, clientY: number) => {
+        const inputEl = (this as any)[$userInputElement] as
+          | HTMLElement
+          | undefined;
+        if (!inputEl) return false;
+        const rect = inputEl.getBoundingClientRect();
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        );
+      };
+
+      const flushPointerMove = () => {
+        pointerMoveRaf = 0;
+        const pending = pendingPointerMove;
+        pendingPointerMove = null;
+        if (!pending || session.state !== 'previewing') return;
+        session.updatePosition(pending.clientX, pending.clientY);
+      };
+
+      const onPointerDown = (e: PointerEvent) => {
+        if (session.state !== 'previewing') return;
+        if (!isPointerInViewer(e.clientX, e.clientY)) return;
+        placementPointerId = e.pointerId;
+        startClientX = e.clientX;
+        startClientY = e.clientY;
+        maxDistanceSq = 0;
+        session.updatePosition(e.clientX, e.clientY);
+      };
+
+      const onPointerMove = (e: PointerEvent) => {
+        if (session.state !== 'previewing') return;
+        if (!isPointerInViewer(e.clientX, e.clientY)) return;
+        if (placementPointerId !== null && e.pointerId !== placementPointerId) {
+          return;
+        }
+        if (startClientX === null || startClientY === null) {
+          startClientX = e.clientX;
+          startClientY = e.clientY;
+        }
+        const dx = e.clientX - startClientX;
+        const dy = e.clientY - startClientY;
+        maxDistanceSq = Math.max(maxDistanceSq, dx * dx + dy * dy);
+        pendingPointerMove = {clientX: e.clientX, clientY: e.clientY};
+        if (!pointerMoveRaf) {
+          pointerMoveRaf = requestAnimationFrame(flushPointerMove);
+        }
+      };
+
+      const onPointerUp = (e: PointerEvent) => {
+        if (session.state !== 'previewing') return;
+        if (performance.now() < suppressPointerUpUntil) return;
+        if (placementPointerId === null || e.pointerId !== placementPointerId) {
+          return;
+        }
+        placementPointerId = null;
+        flushPointerMove();
+        if (maxDistanceSq <= DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+          session.updatePosition(e.clientX, e.clientY);
+        }
+        const result = session.commit({select: true, emitChange: false});
+        this._endActivePasteSession();
+        if (result) {
+          this._emitClipboardChange('paste-commit');
+        }
+      };
+
+      const onKeyDown = (e: KeyboardEvent) => {
+        if (e.key !== 'Escape') return;
+        session.cancel();
+        this._endActivePasteSession();
+      };
+
+      window.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('keydown', onKeyDown);
+
+      // Ignore the pointerup from the Duplicate button click that started the session.
+      suppressPointerUpUntil = performance.now() + 300;
+
+      this._pastePointerTeardown = () => {
+        window.removeEventListener('pointerdown', onPointerDown);
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('keydown', onKeyDown);
+        if (pointerMoveRaf) {
+          cancelAnimationFrame(pointerMoveRaf);
+          pointerMoveRaf = 0;
+        }
+      };
+
+      if (initialMouse) {
+        try {
+          session.updatePosition(initialMouse.clientX, initialMouse.clientY);
+        } catch (_e) {}
+      } else if (this._lastCursorClient) {
+        try {
+          session.updatePosition(
+            this._lastCursorClient.clientX,
+            this._lastCursorClient.clientY
+          );
+        } catch (_e) {}
+      }
+    }
+
+    private async _runConcurrent<T>(
+      total: number,
+      concurrency: number,
+      worker: (index: number) => Promise<T>
+    ): Promise<T[]> {
+      if (total === 0) return [];
+      const results: T[] = new Array(total);
+      let nextIndex = 0;
+      const workerCount = Math.max(1, Math.min(concurrency, total));
+
+      const runNext = async (): Promise<void> => {
+        const currentIndex = nextIndex++;
+        if (currentIndex >= total) {
+          return;
+        }
+        results[currentIndex] = await worker(currentIndex);
+        await runNext();
+      };
+
+      const workers: Promise<void>[] = [];
+      for (let i = 0; i < workerCount; i++) {
+        workers.push(runNext());
+      }
+      await Promise.all(workers);
+      return results;
+    }
+
+    private async _resolveReplacementSrc(
+      src: string | undefined,
+      getHighResUrl?: () => Promise<string | undefined>,
+      contextLabel = 'replacement'
+    ): Promise<string> {
+      let srcToLoad = src;
+      if (!srcToLoad && getHighResUrl) {
+        try {
+          srcToLoad = await getHighResUrl();
         } catch (error) {
           throw new Error(
-            `Failed to resolve URL via getHighResUrl: ${getErrorMessage(error)}`
+            `Failed to resolve URL via getHighResUrl for ${contextLabel}: ${getErrorMessage(
+              error
+            )}`
           );
         }
       }
-
       if (!srcToLoad) {
         throw new Error(
-          'No URL provided: src parameter or options.getHighResUrl is required'
+          `No URL provided for ${contextLabel}: src parameter or getHighResUrl is required`
         );
       }
+      return srcToLoad;
+    }
 
-      // Save the original object's transform, parent, and metadata
-      const originalParent = objectToReplace.parent;
-      const originalPosition = objectToReplace.position.clone();
-      const originalQuaternion = objectToReplace.quaternion.clone();
-      const originalScale = objectToReplace.scale.clone();
-      const originalUserData = { ...objectToReplace.userData };
-      const originalName = objectToReplace.name;
-
-      // Load the new GLB
+    private async _loadCachedGltf(
+      src: string,
+      onProgress?: (progress: number) => void
+    ): Promise<GLTF> {
       const loader = (this as any)[$renderer].loader;
-      let gltf: GLTF;
       try {
-        gltf = await loader.load(srcToLoad, this, (p: number) => {
-          // Emit progress events
+        return await loader.load(src, this, (p: number) => {
+          try {
+            onProgress?.(p);
+          } catch (e) {}
+        });
+      } catch (error) {
+        throw new Error(
+          `Failed to load GLB from "${src}": ${getErrorMessage(error)}`
+        );
+      }
+    }
+
+    async _acquireGltfSceneNode(
+      src: string,
+      options?: { partId?: string },
+      progressDetail?: Record<string, unknown>
+    ): Promise<Object3D> {
+      const scene = (this as any)[$scene];
+      const sceneRoot = scene?.target ?? scene ?? null;
+      if (!sceneRoot) {
+        throw new Error('Scene not available');
+      }
+
+      const cloned = tryCloneExistingGltfScene(src, sceneRoot, options);
+      if (cloned) {
+        if (progressDetail) {
           try {
             (this as any).dispatchEvent(
               new CustomEvent('progress', {
                 detail: {
-                  totalProgress: p,
-                  reason: 'replace-part',
-                  objectUuid,
+                  ...progressDetail,
+                  totalProgress: 1,
+                  progress: 1,
                 },
               })
             );
-          } catch (e) {
-            // ignore
+          } catch (e) {}
+          const onProgress = progressDetail.onProgress;
+          if (typeof onProgress === 'function') {
+            try {
+              onProgress(1);
+            } catch (e) {}
           }
-        });
-      } catch (error) {
-        throw new Error(
-          `Failed to load replacement GLB from "${srcToLoad}": ${getErrorMessage(
-            error
-          )}`
-        );
+        }
+        return cloned;
       }
 
-      if (!gltf || !gltf.scene) {
+      const gltf = await this._loadCachedGltf(src, (p) => {
+        if (!progressDetail) return;
+        try {
+          (this as any).dispatchEvent(
+            new CustomEvent('progress', {
+              detail: {
+                ...progressDetail,
+                totalProgress: p,
+                progress: p,
+              },
+            })
+          );
+        } catch (e) {}
+        const onProgress = progressDetail.onProgress;
+        if (typeof onProgress === 'function') {
+          try {
+            onProgress(p);
+          } catch (e) {}
+        }
+      });
+
+      if (!gltf?.scene) {
         throw new Error('Loaded GLTF missing scene');
       }
+      attachGltfLifecycle(gltf.scene, src, () => {
+        try {
+          (gltf as {dispose?: () => void}).dispose?.();
+        } catch (e) {}
+      });
+      return gltf.scene;
+    }
 
-      const newObject = gltf.scene;
-
-      // Apply the original transform to the new object
-      newObject.position.copy(originalPosition);
-      newObject.quaternion.copy(originalQuaternion);
-      newObject.scale.copy(originalScale);
-
-      // Restore name
-      newObject.name = originalName;
-
-      // Merge userData: start with original, then apply new options
+    private _applyReplacementUserData(
+      newObject: Object3D,
+      originalUserData: Record<string, unknown>,
+      options?: PlacementOptions
+    ): void {
       newObject.userData = {
         ...originalUserData,
         ...newObject.userData,
       };
 
-      // If options.part is provided, merge it with existing userData.part
       if (options?.part) {
         try {
           if (originalUserData.part) {
-            // Merge the parts objects
             newObject.userData.part = {
-              ...originalUserData.part,
+              ...(originalUserData.part as object),
               ...options.part,
             };
           } else {
             newObject.userData.part = options.part;
           }
         } catch (e) {
-          // If merge fails, just use the new part
           newObject.userData.part = options.part;
         }
       }
@@ -6880,8 +7918,6 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (options?.selection) {
         newObject.userData.selection = options.selection;
       }
-
-      // Apply other options if provided
       if (options?.id !== undefined) {
         newObject.userData.id = options.id;
       }
@@ -6900,20 +7936,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (replacementSnapPoints) {
         newObject.userData.snapPoints = replacementSnapPoints;
       }
+    }
 
-      // Check if the target object is part of a group
+    private _swapReplacedObjectInScene(
+      objectToReplace: Object3D,
+      newObject: Object3D,
+      originalParent: Object3D | null
+    ): void {
+      const scene = (this as any)[$scene];
+      const originalName = objectToReplace.name;
+      const objectUuid = objectToReplace.uuid;
       const parentGroup = (this as any)._findEnclosingGroup(objectToReplace);
 
-      // Remove the old object from its parent
-      if (originalParent) {
-        originalParent.remove(objectToReplace);
-      }
-
-      // Add the new object to the same parent
       if (originalParent) {
         originalParent.add(newObject);
       } else {
-        // Fallback: add to scene target
         try {
           scene.target.add(newObject);
         } catch (e) {
@@ -6921,12 +7958,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      // If the object was in a group, update any snap connections that reference it
+      const history = this._ensureUndoHistory();
+      if (!history.isReplaying) {
+        history.detachToGraveyard(objectToReplace);
+      } else if (objectToReplace.parent) {
+        objectToReplace.parent.remove(objectToReplace);
+      }
+
       if (parentGroup && parentGroup.userData?.snapConnections) {
         try {
           const connections = parentGroup.userData.snapConnections;
           connections.forEach((connection: any) => {
-            // Update connections that reference the old object
             if (connection.a === originalName) {
               connection.a = newObject.name;
             }
@@ -6946,15 +7988,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               connection.objectB = newObject;
             }
           });
-
-          // Update group mesh cache
           this.updateGroupMeshCache(parentGroup);
-        } catch (e) {
-          // Ignore errors updating group metadata
-        }
+        } catch (e) {}
       }
 
-      // Update selection if the replaced object was selected
       try {
         const wasSelected =
           (this as any).selectedObjects &&
@@ -6966,28 +8003,210 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             (obj: any) => (obj.uuid === objectUuid ? newObject : obj)
           );
         }
-      } catch (e) {
-        // Ignore selection update errors
-      }
+      } catch (e) {}
 
-      // Request shadow update and render
       this.requestShadowUpdate();
       (this as any)[$needsRender]();
+    }
 
-      // Emit completion event
+    private _recordPartReplacement(
+      before: StructureNodeMemento[],
+      newObject: Object3D
+    ): void {
+      const history = this._ensureUndoHistory();
+      if (history.isReplaying) return;
+      const after = history.captureNodesMemento([newObject]);
+      const displayName = getObjectDisplayName(newObject);
+      history.recordStructure(
+        before,
+        after,
+        `Replace ${displayName}`,
+        [displayName],
+        [newObject.uuid]
+      );
+    }
+
+    private async _replacePartCore(
+      objectUuid: string,
+      src?: string,
+      options?: PlacementOptions
+    ): Promise<{ oldObject: Object3D; newObject: Object3D }> {
+      if (!objectUuid) {
+        throw new Error('objectUuid is required');
+      }
+
+      const scene = (this as any)[$scene];
+      if (!scene) {
+        throw new Error('Scene not available');
+      }
+
+      const objectToReplace = scene.getObjectByProperty('uuid', objectUuid) as
+        | Object3D
+        | undefined;
+
+      if (!objectToReplace) {
+        throw new Error(`Object with UUID "${objectUuid}" not found`);
+      }
+
+      const srcToLoad = await this._resolveReplacementSrc(
+        src,
+        options?.getHighResUrl,
+        `object "${objectUuid}"`
+      );
+
+      const originalParent = objectToReplace.parent;
+      const originalPosition = objectToReplace.position.clone();
+      const originalQuaternion = objectToReplace.quaternion.clone();
+      const originalScale = objectToReplace.scale.clone();
+      const originalUserData = { ...objectToReplace.userData };
+      const originalName = objectToReplace.name;
+
+      const beforeMemento = this._ensureUndoHistory().captureNodesMemento([
+        objectToReplace,
+      ]);
+
+      const partId =
+        options?.id ??
+        (options?.part as { id?: string } | undefined)?.id ??
+        (originalUserData.part as { id?: string } | undefined)?.id;
+
+      const newObject = await this._acquireGltfSceneNode(
+        srcToLoad,
+        partId ? { partId: String(partId) } : undefined,
+        {
+          reason: 'replace-part',
+          objectUuid,
+        }
+      );
+
+      newObject.position.copy(originalPosition);
+      newObject.quaternion.copy(originalQuaternion);
+      newObject.scale.copy(originalScale);
+      newObject.name = originalName;
+
+      this._applyReplacementUserData(newObject, originalUserData, options);
+      this._swapReplacedObjectInScene(
+        objectToReplace,
+        newObject,
+        originalParent
+      );
+      if (objectToReplace.userData?.isPlacedObject === true) {
+        this._reindexPlacedObjectTags(objectToReplace, newObject);
+      }
+      this._recordPartReplacement(beforeMemento, newObject);
+
+      return { oldObject: objectToReplace, newObject };
+    }
+
+    /**
+     * Replace an existing placed object with a new GLB model, preserving its
+     * position, transforms, grouping, and optionally merging userData.parts.
+     *
+     * @param objectUuid - The UUID of the object to replace
+     * @param src - Optional direct URL to the replacement GLB
+     * @param options - Optional PlacementOptions, including getHighResUrl callback
+     * @returns Promise that resolves when replacement is complete
+     */
+    async replacePart(
+      objectUuid: string,
+      src?: string,
+      options?: PlacementOptions
+    ): Promise<void> {
+      const { oldObject, newObject } = await this._replacePartCore(
+        objectUuid,
+        src,
+        options
+      );
+
       try {
         (this as any).dispatchEvent(
           new CustomEvent('replace-part-complete', {
             detail: {
               objectUuid,
-              oldObject: objectToReplace,
+              oldObject,
               newObject,
             },
           })
         );
-      } catch (e) {
-        // ignore
+      } catch (e) {}
+    }
+
+    async replaceManyParts(
+      items: BulkReplaceItem[],
+      options?: {
+        concurrency?: number;
+        getHighResUrl?: (item: BulkReplaceItem) => Promise<string | undefined>;
       }
+    ): Promise<Array<{ objectUuid: string; node: Object3D }>> {
+      const total = items.length;
+      if (total === 0) return [];
+
+      this._ensureUndoHistory().beginBatch();
+
+      let completed = 0;
+      const results = await this._runConcurrent(
+        total,
+        options?.concurrency ?? 4,
+        async (currentIndex) => {
+          const item = items[currentIndex];
+          const srcToLoad = await this._resolveReplacementSrc(
+            item.src,
+            options?.getHighResUrl
+              ? () => options.getHighResUrl!(item)
+              : undefined,
+            `object "${item.objectUuid}"`
+          );
+
+          const { newObject } = await this._replacePartCore(item.objectUuid, srcToLoad, {
+            ...(item.part ? { part: item.part } : {}),
+            ...(item.selection ? { selection: item.selection } : {}),
+            ...(item.id !== undefined ? { id: item.id } : {}),
+            ...(item.name !== undefined ? { name: item.name } : {}),
+            ...(item.mass !== undefined ? { mass: item.mass } : {}),
+            ...(item.selectable !== undefined
+              ? { selectable: item.selectable }
+              : {}),
+            ...(item.editable !== undefined ? { editable: item.editable } : {}),
+            ...(item.snapPoints ? { snapPoints: item.snapPoints } : {}),
+          });
+
+          completed++;
+          const totalProgress = total ? completed / total : 1;
+          try {
+            (this as any).dispatchEvent(
+              new CustomEvent('progress', {
+                detail: {
+                  totalProgress,
+                  reason: 'bulk-replace-part',
+                  completed,
+                  total,
+                  objectUuid: item.objectUuid,
+                },
+              })
+            );
+          } catch (e) {}
+
+          return { objectUuid: item.objectUuid, node: newObject };
+        }
+      );
+
+      this._ensureUndoHistory().endBatch(
+        total === 1 ? undefined : `Replace ${total} objects`
+      );
+
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent('bulk-replace-part-complete', {
+            detail: {
+              total,
+              completed,
+              results,
+            },
+          })
+        );
+      } catch (e) {}
+
+      return results;
     }
   }
 
@@ -7015,7 +8234,7 @@ class PlacementSession extends EventTarget {
   private _targetBottomCenter: { x: number; y: number; z: number } | null =
     null;
   private _hasValidSurfaceSnap: boolean = false;
-  private _placementCursor: PlacementCursor | null = null;
+  private _placeholderLoadEmitted: boolean = false;
 
   constructor(
     element: any,
@@ -7025,7 +8244,7 @@ class PlacementSession extends EventTarget {
     lowResSrc?: string,
     highResSrc?: string,
     options?: PlacementOptions,
-    immediatePlacement = false
+    _immediatePlacement = false
   ) {
     super();
     this.id = String(Date.now()) + '_' + Math.floor(Math.random() * 10000);
@@ -7036,47 +8255,30 @@ class PlacementSession extends EventTarget {
     this.log = log;
     this.warn = warn;
     this.error = error;
-    if (!immediatePlacement) {
-      this._ensurePlacementCursor();
-    }
     (this as any).dispatchEvent(
       new CustomEvent('start', { detail: { sessionId: this.id } })
     );
   }
 
-  private _ensurePlacementCursor() {
-    if (this._placementCursor || !this._element) return;
-    const scene = (this._element as any)[$scene];
-    const parent = scene?.target || scene;
-    if (!parent) return;
+  private _emitPlaceholderLoaded(): void {
+    if (this._placeholderLoadEmitted || !this.placeholder) return;
+    this._placeholderLoadEmitted = true;
+    (this as any).dispatchEvent(
+      new CustomEvent('placeholder-loaded', {
+        detail: { sessionId: this.id, placeholder: this.placeholder },
+      })
+    );
+  }
 
-    const cursor = new PlacementCursor(() => {
-      try {
-        (this._element as any)?.[$needsRender]();
-      } catch (e) {}
-    });
-    parent.add(cursor);
-    this._placementCursor = cursor;
-
-    const defaultWorld = new Vector3();
-    if (scene?.target) {
-      scene.target.getWorldPosition(defaultWorld);
+  async _ensurePlaceholderReady(): Promise<void> {
+    if (this.placeholder) {
+      this._emitPlaceholderLoaded();
+      return;
     }
-    cursor.showOnFloor(defaultWorld);
-  }
-
-  private _disposePlacementCursor() {
-    if (!this._placementCursor) return;
-    this._placementCursor.dispose();
-    this._placementCursor = null;
-  }
-
-  hidePlacementCursor() {
-    this._placementCursor?.hide();
-  }
-
-  tickPlacementCursor(deltaMs: number) {
-    this._placementCursor?.tick(deltaMs);
+    await this._loadPlaceholder();
+    if (!this.placeholder) {
+      throw new Error('Placeholder failed to load');
+    }
   }
 
   private _getWallCursorPointFromPlaceholder(
@@ -7104,27 +8306,6 @@ class PlacementSession extends EventTarget {
       Math.abs(normal.z) * halfSize.z;
 
     return center.addScaledVector(normal, -projectedHalfDepth);
-  }
-
-  private _updatePlacementCursor(
-    worldPoint: Vector3,
-    surfaceHit: SurfaceSnapHit | null,
-    snappedSurfacePoint: Vector3 | null = null
-  ) {
-    this._ensurePlacementCursor();
-    if (!this._placementCursor) return;
-    if (this.requiresSurfaceSnap() && !surfaceHit) {
-      this._placementCursor.hide();
-      return;
-    }
-    if (surfaceHit && surfaceHit.surfaceType === 'wall') {
-      this._placementCursor.showOnSurface(
-        snappedSurfacePoint || surfaceHit.point,
-        surfaceHit.normal
-      );
-      return;
-    }
-    this._placementCursor.showOnFloor(worldPoint);
   }
 
   requiresSurfaceSnap(): boolean {
@@ -7260,11 +8441,7 @@ class PlacementSession extends EventTarget {
         const placeholder = this._createPlaceholderFromBounds(scene, element);
         if (placeholder) {
           this.placeholder = placeholder;
-          (this as any).dispatchEvent(
-            new CustomEvent('placeholder-loaded', {
-              detail: { sessionId: this.id, placeholder },
-            })
-          );
+          this._emitPlaceholderLoaded();
           return;
         }
 
@@ -7273,11 +8450,7 @@ class PlacementSession extends EventTarget {
         // (especially surfaceSnap) still works in getHighResUrl-only flows.
         const anchorPlaceholder = this._createPlaceholderAnchor(scene, element);
         this.placeholder = anchorPlaceholder;
-        (this as any).dispatchEvent(
-          new CustomEvent('placeholder-loaded', {
-            detail: { sessionId: this.id, placeholder: anchorPlaceholder },
-          })
-        );
+        this._emitPlaceholderLoaded();
         this.log(
           '[puzzler] PlacementSession: No low-res URL provided, using anchor placeholder'
         );
@@ -7306,6 +8479,12 @@ class PlacementSession extends EventTarget {
       // Use the low-res model as the interactive placeholder
       const placeholder = gltf.scene;
       if (!placeholder) return;
+
+      attachGltfLifecycle(placeholder, lowResUrl, () => {
+        try {
+          (gltf as {dispose?: () => void}).dispose?.();
+        } catch (e) {}
+      });
 
       this.placeholder = placeholder;
       applyPlacementObjectIdentity(placeholder, this.id, this._options);
@@ -7338,11 +8517,7 @@ class PlacementSession extends EventTarget {
         // ignore if property not present
       }
 
-      (this as any).dispatchEvent(
-        new CustomEvent('placeholder-loaded', {
-          detail: { sessionId: this.id, placeholder },
-        })
-      );
+      this._emitPlaceholderLoaded();
       if (!this._element) return;
       (this._element as any)[$needsRender]();
     } catch (error) {
@@ -7360,11 +8535,13 @@ class PlacementSession extends EventTarget {
   }
 
   // Update placeholder position. Accepts client coordinates and converts
-  // them to a world point using the LDCursor mixin's helper.
+  // them to a world point on the placement plane.
   updatePosition(clientX: number, clientY: number) {
     if (!this._element) return;
 
     try {
+      (this._element as any)._updateCursorFromPointer(clientX, clientY);
+
       const world = getMouseWorldPointOnPlacementPlane(
         this._element as unknown as HTMLElement,
         (this._element as any)[$scene],
@@ -7373,7 +8550,6 @@ class PlacementSession extends EventTarget {
       );
       if (!world) {
         this._hasValidSurfaceSnap = false;
-        this.hidePlacementCursor();
         // pointer outside or no valid ray intersection
         (this as any).dispatchEvent(
           new CustomEvent('update', {
@@ -7383,17 +8559,18 @@ class PlacementSession extends EventTarget {
         return;
       }
 
-      // Store cursor position for later use (even if no placeholder exists)
-      this._lastCursorPosition = { x: world.x, y: world.y, z: world.z };
+      const cursorPos = (this._element as any)._getCursorWorldPosition?.() as
+        | { x: number; y: number; z: number }
+        | null;
+      this._lastCursorPosition = cursorPos
+        ? { ...cursorPos }
+        : { x: world.x, y: world.y, z: world.z };
       // Also store this as the target bottom-center position
       this._targetBottomCenter = { x: world.x, y: world.y, z: world.z };
-
-      let placementSurfaceHit: SurfaceSnapHit | null = null;
 
       // If no placeholder exists, just track position and return
       if (!this.placeholder) {
         this._hasValidSurfaceSnap = false;
-        this._updatePlacementCursor(world, null);
         (this as any).dispatchEvent(
           new CustomEvent('update', {
             detail: {
@@ -7497,7 +8674,6 @@ class PlacementSession extends EventTarget {
             const surfaceHit = (
               this._element as any
             ).applySurfaceSnapForPlacement(this.placeholder, clientX, clientY);
-            placementSurfaceHit = surfaceHit;
             this._hasValidSurfaceSnap = !!surfaceHit;
             if (surfaceHit) {
               snappedSurfacePoint =
@@ -7596,11 +8772,6 @@ class PlacementSession extends EventTarget {
           // Ignore snapping errors during placement
         }
       }
-      this._updatePlacementCursor(
-        world,
-        placementSurfaceHit,
-        snappedSurfacePoint
-      );
 
       (this as any).dispatchEvent(
         new CustomEvent('update', {
@@ -7676,7 +8847,6 @@ class PlacementSession extends EventTarget {
       return Promise.reject(new Error('Session not placing'));
     }
 
-    this.hidePlacementCursor();
     this.state = 'loading';
 
     // Compute a reasonable center point for the placeholder so callers
@@ -7807,33 +8977,65 @@ class PlacementSession extends EventTarget {
   }
 
   private async _placeFinalGlb(element: any, srcToLoad: string) {
-    this._disposePlacementCursor();
-    const loader = (element as any)[$renderer].loader;
     const scene = (element as any)[$scene];
 
-    try {
-      const gltf = await loader.load(srcToLoad, element, (p: number) => {
-        try {
-          (this as any).dispatchEvent(
-            new CustomEvent('progress', {
-              detail: { sessionId: this.id, phase: 'final', progress: p },
-            })
-          );
-        } catch (e) {}
-      });
+    if (!srcToLoad || !String(srcToLoad).trim()) {
+      const error = new Error('No GLB URL provided for placement');
+      this.state = 'cancelled';
+      (this as any).dispatchEvent(
+        new CustomEvent('error', {
+          detail: {
+            type: 'placementfailure',
+            sessionId: this.id,
+            sourceError: error,
+          },
+        })
+      );
+      return Promise.reject(error);
+    }
 
-      if (!gltf || !gltf.scene) {
-        throw new Error('Loaded GLTF missing scene');
-      }
+    try {
+      try {
+        (this as any).dispatchEvent(
+          new CustomEvent('progress', {
+            detail: { sessionId: this.id, phase: 'final', progress: 0 },
+          })
+        );
+      } catch (e) {}
+
+      const partId =
+        this._options?.id ??
+        (this._options?.part as { id?: string } | undefined)?.id;
+      const placedNode = await element._acquireGltfSceneNode(
+        srcToLoad,
+        partId ? { partId: String(partId) } : undefined,
+        {
+          sessionId: this.id,
+          phase: 'final',
+          onProgress: (p: number) => {
+            try {
+              (this as any).dispatchEvent(
+                new CustomEvent('progress', {
+                  detail: {
+                    sessionId: this.id,
+                    phase: 'final',
+                    progress: p,
+                  },
+                })
+              );
+            } catch (e) {}
+          },
+        }
+      );
 
       const objectKey = getPlacementObjectKey(this.id, this._options);
 
       if (this.placeholder) {
-        gltf.scene.quaternion.copy(this.placeholder.quaternion);
-        gltf.scene.scale.copy(this.placeholder.scale);
-        gltf.scene.name = this.placeholder.name || objectKey;
+        placedNode.quaternion.copy(this.placeholder.quaternion);
+        placedNode.scale.copy(this.placeholder.scale);
+        placedNode.name = this.placeholder.name || objectKey;
       } else {
-        gltf.scene.name = objectKey;
+        placedNode.name = objectKey;
       }
 
       const hasSurfaceSnappedPlaceholder =
@@ -7841,26 +9043,26 @@ class PlacementSession extends EventTarget {
 
       if (this.placeholder && hasSurfaceSnappedPlaceholder) {
         // Preserve exact wall/surface placement transform from the placeholder.
-        gltf.scene.position.copy(this.placeholder.position);
+        placedNode.position.copy(this.placeholder.position);
       } else if (this._targetBottomCenter) {
         // Align final GLB bottom-center to the tracked placement anchor so
         // placeholder and final-model origin differences do not cause offsets.
-        const finalQuaternion = gltf.scene.quaternion.clone();
-        const finalScale = gltf.scene.scale.clone();
+        const finalQuaternion = placedNode.quaternion.clone();
+        const finalScale = placedNode.scale.clone();
 
-        gltf.scene.position.set(0, 0, 0);
-        gltf.scene.quaternion.set(0, 0, 0, 1);
-        gltf.scene.scale.set(1, 1, 1);
-        gltf.scene.updateMatrixWorld(true);
-        const bboxLocal = new Box3().setFromObject(gltf.scene);
+        placedNode.position.set(0, 0, 0);
+        placedNode.quaternion.set(0, 0, 0, 1);
+        placedNode.scale.set(1, 1, 1);
+        placedNode.updateMatrixWorld(true);
+        const bboxLocal = new Box3().setFromObject(placedNode);
         const bottomCenterLocal = new Vector3(
           (bboxLocal.min.x + bboxLocal.max.x) / 2,
           bboxLocal.min.y,
           (bboxLocal.min.z + bboxLocal.max.z) / 2
         );
 
-        gltf.scene.quaternion.copy(finalQuaternion);
-        gltf.scene.scale.copy(finalScale);
+        placedNode.quaternion.copy(finalQuaternion);
+        placedNode.scale.copy(finalScale);
 
         const target = (scene as any).target;
         if (target) {
@@ -7876,20 +9078,20 @@ class PlacementSession extends EventTarget {
           : anchorWorld.clone();
         const bottomOffsetLocal = bottomCenterLocal
           .clone()
-          .multiply(gltf.scene.scale)
-          .applyQuaternion(gltf.scene.quaternion);
-        gltf.scene.position.copy(anchorLocal.sub(bottomOffsetLocal));
+          .multiply(placedNode.scale)
+          .applyQuaternion(placedNode.quaternion);
+        placedNode.position.copy(anchorLocal.sub(bottomOffsetLocal));
       } else if (this.placeholder) {
-        gltf.scene.position.copy(this.placeholder.position);
+        placedNode.position.copy(this.placeholder.position);
       } else if (this._lastCursorPosition) {
-        gltf.scene.position.set(
+        placedNode.position.set(
           this._lastCursorPosition.x,
           this._lastCursorPosition.y,
           this._lastCursorPosition.z
         );
         this.log(
           '[puzzler] Placed object using cursor position:',
-          gltf.scene.position.toArray(),
+          placedNode.position.toArray(),
           'from cursor:',
           this._lastCursorPosition
         );
@@ -7901,65 +9103,88 @@ class PlacementSession extends EventTarget {
         }
       }
 
-      gltf.scene.userData = {
+      placedNode.userData = {
         selectable: getPlacementSelectable(this._options),
         selection: this._options?.selection || undefined,
-        ...gltf.scene.userData,
+        ...placedNode.userData,
         id: objectKey,
         name: getPlacementDisplayName(this._options) ?? objectKey,
         part: this._options?.part,
       };
-      gltf.scene.userData.isSurfaceSnapped =
-        this.requiresSurfaceSnap() && this._hasValidSurfaceSnap;
       const placeholderUserData = this.placeholder?.userData || {};
       if (
         typeof placeholderUserData.attachedSurfaceType === 'string' &&
         placeholderUserData.attachedSurfaceType.length > 0
       ) {
-        gltf.scene.userData.attachedSurfaceType =
+        placedNode.userData.attachedSurfaceType =
           placeholderUserData.attachedSurfaceType;
       }
       if (
         typeof placeholderUserData.attachedSurfaceName === 'string' &&
         placeholderUserData.attachedSurfaceName.length > 0
       ) {
-        gltf.scene.userData.attachedSurfaceName =
+        placedNode.userData.attachedSurfaceName =
           placeholderUserData.attachedSurfaceName;
       }
       if (
         typeof placeholderUserData.attachedSurfaceUuid === 'string' &&
         placeholderUserData.attachedSurfaceUuid.length > 0
       ) {
-        gltf.scene.userData.attachedSurfaceUuid =
+        placedNode.userData.attachedSurfaceUuid =
           placeholderUserData.attachedSurfaceUuid;
       }
       if (
         typeof placeholderUserData.attachedWallName === 'string' &&
         placeholderUserData.attachedWallName.length > 0
       ) {
-        gltf.scene.userData.attachedWallName =
+        placedNode.userData.attachedWallName =
           placeholderUserData.attachedWallName;
       }
       if (
         typeof placeholderUserData.attachedWallUuid === 'string' &&
         placeholderUserData.attachedWallUuid.length > 0
       ) {
-        gltf.scene.userData.attachedWallUuid =
+        placedNode.userData.attachedWallUuid =
           placeholderUserData.attachedWallUuid;
       }
       const placedSnapPoints = getPlacementSnapPoints(this._options);
       if (placedSnapPoints) {
         try {
-          gltf.scene.userData.snapPoints = placedSnapPoints;
+          placedNode.userData.snapPoints = placedSnapPoints;
         } catch (e) {}
       }
-      gltf.scene.userData.isPlacedObject = true;
+      placedNode.userData.isPlacedObject = true;
 
       try {
-        scene.target.add(gltf.scene);
+        element._indexPlacedObjectTags?.(placedNode);
+      } catch (e) {}
+
+      try {
+        scene.target.add(placedNode);
       } catch (e) {
-        scene.add(gltf.scene);
+        scene.add(placedNode);
       }
+
+      if (
+        requiresSurfaceSnap(placedNode) &&
+        !hasSurfaceSnappedPlaceholder
+      ) {
+        try {
+          const roomObject = element._findRoomSurfaceObject?.();
+          if (
+            roomObject &&
+            tryResnapToNearestWall(placedNode, roomObject)
+          ) {
+            element._markRoomWallVisibilityCacheDirty?.();
+          }
+        } catch (e) {}
+      }
+
+      placedNode.userData.isSurfaceSnapped =
+        this.requiresSurfaceSnap() &&
+        (this._hasValidSurfaceSnap ||
+          placedNode.userData?.isSurfaceSnapped === true);
+
       try {
         element._markRoomWallVisibilityCacheDirty?.();
       } catch (e) {}
@@ -7988,7 +9213,7 @@ class PlacementSession extends EventTarget {
           try {
             this.log(
               'ld-modular: PlacementSession.commit running fallback snap search for new node',
-              { node: gltf.scene.name }
+              { node: placedNode.name }
             );
           } catch (e) {}
 
@@ -7997,16 +9222,16 @@ class PlacementSession extends EventTarget {
             : (el as any)[$scene];
           if (targetObject) {
             const snappableObjects: Object3D[] = [];
-            if ((gltf.scene as any).userData?.isSnappedGroup) {
-              gltf.scene.traverse((child: any) => {
+            if ((placedNode as any).userData?.isSnappedGroup) {
+              placedNode.traverse((child: any) => {
                 if (
                   child.userData?.isPlacedObject &&
                   child.userData?.snapPoints
                 )
                   snappableObjects.push(child);
               });
-            } else if ((gltf.scene as any).userData?.snapPoints) {
-              snappableObjects.push(gltf.scene);
+            } else if ((placedNode as any).userData?.snapPoints) {
+              snappableObjects.push(placedNode);
             }
 
             let completed = false;
@@ -8067,7 +9292,7 @@ class PlacementSession extends EventTarget {
             let node = dragged;
             while (node) {
               if (node === this.placeholder) {
-                pending.draggedObject = gltf.scene;
+                pending.draggedObject = placedNode;
                 break;
               }
               node = node.parent;
@@ -8096,12 +9321,12 @@ class PlacementSession extends EventTarget {
       } catch (e) {}
 
       this.state = 'ended';
-      const detail = { sessionId: this.id, placedNode: gltf.scene };
+      const detail = { sessionId: this.id, placedNode };
       try {
-        element._recordPlacementAdd?.(gltf.scene);
+        element._recordPlacementAdd?.(placedNode);
       } catch (e) {}
       (this as any).dispatchEvent(new CustomEvent('loaded', { detail }));
-      return { id: objectKey, node: gltf.scene };
+      return { id: objectKey, node: placedNode };
     } catch (error) {
       this._cleanupPlaceholder(element);
       this.state = 'cancelled';
@@ -8122,7 +9347,6 @@ class PlacementSession extends EventTarget {
   }
 
   cancel() {
-    this.hidePlacementCursor();
     this._cleanupPlaceholder();
     this.state = 'cancelled';
     (this as any).dispatchEvent(
@@ -8138,12 +9362,9 @@ class PlacementSession extends EventTarget {
     try {
       if (this.placeholder.parent)
         this.placeholder.parent.remove(this.placeholder);
-      this.placeholder.traverse((child: any) => {
-        if (child.dispose)
-          try {
-            child.dispose();
-          } catch (_) {}
-      });
+      // Geometry may be shared with the loader cache / other instances —
+      // release the retain handle only; do not dispose shared buffers.
+      releaseGltfLifecycle(placeholderRef);
     } catch (e) {
       // ignore
     }
@@ -8167,8 +9388,12 @@ class PlacementSession extends EventTarget {
   }
 
   private _endInteractive() {
-    this._disposePlacementCursor();
-    // Drop reference to element so caller may start another interactive session
+    const el = this._element;
     this._element = null;
+    if (el) {
+      try {
+        (el as any)._syncCursorLifecycle?.();
+      } catch (e) {}
+    }
   }
 }

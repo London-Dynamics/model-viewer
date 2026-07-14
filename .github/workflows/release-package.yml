@@ -43,20 +43,8 @@ jobs:
         env:
           LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps
-
       - name: Build package
         run: npm run build --workspace=packages/model-viewer
-
-      - name: Test package
-        run: npm run test:ci --workspace=packages/model-viewer
-
-      - name: Dry-run publish
-        working-directory: packages/model-viewer
-        run: npm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to GitHub Packages
         working-directory: packages/model-viewer

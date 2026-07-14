@@ -2105,15 +2105,27 @@
         }
       },
       {
-        "name": "rotation-controls-highlight-color",
-        "htmlName": "rotationControlsHighlightColor",
-        "description": "Color used to render the floor rotation disc and tick marks.",
+        "name": "highlight-color",
+        "htmlName": "highlightColor",
+        "description": "Shared LD Modular accent color for the placement cursor and rotation control disc. Cursor ring uses this color at full strength; cursor fill uses the same color at lower opacity.",
         "links": [
           "<a href=\"../examples/ld_transforms/#rotation-controls\">Related examples</a>"
         ],
         "default": {
           "default": "#3b82f6",
           "options": "CSS color"
+        }
+      },
+      {
+        "name": "cursor",
+        "htmlName": "cursor",
+        "description": "When enabled, shows a 3D placement cursor on the floor while the pointer is over the viewer. The cursor switches to a wall-aligned disc when the pointer hits a wall surface. Interactive <code>beginPlacement()</code> also shows the cursor for the duration of the session, even when this attribute is off.",
+        "links": [
+          "<a href=\"../examples/ld_modular/\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
         }
       },
       {
@@ -2259,11 +2271,11 @@
       {
         "name": "placeGlb",
         "htmlName": "placeGlb",
-        "description": "Immediately place a GLB into the scene at a known transform. Rotation values are interpreted as radians (Three.js Euler XYZ). Shares behavior with beginPlacement/PlacementSession.commit for loading events, bounds-based placeholders, snapping, and userData. Returns a Promise that resolves with the created node.",
+        "description": "Immediately place a GLB into the scene. When <code>position</code> and <code>clientPosition</code> are omitted, the bounds placeholder is shown at scene origin <code>(0, y, 0)</code> on <code>scene.target</code> before the high-res model loads. Emits the same <code>PlacementSession</code> events as interactive placement: <code>start</code>, <code>placeholder-loaded</code>, <code>loading-start</code>, <code>progress</code>, <code>loaded</code>, <code>error</code>. Use <code>onSession</code> to attach listeners synchronously. Pass <code>getHighResUrl</code> when <code>highResSrc</code> is omitted. Rotation values are radians (Three.js Euler XYZ). Set <code>skipPlaceholderFeedback: true</code> for bulk restore without visible placeholder UX.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
-        "signature": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; }): Promise<{ id: string; node: Object3D }>"
+        "signature": "placeGlb(highResSrc?: string, options?: PlacementOptions & { position?: [number,number,number]; rotation?: [number,number,number]; scale?: [number,number,number]; clientPosition?: {clientX:number,clientY:number}; onSession?: (session) => void; skipPlaceholderFeedback?: boolean }): Promise<{ id: string; node: Object3D }>"
       },
       {
         "name": "setPosition",
@@ -2416,6 +2428,61 @@
         "signature": "getPlacementTree()"
       },
       {
+        "name": "getPointerInteractionTarget",
+        "htmlName": "getPointerInteractionTarget",
+        "description": "Classify what model-viewer would handle at viewport coordinates (<code>clientX</code>/<code>clientY</code>). Returns <code>{ kind, object? }</code> where <code>kind</code> is one of <code>none</code>, <code>rotation-control-y</code>, <code>selected-object-drag</code>, or <code>interactive-session</code>. Host overlay tools (e.g. box/rectangle select wrappers) should <b>not</b> capture pointer events when <code>kind !== 'none'</code>. Covers the Y rotation disc, selected-object drag in edit mode, and interactive placement/paste sessions. Does not report unselected hover targets — use <code>hover-change</code> for hover UI.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#multi-select\">Related examples</a>"
+        ],
+        "signature": "getPointerInteractionTarget(clientX: number, clientY: number): PointerInteractionTarget"
+      },
+      {
+        "name": "copyPart",
+        "htmlName": "copyPart",
+        "description": "Snapshot the given part, snapped group, or current selection into an in-memory clipboard. When <code>objectUuid</code> is omitted, copies all selected roots. When <code>objectUuid</code> matches one of the selected roots, copies the entire selection. With <code>interactive: true</code>, starts a paste session immediately: semi-transparent ghost(s) follow the pointer and a click commits the copy. Returns a <code>PasteSession</code> when interactive; otherwise void.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>",
+          "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"
+        ],
+        "signature": "copyPart(objectUuid?: string, options?: { interactive?: boolean; initialMouse?: { clientX: number; clientY: number } }): PasteSession | void"
+      },
+      {
+        "name": "paste",
+        "htmlName": "paste",
+        "description": "If the in-memory clipboard is non-empty, place one copy at the placement cursor (or optional <code>clientX</code>/<code>clientY</code>). Floor items paste on the floor; wall items require a valid wall surface snap. Returns <code>null</code> when the clipboard is empty, pointer position is unknown, or the target surface is invalid. Keeps the clipboard for multi-paste.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>"
+        ],
+        "signature": "paste(options?: { clientX?: number; clientY?: number; select?: boolean }): Promise<{ id: string; node: Object3D } | null>"
+      },
+      {
+        "name": "cancelPaste",
+        "htmlName": "cancelPaste",
+        "description": "Cancel the active interactive paste session (ghost preview) without changing the clipboard.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"
+        ],
+        "signature": "cancelPaste(): void"
+      },
+      {
+        "name": "clearClipboard",
+        "htmlName": "clearClipboard",
+        "description": "Cancel any interactive paste session and clear the in-memory clipboard.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>"
+        ],
+        "signature": "clearClipboard(): void"
+      },
+      {
+        "name": "getClipboardState",
+        "htmlName": "getClipboardState",
+        "description": "Synchronous snapshot of clipboard content and any active paste session (mirrors <code>getHistoryState()</code>). Use to seed toolbar UI before the first <code>clipboard-change</code> event.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>"
+        ],
+        "signature": "getClipboardState(): ClipboardState"
+      },
+      {
         "name": "removeSelectedObjects",
         "htmlName": "removeSelectedObjects",
         "description": "Removes the current modular selection (placed objects/groups), clearing selection first. Multiple calls scheduled in the same JavaScript task (for example from both a host <code>window</code> keydown listener and the element's own handler) are coalesced into one removal pass via a microtask; do not use a time-based debounce so key repeat can still remove successive selections. Options are merged across coalesced calls so <code>animate: true</code> wins if any caller requested animated removal. Host applications that add a global listener should mirror the element's own rules: ignore the shortcut when the key is not Delete/Backspace or when <code>event.target</code> is an <code>input</code>, <code>textarea</code>, or <code>contenteditable</code>; only call <code>preventDefault</code> when there is a non-empty modular selection to remove.",
@@ -2423,6 +2490,24 @@
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "signature": "removeSelectedObjects(options?: { animate?: boolean }): void"
+      },
+      {
+        "name": "replaceManyParts",
+        "htmlName": "replaceManyParts",
+        "description": "Replace multiple placed objects with new GLB models in parallel, preserving each object's transforms and grouping. Rotation and position are taken from the existing scene node (items do not carry a transform). Supports configurable concurrency (default 4), per-item <code>src</code> or <code>getHighResUrl</code>, aggregated <code>progress</code> events with <code>reason: 'bulk-replace-part'</code>, a <code>bulk-replace-part-complete</code> event, and a single batched undo step.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#bulk-replace\">Related examples</a>"
+        ],
+        "signature": "replaceManyParts(items: BulkReplaceItem[], options?: { concurrency?: number; getHighResUrl?: (item: BulkReplaceItem) => Promise<string | undefined> }): Promise<{ objectUuid: string; node: Object3D }[]>"
+      },
+      {
+        "name": "replacePart",
+        "htmlName": "replacePart",
+        "description": "Replace an existing placed object with a new GLB model, preserving position, rotation, scale, grouping, and merging <code>userData</code> (including <code>part</code> and top-level <code>selection</code>). Accepts a direct <code>src</code> URL or <code>options.getHighResUrl</code>. Emits <code>progress</code> with <code>reason: 'replace-part'</code> and <code>replace-part-complete</code> when finished. Records an undo step via structure mementos.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#bulk-replace\">Related examples</a>"
+        ],
+        "signature": "replacePart(objectUuid: string, src?: string, options?: PlacementOptions): Promise<void>"
       }
     ],
     "Events": [
@@ -2457,6 +2542,15 @@
         "links": [
           "<a href=\"../examples/ld_modular/#hover-anchor-metadata\">Related examples</a>"
         ]
+      },
+      {
+        "name": "clipboard-change",
+        "htmlName": "clipboardChange",
+        "description": "Dispatched when the in-memory clipboard or interactive paste session changes. detail: <code>{ hasClipboard, entry?, pasteSession?, reason }</code> where <code>pasteSession.validTarget</code> reflects wall/floor snap validity during ghost preview.",
+        "links": [
+          "<a href=\"../examples/ld_clipboard/#clipboard-copy-paste\">Copy / Paste</a>",
+          "<a href=\"../examples/ld_clipboard/#clipboard-interactive\">Interactive duplicate</a>"
+        ]
       }
     ]
   },
@@ -2486,6 +2580,18 @@
         "default": {
           "default": "false",
           "options": "true, false"
+        }
+      },
+      {
+        "name": "click-selection-mode",
+        "htmlName": "clickSelectionMode",
+        "description": "Single-click selection behavior. <code>replace</code> selects one object at a time (hold <b>Shift</b> to toggle items in multi-select). <code>toggle</code> treats every click like Shift+click—useful for touch devices without a Shift key.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "replace",
+          "options": "replace, toggle"
         }
       }
     ],

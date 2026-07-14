@@ -2616,6 +2616,188 @@
           </div>
         </div>
 
+        <div class="sample">
+          <div id="bulk-replace" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Bulk Replace</h2>
+                <h4>
+                  <span class="attribute">replaceManyParts()</span> – swap multiple
+                  placed GLBs while preserving transforms.
+                </h4>
+                <p>
+                  Seed two floor items, then run bulk replace to load alternate
+                  models at the same positions. Progress is reported via
+                  <code>reason: 'bulk-replace-part'</code>; undo restores all
+                  replaced objects in one step.
+                </p>
+              </div>
+              <example-snippet stamp-to="bulk-replace" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/empty.glb"
+                    id="bulk-replace-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    environment-image="../../shared-assets/environments/lebombo_1k.hdr"
+                    edit
+                    disable-base-model-selection
+                    disable-base-model-shadows
+                  >
+                    <div class="ld-panel" id="bulk-replace-control-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">Bulk Replace</h3>
+                          <div class="ld-sections-loose">
+                            <div class="ld-field-row-between">
+                              <button
+                                type="button"
+                                id="seed-bulk-replace"
+                                class="ld-button-sm"
+                              >
+                                Seed items
+                              </button>
+                              <button
+                                type="button"
+                                id="run-bulk-replace"
+                                class="ld-button-sm"
+                                disabled
+                              >
+                                Replace with alternates
+                              </button>
+                            </div>
+                            <span
+                              id="bulk-replace-progress-label"
+                              class="ld-helper-text"
+                            >
+                              Idle
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#bulk-replace-demo'
+                      );
+                      const seedButton =
+                        document.getElementById('seed-bulk-replace');
+                      const replaceButton =
+                        document.getElementById('run-bulk-replace');
+                      const progressLabel = document.getElementById(
+                        'bulk-replace-progress-label'
+                      );
+
+                      const SOFA_URL =
+                        '../../shared-assets/models/sofa_middle.glb';
+                      const ASTRONAUT_URL =
+                        '../../shared-assets/models/Astronaut.glb';
+                      const DUCK_URL =
+                        '../../shared-assets/models/Duck.glb';
+
+                      const seedItems = [
+                        {
+                          id: 'bulk-replace-a',
+                          part: { id: 'bulk-replace-a', name: 'Item A' },
+                          transform: {
+                            position: [-1.5, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                        {
+                          id: 'bulk-replace-b',
+                          part: { id: 'bulk-replace-b', name: 'Item B' },
+                          transform: {
+                            position: [1.5, 0, 0],
+                            rotation: [0, 0, 0],
+                            scale: [1, 1, 1],
+                          },
+                        },
+                      ];
+
+                      const placedUuids = [];
+
+                      const getSeedUrl = async (item) => SOFA_URL;
+
+                      const getReplaceUrl = async (item) => {
+                        const partId = item?.part?.id;
+                        if (partId === 'bulk-replace-a') return ASTRONAUT_URL;
+                        if (partId === 'bulk-replace-b') return DUCK_URL;
+                        return ASTRONAUT_URL;
+                      };
+
+                      seedButton?.addEventListener('click', async () => {
+                        seedButton.disabled = true;
+                        placedUuids.length = 0;
+                        try {
+                          const results = await modelViewer.placeManyGlb(
+                            seedItems,
+                            { getHighResUrl: getSeedUrl }
+                          );
+                          for (const entry of results) {
+                            placedUuids.push(entry.node.uuid);
+                          }
+                          if (replaceButton) replaceButton.disabled = false;
+                          if (progressLabel)
+                            progressLabel.textContent = 'Seeded';
+                        } catch (error) {
+                          console.error('Bulk replace seed failed', error);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Seed error';
+                        } finally {
+                          seedButton.disabled = false;
+                        }
+                      });
+
+                      replaceButton?.addEventListener('click', async () => {
+                        if (!placedUuids.length) return;
+                        replaceButton.disabled = true;
+                        try {
+                          const items = placedUuids.map((objectUuid, index) => ({
+                            objectUuid,
+                            part: seedItems[index]?.part,
+                          }));
+                          const results = await modelViewer.replaceManyParts(
+                            items,
+                            { getHighResUrl: getReplaceUrl }
+                          );
+                          placedUuids.length = 0;
+                          for (const entry of results) {
+                            placedUuids.push(entry.node.uuid);
+                          }
+                          if (progressLabel)
+                            progressLabel.textContent = 'Replaced';
+                        } catch (error) {
+                          console.error('Bulk replace failed', error);
+                          if (progressLabel)
+                            progressLabel.textContent = 'Replace error';
+                        } finally {
+                          replaceButton.disabled = placedUuids.length > 0;
+                        }
+                      });
+
+                      modelViewer.addEventListener('progress', (e) => {
+                        const detail = e.detail || {};
+                        if (detail.reason !== 'bulk-replace-part') return;
+                        const { totalProgress, completed, total } = detail;
+                        const pct = Math.round((totalProgress || 0) * 100);
+                        if (progressLabel) {
+                          progressLabel.textContent = `${completed}/${total} (${pct}%)`;
+                        }
+                      });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
           <div class="sample">
             <div id="hover-anchor-metadata" class="demo"></div>
             <div class="content">

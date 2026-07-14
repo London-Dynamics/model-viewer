@@ -1,6 +1,6 @@
 {
   "name": "@london-dynamics/model-viewer",
-  "version": "4.6.2",
+  "version": "4.7.6",
   "description": "Easily display interactive 3D models on the web and in AR!",
   "repository": {
     "url": "git+https://github.com/london-dynamics/model-viewer.git"
@@ -58,12 +58,15 @@
     "prepare": "if [ ! -L './shared-assets' ]; then ln -s ../shared-assets ./shared-assets; fi && ../shared-assets/scripts/fetch-khronos-gltf-samples.sh",
     "build": "npm run build:tsc && npm run build:rollup",
     "build:dev": "npm run build:tsc && npm run build:rollup:dev",
+    "build:pack": "npm run build:tsc",
+    "pack:local": "npm run build:pack && npm pack",
     "build:tsc": "tsc --incremental",
     "build:rollup": "rollup -c --environment NODE_ENV:production",
     "build:rollup:dev": "rollup -c --environment NODE_ENV:development",
     "prepublishOnly": "npm run build",
     "test": "web-test-runner --playwright --browsers chromium firefox webkit",
     "test:ci": "web-test-runner --static-logging --config web-test-ci.config.mjs",
+    "test:ci:ld": "web-test-runner --static-logging --config web-test-ci-ld.config.mjs",
     "check-fidelity": "node ./test/fidelity/index.js ./test/fidelity/config.json",
     "compare-fidelity": "./scripts/compare-fidelity-to-ref.sh",
     "serve": "node_modules/.bin/http-server -c-1",
@@ -102,7 +105,7 @@
     "three": "^0.172.0"
   },
   "devDependencies": {
-    "@london-dynamics/types": "0.0.64",
+    "@london-dynamics/types": "0.1.8",
     "@rollup/plugin-commonjs": "^28.0.3",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@rollup/plugin-replace": "^6.0.2",

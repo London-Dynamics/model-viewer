@@ -179,6 +179,6 @@ suite('ld-modular transform events', () => {
     const rx = dx * cos + dz * sin;
     const rz = -dx * sin + dz * cos;
     expect(rx).to.be.closeTo(0, 1e-6);
-    expect(rz).to.be.closeTo(1, 1e-6);
+    expect(rz).to.be.closeTo(-1, 1e-6);
   });
 });

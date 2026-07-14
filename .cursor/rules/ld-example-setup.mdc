@@ -1,0 +1,35 @@
+---
+description: LD example page setup (head assets, body class, conventions)
+globs: packages/modelviewer.dev/examples/ld_*/**
+alwaysApply: false
+---
+
+# LD example setup
+
+LD examples under `packages/modelviewer.dev/examples/ld_*/` use shared styles based on [Tailwind UI](https://tailwindui.com/) patterns.
+
+## Required `<head>` assets
+
+```html
+<link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+<link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+<style type="text/tailwindcss"></style>
+<script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+<script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+```
+
+Set `<body class="ld">` so docs-site overrides in `examples.css` do not clash with Tailwind controls.
+
+The empty `<style type="text/tailwindcss">` plus `ld-ui-loader.js` is required: the Tailwind Play CDN only processes inline `text/tailwindcss` blocks. The loader fetches `ld-ui.css` into that block before the CDN script runs.
+
+## When to use `ld-*` classes
+
+Use `ld-*` for interactive controls (sliders, buttons, forms, toggles) or viewport status readouts. Prefer `ld-*` over long inline Tailwind strings. Add shared patterns to [`ld-ui.css`](../../packages/modelviewer.dev/styles/ld-ui.css).
+
+## Conventions
+
+- **Tailwind UI** is the visual source of truth
+- **Light mode only** — no `dark:*` classes
+- **Blue accents** (`blue-600`, `blue-500`) for focus/active — never indigo
+- **No Heroicons** — unicode (e.g. `▾` for select chevrons) or emoji
+- **Range sliders** — `.ld-range`; do not restyle unless repo-wide design change

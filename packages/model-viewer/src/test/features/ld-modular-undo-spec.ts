@@ -13,6 +13,10 @@ import {
   transformsEqual,
   UndoHistoryManager,
 } from '../../features/ld-modular/undo-history.js';
+import {
+  attachGltfLifecycle,
+  hasGltfLifecycle,
+} from '../../features/ld-modular/gltf-lifecycle.js';
 
 const prepareSceneHarness = (element: ModelViewerElement) => {
   const target = new Object3D();
@@ -248,6 +252,35 @@ suite('ld-modular undo / redo', () => {
     expect(element.canUndo()).to.equal(false);
     expect(element.canRedo()).to.equal(false);
     expect(part.position.x).to.equal(1);
+  });
+
+  test('clearUndoHistory does not dispose geometry shared with live placements', () => {
+    const sharedGeometry = new BoxGeometry(1, 1, 1);
+    const makePart = (name: string) => {
+      const part = addPlacedPart(target, name, name);
+      const mesh = new Mesh(sharedGeometry, new MeshBasicMaterial());
+      part.add(mesh);
+      return part;
+    };
+
+    const keep = makePart('keep-shared');
+    const remove = makePart('remove-shared');
+    let releases = 0;
+    attachGltfLifecycle(remove, 'shared.glb', () => {
+      releases += 1;
+    });
+
+    expect(element.deleteNode!(remove)).to.equal(true);
+    expect(remove.parent).to.equal(null);
+    expect(hasGltfLifecycle(remove)).to.equal(true);
+
+    element.clearUndoHistory();
+
+    expect(releases).to.equal(1);
+    expect(hasGltfLifecycle(remove)).to.equal(false);
+    const surviving = keep.children[0] as Mesh;
+    expect(surviving.geometry).to.equal(sharedGeometry);
+    expect(sharedGeometry.getAttribute('position')).to.not.equal(undefined);
   });
 
   test('alignObjects records one undo step and restores on undo', () => {

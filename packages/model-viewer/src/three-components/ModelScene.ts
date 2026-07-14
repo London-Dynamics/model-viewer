@@ -1653,19 +1653,29 @@ export class ModelScene extends Scene {
   }
 
   /**
-   * Update orthographic camera frustum based on current size and zoom
+   * Update orthographic camera frustum in world units. Preserves vertical
+   * extent and adjusts horizontal bounds for the current aspect ratio.
+   * @param halfHeight Optional vertical half-extent in world units; defaults
+   *     to the camera's current top value.
    */
-  private updateOrthographicFrustum() {
-    if (this.camera instanceof OrthographicCamera) {
-      const halfWidth = this.width / 2;
-      const halfHeight = this.height / 2;
-
-      this.camera.left = -halfWidth;
-      this.camera.right = halfWidth;
-      this.camera.top = halfHeight;
-      this.camera.bottom = -halfHeight;
-      this.camera.updateProjectionMatrix();
+  updateOrthographicFrustum(halfHeight?: number) {
+    if (!(this.camera instanceof OrthographicCamera)) {
+      return;
     }
+
+    const verticalHalf =
+        halfHeight ?? this.camera.top;
+    if (!isFinite(verticalHalf) || verticalHalf <= 0) {
+      return;
+    }
+
+    const horizontalHalf = verticalHalf * this.aspect;
+
+    this.camera.left = -horizontalHalf;
+    this.camera.right = horizontalHalf;
+    this.camera.top = verticalHalf;
+    this.camera.bottom = -verticalHalf;
+    this.camera.updateProjectionMatrix();
   }
 
   updateSchema(src: string | null) {

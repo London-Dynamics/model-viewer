@@ -1,0 +1,339 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Clipboard</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Clipboard copy / paste examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style type="text/tailwindcss"></style>
+    <script
+      src="../../styles/ld-ui-loader.js"
+      data-href="../../styles/ld-ui.css"
+    ></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+    <script
+      type="module"
+      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
+    ></script>
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
+    ></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="clipboard-copy-paste" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <h4 id="intro">
+                <span class="font-medium">LD Clipboard</span> keeps copied parts
+                in memory. Use <code>copyPart()</code> and
+                <code>paste()</code> at the placement cursor. Floor items paste
+                on the floor; wall items require a valid wall snap.
+              </h4>
+              <div class="heading">
+                <h2 class="demo-title">Copy / Paste</h2>
+                <h4>
+                  Select a part, click Copy (or Ctrl/Cmd+C), move the pointer,
+                  then Paste (or Ctrl/Cmd+V). Undo and redo include pasted
+                  parts.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="clipboard-copy-paste"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="clipboard-copy-paste-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    edit
+                    highlight-selected
+                    selection-scope="part"
+                    src-is-room
+                    walls
+                    floor
+                    cursor
+                    shadow-intensity="1"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Room with floor duck for clipboard copy paste"
+                  >
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
+                    <div
+                      class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
+                    >
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          id="cp-undo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Undo
+                        </button>
+                        <button
+                          type="button"
+                          id="cp-redo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Redo
+                        </button>
+                      </div>
+                      <div
+                        id="cp-selection"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        selection: none
+                      </div>
+                      <div
+                        id="cp-clipboard"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        clipboard: empty
+                      </div>
+                    </div>
+                    <div
+                      id="cp-history"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
+                    >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="cp-panel" class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-toolbar">
+                          <button
+                            type="button"
+                            id="cp-copy"
+                            class="ld-button-sm"
+                          >
+                            Copy
+                          </button>
+                          <button
+                            type="button"
+                            id="cp-paste"
+                            class="ld-button-sm"
+                          >
+                            Paste
+                          </button>
+                          <button
+                            type="button"
+                            id="cp-clear"
+                            class="ld-button-sm"
+                          >
+                            Clear clipboard
+                          </button>
+                          <span class="ld-helper-text"
+                            >Ctrl/Cmd+C and Ctrl/Cmd+V when the viewer is
+                            focused</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    import {wireClipboardDemo} from './clipboard-demo.js';
+
+                    wireClipboardDemo({
+                      viewerId: 'clipboard-copy-paste-demo',
+                      undoId: 'cp-undo',
+                      redoId: 'cp-redo',
+                      historyId: 'cp-history',
+                      clipboardId: 'cp-clipboard',
+                      selectionId: 'cp-selection',
+                      copyId: 'cp-copy',
+                      pasteId: 'cp-paste',
+                      clearId: 'cp-clear',
+                      keyboardShortcuts: true,
+                    });
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="clipboard-interactive" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Interactive Duplicate</h2>
+                <h4>
+                  <code>copyPart(uuid, &#123; interactive: true &#125;)</code>
+                  shows a semi-transparent ghost on top of the scene. Click to
+                  commit; press Escape to cancel.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="clipboard-interactive"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="clipboard-interactive-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    edit
+                    highlight-selected
+                    selection-scope="part"
+                    src-is-room
+                    walls
+                    floor
+                    cursor
+                    shadow-intensity="1"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    alt="Room with interactive clipboard duplicate"
+                  >
+                    <effect-composer render-mode="quality">
+                      <selection-outline-effect
+                        color="#165dfc"
+                        blend-mode="skip"
+                      ></selection-outline-effect>
+                    </effect-composer>
+                    <div
+                      class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
+                    >
+                      <div class="flex gap-2">
+                        <button
+                          type="button"
+                          id="ci-undo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Undo
+                        </button>
+                        <button
+                          type="button"
+                          id="ci-redo"
+                          class="ld-button-sm disabled:opacity-40"
+                          disabled
+                        >
+                          Redo
+                        </button>
+                      </div>
+                      <div
+                        id="ci-selection"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        selection: none
+                      </div>
+                      <div
+                        id="ci-clipboard"
+                        class="ld-hud ld-hud-passive ld-hud-narrow"
+                      >
+                        clipboard: empty
+                      </div>
+                    </div>
+                    <div
+                      id="ci-history"
+                      class="ld-hud ld-hud-top-right ld-hud-passive"
+                    >
+                      undo: 0 | redo: 0
+                    </div>
+                    <div id="ci-panel" class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-toolbar">
+                          <button
+                            type="button"
+                            id="ci-duplicate"
+                            class="ld-button-primary ld-button-sm"
+                          >
+                            Duplicate (interactive)
+                          </button>
+                          <button
+                            type="button"
+                            id="ci-cancel"
+                            class="ld-button-sm"
+                          >
+                            Cancel paste
+                          </button>
+                          <span class="ld-helper-text"
+                            >Ghost renders on top; wall items only commit on
+                            valid walls</span
+                          >
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    import {wireClipboardDemo} from './clipboard-demo.js';
+
+                    wireClipboardDemo({
+                      viewerId: 'clipboard-interactive-demo',
+                      undoId: 'ci-undo',
+                      redoId: 'ci-redo',
+                      historyId: 'ci-history',
+                      clipboardId: 'ci-clipboard',
+                      selectionId: 'ci-selection',
+                      duplicateId: 'ci-duplicate',
+                      cancelId: 'ci-cancel',
+                      keyboardShortcuts: false,
+                    });
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_clipboard');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <script type="module" src="../built/dependencies.js"></script>
+  </body>
+</html>

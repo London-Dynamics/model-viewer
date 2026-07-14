@@ -6,6 +6,10 @@ import {
   type TransformSource,
   type TransformValues,
 } from './transform-events.js';
+import {
+  disposePlacedObjectSubtree,
+  releaseGltfLifecycle,
+} from './gltf-lifecycle.js';
 
 export type HistoryEntryKind = 'transform' | 'add' | 'remove' | 'structure';
 
@@ -115,6 +119,7 @@ const STRUCTURE_USER_DATA_KEYS = [
   'part',
   'selection',
   'snapPoints',
+  'ldGltfSrc',
 ] as const;
 
 let nextEntryId = 0;
@@ -672,23 +677,11 @@ export class UndoHistoryManager {
     const node = this._graveyard.get(uuid);
     if (!node) return;
     this._graveyard.delete(uuid);
-    node.traverse((child) => {
-      const mesh = child as Object3D & {
-        geometry?: {dispose?: () => void};
-        material?: {dispose?: () => void};
-      };
-      try {
-        mesh.geometry?.dispose?.();
-      } catch (e) {}
-      try {
-        const material = mesh.material;
-        if (Array.isArray(material)) {
-          material.forEach((m) => m?.dispose?.());
-        } else {
-          material?.dispose?.();
-        }
-      } catch (e) {}
-    });
+    // Geometry is shared across placements of the same URL (SkeletonUtils /
+    // Object3D.clone). Never dispose buffers here — only release the loader
+    // retain and per-instance materials.
+    releaseGltfLifecycle(node);
+    disposePlacedObjectSubtree(node);
   }
 
   private _notify(

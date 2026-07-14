@@ -1,0 +1,11 @@
+---
+description: LD UI component classes — see reference doc for snippets
+globs: packages/modelviewer.dev/examples/ld_*/**,packages/modelviewer.dev/styles/ld-ui.css
+alwaysApply: false
+---
+
+# LD UI components
+
+- Prefer `ld-*` classes from [`ld-ui.css`](../../packages/modelviewer.dev/styles/ld-ui.css)
+- Add new shared classes to `ld-ui.css` when a pattern repeats across examples
+- Full class table and copy-paste snippets → [`.cursor/docs/ld-example-components.md`](../docs/ld-example-components.md)

@@ -1,4 +1,5 @@
 import {
+  Color,
   DoubleSide,
   Mesh,
   MeshBasicMaterial,
@@ -9,13 +10,25 @@ import {
   CircleGeometry,
   Vector3,
 } from 'three';
+import {
+  OVERLAY_RENDER_ORDER,
+  OVERLAY_RENDER_ORDER_TOP,
+} from './overlay-rendering.js';
+
+export {
+  OVERLAY_RENDER_ORDER,
+  OVERLAY_RENDER_ORDER_TOP,
+} from './overlay-rendering.js';
+export {applyOverlayRendering, markPasteGhostNonInteractive} from './overlay-rendering.js';
 
 export const PLACEMENT_CURSOR_DIAMETER_M = 0.5;
 export const PLACEMENT_CURSOR_PULSE_SPEED = 0.4;
 export const PLACEMENT_CURSOR_PULSE_GROWTH_RATIO = 0.12;
 
-const CURSOR_RENDER_ORDER = 9999;
-const CURSOR_COLOUR = 0x165dfc;
+const CURSOR_RENDER_ORDER = OVERLAY_RENDER_ORDER;
+export const PLACEMENT_CURSOR_DEFAULT_HIGHLIGHT_COLOR = '#3b82f6';
+const CURSOR_FILL_OPACITY = 0.14;
+const CURSOR_RING_OPACITY = 0.85;
 const CURSOR_SURFACE_OFFSET_M = 0.001;
 const CURSOR_BASE_NORMAL = new Vector3(0, 1, 0);
 const TMP_QUATERNION = new Quaternion();
@@ -23,6 +36,7 @@ const TMP_PARENT_QUATERNION = new Quaternion();
 const TMP_PARENT_QUATERNION_INV = new Quaternion();
 const TMP_NORMAL = new Vector3();
 const TMP_POSITION = new Vector3();
+const TMP_COLOR = new Color();
 
 export class PlacementCursor extends Object3D {
   private fillMesh: Mesh;
@@ -38,9 +52,9 @@ export class PlacementCursor extends Object3D {
     const fillGeometry = new CircleGeometry(1, 40);
     fillGeometry.rotateX(-Math.PI / 2);
     const fillMaterial = new MeshBasicMaterial({
-      color: CURSOR_COLOUR,
+      color: PLACEMENT_CURSOR_DEFAULT_HIGHLIGHT_COLOR,
       transparent: true,
-      opacity: 0.14,
+      opacity: CURSOR_FILL_OPACITY,
       depthTest: false,
       depthWrite: false,
       side: DoubleSide,
@@ -56,16 +70,16 @@ export class PlacementCursor extends Object3D {
     const ringGeometry = new RingGeometry(0.92, 1, 64);
     ringGeometry.rotateX(-Math.PI / 2);
     const ringMaterial = new MeshBasicMaterial({
-      color: CURSOR_COLOUR,
+      color: PLACEMENT_CURSOR_DEFAULT_HIGHLIGHT_COLOR,
       transparent: true,
-      opacity: 0.85,
+      opacity: CURSOR_RING_OPACITY,
       depthTest: false,
       depthWrite: false,
       side: DoubleSide,
       blending: NormalBlending,
     });
     this.ringMesh = new Mesh(ringGeometry, ringMaterial);
-    this.ringMesh.renderOrder = CURSOR_RENDER_ORDER + 1;
+    this.ringMesh.renderOrder = OVERLAY_RENDER_ORDER_TOP;
     this.ringMesh.frustumCulled = false;
     this.ringMesh.userData.noHit = true;
     this.ringMesh.userData.selectable = false;
@@ -73,6 +87,13 @@ export class PlacementCursor extends Object3D {
 
     this.visible = false;
     this.applyScale();
+  }
+
+  setHighlightColor(hex: string = PLACEMENT_CURSOR_DEFAULT_HIGHLIGHT_COLOR) {
+    TMP_COLOR.set(hex);
+    (this.fillMesh.material as MeshBasicMaterial).color.copy(TMP_COLOR);
+    (this.ringMesh.material as MeshBasicMaterial).color.copy(TMP_COLOR);
+    this.onNeedsRender();
   }
 
   private applyScale() {

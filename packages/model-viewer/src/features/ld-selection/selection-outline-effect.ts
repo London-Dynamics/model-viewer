@@ -32,6 +32,10 @@ import { property } from 'lit/decorators.js';
 import { BlendFunction, Effect, OutlineEffect } from 'postprocessing';
 import { Color, Object3D, PerspectiveCamera } from 'three';
 
+import {
+  SELECTION_OUTLINE_LAYER,
+} from './selection-outline-layers.js';
+
 // Symbols for internal properties
 const $effectComposer = Symbol('effectComposer');
 const $updateProperties = Symbol('updateProperties');
@@ -134,6 +138,9 @@ export class SelectionOutlineEffect extends LitElement {
    */
   private _selection: Array<string | Object3D> = [];
 
+  /** Meshes last outlined — used to disable render layers on deselect. */
+  private _lastOutlined: Object3D[] = [];
+
   /**
    * Array of objects to outline. Can be Object3D instances or object names.
    * Setting this property immediately applies the selection to the effect.
@@ -177,9 +184,9 @@ export class SelectionOutlineEffect extends LitElement {
       resolutionScale: 1.0, // Full resolution for crisp edges
     });
 
-    // Use a high layer number (10) to avoid conflicts with effect-composer's
+    // Use a high layer number to avoid conflicts with effect-composer's
     // default selection which uses layer 2
-    outlineEffect.selection.layer = 10;
+    outlineEffect.selection.layer = SELECTION_OUTLINE_LAYER;
 
     // Store ALPHA as the default blend function for colored outlines
     this._defaultBlendFunction = BlendFunction.ALPHA;
@@ -290,17 +297,22 @@ export class SelectionOutlineEffect extends LitElement {
       return;
     }
 
-    if (this._selection.length > 0) {
-      // Filter to only Object3D instances (names would need scene traversal)
-      const objects = this._selection.filter(
-        (item): item is Object3D => item instanceof Object3D
-      );
+    const layer = outlineEffect.selection.layer;
+    for (const object of this._lastOutlined) {
+      try {
+        object.layers.disable(layer);
+        object.layers.enable(0);
+      } catch (_e) {}
+    }
+    this._lastOutlined = [];
 
-      // Clear first, then add objects one by one
-      outlineEffect.selection.clear();
-      for (const obj of objects) {
-        outlineEffect.selection.add(obj);
-      }
+    const objects = this._selection.filter(
+      (item): item is Object3D => item instanceof Object3D
+    );
+
+    if (objects.length > 0) {
+      outlineEffect.selection.set(objects);
+      this._lastOutlined = objects;
     } else {
       outlineEffect.selection.clear();
     }

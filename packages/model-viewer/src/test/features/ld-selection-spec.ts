@@ -199,3 +199,59 @@ suite('ld-selection multi-select', () => {
     expect((element as any).getSelectedObjects()).to.deep.equal([partA]);
   });
 });
+
+suite('ld-selection click-selection-mode', () => {
+  let element: ModelViewerElement;
+
+  const touchEventStub = () =>
+    ({type: 'touchstart', touches: []}) as unknown as TouchEvent;
+
+  const pointerEventWithShift = (shiftKey: boolean) =>
+    ({
+      type: 'pointerup',
+      getModifierState: (key: string) =>
+        key === 'Shift' ? shiftKey : false,
+    }) as unknown as PointerEvent;
+
+  setup(() => {
+    element = new ModelViewerElement();
+    element.setAttribute('selection-scope', 'all');
+  });
+
+  teardown(() => {
+    if (element.parentNode != null) {
+      element.parentNode.removeChild(element);
+    }
+  });
+
+  test('_isClickSelectionToggleActive does not throw for TouchEvent', () => {
+    expect(() =>
+      (element as any)._isClickSelectionToggleActive(touchEventStub())
+    ).to.not.throw();
+    expect(
+      (element as any)._isClickSelectionToggleActive(touchEventStub())
+    ).to.equal(false);
+  });
+
+  test('_isClickSelectionToggleActive returns true for TouchEvent when mode is toggle', () => {
+    element.setAttribute('click-selection-mode', 'toggle');
+    expect(
+      (element as any)._isClickSelectionToggleActive(touchEventStub())
+    ).to.equal(true);
+  });
+
+  test('_isClickSelectionToggleActive respects Shift on PointerEvent in replace mode', () => {
+    expect(
+      (element as any)._isClickSelectionToggleActive(
+        pointerEventWithShift(false)
+      )
+    ).to.equal(false);
+    expect(
+      (element as any)._isClickSelectionToggleActive(pointerEventWithShift(true))
+    ).to.equal(true);
+  });
+
+  test('click-selection-mode defaults to replace', () => {
+    expect((element as any).clickSelectionMode).to.equal('replace');
+  });
+});

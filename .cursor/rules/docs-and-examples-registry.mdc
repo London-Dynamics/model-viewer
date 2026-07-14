@@ -1,0 +1,41 @@
+---
+description: Docs site and examples registry upkeep
+globs: packages/modelviewer.dev/data/docs.json,packages/modelviewer.dev/data/examples.json,packages/modelviewer.dev/docs/**,packages/modelviewer.dev/examples/**
+alwaysApply: false
+---
+
+# Docs & examples registry
+
+## Upkeep checklist (new or amended LD feature)
+
+1. **Feature code** — `packages/model-viewer/src/features/` + mixin in `model-viewer.ts` (see `model-viewer-ld-features.mdc`)
+2. **API reference** — add/update section in `packages/modelviewer.dev/data/docs.json`; link entries via `links` to example anchors
+3. **Docs page slot** — new category: `<div id="{htmlName}-docs"></div>` in `packages/modelviewer.dev/docs/index.html`
+4. **Example page** — `packages/modelviewer.dev/examples/ld_*/index.html`; call `init('examples-{htmlName}')`
+5. **Examples registry** — `packages/modelviewer.dev/data/examples.json`
+6. **Tests** — `packages/model-viewer/src/test/` + optional `packages/modelviewer.dev/test/` smoke tests
+7. **Verify** — `cd packages/model-viewer && npm run build:dev`, `npm run serve`, browse docs + examples
+
+## `examples.json` ordering
+
+LD examples (`ld_*`) stay **below** upstream categories (Loading, Augmented Reality, Materials & Scene, Post Process Effects, etc.). Within the LD block, sort **alphabetically** by display `name`:
+
+```
+Materials & Scene
+Post Process Effects
+LD Ambient Occlusion
+LD Bloom
+LD Camera
+…
+```
+
+## `docs.json` wiring
+
+- `htmlName` must match `<div id="{htmlName}-docs">` in `docs/index.html`
+- LD API sections alphabetically among LD entries (mirror examples)
+- `init('docs')` on docs page; `init('examples-{htmlName}')` on example pages (`utils.ts`)
+- API `links` → `../examples/ld_*/#{htmlId}` matching `htmlId` in `examples.json`
+
+## Rebuild
+
+After editing `packages/modelviewer.dev/src/docs-and-examples/`, run `npm run build --workspace=modelviewer.dev` to update `examples/built/docs-and-examples.js`.

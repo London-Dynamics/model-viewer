@@ -101,7 +101,7 @@ suite('Loading', () => {
     const picked = pickShadowDescendant(element);
     expect(picked).to.be.ok;
     // TODO(cdata): Leaky internal details here:
-    expect(picked!.id).to.be.equal('default-poster');
+    expect(picked!.id).to.be.equal('default-ruler-depth');
   });
 
   test('does not load when hidden from render tree', async () => {

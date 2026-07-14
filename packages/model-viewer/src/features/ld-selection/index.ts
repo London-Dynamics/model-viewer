@@ -99,8 +99,14 @@ import ModelViewerElementBase, {
 import {Constructor} from '../../utilities.js';
 import {Object3D, Vector2, Raycaster, Box3, Vector3, Camera} from 'three';
 
+import {scrubSelectionOutlineLayers} from './selection-outline-layers.js';
+
 // Re-export the selection outline effect
 export {SelectionOutlineEffect} from './selection-outline-effect.js';
+export {
+  SELECTION_OUTLINE_LAYER,
+  scrubSelectionOutlineLayers,
+} from './selection-outline-layers.js';
 
 const MULTI_SELECT_MODIFIER_KEY = 'Shift' as const;
 
@@ -118,6 +124,8 @@ export type DomRectLike = {
 };
 
 export type RectangleSelectionMode = 'replace' | 'add' | 'remove' | 'toggle';
+
+export type ClickSelectionMode = 'replace' | 'toggle';
 
 export interface SelectionChangeDetail {
   selectedObjects: Object3D[];
@@ -167,6 +175,14 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({type: Boolean, attribute: 'disable-base-model-selection'})
     disableBaseModelSelection: boolean = false;
 
+    /**
+     * Single-click selection behavior. 'replace' selects one object at a time
+     * (Shift+click still toggles). 'toggle' treats every click like Shift+click
+     * (for touch hosts without a Shift key).
+     */
+    @property({type: String, attribute: 'click-selection-mode'})
+    clickSelectionMode: ClickSelectionMode = 'replace';
+
     // Track selected objects
     protected selectedObjects: Object3D[] = [];
     protected _selectedGroups: Set<Object3D> = new Set();
@@ -185,19 +201,27 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     protected _isInteractivePlacementActive(): boolean {
       const session = (this as any)._activePlacementSession;
-      return (
+      if (
         !!session &&
         (session.state === 'placing' || session.state === 'loading')
-      );
+      ) {
+        return true;
+      }
+      const pasteSession = (this as any)._activePasteSession;
+      return pasteSession?.state === 'previewing';
     }
 
-    protected _isMultiSelectModifierActive(e: PointerEvent | MouseEvent): boolean {
-      return e.getModifierState(MULTI_SELECT_MODIFIER_KEY);
+    protected _isClickSelectionToggleActive(e: Event): boolean {
+      if (this.clickSelectionMode === 'toggle') return true;
+      const getModifierState = (e as PointerEvent | MouseEvent).getModifierState;
+      if (typeof getModifierState !== 'function') return false;
+      return getModifierState.call(e, MULTI_SELECT_MODIFIER_KEY);
     }
 
     protected _isNodeSelectable(node: any): boolean {
       if (!node) return false;
       if (node.userData?.isPlacementPlaceholder === true) return false;
+      if (node.userData?.isPasteGhost === true) return false;
       if (node.selectable === false || node.userData?.selectable === false)
         return false;
 
@@ -362,7 +386,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (btn !== 0) return;
       if (this._isUIElement(e.target)) return;
       if (this._shouldDeferSelectionPointer(e)) return;
-      if (this._isMultiSelectModifierActive(e)) return;
+      if (this._isClickSelectionToggleActive(e)) return;
       try {
         this._performSelectionRaycast(e, {
           clearWhenNoHit: false,
@@ -473,7 +497,7 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       const clearWhenNoHit = options?.clearWhenNoHit !== false;
       const phase = options?.phase ?? 'pointerup';
-      const multiSelect = this._isMultiSelectModifierActive(e);
+      const multiSelect = this._isClickSelectionToggleActive(e);
 
       if (this._isInteractivePlacementActive()) {
         this.clearSelection();
@@ -991,6 +1015,12 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Uses the outline-effect or ld-outline-effect component if present.
      */
     protected _updateHighlight() {
+      const scene = (this as any)[$scene];
+      const highlightRoot = scene?.target || scene;
+      if (highlightRoot) {
+        scrubSelectionOutlineLayers(highlightRoot);
+      }
+
       const effectComposer = (this as unknown as HTMLElement).querySelector(
         'effect-composer'
       );
@@ -1031,6 +1061,12 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
      * Clear all visual highlights.
      */
     protected _clearHighlights() {
+      const scene = (this as any)[$scene];
+      const highlightRoot = scene?.target || scene;
+      if (highlightRoot) {
+        scrubSelectionOutlineLayers(highlightRoot);
+      }
+
       const effectComposer = (this as unknown as HTMLElement).querySelector(
         'effect-composer'
       );
