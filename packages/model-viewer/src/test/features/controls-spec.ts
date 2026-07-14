@@ -541,6 +541,50 @@ suite('Controls', () => {
       expect(cc.mouseButtons.left).to.equal(CameraControls.ACTION.ROTATE);
     });
 
+    test('fps pointer drag reports camera movement before pointerup', async () => {
+      (element as ModelViewerElement).cameraControlMode = 'fps';
+      await timePasses();
+
+      let cameraChanged = false;
+      element.addEventListener('camera-change', () => {
+        cameraChanged = true;
+      }, {once: true});
+
+      const inputElement = element[$userInputElement];
+      const setPointerCapture = inputElement.setPointerCapture;
+      const releasePointerCapture = inputElement.releasePointerCapture;
+      inputElement.setPointerCapture = () => {};
+      inputElement.releasePointerCapture = () => {};
+
+      try {
+        inputElement.dispatchEvent(new PointerEvent('pointerdown', {
+          pointerId: 8,
+          button: 0,
+          clientX: 0,
+          clientY: 0,
+        }));
+        inputElement.dispatchEvent(new PointerEvent('pointermove', {
+          pointerId: 8,
+          clientX: 20,
+          clientY: 0,
+        }));
+
+        await rafPasses();
+
+        expect(cameraChanged).to.be.true;
+
+        inputElement.dispatchEvent(new PointerEvent('pointerup', {
+          pointerId: 8,
+          button: 0,
+          clientX: 20,
+          clientY: 0,
+        }));
+      } finally {
+        inputElement.setPointerCapture = setPointerCapture;
+        inputElement.releasePointerCapture = releasePointerCapture;
+      }
+    });
+
     suite('when user is interacting', () => {
       test('sets an appropriate camera-change event source', async () => {
         await rafPasses();

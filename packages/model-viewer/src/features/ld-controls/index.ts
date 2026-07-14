@@ -193,6 +193,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _fpsYaw = 0;
   private _fpsPitch = 0;
   private _fpsLookDistance = 1;
+  private _fpsLookChanged = false;
   private _fpsKeys = new Set<string>();
   /** Transient disables (hover, object drag, rotation gesture). */
   private _internalDragDisableCount: number = 0;
@@ -749,6 +750,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
         -Math.PI / 2 + 0.01,
         Math.PI / 2 - 0.01);
     this.applyFpsLookAtCurrentPosition();
+    this._fpsLookChanged = true;
     event.preventDefault();
   };
 
@@ -1159,10 +1161,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Periodically validate camera matrix to catch and fix NaN issues
     this.validateAndFixCameraMatrix();
 
+    const fpsLookChanged = this._fpsLookChanged;
+    this._fpsLookChanged = false;
     const fpsMoved = this.updateFpsKeyboardMovement(delta);
 
     // Update CameraControls - delta is in seconds for CameraControls
-    return this.thirdPartyControls.update(delta / 1000) || fpsMoved;
+    return this.thirdPartyControls.update(delta / 1000) || fpsMoved ||
+        fpsLookChanged;
   }
 
   addEventListener(type: string, listener: (event: THREE.Event) => void): void {
