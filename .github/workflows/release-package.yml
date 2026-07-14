@@ -48,7 +48,7 @@ jobs:
 
       - name: Publish to GitHub Packages
         working-directory: packages/model-viewer
-        run: rm -f .npmrc ../../.npmrc && npm publish
+        run: rm -f .npmrc ../../.npmrc && npm publish --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

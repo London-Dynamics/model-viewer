@@ -37,10 +37,10 @@ Or **workflow_dispatch** in Actions — select the **tag ref** (e.g. `v4.7.3`), 
 | Validate | Tag version equals `package.json` |
 | Install | `npm ci` (`LONDON_DYNAMICS_NPM_AUTH_TOKEN`) |
 | Build | `npm run build --workspace=packages/model-viewer` |
-| Publish | `npm publish` → GitHub Packages |
+| Publish | `npm publish --ignore-scripts` → GitHub Packages |
 | Release | GitHub Release with auto-generated notes |
 
-**Note:** workflow does **not** run tests before publish. Re-publishing the same version fails at the registry.
+**Note:** CI uses `--ignore-scripts` so publish does not re-run `prepublishOnly` / `prepare` (build already ran). Local `npm publish` still runs the full build. Workflow does **not** run tests before publish. Re-publishing the same version fails at the registry.
 
 ## Docs deploy (separate from npm release)
 

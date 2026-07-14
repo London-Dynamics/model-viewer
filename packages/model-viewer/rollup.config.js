@@ -17,17 +17,19 @@ import commonjs from '@rollup/plugin-commonjs';
 import {nodeResolve as resolve} from '@rollup/plugin-node-resolve';
 import replace from '@rollup/plugin-replace';
 import swc from '@rollup/plugin-swc';
-import terser from '@rollup/plugin-terser';
 import cleanup from 'rollup-plugin-cleanup';
 import dts from 'rollup-plugin-dts';
 
-const {NODE_ENV} = process.env;
+const {NODE_ENV, MV_BUILD} = process.env;
 
 const onwarn = (warning, warn) => {
-  // Suppress non-actionable warning caused by TypeScript boilerplate:
-  if (warning.code !== 'THIS_IS_UNDEFINED') {
-    warn(warning);
+  // Suppress non-actionable warnings caused by TypeScript boilerplate /
+  // established feature mixin cycles:
+  if (warning.code === 'THIS_IS_UNDEFINED' ||
+      warning.code === 'CIRCULAR_DEPENDENCY') {
+    return;
   }
+  warn(warning);
 };
 
 let commonPlugins = [
@@ -61,52 +63,26 @@ const createModelViewerOutput =
       };
     };
 
-const outputOptions = [
-  createModelViewerOutput('./dist/model-viewer.js', 'esm'),
-  createModelViewerOutput(
-      './dist/model-viewer-module.js', 'esm', commonPlugins, ['three'])
+const pluginsIE11 = [
+  ...commonPlugins,
+  commonjs(),
+  swc(),
+  cleanup({
+    // Ideally we'd also clean third_party/three, which saves
+    // ~45kb in filesize alone... but takes 2 minutes to build
+    include: ['lib/**'],
+    comments: 'none',
+  }),
 ];
 
-if (NODE_ENV !== 'development') {
-  const pluginsIE11 = [
-    ...commonPlugins,
-    commonjs(),
-    swc(),
-    cleanup({
-      // Ideally we'd also clean third_party/three, which saves
-      // ~45kb in filesize alone... but takes 2 minutes to build
-      include: ['lib/**'],
-      comments: 'none',
-    }),
-  ];
-
-  // IE11 does not support modules, so they are removed here, as well as in a
-  // dedicated unit test build which is needed for the same reason.
-  outputOptions.push(
-      createModelViewerOutput('./dist/model-viewer-umd.js', 'umd', pluginsIE11),
-      /** Bundled w/o three */
-      createModelViewerOutput(
-          './dist/model-viewer-module-umd.js', 'umd', pluginsIE11, ['three']));
-
-  // Minified Versions
-  const minifiedPlugins = [...commonPlugins, terser()];
-
-  outputOptions.push(
-      createModelViewerOutput(
-          './dist/model-viewer.min.js', 'esm', minifiedPlugins),
-      createModelViewerOutput(
-          './dist/model-viewer-umd.min.js', 'umd', minifiedPlugins),
-      createModelViewerOutput(
-          './dist/model-viewer-module.min.js',
-          'esm',
-          minifiedPlugins,
-          ['three']),
-      createModelViewerOutput(
-          './dist/model-viewer-module-umd.min.js', 'umd', minifiedPlugins, [
-            'three'
-          ]));
-
-  outputOptions.push({
+const builds = {
+  esm: createModelViewerOutput('./dist/model-viewer.js', 'esm'),
+  'esm-module': createModelViewerOutput(
+      './dist/model-viewer-module.js', 'esm', commonPlugins, ['three']),
+  umd: createModelViewerOutput('./dist/model-viewer-umd.js', 'umd', pluginsIE11),
+  'umd-module': createModelViewerOutput(
+      './dist/model-viewer-module-umd.js', 'umd', pluginsIE11, ['three']),
+  dts: {
     input: './lib/model-viewer.d.ts',
     output: {
       file: './dist/model-viewer.d.ts',
@@ -114,7 +90,31 @@ if (NODE_ENV !== 'development') {
       name: 'ModelViewerElement',
     },
     plugins: [dts()],
-  });
+    onwarn,
+  },
+};
+
+let outputOptions;
+
+if (NODE_ENV === 'development') {
+  outputOptions = [builds.esm, builds['esm-module']];
+} else if (MV_BUILD) {
+  if (!builds[MV_BUILD]) {
+    throw new Error(
+        `Unknown MV_BUILD="${MV_BUILD}". Expected one of: ${
+            Object.keys(builds).join(', ')}`);
+  }
+  outputOptions = [builds[MV_BUILD]];
+} else {
+  // Full production (e.g. watch:rollup): all non-minified JS + dts.
+  // Minified artifacts are produced by scripts/minify-dist.mjs.
+  outputOptions = [
+    builds.esm,
+    builds['esm-module'],
+    builds.umd,
+    builds['umd-module'],
+    builds.dts,
+  ];
 }
 
 export default outputOptions;
