@@ -118,11 +118,11 @@ export interface CaptureImageOptions {
    */
   crop?: CaptureImageCrop;
   /**
-   * When true and capturing to an offscreen render target (width/height or
-   * camera provided), ask the camera controls to fit the view to the scene's
-   * bounding box via <code>fitToBox</code> for the capture so the model fills
-   * the frame for the requested aspect ratio. The visible camera is restored
-   * afterward.
+   * When true and capturing to an offscreen render target (width/height), ask
+   * the camera controls to fit the view to the scene's bounding box via
+   * <code>fitToBox</code> for the capture so the model fills the frame for the
+   * requested aspect ratio. Ignored when <code>camera</code> is set so saved
+   * poses are captured exactly. The visible camera is restored afterward.
    */
   fitToBox?: boolean;
   /**
@@ -133,13 +133,26 @@ export interface CaptureImageOptions {
   backgroundColor?: string | number;
 }
 
+/** Default size for captureThumbnails() when width/height are omitted. */
+const DEFAULT_THUMBNAIL_SIZE = 150;
+
 export declare interface LDImageCaptureInterface {
   /**
    * Captures the current view as a data URL. When width/height are set, renders
    * to an offscreen canvas at that size without altering the main canvas.
-   * Optional camera is used only for this capture.
+   * Optional camera is used only for this capture. Concurrent calls are
+   * serialized (shared capture buffers).
    */
   captureImage(options?: CaptureImageOptions): Promise<string>;
+  /**
+   * Captures one data URL per camera pose for ephemeral UI thumbnails
+   * (e.g. saved views). Runs sequentially; defaults to 150×150 JPEG.
+   * Results are not intended for persistence.
+   */
+  captureThumbnails(
+    cameras: Array<object>,
+    options?: Omit<CaptureImageOptions, 'camera'>
+  ): Promise<string[]>;
 }
 
 /** 2D canvas used when capturing from the display canvas (crop or no dimensions). */
@@ -147,6 +160,49 @@ const captureCanvas2D = document.createElement('canvas');
 
 /** Reusable buffer for readRenderTargetPixels (avoids allocations). */
 let capturePixelBuffer: Uint8Array | null = null;
+
+/**
+ * Global capture queue so overlapping captureImage / captureThumbnails calls
+ * do not share captureCanvas2D / capturePixelBuffer concurrently.
+ */
+let captureQueue: Promise<unknown> = Promise.resolve();
+
+function enqueueCapture<T>(task: () => Promise<T>): Promise<T> {
+  const next = captureQueue.then(task, task);
+  // Keep the chain alive even if a capture rejects.
+  captureQueue = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
+/**
+ * When a temporary camera pose is provided and only one of width/height is
+ * set, default the missing dimension to the other for a square thumbnail.
+ */
+function resolveCaptureDimensions(
+  outWidth: number | undefined,
+  outHeight: number | undefined,
+  hasCamera: boolean,
+  fallbackWidth: number,
+  fallbackHeight: number
+): {captureWidth: number; captureHeight: number} {
+  let w =
+    outWidth != null && outWidth > 0 ? Math.floor(outWidth) : undefined;
+  let h =
+    outHeight != null && outHeight > 0 ? Math.floor(outHeight) : undefined;
+
+  if (hasCamera) {
+    if (w != null && h == null) h = w;
+    else if (h != null && w == null) w = h;
+  }
+
+  return {
+    captureWidth: Math.max(1, w ?? fallbackWidth),
+    captureHeight: Math.max(1, h ?? fallbackHeight),
+  };
+}
 
 function ensurePixelBuffer(size: number): Uint8Array {
   if (capturePixelBuffer == null || capturePixelBuffer.length < size) {
@@ -390,6 +446,8 @@ function applyCameraJSONToCamera(
   );
 }
 
+const $captureImageInternal = Symbol('captureImageInternal');
+
 export const LDImageCaptureMixin = <
   T extends Constructor<ModelViewerElementBase>,
 >(
@@ -397,7 +455,35 @@ export const LDImageCaptureMixin = <
 ): Constructor<LDImageCaptureInterface> & T => {
   class LDImageCaptureModelViewerElement extends ModelViewerElement {
     async captureImage(options: CaptureImageOptions = {}): Promise<string> {
-      const {
+      return enqueueCapture(() => this[$captureImageInternal](options));
+    }
+
+    async captureThumbnails(
+      cameras: Array<object>,
+      options: Omit<CaptureImageOptions, 'camera'> = {}
+    ): Promise<string[]> {
+      const shared: Omit<CaptureImageOptions, 'camera'> = {
+        width: DEFAULT_THUMBNAIL_SIZE,
+        height: DEFAULT_THUMBNAIL_SIZE,
+        fileType: 'image/jpeg',
+        ...options,
+      };
+      const results: string[] = [];
+      for (const camera of cameras) {
+        results.push(
+          await this.captureImage({
+            ...shared,
+            camera,
+          })
+        );
+      }
+      return results;
+    }
+
+    async [$captureImageInternal](
+      options: CaptureImageOptions = {}
+    ): Promise<string> {
+      let {
         width: outWidth,
         height: outHeight,
         fileType = 'image/png',
@@ -406,6 +492,23 @@ export const LDImageCaptureMixin = <
         crop,
         backgroundColor = 'white',
       } = options;
+
+      // Pose-based capture with a single dimension → square output.
+      if (camera != null) {
+        if (
+          outWidth != null &&
+          outWidth > 0 &&
+          (outHeight == null || outHeight <= 0)
+        ) {
+          outHeight = outWidth;
+        } else if (
+          outHeight != null &&
+          outHeight > 0 &&
+          (outWidth == null || outWidth <= 0)
+        ) {
+          outWidth = outHeight;
+        }
+      }
 
       const bgColor = new Color(backgroundColor);
 
@@ -450,17 +553,12 @@ export const LDImageCaptureMixin = <
           }
 
           const sourceCanvas = renderer.displayCanvas(scene);
-          const captureWidth = Math.max(
-            1,
-            outWidth != null && outWidth > 0
-              ? Math.floor(outWidth)
-              : sourceCanvas.width
-          );
-          const captureHeight = Math.max(
-            1,
-            outHeight != null && outHeight > 0
-              ? Math.floor(outHeight)
-              : sourceCanvas.height
+          const {captureWidth, captureHeight} = resolveCaptureDimensions(
+            outWidth,
+            outHeight,
+            camera != null,
+            sourceCanvas.width,
+            sourceCanvas.height
           );
 
           const sceneCamera = scene.camera;
@@ -509,11 +607,8 @@ export const LDImageCaptureMixin = <
             sceneCamera.updateProjectionMatrix();
           }
 
-          // Optionally refit the camera to the scene's bounding box for the
-          // requested aspect ratio using CameraControls.fitToBox. This only
-          // affects the offscreen capture; the visible camera is restored
-          // afterward.
-          if (options.fitToBox) {
+          // fitToBox overrides a saved pose; only apply when no camera option.
+          if (options.fitToBox && camera == null) {
             const controls = (this as any)[$controls];
             if (controls && scene) {
               try {
@@ -662,7 +757,7 @@ export const LDImageCaptureMixin = <
           typeof element.setCameraFromJSON === 'function'
         ) {
           const data = savedCameraJSON.object ?? savedCameraJSON;
-          element.setCameraFromJSON(data);
+          await element.setCameraFromJSON(data);
         }
       }
     }
