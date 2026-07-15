@@ -39,7 +39,6 @@
     ></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 
-    <!-- model-viewer-effects imports "three" — must share one instance with model-viewer-module -->
     <script type="importmap">
       {
         "imports": {
@@ -48,11 +47,6 @@
       }
     </script>
 
-    <!-- Load effects before model-viewer so stamped <effect-composer> upgrades first -->
-    <script
-      type="module"
-      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
-    ></script>
     <script
       type="module"
       src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
@@ -848,6 +842,8 @@
                     interaction-prompt="none"
                     edit
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="part"
                     rotation-controls
                     src-is-room
@@ -857,12 +853,7 @@
                     alt="Room with placed duck rotation controls demo"
                     cursor
                   >
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
+
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
@@ -1094,6 +1085,8 @@
                     interaction-prompt="none"
                     edit
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="group"
                     src-is-room
                     floor
@@ -1101,12 +1094,7 @@
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Floor align and distribute demo"
                   >
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
+
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
@@ -1393,6 +1381,8 @@
                     interaction-prompt="none"
                     edit
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="part"
                     src-is-room
                     walls
@@ -1401,12 +1391,7 @@
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Wall align and distribute demo"
                   >
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
+
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >

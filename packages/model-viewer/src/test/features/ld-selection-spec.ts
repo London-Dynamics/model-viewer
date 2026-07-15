@@ -7,6 +7,7 @@ import {Object3D, PerspectiveCamera} from 'three';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
+import {timePasses} from '../../utilities.js';
 
 const prepareRectangleSelectionHarness = (element: ModelViewerElement) => {
   element.getBoundingClientRect = () =>
@@ -253,5 +254,70 @@ suite('ld-selection click-selection-mode', () => {
 
   test('click-selection-mode defaults to replace', () => {
     expect((element as any).clickSelectionMode).to.equal('replace');
+  });
+});
+
+suite('ld-selection highlight-selected', () => {
+  let element: ModelViewerElement;
+
+  setup(() => {
+    element = new ModelViewerElement();
+    element.setAttribute('selection-scope', 'all');
+    document.body.appendChild(element);
+  });
+
+  teardown(() => {
+    element.remove();
+  });
+
+  test('defaults selection highlight style attrs', () => {
+    expect(element.selectionHighlightColor).to.equal('#165dfc');
+    expect(element.selectionHighlightThickness).to.equal(1.5);
+    expect(element.highlightSelected).to.equal(false);
+  });
+
+  test('reflects selection-highlight-color and thickness', async () => {
+    element.setAttribute('selection-highlight-color', '#ff0000');
+    element.setAttribute('selection-highlight-thickness', '3');
+    await element.updateComplete;
+    expect(element.selectionHighlightColor).to.equal('#ff0000');
+    expect(element.selectionHighlightThickness).to.equal(3);
+  });
+
+  test('registers pipeline outline without effect-composer when highlight-selected', async () => {
+    element.highlightSelected = true;
+    await timePasses();
+
+    expect(element.querySelector('effect-composer')).to.equal(null);
+    expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(
+      (element[$scene].effectRenderer as any).hasSelectionOutline()
+    ).to.equal(true);
+  });
+
+  test('pushes selected meshes into the outline selection', async () => {
+    element.highlightSelected = true;
+    await timePasses();
+
+    const root = new Object3D();
+    const mesh = new Object3D();
+    (mesh as any).isMesh = true;
+    root.add(mesh);
+
+    (element as any)._replaceSelection?.([root]);
+    await timePasses();
+
+    expect(element.getSelectionHighlightMeshes()).to.deep.equal([mesh]);
+  });
+
+  test('coexists with ambient-occlusion on one pipeline composer', async () => {
+    element.highlightSelected = true;
+    element.ambientOcclusion = true;
+    await timePasses();
+
+    const pipeline = element[$scene].effectRenderer as any;
+    expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(pipeline.hasAmbientOcclusion()).to.equal(true);
+    expect(pipeline.hasSelectionOutline()).to.equal(true);
   });
 });

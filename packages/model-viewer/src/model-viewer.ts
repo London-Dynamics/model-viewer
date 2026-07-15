@@ -40,9 +40,6 @@ import { LDSelectionMixin } from './features/ld-selection/index.js';
 import { LDServerAIDenoiseMixin } from './features/ld-server-ai-denoise.js';
 import { LDSkyboxRotationMixin } from './features/ld-skybox-rotation.js';
 
-// Import custom effects to register them
-import './features/ld-selection/selection-outline-effect.js';
-
 import ModelViewerElementBase from './model-viewer-base.js';
 
 // Export these to allow lazy-loaded LottieLoader.js to find what it needs.

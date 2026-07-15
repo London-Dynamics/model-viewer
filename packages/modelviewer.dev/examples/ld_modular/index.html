@@ -55,12 +55,6 @@
       src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
     ></script>
 
-    <!-- Import the <model-viewer-effects> addon -->
-    <script
-      type="module"
-      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
-    ></script>
-
     <style type="text/tailwindcss"></style>
     <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
@@ -193,6 +187,8 @@
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     snapping-enabled
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="group"
                     measure
                     edit
@@ -247,13 +243,6 @@
                         </button>
                       </div>
                     </div>
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                      <color-grade-effect></color-grade-effect>
-                    </effect-composer>
                     <div
                       id="placeglb-transform-events"
                       class="ld-hud ld-hud-top-left ld-hud-passive"
@@ -1170,6 +1159,8 @@
                     shadow-softness="1"
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="group"
                     edit
                     disable-base-model-selection
@@ -1177,12 +1168,6 @@
                     viewport-gizmo
                     rotation-controls
                   >
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
                     <div
                       id="multi-select-readout"
                       class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow"
@@ -1540,6 +1525,8 @@
                     edit
                     selection-scope="part"
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     edit
                     src-is-room
                     walls
@@ -1562,12 +1549,6 @@
                         </button>
                       </div>
                     </div>
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
                     <div class="ld-panel">
                       <div class="ld-card">
                         <div class="ld-card-body">
@@ -2372,6 +2353,8 @@
                     environment-image="../../shared-assets/environments/lebombo_1k.hdr"
                     snapping-enabled
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="group"
                     measure
                     edit

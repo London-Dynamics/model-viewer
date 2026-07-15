@@ -1,6 +1,6 @@
 import type {Object3D} from 'three';
 
-/** Render layer used by `<selection-outline-effect>` (postprocessing OutlineEffect). */
+/** Legacy layer scrubbed from clipboard clones (formerly used by pmndrs OutlineEffect). */
 export const SELECTION_OUTLINE_LAYER = 10;
 
 /**

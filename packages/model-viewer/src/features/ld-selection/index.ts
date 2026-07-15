@@ -101,8 +101,6 @@ import {Object3D, Vector2, Raycaster, Box3, Vector3, Camera} from 'three';
 
 import {scrubSelectionOutlineLayers} from './selection-outline-layers.js';
 
-// Re-export the selection outline effect
-export {SelectionOutlineEffect} from './selection-outline-effect.js';
 export {
   SELECTION_OUTLINE_LAYER,
   scrubSelectionOutlineLayers,
@@ -142,6 +140,10 @@ export interface SelectionChangeDetail {
 
 export interface LDSelectionInterface {
   disableBaseModelSelection: boolean;
+  highlightSelected: boolean;
+  selectionHighlightColor: string;
+  selectionHighlightThickness: number;
+  getSelectionHighlightMeshes(): Object3D[];
   selectAll(): void;
   deselectAll(): void;
   applyRectangleSelection(
@@ -171,6 +173,20 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({type: Boolean, attribute: 'highlight-selected'})
     highlightSelected: boolean = false;
+
+    /**
+     * Outline color when highlight-selected is enabled.
+     * @default '#165dfc'
+     */
+    @property({type: String, attribute: 'selection-highlight-color'})
+    selectionHighlightColor: string = '#165dfc';
+
+    /**
+     * Outline thickness when highlight-selected is enabled (0–5).
+     * @default 1.5
+     */
+    @property({type: Number, attribute: 'selection-highlight-thickness'})
+    selectionHighlightThickness: number = 1.5;
 
     @property({type: Boolean, attribute: 'disable-base-model-selection'})
     disableBaseModelSelection: boolean = false;
@@ -1011,8 +1027,25 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Update visual highlight for selected objects.
-     * Uses the outline-effect or ld-outline-effect component if present.
+     * Meshes under the current selection for the outline pass.
+     */
+    getSelectionHighlightMeshes(): Object3D[] {
+      if (!this.highlightSelected || this.selectedObjects.length === 0) {
+        return [];
+      }
+      const meshes: Object3D[] = [];
+      for (const obj of this.selectedObjects) {
+        obj.traverse((child: Object3D) => {
+          if ((child as any).isMesh) {
+            meshes.push(child);
+          }
+        });
+      }
+      return meshes;
+    }
+
+    /**
+     * Push selected meshes into the LD render pipeline outline pass.
      */
     protected _updateHighlight() {
       const scene = (this as any)[$scene];
@@ -1021,37 +1054,10 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         scrubSelectionOutlineLayers(highlightRoot);
       }
 
-      const effectComposer = (this as unknown as HTMLElement).querySelector(
-        'effect-composer'
-      );
-      if (!effectComposer) {
-        return;
-      }
-
-      const outlineEffect =
-        effectComposer.querySelector('selection-outline-effect') ||
-        effectComposer.querySelector('outline-effect') ||
-        effectComposer.querySelector('ld-outline-effect');
-
-      if (!outlineEffect) {
-        return;
-      }
-
-      if (this.selectedObjects.length > 0) {
-        const meshes: Object3D[] = [];
-        for (const obj of this.selectedObjects) {
-          obj.traverse((child: Object3D) => {
-            if ((child as any).isMesh) {
-              meshes.push(child);
-            }
-          });
-        }
-
-        (outlineEffect as any).selection = meshes;
-        outlineEffect.setAttribute('blend-mode', 'default');
-      } else {
-        (outlineEffect as any).selection = [];
-        outlineEffect.setAttribute('blend-mode', 'skip');
+      if (typeof (this as any).updateSelectionOutlineSelection === 'function') {
+        (this as any).updateSelectionOutlineSelection(
+          this.getSelectionHighlightMeshes()
+        );
       }
 
       (this as any)[$needsRender]();
@@ -1067,19 +1073,8 @@ export const LDSelectionMixin = <T extends Constructor<ModelViewerElementBase>>(
         scrubSelectionOutlineLayers(highlightRoot);
       }
 
-      const effectComposer = (this as unknown as HTMLElement).querySelector(
-        'effect-composer'
-      );
-      if (!effectComposer) return;
-
-      const outlineEffect =
-        effectComposer.querySelector('selection-outline-effect') ||
-        effectComposer.querySelector('outline-effect') ||
-        effectComposer.querySelector('ld-outline-effect');
-
-      if (outlineEffect) {
-        (outlineEffect as any).selection = [];
-        outlineEffect.setAttribute('blend-mode', 'skip');
+      if (typeof (this as any).updateSelectionOutlineSelection === 'function') {
+        (this as any).updateSelectionOutlineSelection([]);
       }
     }
 

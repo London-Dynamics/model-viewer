@@ -6,17 +6,28 @@ import {
   LinearSRGBColorSpace,
   NoToneMapping,
   NeutralToneMapping,
+  Object3D,
   PerspectiveCamera,
   SRGBColorSpace,
+  Vector2,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
 import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import {OutlinePass} from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass.js';
 import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass.js';
 
 import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
+import {
+  applySelectionOutlineStyle,
+  createSelectionOutlinePass,
+  DEFAULT_SELECTION_OUTLINE_STYLE,
+  SelectionOutlineCapable,
+  SelectionOutlineStyle,
+  setSelectionOutlineObjects,
+} from '../ld-selection/selection-outline-pass.js';
 
 import {AOPass} from './AOPass.js';
 import {AOShader} from './AOShader.js';
@@ -69,13 +80,15 @@ const DEFAULT_OPTIONS: AmbientOcclusionOptions = {
   pdSamples: 16,
 };
 
-export class LDAmbientOcclusionComposer implements EffectComposerInterface {
+export class LDAmbientOcclusionComposer implements EffectComposerInterface,
+                                                   SelectionOutlineCapable {
   private renderer: WebGLRenderer|null = null;
   private scene: ModelScene|null = null;
   private camera: Camera|null = null;
   private composer: EffectComposer|null = null;
   private renderPass: RenderPass|null = null;
   private aoPass: AOPass|null = null;
+  private outlinePass: OutlinePass|null = null;
   private outputPass: OutputPass|null = null;
   private renderTarget: WebGLRenderTarget|null = null;
   private depthTexture: DepthTexture|null = null;
@@ -83,6 +96,11 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface {
   private width = 1;
   private height = 1;
   private lastSceneRadius = NaN;
+  private outlineEnabled = false;
+  private outlineSelection: Object3D[] = [];
+  private outlineStyle: SelectionOutlineStyle = {
+    ...DEFAULT_SELECTION_OUTLINE_STYLE,
+  };
 
   constructor(initialOptions?: Partial<AmbientOcclusionOptions>) {
     if (initialOptions) {
@@ -111,7 +129,31 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface {
     if (this.aoPass) {
       this.aoPass.camera = camera;
     }
+    if (this.outlinePass) {
+      this.outlinePass.renderCamera = camera;
+    }
     this.rebuildComposer();
+  }
+
+  setSelectionOutlineEnabled(enabled: boolean) {
+    this.outlineEnabled = enabled;
+    this.syncOutlinePass();
+  }
+
+  setSelectionOutlineSelection(objects: Object3D[]) {
+    this.outlineSelection = objects;
+    this.syncOutlinePass();
+  }
+
+  setSelectionOutlineStyle(style: SelectionOutlineStyle) {
+    this.outlineStyle = {
+      color: style.color || DEFAULT_SELECTION_OUTLINE_STYLE.color,
+      thickness: style.thickness,
+    };
+    if (this.outlinePass) {
+      applySelectionOutlineStyle(this.outlinePass, this.outlineStyle);
+    }
+    this.syncOutlinePass();
   }
 
   beforeRender(_time: DOMHighResTimeStamp, _delta: DOMHighResTimeStamp) {
@@ -209,6 +251,10 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface {
     this.renderTarget?.setSize(width, height);
     this.aoPass?.setSize(width, height);
     this.composer?.setSize(width, height);
+    if (this.outlinePass) {
+      this.outlinePass.resolution.set(width, height);
+      this.outlinePass.setSize(width, height);
+    }
   }
 
   updateOptions(partial: Partial<AmbientOcclusionOptions>) {
@@ -264,15 +310,29 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface {
     this.composer?.dispose?.();
     this.renderTarget?.dispose();
     this.aoPass?.dispose();
+    this.outlinePass?.dispose();
     this.outputPass?.dispose();
     this.depthTexture?.dispose?.();
     this.composer = null;
     this.renderPass = null;
     this.aoPass = null;
+    this.outlinePass = null;
     this.outputPass = null;
     this.renderTarget = null;
     this.depthTexture = null;
     this.lastSceneRadius = NaN;
+  }
+
+  private syncOutlinePass() {
+    if (!this.outlinePass) {
+      return;
+    }
+    if (!this.outlineEnabled) {
+      this.outlinePass.selectedObjects = [];
+      this.outlinePass.enabled = false;
+      return;
+    }
+    setSelectionOutlineObjects(this.outlinePass, this.outlineSelection);
   }
 
   private rebuildComposer() {
@@ -304,6 +364,14 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface {
         new AOPass(this.scene, this.camera, this.width, this.height);
     aoPass.setGBuffer(depthTexture, undefined);
     composer.addPass(aoPass);
+
+    const outlinePass = createSelectionOutlinePass(
+        new Vector2(this.width, this.height),
+        this.scene,
+        this.camera,
+        this.outlineStyle);
+    composer.addPass(outlinePass);
+
     const outputPass = new OutputPass();
     composer.addPass(outputPass);
 
@@ -363,10 +431,12 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface {
     this.composer = composer;
     this.renderPass = renderPass;
     this.aoPass = aoPass;
+    this.outlinePass = outlinePass;
     this.outputPass = outputPass;
     this.lastSceneRadius = this.scene.boundingSphere?.radius ?? 1.0;
 
     this.updateOptions(this.options);
+    this.syncOutlinePass();
   }
 }
 

@@ -2573,13 +2573,37 @@
       {
         "name": "highlight-selected",
         "htmlName": "highlightSelected",
-        "description": "When enabled, visually highlights the currently selected object. The highlight method can be overridden in subclasses for custom highlight behavior.",
+        "description": "When enabled, visually outlines the currently selected object(s) via the LD render pipeline (no <code>&lt;effect-composer&gt;</code> markup required). Works alongside LD ambient occlusion and bloom.",
         "links": [
           "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
         ],
         "default": {
           "default": "false",
           "options": "true, false"
+        }
+      },
+      {
+        "name": "selection-highlight-color",
+        "htmlName": "selectionHighlightColor",
+        "description": "Outline color used when <code>highlight-selected</code> is enabled.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "#165dfc",
+          "type": "string"
+        }
+      },
+      {
+        "name": "selection-highlight-thickness",
+        "htmlName": "selectionHighlightThickness",
+        "description": "Outline thickness (0–5) when <code>highlight-selected</code> is enabled.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#modular\">Related examples</a>"
+        ],
+        "default": {
+          "default": "1.5",
+          "type": "number"
         }
       },
       {

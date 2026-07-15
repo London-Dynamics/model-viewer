@@ -9,6 +9,7 @@ type PipelineInternals = {
   hasAmbientOcclusion(): boolean;
   hasBloom(): boolean;
   hasPathTracer(): boolean;
+  hasSelectionOutline(): boolean;
   getBloomTargetCount(): number;
 };
 
@@ -91,6 +92,30 @@ suite('LD Render Pipeline', () => {
         await timePasses();
 
         expect(element[$scene].effectRenderer).to.equal(null);
+      });
+
+  test('registers pipeline when only highlight-selected is enabled', async () => {
+    element.highlightSelected = true;
+    await timePasses();
+
+    const pipeline = getPipeline(element);
+    expect(element[$scene].effectRenderer).to.not.equal(null);
+    expect(pipeline.hasAmbientOcclusion()).to.equal(false);
+    expect(pipeline.hasBloom()).to.equal(false);
+    expect(pipeline.hasSelectionOutline()).to.equal(true);
+  });
+
+  test('keeps one pipeline when ambient occlusion and highlight-selected are enabled',
+      async () => {
+        element.ambientOcclusion = true;
+        element.highlightSelected = true;
+        await timePasses();
+
+        const renderer = element[$scene].effectRenderer;
+        const pipeline = getPipeline(element);
+        expect(renderer).to.not.equal(null);
+        expect(pipeline.hasAmbientOcclusion()).to.equal(true);
+        expect(pipeline.hasSelectionOutline()).to.equal(true);
       });
 
   test('keeps central ownership while path tracer runs with raster preview',

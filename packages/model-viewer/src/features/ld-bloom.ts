@@ -22,6 +22,7 @@ import {
 } from 'three';
 import { BloomPass } from 'three/examples/jsm/postprocessing/BloomPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -38,6 +39,14 @@ import { AOPass } from '../three-components/postprocessing/ld-ambient-occlusion/
 import {
   AmbientOcclusionOptions,
 } from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
+import {
+  applySelectionOutlineStyle,
+  createSelectionOutlinePass,
+  DEFAULT_SELECTION_OUTLINE_STYLE,
+  SelectionOutlineCapable,
+  SelectionOutlineStyle,
+  setSelectionOutlineObjects,
+} from '../three-components/postprocessing/ld-selection/selection-outline-pass.js';
 import { Constructor } from '../utilities.js';
 
 export type LDBloomMode = 'unreal' | 'classic';
@@ -133,11 +142,13 @@ type RenderPipelineHost = {
 type LDBloomHost = LDBloomInterface & ModelViewerElementBase &
   AmbientOcclusionHost & RenderPipelineHost;
 
-export class LDBloomComposer implements EffectComposerInterface {
+export class LDBloomComposer implements EffectComposerInterface,
+                                         SelectionOutlineCapable {
   private bloomComposer?: EffectComposer;
   private finalComposer?: EffectComposer;
   private bloomPass?: UnrealBloomPass | BloomPass;
   private blendPass?: ShaderPass;
+  private outlinePass?: OutlinePass;
   private outputPass?: OutputPass;
   private aoPass?: AOPass;
   private finalRenderTarget?: WebGLRenderTarget;
@@ -147,6 +158,11 @@ export class LDBloomComposer implements EffectComposerInterface {
   private camera?: Camera;
   private activeMsaa = 0;
   private targets: LDBloomTarget[] = [];
+  private outlineEnabled = false;
+  private outlineSelection: Object3D[] = [];
+  private outlineStyle: SelectionOutlineStyle = {
+    ...DEFAULT_SELECTION_OUTLINE_STYLE,
+  };
   // Non-targeted meshes whose material was swapped out for an opaque black
   // stand-in during the bloom pass. Opaque non-targets *must* still be drawn
   // (in black) so that they correctly occlude bright targeted meshes behind
@@ -191,12 +207,37 @@ export class LDBloomComposer implements EffectComposerInterface {
     this.rebuild();
   }
 
+  setSelectionOutlineEnabled(enabled: boolean): void {
+    this.outlineEnabled = enabled;
+    this.syncOutlinePass();
+  }
+
+  setSelectionOutlineSelection(objects: Object3D[]): void {
+    this.outlineSelection = objects;
+    this.syncOutlinePass();
+  }
+
+  setSelectionOutlineStyle(style: SelectionOutlineStyle): void {
+    this.outlineStyle = {
+      color: style.color || DEFAULT_SELECTION_OUTLINE_STYLE.color,
+      thickness: style.thickness,
+    };
+    if (this.outlinePass) {
+      applySelectionOutlineStyle(this.outlinePass, this.outlineStyle);
+    }
+    this.syncOutlinePass();
+  }
+
   setSize(width: number, height: number): void {
     this.bloomComposer?.setSize(width, height);
     this.finalComposer?.setSize(width, height);
     this.finalRenderTarget?.setSize(width, height);
     this.aoPass?.setSize(width, height);
     this.bloomPass?.setSize(width, height);
+    if (this.outlinePass) {
+      this.outlinePass.resolution.set(width, height);
+      this.outlinePass.setSize(width, height);
+    }
   }
 
   beforeRender(_time: DOMHighResTimeStamp, _delta: DOMHighResTimeStamp): void {}
@@ -289,6 +330,7 @@ export class LDBloomComposer implements EffectComposerInterface {
     this.restoreNonTargeted();
     this.bloomPass?.dispose();
     this.aoPass?.dispose();
+    this.outlinePass?.dispose();
     this.outputPass?.dispose();
     this.bloomComposer?.dispose();
     this.finalComposer?.dispose();
@@ -296,6 +338,7 @@ export class LDBloomComposer implements EffectComposerInterface {
     this.finalDepthTexture?.dispose?.();
     this.bloomPass = undefined;
     this.blendPass = undefined;
+    this.outlinePass = undefined;
     this.outputPass = undefined;
     this.aoPass = undefined;
     this.bloomComposer = undefined;
@@ -615,12 +658,32 @@ export class LDBloomComposer implements EffectComposerInterface {
       this.updateAmbientOcclusionPass(ambientOcclusionOptions);
     }
     this.finalComposer.addPass(this.blendPass);
+    this.outlinePass = createSelectionOutlinePass(
+      new Vector2(this.scene.width, this.scene.height),
+      this.scene,
+      this.camera,
+      this.outlineStyle
+    );
+    this.finalComposer.addPass(this.outlinePass);
     this.finalComposer.addPass(this.outputPass);
     this.updateBlendPassParams();
+    this.syncOutlinePass();
 
     const dpr = window.devicePixelRatio || 1;
     this.setSize(this.scene.width * dpr, this.scene.height * dpr);
     this.disableAmbientOcclusionMultisampling();
+  }
+
+  private syncOutlinePass(): void {
+    if (this.outlinePass == null) {
+      return;
+    }
+    if (!this.outlineEnabled) {
+      this.outlinePass.selectedObjects = [];
+      this.outlinePass.enabled = false;
+      return;
+    }
+    setSelectionOutlineObjects(this.outlinePass, this.outlineSelection);
   }
 
   private disableAmbientOcclusionMultisampling(): void {

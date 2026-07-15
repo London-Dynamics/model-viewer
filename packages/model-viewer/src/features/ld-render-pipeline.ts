@@ -1,3 +1,5 @@
+import {Object3D} from 'three';
+
 import {
   $needsRender,
   $onModelLoad,
@@ -8,8 +10,12 @@ import {
   AmbientOcclusionOptions,
 } from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 import {
+  DEFAULT_SELECTION_OUTLINE_STYLE,
+} from '../three-components/postprocessing/ld-selection/selection-outline-pass.js';
+import {
   LDRenderPipelineComposer,
   LDRenderPipelineOptions,
+  SelectionOutlineOptions,
 } from '../three-components/postprocessing/ld-render-pipeline/LDRenderPipelineComposer.js';
 import {Constructor} from '../utilities.js';
 import {LDBloomOptions} from './ld-bloom.js';
@@ -24,6 +30,7 @@ const PATH_TRACER_BACKEND_CHANGE_EVENT = 'ld-path-tracer-backend-change';
 
 export declare interface LDRenderPipelineInterface {
   readonly ldRenderPipelineActive: boolean;
+  updateSelectionOutlineSelection(objects: Object3D[]): void;
 }
 
 type PipelineHost = ModelViewerElementBase&{
@@ -41,6 +48,10 @@ type PipelineHost = ModelViewerElementBase&{
   pathTracer?: boolean;
   pathTracerSamplesThreshold?: number;
   getPathTracerComposer?: () => LDPathTracerComposer|null;
+  highlightSelected?: boolean;
+  selectionHighlightColor?: string;
+  selectionHighlightThickness?: number;
+  getSelectionHighlightMeshes?: () => Object3D[];
 };
 
 const EMPTY_BLOOM: LDBloomOptions = {
@@ -88,6 +99,9 @@ const PIPELINE_OPTION_PROPERTIES = [
   'bloomSoftShadow',
   'pathTracer',
   'pathTracerSamplesThreshold',
+  'highlightSelected',
+  'selectionHighlightColor',
+  'selectionHighlightThickness',
 ] as const;
 
 export const LDRenderPipelineMixin = <
@@ -101,6 +115,10 @@ export const LDRenderPipelineMixin = <
 
     get ldRenderPipelineActive() {
       return this[$renderPipelineComposer] != null;
+    }
+
+    updateSelectionOutlineSelection(objects: Object3D[]): void {
+      this[$renderPipelineComposer]?.updateSelectionOutlineSelection(objects);
     }
 
     override connectedCallback() {
@@ -143,7 +161,8 @@ export const LDRenderPipelineMixin = <
       const shouldEnable =
           options.ambientOcclusion != null ||
           (options.bloom.enabled && options.bloom.strength > 0) ||
-          options.pathTracer.enabled;
+          options.pathTracer.enabled ||
+          options.selectionOutline?.enabled === true;
 
       if (!shouldEnable) {
         this.teardownRenderPipeline();
@@ -160,6 +179,12 @@ export const LDRenderPipelineMixin = <
             this[$renderPipelineComposer]) {
           this.registerEffectComposer(this[$renderPipelineComposer]);
         }
+      }
+
+      const host = this as unknown as PipelineHost;
+      if (typeof host.getSelectionHighlightMeshes === 'function') {
+        this[$renderPipelineComposer]!.updateSelectionOutlineSelection(
+            host.getSelectionHighlightMeshes());
       }
 
       (this as any)[$needsRender]();
@@ -188,6 +213,17 @@ export const LDRenderPipelineMixin = <
         softShadow: host.bloomSoftShadow ?? EMPTY_BLOOM.softShadow,
       };
 
+      const selectionOutline: SelectionOutlineOptions|null =
+          host.highlightSelected ?
+          {
+            enabled: true,
+            color: host.selectionHighlightColor ||
+                DEFAULT_SELECTION_OUTLINE_STYLE.color,
+            thickness: host.selectionHighlightThickness ??
+                DEFAULT_SELECTION_OUTLINE_STYLE.thickness,
+          } :
+          null;
+
       return {
         ambientOcclusion,
         bloom,
@@ -199,6 +235,7 @@ export const LDRenderPipelineMixin = <
             host.getPathTracerComposer() :
             null,
         },
+        selectionOutline,
       };
     }
 

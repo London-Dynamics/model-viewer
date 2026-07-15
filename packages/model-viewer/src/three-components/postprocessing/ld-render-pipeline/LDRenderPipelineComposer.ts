@@ -1,4 +1,4 @@
-import {Camera, WebGLRenderer} from 'three';
+import {Camera, Object3D, WebGLRenderer} from 'three';
 
 import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {LDBloomComposer, LDBloomOptions} from '../../../features/ld-bloom.js';
@@ -8,6 +8,16 @@ import {
   LDAmbientOcclusionComposer,
 } from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 import {LDPathTracerComposer} from '../ld-path-tracer/LDPathTracerComposer.js';
+import {LDSelectionOutlineComposer} from '../ld-selection/LDSelectionOutlineComposer.js';
+import {
+  DEFAULT_SELECTION_OUTLINE_STYLE,
+  isSelectionOutlineCapable,
+  SelectionOutlineStyle,
+} from '../ld-selection/selection-outline-pass.js';
+
+export interface SelectionOutlineOptions extends SelectionOutlineStyle {
+  enabled: boolean;
+}
 
 export interface LDRenderPipelineOptions {
   ambientOcclusion: AmbientOcclusionOptions|null;
@@ -17,6 +27,7 @@ export interface LDRenderPipelineOptions {
     samplesThreshold: number;
     composer: LDPathTracerComposer|null;
   };
+  selectionOutline: SelectionOutlineOptions|null;
 }
 
 type BloomPipelineHost = ConstructorParameters<typeof LDBloomComposer>[0];
@@ -27,6 +38,7 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   private camera?: Camera;
   private rasterDelegate: EffectComposerInterface|null = null;
   private options: LDRenderPipelineOptions;
+  private outlineSelection: Object3D[] = [];
 
   constructor(
     private readonly host: BloomPipelineHost,
@@ -47,6 +59,10 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   hasPathTracer(): boolean {
     return this.options.pathTracer.enabled &&
         this.options.pathTracer.composer != null;
+  }
+
+  hasSelectionOutline(): boolean {
+    return this.options.selectionOutline?.enabled === true;
   }
 
   getBloomTargetCount(): number {
@@ -70,11 +86,17 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
           this.options.ambientOcclusion != null) {
         this.rasterDelegate.updateOptions(this.options.ambientOcclusion);
       }
+      this.forwardOutlineToDelegate();
       return;
     }
 
     this.options = nextOptions;
     this.rebuildRasterDelegate();
+  }
+
+  updateSelectionOutlineSelection(objects: Object3D[]): void {
+    this.outlineSelection = objects;
+    this.forwardOutlineToDelegate();
   }
 
   setRenderer(renderer: WebGLRenderer): void {
@@ -118,6 +140,7 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   dispose(): void {
     disposeDelegate(this.rasterDelegate);
     this.rasterDelegate = null;
+    this.outlineSelection = [];
     this.threeRenderer = undefined;
     this.scene = undefined;
     this.camera = undefined;
@@ -202,6 +225,8 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
     } else if (this.options.ambientOcclusion != null) {
       this.rasterDelegate =
           new LDAmbientOcclusionComposer(this.options.ambientOcclusion);
+    } else if (this.options.selectionOutline?.enabled === true) {
+      this.rasterDelegate = new LDSelectionOutlineComposer();
     } else {
       this.rasterDelegate = null;
     }
@@ -218,6 +243,21 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
       this.rasterDelegate?.setMainCamera(previousCamera);
       this.options.pathTracer.composer?.setMainCamera(previousCamera);
     }
+
+    this.forwardOutlineToDelegate();
+  }
+
+  private forwardOutlineToDelegate(): void {
+    if (!isSelectionOutlineCapable(this.rasterDelegate)) {
+      return;
+    }
+    const outline = this.options.selectionOutline;
+    const enabled = outline?.enabled === true;
+    this.rasterDelegate.setSelectionOutlineEnabled(enabled);
+    this.rasterDelegate.setSelectionOutlineStyle(
+        outline ?? DEFAULT_SELECTION_OUTLINE_STYLE);
+    this.rasterDelegate.setSelectionOutlineSelection(
+        enabled ? this.outlineSelection : []);
   }
 
   private effectiveBloomMsaa(): number {
@@ -236,8 +276,14 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
       return !shouldUseBloomDelegate(nextOptions) &&
           nextOptions.ambientOcclusion != null;
     }
+    if (this.rasterDelegate instanceof LDSelectionOutlineComposer) {
+      return !shouldUseBloomDelegate(nextOptions) &&
+          nextOptions.ambientOcclusion == null &&
+          nextOptions.selectionOutline?.enabled === true;
+    }
     return this.rasterDelegate == null && !shouldUseBloomDelegate(nextOptions) &&
-        nextOptions.ambientOcclusion == null;
+        nextOptions.ambientOcclusion == null &&
+        nextOptions.selectionOutline?.enabled !== true;
   }
 
   private shouldUseBloomDelegate(): boolean {
@@ -279,6 +325,9 @@ const cloneOptions = (
     targets: options.bloom.targets.map((target) => ({...target})),
   },
   pathTracer: {...options.pathTracer},
+  selectionOutline: options.selectionOutline == null ?
+    null :
+    {...options.selectionOutline},
 });
 
 const disposeDelegate = (delegate: EffectComposerInterface|null): void => {

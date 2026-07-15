@@ -36,10 +36,6 @@
     </script>
     <script
       type="module"
-      src="../../../../node_modules/@google/model-viewer-effects/dist/model-viewer-effects.js"
-    ></script>
-    <script
-      type="module"
       src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer-module.js"
     ></script>
   </head>
@@ -78,6 +74,8 @@
                     interaction-prompt="none"
                     edit
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="part"
                     src-is-room
                     walls
@@ -87,12 +85,6 @@
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Room with floor duck for clipboard copy paste"
                   >
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
@@ -210,6 +202,8 @@
                     interaction-prompt="none"
                     edit
                     highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
                     selection-scope="part"
                     src-is-room
                     walls
@@ -219,12 +213,6 @@
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Room with interactive clipboard duplicate"
                   >
-                    <effect-composer render-mode="quality">
-                      <selection-outline-effect
-                        color="#165dfc"
-                        blend-mode="skip"
-                      ></selection-outline-effect>
-                    </effect-composer>
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
