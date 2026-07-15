@@ -2,10 +2,11 @@
  * LD Image Capture Mixin
  *
  * Adds captureImage() to capture the current view as a data URL. When width and
- * height are set, a second (offscreen) canvas is sized to those dimensions and
- * the scene is rendered to it once; the main canvas is never altered. Optional
- * camera applies only to the capture; crop is supported when not using
- * width/height.
+ * height are set (or a camera option is provided), an offscreen WebGL render
+ * target is used and the scene is rendered directly into it — never via
+ * effectRenderer, which presents to the screen and would flash the visible
+ * canvas / leave the capture RT blank. Optional camera applies only to the
+ * capture; crop is supported when not using width/height.
  */
 
 import {
@@ -540,6 +541,7 @@ export const LDImageCaptureMixin = <
           const prevViewport = threeRenderer.getViewport(new Vector4());
           const prevClearColor = new Color();
           const prevClearAlpha = threeRenderer.getClearAlpha();
+          const prevAutoClear = threeRenderer.autoClear;
           threeRenderer.getClearColor(prevClearColor);
 
           try {
@@ -548,11 +550,13 @@ export const LDImageCaptureMixin = <
             threeRenderer.setClearColor(bgColor, 1);
             scene.renderShadow(threeRenderer);
             threeRenderer.setRenderTarget(renderTarget);
-            if (scene.effectRenderer != null) {
-              scene.effectRenderer.render(0);
-            } else {
-              threeRenderer.render(scene, scene.camera);
-            }
+            // Always render the scene directly into the capture RT. Pipeline /
+            // AO / bloom / outline composers implement EffectComposerInterface
+            // with renderToScreen presentation, so calling effectRenderer.render
+            // would flash the display canvas and leave the capture RT blank.
+            threeRenderer.autoClear = true;
+            threeRenderer.clear();
+            threeRenderer.render(scene, scene.camera);
 
             const baseDataUrl = renderTargetToDataURL(
               threeRenderer,
@@ -591,6 +595,7 @@ export const LDImageCaptureMixin = <
             threeRenderer.setRenderTarget(prevRenderTarget);
             threeRenderer.setViewport(prevViewport);
             threeRenderer.setClearColor(prevClearColor, prevClearAlpha);
+            threeRenderer.autoClear = prevAutoClear;
             renderTarget.dispose();
 
             if (sceneCamera instanceof PerspectiveCamera) {
