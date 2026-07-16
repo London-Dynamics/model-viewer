@@ -1776,6 +1776,7 @@
           "<a href=\"../examples/ld_image_capture/#capture-with-camera\">Capture with camera pose</a>",
           "<a href=\"../examples/ld_image_capture/#capture-with-crop\">Capture with crop</a>",
           "<a href=\"../examples/ld_image_capture/#capture-background-color\">Background color (cornflowerblue)</a>",
+          "<a href=\"../examples/ld_image_capture/#capture-fit-to-box\">fitToBox without camera (stay put)</a>",
           "<a href=\"../examples/ld_image_capture/#capture-orthographic-views\">Orthographic views (Prepare views)</a>"
         ]
       }

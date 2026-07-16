@@ -486,6 +486,10 @@
         "name": "Background color"
       },
       {
+        "htmlId": "capture-fit-to-box",
+        "name": "fitToBox without camera"
+      },
+      {
         "htmlId": "capture-orthographic-views",
         "name": "Orthographic views"
       }

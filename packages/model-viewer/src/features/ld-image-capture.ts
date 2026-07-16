@@ -14,6 +14,9 @@ import {
   Matrix4,
   OrthographicCamera,
   PerspectiveCamera,
+  RGBAFormat,
+  SRGBColorSpace,
+  UnsignedByteType,
   Vector3,
   Vector4,
   WebGLRenderer,
@@ -158,6 +161,9 @@ export declare interface LDImageCaptureInterface {
 /** 2D canvas used when capturing from the display canvas (crop or no dimensions). */
 const captureCanvas2D = document.createElement('canvas');
 
+/** Scratch canvas for RT readback before compositing over backgroundColor. */
+const captureScratch2D = document.createElement('canvas');
+
 /** Reusable buffer for readRenderTargetPixels (avoids allocations). */
 let capturePixelBuffer: Uint8Array | null = null;
 
@@ -213,13 +219,16 @@ function ensurePixelBuffer(size: number): Uint8Array {
 
 /**
  * Read WebGL render target into a 2D canvas and return data URL. WebGL origin
- * is bottom-left; we flip to top-left for ImageData.
+ * is bottom-left; we flip to top-left for ImageData. Composites over
+ * backgroundColor (like the display-canvas path) so transparent readback
+ * cannot yield black JPEG / invisible PNG.
  */
 function renderTargetToDataURL(
   renderer: WebGLRenderer,
   renderTarget: WebGLRenderTarget,
   width: number,
   height: number,
+  bgColor: Color,
   fileType: string,
   encoderOptions?: number
 ): string {
@@ -237,15 +246,70 @@ function renderTargetToDataURL(
     }
   }
 
+  captureScratch2D.width = width;
+  captureScratch2D.height = height;
+  const scratchCtx = captureScratch2D.getContext('2d');
+  if (!scratchCtx) {
+    return 'data:image/png;base64,';
+  }
+  scratchCtx.putImageData(new ImageData(flipped, width, height), 0, 0);
+
   captureCanvas2D.width = width;
   captureCanvas2D.height = height;
   const ctx = captureCanvas2D.getContext('2d');
   if (!ctx) {
     return 'data:image/png;base64,';
   }
-  const imageData = new ImageData(flipped, width, height);
-  ctx.putImageData(imageData, 0, 0);
+  ctx.fillStyle = bgColor.getStyle();
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(captureScratch2D, 0, 0);
   return captureCanvas2D.toDataURL(fileType, encoderOptions);
+}
+
+/**
+ * Adjust perspective/ortho frustum for a capture aspect while preserving the
+ * current world framing (ortho: expand the narrower axis).
+ */
+function applyCaptureProjection(
+  sceneCamera: PerspectiveCamera | OrthographicCamera,
+  captureWidth: number,
+  captureHeight: number,
+  prev: {
+    aspect: number;
+    left?: number;
+    right?: number;
+    top?: number;
+    bottom?: number;
+  }
+): void {
+  if (sceneCamera instanceof PerspectiveCamera) {
+    sceneCamera.aspect = captureWidth / captureHeight;
+    sceneCamera.updateProjectionMatrix();
+    return;
+  }
+
+  const prevLeft = prev.left!;
+  const prevRight = prev.right!;
+  const prevTop = prev.top!;
+  const prevBottom = prev.bottom!;
+  const captureAspect = captureWidth / captureHeight;
+  const currentAspect = (prevRight - prevLeft) / (prevTop - prevBottom);
+  if (Math.abs(currentAspect - captureAspect) > 1e-6) {
+    const cx = (prevLeft + prevRight) / 2;
+    const cy = (prevTop + prevBottom) / 2;
+    const w = prevRight - prevLeft;
+    const h = prevTop - prevBottom;
+    if (captureAspect > currentAspect) {
+      const newW = h * captureAspect;
+      sceneCamera.left = cx - newW / 2;
+      sceneCamera.right = cx + newW / 2;
+    } else {
+      const newH = w / captureAspect;
+      sceneCamera.top = cy + newH / 2;
+      sceneCamera.bottom = cy - newH / 2;
+    }
+  }
+  sceneCamera.updateProjectionMatrix();
 }
 
 function parseFrameAspect(frame?: string): number | null {
@@ -524,8 +588,13 @@ export const LDImageCaptureMixin = <
           outHeight > 0) ||
         camera != null;
 
+      // Always snapshot the live view for offscreen captures so fitToBox /
+      // temporary poses / aspect changes never leave the visible camera moved.
       let savedCameraJSON: any = null;
-      if (camera != null && typeof element.getCameraJSON === 'function') {
+      if (
+        useOffscreenRender &&
+        typeof element.getCameraJSON === 'function'
+      ) {
         savedCameraJSON = element.getCameraJSON();
       }
 
@@ -561,53 +630,9 @@ export const LDImageCaptureMixin = <
             sourceCanvas.height
           );
 
-          const sceneCamera = scene.camera;
-          let prevAspect = scene.aspect;
-          let prevLeft: number | undefined;
-          let prevRight: number | undefined;
-          let prevTop: number | undefined;
-          let prevBottom: number | undefined;
-
-          if (sceneCamera instanceof PerspectiveCamera) {
-            prevAspect = sceneCamera.aspect;
-            sceneCamera.aspect = captureWidth / captureHeight;
-            sceneCamera.updateProjectionMatrix();
-          } else if (sceneCamera instanceof OrthographicCamera) {
-            prevLeft = sceneCamera.left;
-            prevRight = sceneCamera.right;
-            prevTop = sceneCamera.top;
-            prevBottom = sceneCamera.bottom;
-            if (camera == null) {
-              const halfW = captureWidth / 2;
-              const halfH = captureHeight / 2;
-              sceneCamera.left = -halfW;
-              sceneCamera.right = halfW;
-              sceneCamera.top = halfH;
-              sceneCamera.bottom = -halfH;
-            } else {
-              const captureAspect = captureWidth / captureHeight;
-              const currentAspect =
-                (prevRight - prevLeft) / (prevTop - prevBottom);
-              if (Math.abs(currentAspect - captureAspect) > 1e-6) {
-                const cx = (prevLeft + prevRight) / 2;
-                const cy = (prevTop + prevBottom) / 2;
-                const w = prevRight - prevLeft;
-                const h = prevTop - prevBottom;
-                if (captureAspect > currentAspect) {
-                  const newW = h * captureAspect;
-                  sceneCamera.left = cx - newW / 2;
-                  sceneCamera.right = cx + newW / 2;
-                } else {
-                  const newH = w / captureAspect;
-                  sceneCamera.top = cy + newH / 2;
-                  sceneCamera.bottom = cy - newH / 2;
-                }
-              }
-            }
-            sceneCamera.updateProjectionMatrix();
-          }
-
-          // fitToBox overrides a saved pose; only apply when no camera option.
+          // fitToBox first (mutates live controls); aspect applied after so
+          // projection matches the capture size. Visible camera is restored
+          // from savedCameraJSON in the outer finally.
           if (options.fitToBox && camera == null) {
             const controls = (this as any)[$controls];
             if (controls && scene) {
@@ -627,9 +652,45 @@ export const LDImageCaptureMixin = <
             }
           }
 
+          const sceneCamera = scene.camera;
+          let prevAspect = scene.aspect;
+          let prevLeft: number | undefined;
+          let prevRight: number | undefined;
+          let prevTop: number | undefined;
+          let prevBottom: number | undefined;
+
+          if (sceneCamera instanceof PerspectiveCamera) {
+            prevAspect = sceneCamera.aspect;
+            applyCaptureProjection(sceneCamera, captureWidth, captureHeight, {
+              aspect: prevAspect,
+            });
+          } else if (sceneCamera instanceof OrthographicCamera) {
+            prevLeft = sceneCamera.left;
+            prevRight = sceneCamera.right;
+            prevTop = sceneCamera.top;
+            prevBottom = sceneCamera.bottom;
+            applyCaptureProjection(sceneCamera, captureWidth, captureHeight, {
+              aspect: prevAspect,
+              left: prevLeft,
+              right: prevRight,
+              top: prevTop,
+              bottom: prevBottom,
+            });
+          }
+
+          scene.updateMatrixWorld(true);
+          scene.camera.updateMatrixWorld(true);
+
           const renderTarget = new WebGLRenderTarget(
             captureWidth,
-            captureHeight
+            captureHeight,
+            {
+              type: UnsignedByteType,
+              format: RGBAFormat,
+              // sRGB so readback/toDataURL match CSS backgroundColor and
+              // display-canvas captures (ColorManagement stores linear).
+              colorSpace: SRGBColorSpace,
+            }
           );
 
           const prevRenderTarget = threeRenderer.getRenderTarget();
@@ -637,9 +698,15 @@ export const LDImageCaptureMixin = <
           const prevClearColor = new Color();
           const prevClearAlpha = threeRenderer.getClearAlpha();
           const prevAutoClear = threeRenderer.autoClear;
+          const prevAutoClearColor = threeRenderer.autoClearColor;
+          const prevAutoClearDepth = threeRenderer.autoClearDepth;
+          const prevAutoClearStencil = threeRenderer.autoClearStencil;
+          const prevToneMapping = threeRenderer.toneMapping;
+          const prevScissorTest = threeRenderer.getScissorTest();
           threeRenderer.getClearColor(prevClearColor);
 
           try {
+            threeRenderer.setScissorTest(false);
             threeRenderer.setRenderTarget(renderTarget);
             threeRenderer.setViewport(0, 0, captureWidth, captureHeight);
             threeRenderer.setClearColor(bgColor, 1);
@@ -650,6 +717,10 @@ export const LDImageCaptureMixin = <
             // with renderToScreen presentation, so calling effectRenderer.render
             // would flash the display canvas and leave the capture RT blank.
             threeRenderer.autoClear = true;
+            threeRenderer.autoClearColor = true;
+            threeRenderer.autoClearDepth = true;
+            threeRenderer.autoClearStencil = true;
+            threeRenderer.toneMapping = scene.toneMapping;
             threeRenderer.clear();
             threeRenderer.render(scene, scene.camera);
 
@@ -658,6 +729,7 @@ export const LDImageCaptureMixin = <
               renderTarget,
               captureWidth,
               captureHeight,
+              bgColor,
               fileType,
               encoderOptions
             );
@@ -691,6 +763,11 @@ export const LDImageCaptureMixin = <
             threeRenderer.setViewport(prevViewport);
             threeRenderer.setClearColor(prevClearColor, prevClearAlpha);
             threeRenderer.autoClear = prevAutoClear;
+            threeRenderer.autoClearColor = prevAutoClearColor;
+            threeRenderer.autoClearDepth = prevAutoClearDepth;
+            threeRenderer.autoClearStencil = prevAutoClearStencil;
+            threeRenderer.toneMapping = prevToneMapping;
+            threeRenderer.setScissorTest(prevScissorTest);
             renderTarget.dispose();
 
             if (sceneCamera instanceof PerspectiveCamera) {
@@ -757,6 +834,34 @@ export const LDImageCaptureMixin = <
           typeof element.setCameraFromJSON === 'function'
         ) {
           const data = savedCameraJSON.object ?? savedCameraJSON;
+          // fitToBox mutates CameraControls spherical/dolly state. Object
+          // snapshots normally skip fromJSON inside setCameraFromJSON; rewind
+          // explicitly so the live view cannot stay on the fit pose.
+          const controls = (this as any)[$controls];
+          const snapshot = data?.controlsSnapshot;
+          if (
+            snapshot != null &&
+            controls &&
+            typeof controls.fromJSON === 'function'
+          ) {
+            try {
+              const json =
+                typeof snapshot === 'string'
+                  ? snapshot
+                  : JSON.stringify(snapshot);
+              controls.fromJSON(json, false);
+              const cc = controls.thirdPartyControls;
+              if (cc) {
+                if (typeof cc.stop === 'function') cc.stop();
+                if (typeof cc.update === 'function') {
+                  for (let i = 0; i < 3; ++i) cc.update(0);
+                }
+                cc._needsUpdate = false;
+              }
+            } catch {
+              // Fall through to setCameraFromJSON reconcile.
+            }
+          }
           await element.setCameraFromJSON(data);
         }
       }

@@ -85,6 +85,7 @@
                     camera-controls
                     interaction-prompt="none"
                     shadow-intensity="1"
+                    highlight-selected
                   >
                     <div
                       class="ld-card absolute bottom-4 left-4"
@@ -109,7 +110,14 @@
                         type="button"
                         id="captureResized"
                       >
-                        Capture 320×240
+                        Offscreen 320×240 PNG
+                      </button>
+                      <button
+                        class="ld-button-sm"
+                        type="button"
+                        id="captureResizedJpeg"
+                      >
+                        Offscreen 320×240 JPEG
                       </button>
                       </div>
                     </div>
@@ -123,17 +131,18 @@
                       const el = document.querySelector('#capture-demo');
                       const captureResult =
                         document.querySelector('#capture-result');
+                      const show = (dataUrl, label) => {
+                        captureResult.innerHTML = `
+                          <div class="p-2 text-xs">${label}</div>
+                          <img src="${dataUrl}" alt="${label}" />`;
+                      };
                       document
                         .getElementById('capturePng')
                         .addEventListener('click', async () => {
                           const dataUrl = await el.captureImage({
                             fileType: 'image/png',
                           });
-                          console.log(
-                            'PNG data URL (first 80 chars):',
-                            dataUrl.slice(0, 80) + '...'
-                          );
-                          captureResult.innerHTML = `<img src="${dataUrl}" alt="PNG image" />`;
+                          show(dataUrl, 'Display PNG (no size)');
                         });
                       document
                         .getElementById('captureJpeg')
@@ -142,11 +151,7 @@
                             fileType: 'image/jpeg',
                             encoderOptions: 0.9,
                           });
-                          console.log(
-                            'JPEG data URL (first 80 chars):',
-                            dataUrl.slice(0, 80) + '...'
-                          );
-                          captureResult.innerHTML = `<img src="${dataUrl}" alt="JPEG image" />`;
+                          show(dataUrl, 'Display JPEG (no size)');
                         });
                       document
                         .getElementById('captureResized')
@@ -156,11 +161,24 @@
                             height: 240,
                             fileType: 'image/png',
                           });
-                          console.log(
-                            '320×240 (offscreen render, first 80 chars):',
-                            dataUrl.slice(0, 80) + '...'
+                          show(
+                            dataUrl,
+                            'Offscreen 320×240 PNG (no camera) — must show model'
                           );
-                          captureResult.innerHTML = `<img src="${dataUrl}" alt="320×240 capture" />`;
+                        });
+                      document
+                        .getElementById('captureResizedJpeg')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            width: 320,
+                            height: 240,
+                            fileType: 'image/jpeg',
+                            encoderOptions: 0.9,
+                          });
+                          show(
+                            dataUrl,
+                            'Offscreen 320×240 JPEG (no camera) — must not be black'
+                          );
                         });
                     })();
                   </script>
@@ -334,8 +352,9 @@
                 <h4>
                   Use <code>backgroundColor</code> so formats like JPEG (no
                   transparency) show a solid background instead of black.
-                  Default is white; here it is set to
-                  <code>cornflowerblue</code>.
+                  The offscreen buttons exercise the width×height render-target
+                  path (the bug case); cornflowerblue must appear, not black /
+                  transparent.
                 </h4>
               </div>
               <example-snippet
@@ -349,6 +368,7 @@
                     camera-controls
                     interaction-prompt="none"
                     shadow-intensity="1"
+                    highlight-selected
                   >
                     <div
                       class="ld-card absolute bottom-4 left-4"
@@ -359,7 +379,21 @@
                         type="button"
                         id="captureJpegCornflowerblue"
                       >
-                        Capture JPEG (cornflowerblue)
+                        Display JPEG (blue)
+                      </button>
+                      <button
+                        class="ld-button-sm"
+                        type="button"
+                        id="captureOffscreenPngBg"
+                      >
+                        Offscreen PNG 320×240 (blue)
+                      </button>
+                      <button
+                        class="ld-button-sm"
+                        type="button"
+                        id="captureOffscreenJpegBg"
+                      >
+                        Offscreen JPEG 320×240 (blue)
                       </button>
                       </div>
                     </div>
@@ -373,6 +407,11 @@
                       const el = document.querySelector('#capture-bg-demo');
                       const result =
                         document.querySelector('#capture-bg-result');
+                      const show = (dataUrl, label) => {
+                        result.innerHTML = `
+                          <div class="p-2 text-xs">${label}</div>
+                          <img src="${dataUrl}" alt="${label}" />`;
+                      };
                       document
                         .getElementById('captureJpegCornflowerblue')
                         .addEventListener('click', async () => {
@@ -381,7 +420,129 @@
                             encoderOptions: 0.9,
                             backgroundColor: 'cornflowerblue',
                           });
-                          result.innerHTML = `<img src="${dataUrl}" alt="JPEG cornflowerblue" />`;
+                          show(dataUrl, 'Display JPEG — blue bg');
+                        });
+                      document
+                        .getElementById('captureOffscreenPngBg')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            width: 320,
+                            height: 240,
+                            fileType: 'image/png',
+                            backgroundColor: 'cornflowerblue',
+                          });
+                          show(
+                            dataUrl,
+                            'Offscreen PNG — blue corners, not transparent'
+                          );
+                        });
+                      document
+                        .getElementById('captureOffscreenJpegBg')
+                        .addEventListener('click', async () => {
+                          const dataUrl = await el.captureImage({
+                            width: 320,
+                            height: 240,
+                            fileType: 'image/jpeg',
+                            encoderOptions: 0.9,
+                            backgroundColor: 'cornflowerblue',
+                          });
+                          show(
+                            dataUrl,
+                            'Offscreen JPEG — blue bg, not black'
+                          );
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="capture-fit-to-box" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">fitToBox without camera (stay put)</h2>
+                <h4>
+                  Orbit to a custom framing, then capture with
+                  <code>{ width, height, fitToBox: true }</code> and no
+                  <code>camera</code>. The thumbnail may reframe the model for
+                  the capture; the live viewer must stay where you left it.
+                  Status reports whether the pose was restored.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="capture-fit-to-box"
+                highlight-as="html"
+              >
+                <template>
+                  <model-viewer
+                    id="capture-fit-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    highlight-selected
+                  >
+                    <div
+                      class="ld-card absolute bottom-4 left-4"
+                    >
+                      <div class="ld-card-toolbar">
+                      <button
+                        class="ld-button-sm"
+                        type="button"
+                        id="captureFitToBoxStay"
+                      >
+                        Capture with fitToBox
+                      </button>
+                      </div>
+                    </div>
+                    <div
+                      id="capture-fit-status"
+                      class="ld-hud ld-hud-top-left ld-hud-passive"
+                    >
+                      Orbit first, then capture
+                    </div>
+                  </model-viewer>
+                  <div
+                    id="capture-fit-result"
+                    class="ld-card absolute top-2 right-2 max-w-xs overflow-hidden z-10"
+                  ></div>
+                  <script type="module">
+                    (() => {
+                      const el = document.querySelector('#capture-fit-demo');
+                      const result =
+                        document.querySelector('#capture-fit-result');
+                      const status =
+                        document.querySelector('#capture-fit-status');
+                      document
+                        .getElementById('captureFitToBoxStay')
+                        .addEventListener('click', async () => {
+                          const before = el.getCameraJSON();
+                          if (!before || !before.object) return;
+                          const dataUrl = await el.captureImage({
+                            width: 320,
+                            height: 240,
+                            fitToBox: true,
+                            fileType: 'image/png',
+                            backgroundColor: '#ffffff',
+                          });
+                          const after = el.getCameraJSON();
+                          const same =
+                            after &&
+                            JSON.stringify(after.object.position) ===
+                              JSON.stringify(before.object.position) &&
+                            JSON.stringify(after.object.target) ===
+                              JSON.stringify(before.object.target);
+                          status.textContent = same
+                            ? 'camera restored (live view unchanged)'
+                            : 'camera moved — bug';
+                          status.style.color = same ? '' : '#b91c1c';
+                          result.innerHTML = `
+                            <div class="p-2 text-xs">fitToBox capture (no camera)</div>
+                            <img src="${dataUrl}" alt="fitToBox capture" />`;
                         });
                     })();
                   </script>
