@@ -1071,7 +1071,9 @@
                 <h4>
                   Multi-select floor-placed parts (Shift+click) and call
                   <code>alignObjects(action)</code> on world X/Z. Each action
-                  records one undo step.
+                  records one undo step. Use
+                  <strong>Face all</strong> (N/E/S/W) to set a shared plan
+                  orientation, then align again to compare rotated vs default.
                 </h4>
               </div>
               <example-snippet
@@ -1134,108 +1136,172 @@
                         <div class="ld-card-body">
                           <h3 class="ld-panel-title">Align and distribute</h3>
                           <div class="ld-sections">
-                            <div>
-                              <h4 class="ld-section-title">Align horizontal</h4>
-                              <div class="ld-button-group">
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-first align-action"
-                                  data-action="align-left"
-                                >
-                                  Left
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn align-action"
-                                  data-action="align-center-h"
-                                >
-                                  Center
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-last align-action"
-                                  data-action="align-right"
-                                >
-                                  Right
-                                </button>
+                            <div class="flex flex-wrap gap-4">
+                              <div>
+                                <h4 class="ld-section-title">
+                                  Align horizontal
+                                </h4>
+                                <div class="ld-button-group">
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-first align-action"
+                                    data-action="align-left"
+                                  >
+                                    Left
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn align-action"
+                                    data-action="align-center-h"
+                                  >
+                                    Center
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-last align-action"
+                                    data-action="align-right"
+                                  >
+                                    Right
+                                  </button>
+                                </div>
+                              </div>
+                              <div>
+                                <h4 class="ld-section-title">
+                                  Align vertical
+                                </h4>
+                                <div class="ld-button-group">
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-first align-action"
+                                    data-action="align-top"
+                                  >
+                                    Top
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn align-action"
+                                    data-action="align-center-v"
+                                  >
+                                    Center
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-last align-action"
+                                    data-action="align-bottom"
+                                  >
+                                    Bottom
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                            <div>
-                              <h4 class="ld-section-title">Align vertical</h4>
-                              <div class="ld-button-group">
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-first align-action"
-                                  data-action="align-top"
-                                >
-                                  Top
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn align-action"
-                                  data-action="align-center-v"
-                                >
-                                  Center
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-last align-action"
-                                  data-action="align-bottom"
-                                >
-                                  Bottom
-                                </button>
+                            <div class="flex flex-wrap gap-4">
+                              <div>
+                                <h4 class="ld-section-title">Distribute</h4>
+                                <div class="ld-button-group">
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-first align-action"
+                                    data-action="distribute-h"
+                                  >
+                                    H
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn align-action"
+                                    data-action="distribute-v"
+                                  >
+                                    V
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-last align-action"
+                                    data-action="distribute-line"
+                                  >
+                                    Line
+                                  </button>
+                                </div>
+                              </div>
+                              <div>
+                                <h4 class="ld-section-title">Equal gap</h4>
+                                <div class="ld-button-group">
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-first align-action"
+                                    data-action="equal-gap-h"
+                                  >
+                                    H
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn align-action"
+                                    data-action="equal-gap-v"
+                                  >
+                                    V
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-last align-action"
+                                    data-action="equal-gap-line"
+                                  >
+                                    Line
+                                  </button>
+                                </div>
                               </div>
                             </div>
-                            <div>
-                              <h4 class="ld-section-title">Distribute</h4>
-                              <div class="ld-button-group">
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-first align-action"
-                                  data-action="distribute-h"
-                                >
-                                  H
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn align-action"
-                                  data-action="distribute-v"
-                                >
-                                  V
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-last align-action"
-                                  data-action="distribute-line"
-                                >
-                                  Line
-                                </button>
+                            <div class="flex flex-wrap gap-4">
+                              <div>
+                                <h4 class="ld-section-title">Face all</h4>
+                                <div class="ld-button-group">
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-first face-all-action"
+                                    data-yaw="0"
+                                  >
+                                    N
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn face-all-action"
+                                    data-yaw="90"
+                                  >
+                                    E
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn face-all-action"
+                                    data-yaw="180"
+                                  >
+                                    S
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="ld-button-group-btn-last face-all-action"
+                                    data-yaw="270"
+                                  >
+                                    W
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                            <div>
-                              <h4 class="ld-section-title">Equal gap</h4>
-                              <div class="ld-button-group">
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-first align-action"
-                                  data-action="equal-gap-h"
-                                >
-                                  H
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn align-action"
-                                  data-action="equal-gap-v"
-                                >
-                                  V
-                                </button>
-                                <button
-                                  type="button"
-                                  class="ld-button-group-btn-last align-action"
-                                  data-action="equal-gap-line"
-                                >
-                                  Line
-                                </button>
+                              <div>
+                                <h4 class="ld-section-title">
+                                  Rotate selected
+                                </h4>
+                                <div class="ld-button-group">
+                                  <button
+                                    type="button"
+                                    id="align-floor-rotate-ccw"
+                                    class="ld-button-group-btn-first"
+                                  >
+                                    −90°
+                                  </button>
+                                  <button
+                                    type="button"
+                                    id="align-floor-rotate-cw"
+                                    class="ld-button-group-btn-last"
+                                  >
+                                    +90°
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1250,6 +1316,11 @@
                         document.getElementById('align-floor-demo');
                       const DUCK_URL =
                         '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb';
+                      const FLOOR_DUCK_NAMES = [
+                        'align-floor-a',
+                        'align-floor-b',
+                        'align-floor-c',
+                      ];
 
                       const undoBtn =
                         document.getElementById('align-floor-undo');
@@ -1313,6 +1384,31 @@
                           });
                         });
 
+                      viewer
+                        .querySelectorAll('.face-all-action')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const yaw = Number(button.dataset.yaw);
+                            if (!Number.isFinite(yaw)) return;
+                            for (const name of FLOOR_DUCK_NAMES) {
+                              viewer.setRotationY(name, yaw, {
+                                animate: true,
+                              });
+                            }
+                          });
+                        });
+
+                      document
+                        .getElementById('align-floor-rotate-ccw')
+                        ?.addEventListener('click', () => {
+                          viewer.setRotationY('-=90', { animate: true });
+                        });
+                      document
+                        .getElementById('align-floor-rotate-cw')
+                        ?.addEventListener('click', () => {
+                          viewer.setRotationY('+=90', { animate: true });
+                        });
+
                       const placeFloorDucks = async () => {
                         if (viewer.dataset.ducksPlaced === 'true') return;
                         viewer.dataset.ducksPlaced = 'true';
@@ -1323,6 +1419,7 @@
                         ];
                         for (const spot of spots) {
                           await viewer.placeGlb(DUCK_URL, {
+                            id: spot.name,
                             name: spot.name,
                             position: spot.position,
                             part: { type: 'scene', editable: true },
