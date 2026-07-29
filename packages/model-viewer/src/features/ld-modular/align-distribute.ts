@@ -75,36 +75,6 @@ function buildWallAxisH(wallNormal: Vector3, out: Vector3): Vector3 {
   return out.normalize();
 }
 
-function withRotationIgnored<T>(
-  object: Object3D,
-  fn: () => T
-): T {
-  const savedRotation = object.rotation.clone();
-  const savedQuaternion = object.quaternion.clone();
-  const savedLogical = object.userData?.ldLogicalRotationDeg;
-
-  object.rotation.set(0, 0, 0);
-  object.quaternion.set(0, 0, 0, 1);
-  if (object.userData?.ldLogicalRotationDeg) {
-    delete object.userData.ldLogicalRotationDeg;
-  }
-  object.updateMatrixWorld(true);
-
-  try {
-    return fn();
-  } finally {
-    object.rotation.copy(savedRotation);
-    object.quaternion.copy(savedQuaternion);
-    object.userData = object.userData || {};
-    if (savedLogical) {
-      object.userData.ldLogicalRotationDeg = savedLogical;
-    } else {
-      delete object.userData.ldLogicalRotationDeg;
-    }
-    object.updateMatrixWorld(true);
-  }
-}
-
 function projectWorldToHV(
   world: Vector3,
   context: LayoutContext,
@@ -131,14 +101,12 @@ function computeObjectLayoutBounds(
   let minV = Infinity;
   let maxV = -Infinity;
 
-  const hasCorners = withRotationIgnored(object, () => {
-    box.setFromObject(object);
-    return (
-      Number.isFinite(box.min.x) &&
-      Number.isFinite(box.max.x) &&
-      !box.isEmpty()
-    );
-  });
+  object.updateMatrixWorld(true);
+  box.setFromObject(object);
+  const hasCorners =
+    Number.isFinite(box.min.x) &&
+    Number.isFinite(box.max.x) &&
+    !box.isEmpty();
 
   if (!hasCorners) {
     return null;

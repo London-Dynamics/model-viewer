@@ -170,3 +170,103 @@ suite('align-distribute wall deltas', () => {
     expect(movedB).to.be.closeTo(1, 1e-3);
   });
 });
+
+suite('align-distribute rotated floor regression', () => {
+  let root: Object3D;
+  const epsilon = 1e-4;
+
+  const applyDeltas = (objects: Object3D[], deltas: Map<string, Vector3>) => {
+    for (const object of objects) {
+      const delta = deltas.get(object.uuid);
+      if (delta) {
+        object.position.add(delta);
+      }
+    }
+  };
+
+  const assertNoOp = (deltas: Map<string, Vector3>) => {
+    for (const delta of deltas.values()) {
+      expect(delta.length()).to.be.lessThan(epsilon);
+    }
+  };
+
+  setup(() => {
+    root = new Object3D();
+  });
+
+  test('align actions stay stable through rotate sequence', () => {
+    const a = addBoxPart(root, 'a', [-2.1, 0, -0.8], [0.6, 1, 1.4]);
+    const b = addBoxPart(root, 'b', [0.3, 0, 1.1], [1.3, 1, 0.7]);
+    const c = addBoxPart(root, 'c', [2.2, 0, -0.2], [0.9, 1, 1.1]);
+    const objects = [a, b, c];
+    a.rotation.y = Math.PI / 2;
+    b.rotation.y = Math.PI;
+    c.rotation.y = Math.PI * 1.5;
+    objects.forEach((object) => object.updateMatrixWorld(true));
+
+    const context = floorContext();
+
+    const alignTop1 = computeAlignDistributeDeltas('align-top', objects, context);
+    applyDeltas(objects, alignTop1);
+    const alignTop2 = computeAlignDistributeDeltas('align-top', objects, context);
+    assertNoOp(alignTop2);
+
+    for (const object of objects) {
+      object.rotation.y += Math.PI / 2;
+      object.updateMatrixWorld(true);
+    }
+    const alignRight1 = computeAlignDistributeDeltas('align-right', objects, context);
+    applyDeltas(objects, alignRight1);
+    const alignRight2 = computeAlignDistributeDeltas('align-right', objects, context);
+    assertNoOp(alignRight2);
+
+    for (const object of objects) {
+      object.rotation.y += Math.PI / 2;
+      object.updateMatrixWorld(true);
+    }
+    const alignBottom1 = computeAlignDistributeDeltas('align-bottom', objects, context);
+    applyDeltas(objects, alignBottom1);
+    const alignBottom2 = computeAlignDistributeDeltas('align-bottom', objects, context);
+    assertNoOp(alignBottom2);
+  });
+
+  test('distribute actions are no-op when already distributed under rotation', () => {
+    const a = addBoxPart(root, 'a', [-2.6, 0, -0.9], [0.8, 1, 1.4]);
+    const b = addBoxPart(root, 'b', [0.2, 0, 0.5], [1.4, 1, 0.6]);
+    const c = addBoxPart(root, 'c', [2.9, 0, 1.2], [0.7, 1, 1.1]);
+    const objects = [a, b, c];
+    a.rotation.y = Math.PI / 2;
+    b.rotation.y = Math.PI / 4;
+    c.rotation.y = Math.PI * 1.25;
+    objects.forEach((object) => object.updateMatrixWorld(true));
+
+    const context = floorContext();
+    const actions = ['distribute-h', 'distribute-v', 'distribute-line'] as const;
+    for (const action of actions) {
+      const firstPass = computeAlignDistributeDeltas(action, objects, context);
+      applyDeltas(objects, firstPass);
+      const secondPass = computeAlignDistributeDeltas(action, objects, context);
+      assertNoOp(secondPass);
+    }
+  });
+
+  test('equal-gap actions are no-op when already equal under rotation', () => {
+    const a = addBoxPart(root, 'a', [-3.2, 0, -1.4], [0.7, 1, 1.5]);
+    const b = addBoxPart(root, 'b', [0.4, 0, -0.2], [1.5, 1, 0.8]);
+    const c = addBoxPart(root, 'c', [3.1, 0, 1.1], [0.9, 1, 1.2]);
+    const objects = [a, b, c];
+    a.rotation.y = Math.PI / 3;
+    b.rotation.y = Math.PI * 0.9;
+    c.rotation.y = Math.PI * 1.4;
+    objects.forEach((object) => object.updateMatrixWorld(true));
+
+    const context = floorContext();
+    const actions = ['equal-gap-h', 'equal-gap-v', 'equal-gap-line'] as const;
+    for (const action of actions) {
+      const firstPass = computeAlignDistributeDeltas(action, objects, context);
+      applyDeltas(objects, firstPass);
+      const secondPass = computeAlignDistributeDeltas(action, objects, context);
+      assertNoOp(secondPass);
+    }
+  });
+});

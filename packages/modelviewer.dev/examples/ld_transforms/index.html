@@ -853,7 +853,6 @@
                     alt="Room with placed duck rotation controls demo"
                     cursor
                   >
-
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
@@ -1071,9 +1070,9 @@
                 <h4>
                   Multi-select floor-placed parts (Shift+click) and call
                   <code>alignObjects(action)</code> on world X/Z. Each action
-                  records one undo step. Use
-                  <strong>Face all</strong> (N/E/S/W) to set a shared plan
-                  orientation, then align again to compare rotated vs default.
+                  records one undo step. Use <strong>Face all</strong> (N/E/S/W)
+                  to set a shared plan orientation, then align again to compare
+                  rotated vs default.
                 </h4>
               </div>
               <example-snippet
@@ -1090,13 +1089,14 @@
                     selection-highlight-color="#165dfc"
                     selection-highlight-thickness="1.5"
                     selection-scope="group"
+                    rotation-controls
+                    rotation-controls-major-step="45"
                     src-is-room
                     floor
                     shadow-intensity="1"
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Floor align and distribute demo"
                   >
-
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
@@ -1166,9 +1166,7 @@
                                 </div>
                               </div>
                               <div>
-                                <h4 class="ld-section-title">
-                                  Align vertical
-                                </h4>
+                                <h4 class="ld-section-title">Align vertical</h4>
                                 <div class="ld-button-group">
                                   <button
                                     type="button"
@@ -1316,7 +1314,11 @@
                         document.getElementById('align-floor-demo');
                       const DUCK_URL =
                         '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb';
-                      const FLOOR_DUCK_NAMES = [
+                      const ASTRONAUT_URL =
+                        '../../shared-assets/models/Astronaut.glb';
+                      const HORSE_URL =
+                        '../../shared-assets/models/Astronaut.glb';
+                      const FLOOR_OBJECT_NAMES = [
                         'align-floor-a',
                         'align-floor-b',
                         'align-floor-c',
@@ -1390,7 +1392,7 @@
                           button.addEventListener('click', () => {
                             const yaw = Number(button.dataset.yaw);
                             if (!Number.isFinite(yaw)) return;
-                            for (const name of FLOOR_DUCK_NAMES) {
+                            for (const name of FLOOR_OBJECT_NAMES) {
                               viewer.setRotationY(name, yaw, {
                                 animate: true,
                               });
@@ -1409,16 +1411,28 @@
                           viewer.setRotationY('+=90', { animate: true });
                         });
 
-                      const placeFloorDucks = async () => {
+                      const placeFloorObjects = async () => {
                         if (viewer.dataset.ducksPlaced === 'true') return;
                         viewer.dataset.ducksPlaced = 'true';
                         const spots = [
-                          { name: 'align-floor-a', position: [-1.5, 0, -1] },
-                          { name: 'align-floor-b', position: [0.5, 0, 1.2] },
-                          { name: 'align-floor-c', position: [2, 0, -0.5] },
+                          {
+                            name: 'align-floor-a',
+                            position: [-1.5, 0, -1],
+                            src: DUCK_URL,
+                          },
+                          {
+                            name: 'align-floor-b',
+                            position: [0.5, 0, 1.2],
+                            src: ASTRONAUT_URL,
+                          },
+                          {
+                            name: 'align-floor-c',
+                            position: [2, 0, -0.5],
+                            src: HORSE_URL,
+                          },
                         ];
                         for (const spot of spots) {
-                          await viewer.placeGlb(DUCK_URL, {
+                          await viewer.placeGlb(spot.src, {
                             id: spot.name,
                             name: spot.name,
                             position: spot.position,
@@ -1429,7 +1443,7 @@
 
                       viewer.addEventListener('load', () => {
                         if (!('IntersectionObserver' in window)) {
-                          placeFloorDucks();
+                          placeFloorObjects();
                           return;
                         }
                         const observer = new IntersectionObserver(
@@ -1440,7 +1454,7 @@
                               return;
                             }
                             observer.disconnect();
-                            placeFloorDucks();
+                            placeFloorObjects();
                           },
                           { root: null, threshold: 0.1 }
                         );
@@ -1488,7 +1502,6 @@
                     src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     alt="Wall align and distribute demo"
                   >
-
                     <div
                       class="absolute top-2 left-2 z-30 flex flex-col gap-2 items-start"
                     >
