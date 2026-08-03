@@ -696,6 +696,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
         this._markRoomWallVisibilityCacheDirty();
         this._applyRoomTaggedSurfaceVisibility();
+        try {
+          ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
+        } catch (_) {}
         if (this.srcIsRoom) {
           this._logRoomTaggedSurfaceVisibility('load');
         }
@@ -728,6 +731,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         changedProperties.has('srcIsRoom')
       ) {
         this._applyRoomTaggedSurfaceVisibility();
+        if (
+          changedProperties.has('floor') ||
+          changedProperties.has('srcIsRoom')
+        ) {
+          try {
+            ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
+          } catch (_) {}
+        }
         if (this.srcIsRoom) {
           this._logRoomTaggedSurfaceVisibility('updated');
         }
@@ -756,6 +767,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.srcIsRoom) {
         this._resetRoomTaggedSurfaceVisibilityOverrides();
         this._resetRoomAttachedVisibility();
+        try {
+          ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
+        } catch (_) {}
         return;
       }
 
@@ -767,6 +781,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       this._applyRoomSourceRuntimeFlags();
       this._markRoomWallVisibilityCacheDirty();
+      try {
+        ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
+      } catch (_) {}
     }
 
     private _applyRoomSourceRuntimeFlags() {
@@ -1056,6 +1073,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._ensureUndoHistory().endBatch(
         total === 1 ? undefined : `Place ${total} objects`
       );
+
+      try {
+        this.requestShadowUpdate();
+        (this as any)[$needsRender]();
+      } catch (e) {}
 
       try {
         (this as any).dispatchEvent(
@@ -6651,6 +6673,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           this._firePartsStateEvents(node, 'delete', {});
           this._dispatchObjectRemoveEvent(node);
           this._ensureUndoHistory().recordRemove([detached]);
+          this.requestShadowUpdate();
           (this as any)[$needsRender]();
           return true;
         }
@@ -6663,6 +6686,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           node.parent.remove(node);
         }
 
+        this.requestShadowUpdate();
         (this as any)[$needsRender]();
         return true;
       } catch (e) {
@@ -7571,6 +7595,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       try {
+        this.requestShadowUpdate();
         (this as any)[$needsRender]();
       } catch (_e) {}
 
@@ -7617,6 +7642,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       try {
+        this.requestShadowUpdate();
         (this as any)[$needsRender]();
       } catch (_e) {}
 
@@ -9313,6 +9339,9 @@ class PlacementSession extends EventTarget {
 
       try {
         if (!element) return Promise.reject(new Error('No element'));
+        try {
+          (element as any).requestShadowUpdate?.();
+        } catch (e) {}
         (element as any)[$needsRender]();
         try {
           (element as any).updateSnappingPointSlots &&

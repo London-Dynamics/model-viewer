@@ -2,6 +2,7 @@ import {
   Box3,
   Camera,
   Matrix4,
+  Mesh,
   Object3D,
   Quaternion,
   Raycaster,
@@ -145,6 +146,66 @@ export function getRoomFloorY(baseModel: Object3D | null): number | null {
   const bbox = new Box3().setFromObject(baseModel);
   if (!Number.isFinite(bbox.min.y)) return null;
   return bbox.min.y;
+}
+
+/** Floor shell naming: `floor` group/mesh or any `floor_*` node. */
+export function isRoomFloorShellNode(name: string | undefined): boolean {
+  const n = (name || '').toLowerCase();
+  return n === 'floor' || n.startsWith('floor_');
+}
+
+/**
+ * Collects floor shell meshes from a room base model for soft-shadow
+ * projection. Groups named `floor` contribute descendant meshes with
+ * geometry (skipping wall_/ceiling_ named subtrees); meshes named
+ * `floor` / `floor_*` are included directly. Dedupes by UUID.
+ * Optionally reuses `out` to avoid allocating.
+ */
+export function collectRoomFloorMeshes(
+  baseModel: Object3D | null | undefined,
+  out: Mesh[] = []
+): Mesh[] {
+  out.length = 0;
+  if (!baseModel) return out;
+
+  const seen = new Set<string>();
+
+  const isWallOrCeilingShell = (name: string | undefined): boolean => {
+    const n = (name || '').toLowerCase();
+    return (
+      n === 'walls' ||
+      n.startsWith('wall_') ||
+      n === 'ceiling' ||
+      n.startsWith('ceiling_')
+    );
+  };
+
+  const addMesh = (mesh: Mesh) => {
+    if (!mesh.geometry || seen.has(mesh.uuid)) return;
+    if (isWallOrCeilingShell(mesh.name)) return;
+    seen.add(mesh.uuid);
+    out.push(mesh);
+  };
+
+  baseModel.traverse((child) => {
+    if (!isRoomFloorShellNode(child.name)) return;
+    const mesh = child as Mesh;
+    if ((mesh as any).isMesh && mesh.geometry) {
+      addMesh(mesh);
+      return;
+    }
+    // Group (or other non-mesh) named floor / floor_*: gather child meshes.
+    child.traverse((desc) => {
+      if (desc === child) return;
+      if (isWallOrCeilingShell(desc.name)) return;
+      const descMesh = desc as Mesh;
+      if ((descMesh as any).isMesh && descMesh.geometry) {
+        addMesh(descMesh);
+      }
+    });
+  });
+
+  return out;
 }
 
 export function clientToNdc(

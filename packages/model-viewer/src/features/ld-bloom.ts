@@ -393,12 +393,23 @@ export class LDBloomComposer implements EffectComposerInterface,
       typeof shadow.render === 'function'
     ) {
       shadow.render(this.renderer, this.scene);
+    } else if (
+      'updateRoomFloorTextureMatrix' in shadow &&
+      typeof (shadow as any).updateRoomFloorTextureMatrix === 'function'
+    ) {
+      (shadow as any).updateRoomFloorTextureMatrix();
     }
     try {
       callback();
     } finally {
       floor.scale.copy(previousScale);
       shadowCamera.scale.copy(previousCameraScale);
+      if (
+        'updateRoomFloorTextureMatrix' in shadow &&
+        typeof (shadow as any).updateRoomFloorTextureMatrix === 'function'
+      ) {
+        (shadow as any).updateRoomFloorTextureMatrix();
+      }
       if ('needsUpdate' in shadow) {
         shadow.needsUpdate = true;
       }

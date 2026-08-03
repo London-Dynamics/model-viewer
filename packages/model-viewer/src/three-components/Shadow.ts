@@ -19,6 +19,7 @@ import {
   DoubleSide,
   Box3,
   Material,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshDepthMaterial,
@@ -55,6 +56,40 @@ const ANIMATION_SCALING = 2;
 // the soft shadows.
 const DEFAULT_HARD_INTENSITY = 0.3;
 
+const ROOM_FLOOR_SHADOW_VERTEX = /* glsl */ `
+  uniform mat4 textureMatrix;
+  varying vec4 vShadowCoord;
+
+  void main() {
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vShadowCoord = textureMatrix * worldPosition;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const ROOM_FLOOR_SHADOW_FRAGMENT = /* glsl */ `
+  uniform sampler2D shadowMap;
+  uniform float opacity;
+  varying vec4 vShadowCoord;
+
+  void main() {
+    vec3 coord = vShadowCoord.xyz / vShadowCoord.w;
+    if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0) {
+      discard;
+    }
+    float alpha = texture2D(shadowMap, coord.xy).a * opacity;
+    if (alpha < 0.001) {
+      discard;
+    }
+    gl_FragColor = vec4(0.0, 0.0, 0.0, alpha);
+  }
+`;
+
+type RoomFloorOverlay = {
+  source: Mesh;
+  overlay: Mesh;
+};
+
 /**
  * The Shadow class creates a shadow that fits a given scene and follows a
  * target. This shadow will follow the scene without any updates needed so long
@@ -85,6 +120,30 @@ export class Shadow extends Object3D {
   private maxDimension = 0;
   private isAnimated = false;
   public needsUpdate = false;
+
+  private roomFloorOverlays: RoomFloorOverlay[] = [];
+  private roomFloorSignature: string = '';
+  private roomFloorMaterial: ShaderMaterial | null = null;
+  private readonly textureMatrix = new Matrix4();
+  private readonly tmpInvParentMatrix = new Matrix4();
+  private readonly textureMatrixBias = new Matrix4().set(
+    0.5,
+    0.0,
+    0.0,
+    0.5,
+    0.0,
+    0.5,
+    0.0,
+    0.5,
+    0.0,
+    0.0,
+    0.5,
+    0.5,
+    0.0,
+    0.0,
+    0.0,
+    1.0
+  );
 
   constructor(scene: ModelScene, softness: number, side: Side) {
     super();
@@ -256,6 +315,7 @@ export class Shadow extends Object3D {
 
       (this.floor.material as MeshBasicMaterial).map =
         this.renderTarget.texture;
+      this.bindRoomFloorShadowMap();
     }
 
     // These pads account for the softening radius around the shadow.
@@ -273,20 +333,101 @@ export class Shadow extends Object3D {
    */
   setIntensity(intensity: number) {
     this.intensity = intensity;
+    const opacity =
+      intensity *
+      lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
     if (intensity > 0) {
       this.visible = true;
-      this.floor.visible = true;
-      (this.floor.material as MeshBasicMaterial).opacity =
-        intensity *
-        lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
+      this.applyReceiverVisibility(opacity);
     } else {
       this.visible = false;
       this.floor.visible = false;
+      this.setRoomFloorOverlaysVisible(false);
     }
   }
 
   getIntensity(): number {
     return this.intensity;
+  }
+
+  hasRoomFloorReceivers(): boolean {
+    return this.roomFloorOverlays.length > 0;
+  }
+
+  /**
+   * Project the soft-shadow map onto room floor meshes instead of the
+   * synthetic plane. No-op when the mesh signature is unchanged. Pass null or
+   * an empty list to clear and restore the synthetic plane.
+   */
+  setRoomFloorReceivers(meshes: Mesh[] | null): void {
+    const list = meshes && meshes.length > 0 ? meshes : null;
+    if (list == null) {
+      this.clearRoomFloorReceivers();
+      return;
+    }
+
+    const signature = this.computeRoomFloorSignature(list);
+    if (signature === this.roomFloorSignature) {
+      return;
+    }
+
+    this.clearRoomFloorReceivers();
+    this.roomFloorSignature = signature;
+    const material = this.ensureRoomFloorMaterial();
+    this.bindRoomFloorShadowMap();
+
+    for (let i = 0; i < list.length; i++) {
+      const source = list[i];
+      const overlay = new Mesh(source.geometry, material);
+      overlay.matrixAutoUpdate = false;
+      overlay.frustumCulled = false;
+      overlay.userData.noHit = true;
+      overlay.userData.skipShadow = true;
+      overlay.userData.isRoomFloorShadowOverlay = true;
+      overlay.onBeforeRender = () => {
+        this.syncOverlayMatrix(source, overlay);
+      };
+      this.add(overlay);
+      this.roomFloorOverlays.push({ source, overlay });
+    }
+
+    const opacity =
+      this.intensity *
+      lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
+    this.applyReceiverVisibility(opacity);
+    this.updateRoomFloorTextureMatrix();
+  }
+
+  clearRoomFloorReceivers(): void {
+    if (
+      this.roomFloorOverlays.length === 0 &&
+      this.roomFloorMaterial == null &&
+      this.roomFloorSignature === ''
+    ) {
+      return;
+    }
+
+    for (let i = 0; i < this.roomFloorOverlays.length; i++) {
+      const { overlay } = this.roomFloorOverlays[i];
+      overlay.onBeforeRender = () => {};
+      overlay.removeFromParent();
+      // Geometry is owned by the source GLTF — do not dispose.
+      // Material is shared — disposed once below.
+    }
+    this.roomFloorOverlays.length = 0;
+    this.roomFloorSignature = '';
+
+    if (this.roomFloorMaterial != null) {
+      this.roomFloorMaterial.dispose();
+      this.roomFloorMaterial = null;
+    }
+
+    if (this.intensity > 0) {
+      this.applyReceiverVisibility(
+        this.intensity *
+          lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness)
+      );
+    }
   }
 
   /**
@@ -320,7 +461,10 @@ export class Shadow extends Object3D {
     // HACK: Hide helper overlays during shadow rendering to prevent interference
     let gridContainer: any = null;
     let gridWasVisible = false;
-    const hiddenShadowHelperObjects: Array<{ object: Object3D; visible: boolean }> = [];
+    const hiddenShadowHelperObjects: Array<{
+      object: Object3D;
+      visible: boolean;
+    }> = [];
     scene.traverse((object: any) => {
       if (object.name === 'ld-grid') {
         gridContainer = object;
@@ -339,6 +483,7 @@ export class Shadow extends Object3D {
     // set renderer clear alpha
     const initialClearAlpha = renderer.getClearAlpha();
     renderer.setClearAlpha(0);
+    const floorWasVisible = this.floor.visible;
     this.floor.visible = false;
 
     // disable XR for offscreen rendering
@@ -352,7 +497,7 @@ export class Shadow extends Object3D {
 
     // and reset the override material
     scene.overrideMaterial = null;
-    this.floor.visible = true;
+    this.floor.visible = floorWasVisible && !this.hasRoomFloorReceivers();
 
     // HACK: Restore base model visibility
     if (shouldHideBaseModel && baseModel) {
@@ -368,6 +513,7 @@ export class Shadow extends Object3D {
     }
 
     this.blurShadow(renderer);
+    this.updateRoomFloorTextureMatrix();
 
     // reset and render the normal scene
     renderer.xr.enabled = xrEnabled;
@@ -377,30 +523,58 @@ export class Shadow extends Object3D {
   }
 
   renderFloor(renderer: WebGLRenderer, scene: Scene, camera: Camera) {
-    if (!this.visible || !this.floor.visible) {
+    if (!this.visible) {
+      return;
+    }
+
+    const useRoomReceivers = this.hasRoomFloorReceivers();
+    if (!useRoomReceivers && !this.floor.visible) {
+      return;
+    }
+    if (useRoomReceivers && this.intensity <= 0) {
       return;
     }
 
     const visibleState = new Map<Object3D, boolean>();
     const materialColorWriteState = new Map<Material, boolean>();
-    const floorAncestors = new Set<Object3D>();
-    let parent: Object3D | null = this.floor;
-    while (parent != null) {
-      floorAncestors.add(parent);
-      parent = parent.parent;
+    const keepVisible = new Set<Object3D>();
+
+    if (useRoomReceivers) {
+      for (let i = 0; i < this.roomFloorOverlays.length; i++) {
+        let parent: Object3D | null = this.roomFloorOverlays[i].overlay;
+        while (parent != null) {
+          keepVisible.add(parent);
+          parent = parent.parent;
+        }
+      }
+    } else {
+      let parent: Object3D | null = this.floor;
+      while (parent != null) {
+        keepVisible.add(parent);
+        parent = parent.parent;
+      }
     }
 
+    const floorWasVisible = this.floor.visible;
     this.floor.visible = false;
     this.blurPlane.visible = false;
+    const overlayVisibility: boolean[] = [];
+    if (useRoomReceivers) {
+      for (let i = 0; i < this.roomFloorOverlays.length; i++) {
+        overlayVisibility[i] = this.roomFloorOverlays[i].overlay.visible;
+        this.roomFloorOverlays[i].overlay.visible = false;
+      }
+    }
+
     scene.traverse((object) => {
       const mesh = object as Mesh;
-      if (!mesh.isMesh || floorAncestors.has(object)) {
+      if (!mesh.isMesh || keepVisible.has(object)) {
         return;
       }
 
-      const materials = Array.isArray(mesh.material) ?
-        mesh.material :
-        [mesh.material];
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
       for (const material of materials) {
         if (!materialColorWriteState.has(material)) {
           materialColorWriteState.set(material, material.colorWrite);
@@ -417,10 +591,18 @@ export class Shadow extends Object3D {
     for (const [material, colorWrite] of materialColorWriteState) {
       material.colorWrite = colorWrite;
     }
-    this.floor.visible = true;
+
+    if (useRoomReceivers) {
+      this.updateRoomFloorTextureMatrix();
+      for (let i = 0; i < this.roomFloorOverlays.length; i++) {
+        this.roomFloorOverlays[i].overlay.visible = overlayVisibility[i];
+      }
+    } else {
+      this.floor.visible = true;
+    }
 
     scene.traverse((object) => {
-      const shouldKeepVisible = floorAncestors.has(object);
+      const shouldKeepVisible = keepVisible.has(object);
       if (!shouldKeepVisible && (object as Mesh).isMesh) {
         visibleState.set(object, object.visible);
         object.visible = false;
@@ -433,6 +615,8 @@ export class Shadow extends Object3D {
     for (const [object, visible] of visibleState) {
       object.visible = visible;
     }
+
+    this.floor.visible = floorWasVisible && !useRoomReceivers;
   }
 
   blurShadow(renderer: WebGLRenderer) {
@@ -466,7 +650,22 @@ export class Shadow extends Object3D {
     blurPlane.visible = false;
   }
 
+  /** Refresh projective matrix after camera scale changes (e.g. bloom pad). */
+  updateRoomFloorTextureMatrix(): void {
+    if (this.roomFloorMaterial == null) {
+      return;
+    }
+    this.camera.updateMatrixWorld(true);
+    this.textureMatrix.copy(this.textureMatrixBias);
+    this.textureMatrix.multiply(this.camera.projectionMatrix);
+    this.textureMatrix.multiply(this.camera.matrixWorldInverse);
+    this.roomFloorMaterial.uniforms.textureMatrix.value.copy(
+      this.textureMatrix
+    );
+  }
+
   dispose() {
+    this.clearRoomFloorReceivers();
     if (this.renderTarget != null) {
       this.renderTarget.dispose();
     }
@@ -480,5 +679,69 @@ export class Shadow extends Object3D {
     this.floor.geometry.dispose();
     this.blurPlane.geometry.dispose();
     this.removeFromParent();
+  }
+
+  private computeRoomFloorSignature(meshes: Mesh[]): string {
+    const parts: string[] = new Array(meshes.length);
+    for (let i = 0; i < meshes.length; i++) {
+      const mesh = meshes[i];
+      parts[i] = `${mesh.uuid}:${mesh.geometry?.uuid ?? ''}`;
+    }
+    parts.sort();
+    return parts.join('|');
+  }
+
+  private ensureRoomFloorMaterial(): ShaderMaterial {
+    if (this.roomFloorMaterial != null) {
+      return this.roomFloorMaterial;
+    }
+    this.roomFloorMaterial = new ShaderMaterial({
+      uniforms: {
+        shadowMap: { value: this.renderTarget?.texture ?? null },
+        opacity: { value: 1 },
+        textureMatrix: { value: this.textureMatrix.clone() },
+      },
+      vertexShader: ROOM_FLOOR_SHADOW_VERTEX,
+      fragmentShader: ROOM_FLOOR_SHADOW_FRAGMENT,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      side: DoubleSide,
+    });
+    return this.roomFloorMaterial;
+  }
+
+  private bindRoomFloorShadowMap(): void {
+    if (this.roomFloorMaterial == null || this.renderTarget == null) {
+      return;
+    }
+    this.roomFloorMaterial.uniforms.shadowMap.value =
+      this.renderTarget.texture;
+  }
+
+  private applyReceiverVisibility(opacity: number): void {
+    const useRoom = this.hasRoomFloorReceivers();
+    this.floor.visible = this.intensity > 0 && !useRoom;
+    (this.floor.material as MeshBasicMaterial).opacity = opacity;
+    if (this.roomFloorMaterial != null) {
+      this.roomFloorMaterial.uniforms.opacity.value = opacity;
+    }
+    this.setRoomFloorOverlaysVisible(this.intensity > 0 && useRoom);
+  }
+
+  private setRoomFloorOverlaysVisible(visible: boolean): void {
+    for (let i = 0; i < this.roomFloorOverlays.length; i++) {
+      this.roomFloorOverlays[i].overlay.visible = visible;
+    }
+  }
+
+  private syncOverlayMatrix(source: Mesh, overlay: Mesh): void {
+    source.updateWorldMatrix(true, false);
+    this.updateWorldMatrix(true, false);
+    this.tmpInvParentMatrix.copy(this.matrixWorld).invert();
+    overlay.matrix.copy(this.tmpInvParentMatrix).multiply(source.matrixWorld);
+    overlay.matrixWorld.copy(source.matrixWorld);
   }
 }

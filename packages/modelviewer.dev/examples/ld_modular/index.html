@@ -174,7 +174,7 @@
               <example-snippet stamp-to="modular" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/empty.glb"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     id="modular-demo"
                     camera-controls
                     touch-action="pan-y"
@@ -193,9 +193,10 @@
                     measure
                     edit
                     debug
-                    disable-base-model-selection
-                    disable-base-model-shadows
                     viewport-gizmo
+                    src-is-room
+                    walls
+                    floor
                   >
                     <div slot="floating-object-anchor">
                       <div
@@ -1150,7 +1151,7 @@
               <example-snippet stamp-to="multi-select" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/empty.glb"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     id="multi-select-demo"
                     camera-controls
                     touch-action="pan-y"
@@ -1167,6 +1168,9 @@
                     disable-base-model-shadows
                     viewport-gizmo
                     rotation-controls
+                    src-is-room
+                    walls
+                    floor
                   >
                     <div
                       id="multi-select-readout"
@@ -1504,7 +1508,10 @@
                   observe that placement is accepted only on supported walls.
                   The code demonstrates room-aware model configuration,
                   per-object snap options, and event wiring for constrained
-                  surface placement.
+                  surface placement. With
+                  <span class="attribute">src-is-room</span> and
+                  <span class="attribute">shadow-intensity</span>, soft shadows
+                  from placed objects project onto the room floor shells.
                 </p>
               </div>
               <example-snippet stamp-to="room-surface-snap" highlight-as="html">
@@ -2341,7 +2348,7 @@
               <example-snippet stamp-to="bulk-placement" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/empty.glb"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     id="bulk-placement-demo"
                     camera-controls
                     interaction-prompt="none"
@@ -2619,7 +2626,7 @@
               <example-snippet stamp-to="bulk-replace" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/empty.glb"
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                     id="bulk-replace-demo"
                     camera-controls
                     interaction-prompt="none"
@@ -2796,7 +2803,7 @@
                 <example-snippet stamp-to="hover-anchor-metadata" highlight-as="html">
                   <template>
                     <model-viewer
-                      src="../../shared-assets/models/empty.glb"
+                      src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
                       id="hover-anchor-metadata-demo"
                       camera-controls
                       touch-action="pan-y"

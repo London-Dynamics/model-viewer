@@ -66,6 +66,8 @@ import { ModelViewerElement } from '../model-viewer.js';
 import { normalizeUnit } from '../styles/conversions.js';
 import { NumberNode, parseExpressions } from '../styles/parsers.js';
 
+import { collectRoomFloorMeshes } from '../utilities/surface-snapping.js';
+
 import { Damper, SETTLING_TIME } from './Damper.js';
 import { ModelViewerGLTFInstance } from './gltf-instance/ModelViewerGLTFInstance.js';
 import { GroundedSkybox } from './GroundedSkybox.js';
@@ -197,6 +199,7 @@ export class ModelScene extends Scene {
 
   private groundedSkybox = new GroundedSkybox();
   private skyboxRotation = new Euler();
+  private readonly roomFloorMeshScratch: Mesh[] = [];
 
   constructor({ canvas, element, width, height }: ModelSceneConfig) {
     super();
@@ -399,6 +402,7 @@ export class ModelScene extends Scene {
       });
     }
 
+    this.syncRoomShadowReceivers();
     this.setGroundedSkybox();
   }
 
@@ -407,6 +411,7 @@ export class ModelScene extends Scene {
     this.renderCount = 0;
     this.queueRender();
     if (this.shadow != null) {
+      this.shadow.clearRoomFloorReceivers();
       this.shadow.setIntensity(0);
     }
     this.bakedShadows.clear();
@@ -1285,7 +1290,45 @@ export class ModelScene extends Scene {
       const side = this.element.arPlacement === 'wall' ? 'back' : 'bottom';
       shadow.setScene(this, this.shadowSoftness, side);
       shadow.needsUpdate = true;
+      this.syncRoomShadowReceivers();
     }
+  }
+
+  /**
+   * When `src-is-room`, project soft shadows onto room floor shell meshes
+   * instead of the synthetic plane. Clears receivers when leaving room mode,
+   * when the `floor` attribute is off, or when no floor meshes exist.
+   * Idempotent via signature inside Shadow.
+   */
+  syncRoomShadowReceivers() {
+    const shadow = this.shadow;
+    if (shadow == null) {
+      return;
+    }
+
+    const element = this.element as any;
+    const srcIsRoom = !!element.srcIsRoom;
+    const floorVisible = !!element.floor;
+    if (
+      !srcIsRoom ||
+      !floorVisible ||
+      this.shadowMode !== 'soft-shadow' ||
+      this.shadowIntensity <= 0 ||
+      this._model == null
+    ) {
+      shadow.clearRoomFloorReceivers();
+      return;
+    }
+
+    const floors = collectRoomFloorMeshes(
+      this._model,
+      this.roomFloorMeshScratch
+    );
+    if (floors.length === 0) {
+      shadow.clearRoomFloorReceivers();
+      return;
+    }
+    shadow.setRoomFloorReceivers(floors);
   }
 
   renderShadow(renderer: WebGLRenderer) {
@@ -1342,6 +1385,7 @@ export class ModelScene extends Scene {
       this.shadow = new Shadow(this, this.shadowSoftness, side);
     }
     this.shadow.setIntensity(shadowIntensity);
+    this.syncRoomShadowReceivers();
   }
 
   /**
