@@ -17,6 +17,7 @@ import {
   BackSide,
   Camera,
   DoubleSide,
+  FrontSide,
   Box3,
   Material,
   Matrix4,
@@ -708,7 +709,8 @@ export class Shadow extends Object3D {
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
-      side: DoubleSide,
+      // Floor shells face upward; FrontSide hides the projection from below.
+      side: FrontSide,
     });
     return this.roomFloorMaterial;
   }

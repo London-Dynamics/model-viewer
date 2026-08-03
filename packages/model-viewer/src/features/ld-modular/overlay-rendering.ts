@@ -61,6 +61,7 @@ export function applyOverlayRendering(
     mesh.frustumCulled = false;
     mesh.userData.noHit = true;
     mesh.userData.selectable = false;
+    mesh.userData.skipShadow = true;
 
     const materials = Array.isArray(mesh.material)
       ? mesh.material
@@ -82,9 +83,11 @@ function applyOverlayMaterial(material: Material, opacity: number): void {
 
 export function markPasteGhostNonInteractive(ghost: Object3D): void {
   ghost.userData.isPasteGhost = true;
+  ghost.userData.skipShadow = true;
   ghost.traverse((child) => {
     child.userData.isPasteGhost = true;
     child.userData.noHit = true;
     child.userData.selectable = false;
+    child.userData.skipShadow = true;
   });
 }

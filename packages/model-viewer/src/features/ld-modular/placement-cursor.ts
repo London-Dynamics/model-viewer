@@ -65,6 +65,7 @@ export class PlacementCursor extends Object3D {
     this.fillMesh.frustumCulled = false;
     this.fillMesh.userData.noHit = true;
     this.fillMesh.userData.selectable = false;
+    this.fillMesh.userData.skipShadow = true;
     this.add(this.fillMesh);
 
     const ringGeometry = new RingGeometry(0.92, 1, 64);
@@ -83,9 +84,13 @@ export class PlacementCursor extends Object3D {
     this.ringMesh.frustumCulled = false;
     this.ringMesh.userData.noHit = true;
     this.ringMesh.userData.selectable = false;
+    this.ringMesh.userData.skipShadow = true;
     this.add(this.ringMesh);
 
     this.visible = false;
+    this.userData.noHit = true;
+    this.userData.selectable = false;
+    this.userData.skipShadow = true;
     this.applyScale();
   }
 
