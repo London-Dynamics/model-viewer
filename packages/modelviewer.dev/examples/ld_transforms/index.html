@@ -1312,12 +1312,12 @@
                     (() => {
                       const viewer =
                         document.getElementById('align-floor-demo');
-                      const DUCK_URL =
-                        '../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb';
-                      const ASTRONAUT_URL =
-                        '../../shared-assets/models/Astronaut.glb';
-                      const HORSE_URL =
-                        '../../shared-assets/models/Astronaut.glb';
+                      const GYM_A_URL =
+                        'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/ce4a7d08-64a5-7f5a-8f3d-e3f5c4805f54.glb';
+                      const GYM_B_URL =
+                        'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/81a47b2e-8104-573b-3e32-0271a6549326.glb';
+                      const GYM_C_URL =
+                        'https://assets.v2.londondynamics.com/71931451-f74c-4f9e-8c89-45eb5759ce1c/puzzle/0e9059f5-536e-5b7a-b3c4-054e250ba1a7.glb';
                       const FLOOR_OBJECT_NAMES = [
                         'align-floor-a',
                         'align-floor-b',
@@ -1418,17 +1418,17 @@
                           {
                             name: 'align-floor-a',
                             position: [-1.5, 0, -1],
-                            src: DUCK_URL,
+                            src: GYM_A_URL,
                           },
                           {
                             name: 'align-floor-b',
                             position: [0.5, 0, 1.2],
-                            src: ASTRONAUT_URL,
+                            src: GYM_B_URL,
                           },
                           {
                             name: 'align-floor-c',
                             position: [2, 0, -0.5],
-                            src: HORSE_URL,
+                            src: GYM_C_URL,
                           },
                         ];
                         for (const spot of spots) {
