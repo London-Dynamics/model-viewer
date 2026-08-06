@@ -14,6 +14,7 @@
  */
 
 import {convertJSONToHTML, createExamplesHeader, createExamplesSidebar, starterSidebar} from './create-html';
+import {initLayoutCollapse} from './layout-collapse';
 import {getSidebarCategoryForNewPage, sidebarDocsObserver, sidebarExamplesObserver} from './sidebar';
 
 
@@ -107,6 +108,7 @@ export function init(docsOrExample: string) {
       createExamplesSidebar(json);
       createExamplesHeader();
       sidebarExamplesObserver();
+      initLayoutCollapse();
     } else {
       convertJSONToHTML(json);
       sidebarDocsObserver();
@@ -125,7 +127,13 @@ export function init(docsOrExample: string) {
 (self as any).initFooterLinks = initFooterLinks;
 
 function handleSideBarClickToggle(event: any) {
-  if (!(event.target.classList.contains('sidebar') || event.target.closest(".sidebar")) && !event.target.classList.contains("hamburgerInput")) {
+  // Mobile overlay menu only — desktop uses the sidebar collapse rail.
+  if (!window.matchMedia('(max-width: 800px)').matches) {
+    return;
+  }
+  if (!(event.target.classList.contains('sidebar') ||
+        event.target.closest('.sidebar')) &&
+      !event.target.classList.contains('hamburgerInput')) {
     if (event.target.classList.contains('tab')) {
       document.getElementById('sidenav')?.classList.toggle('active');
     } else {

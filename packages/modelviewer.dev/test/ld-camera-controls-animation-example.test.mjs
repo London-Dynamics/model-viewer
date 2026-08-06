@@ -41,20 +41,16 @@ assert.match(
     'example should declare reduced FPS keyboard movement sensitivity');
 assert.match(
     html,
-    /href="\.\.\/\.\.\/styles\/ld-examples\.css"/,
-    'example should load LD examples styles for minimized info/code panels');
-assert.match(
+    /class="sample"/,
+    'example should use the standard sample layout');
+assert.doesNotMatch(
     html,
-    /class="sample minimized-content"/,
-    'example should start with the info/code panel minimized');
-assert.match(
+    /content-toggle|minimized-content|Info & code/,
+    'example should not use the removed Info & code minimize control');
+assert.doesNotMatch(
     html,
-    /class="content-toggle"[\s\S]*aria-expanded="false"[\s\S]*Info & code/,
-    'example should expose the Info & code toggle');
-assert.match(
-    html,
-    /sample\.classList\.toggle\('content-expanded'\)/,
-    'example toggle should expand and collapse the info/code panel');
+    /sidebar-collapsed|content-collapsed/,
+    'example should start with sidebar and content expanded');
 
 for (const id of [
   'camera-outside-1-orbit',

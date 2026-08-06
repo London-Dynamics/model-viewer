@@ -34,9 +34,14 @@
   --toggle-visibility: hidden;
   --og-sidebar-width: 300px;
   --neg-sidebar-width: 0px;
+  --collapse-rail-width: 18px;
   --sidebar-width: 315px;
   --sidebar-speed: 0.15s;
   --border-style-dark: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+body.has-layout-collapse {
+  --sidebar-width: calc(var(--og-sidebar-width) + var(--collapse-rail-width));
 }
 
 html {
@@ -51,7 +56,7 @@ body:not(.ld) button {
   padding: 0.24em 0.5em;
   box-shadow: 1px 1px 2px #22222227;
   cursor: pointer;
-  margin: 0.25em !important;
+  margin: 0.25em;
 }
 
 body:not(.ld) select {
@@ -84,9 +89,88 @@ body:not(.ld) select {
   height: 100%;
   overflow: auto;
   border-right: 1px solid #bdbdbd;
-  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform var(--sidebar-speed) cubic-bezier(0.4, 0, 0.2, 1);
   width: var(--og-sidebar-width);
   z-index: 1010;
+}
+
+body.sidebar-collapsed {
+  --sidebar-width: var(--collapse-rail-width);
+}
+
+body.sidebar-collapsed .sidebar {
+  pointer-events: none;
+  transform: translateX(-100%);
+}
+
+.sidebar-collapse-rail,
+.content-collapse-rail {
+  align-items: center;
+  background: #ffffff !important;
+  border: 0;
+
+  border-right: var(--border-style) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  box-sizing: border-box;
+  color: rgba(0, 0, 0, 0.55) !important;
+  cursor: pointer;
+  display: flex;
+  flex-shrink: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  justify-content: center;
+  line-height: 1;
+  margin: 0 !important;
+  padding: 0rem !important;
+  user-select: none;
+}
+
+.sidebar-collapse-rail:hover,
+.content-collapse-rail:hover {
+  background: #eeeeee !important;
+  color: rgba(0, 0, 0, 0.78) !important;
+}
+
+.sidebar-collapse-rail {
+  border-left: var(--border-style);
+  height: 100%;
+  left: var(--og-sidebar-width);
+  position: fixed;
+  top: 0;
+  transition: left var(--sidebar-speed) cubic-bezier(0.4, 0, 0.2, 1);
+  width: var(--collapse-rail-width);
+  z-index: 1011;
+}
+
+body.sidebar-collapsed .sidebar-collapse-rail {
+  left: 0;
+}
+
+.content-collapse-rail {
+  /* Viewport-tall + sticky so the chevron stays on-screen even when the
+     sample column is much taller than the viewport. */
+  align-self: start;
+  background: #fafafa;
+  border-left: var(--border-style);
+  grid-area: content-rail;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  width: var(--collapse-rail-width);
+  z-index: 2;
+}
+
+.sidebar-collapse-rail:hover,
+.content-collapse-rail:hover {
+  background: #eeeeee;
+  color: rgba(0, 0, 0, 0.78);
+}
+
+.sidebar-collapse-rail:focus-visible,
+.content-collapse-rail:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
 }
 
 .outer-content {
@@ -156,7 +240,8 @@ body:not(.ld) select {
   stroke-linejoin: round;
   stroke-width: 3;
   /* Define the transition for transforming the Stroke */
-  transition: stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1),
+  transition:
+    stroke-dasharray 600ms cubic-bezier(0.4, 0, 0.2, 1),
     stroke-dashoffset 600ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -459,12 +544,25 @@ p {
   display: grid;
   position: relative;
   background: white;
-  grid-template-columns: 50% 50%;
-  grid-template-areas: 'content demo';
+  grid-template-columns: minmax(0, 1fr) var(--collapse-rail-width) minmax(
+      0,
+      1fr
+    );
+  grid-template-areas: 'content content-rail demo';
+  border-bottom: var(--border-style);
 }
 
-.sample {
-  border-bottom: var(--border-style);
+body.content-collapsed .sample {
+  grid-template-columns: 0 var(--collapse-rail-width) minmax(0, 1fr);
+}
+
+body.content-collapsed .sample > .content {
+  border: 0;
+  height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  visibility: hidden;
 }
 
 .demo {
@@ -897,6 +995,11 @@ p {
     --overlay-width: 0;
   }
 
+  body.sidebar-collapsed,
+  body.has-layout-collapse {
+    --sidebar-width: 0;
+  }
+
   .examples-container {
     margin-left: 0px;
     margin-right: 0px;
@@ -1050,5 +1153,31 @@ p {
 
   .sidebar.active {
     transform: translateX(0);
+  }
+
+  body.sidebar-collapsed .sidebar {
+    pointer-events: auto;
+    transform: translateX(-100%);
+  }
+
+  body.sidebar-collapsed .sidebar.active {
+    transform: translateX(0);
+  }
+
+  .sidebar-collapse-rail,
+  .content-collapse-rail {
+    display: none;
+  }
+
+  body.content-collapsed .sample {
+    grid-template-columns: unset;
+  }
+
+  body.content-collapsed .sample > .content {
+    border: initial;
+    height: auto;
+    overflow: visible;
+    padding-top: 16px;
+    visibility: visible;
   }
 }

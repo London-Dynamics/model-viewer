@@ -23,6 +23,14 @@ const CAMERA_TARGET =
 
 assert.match(html, /<title>&lt;model-viewer&gt; Car Demo<\/title>/);
 assert.match(html, /<span class="font-medium">Car Demo<\/span>/);
+assert.match(
+    html,
+    /<body class="ld sidebar-collapsed content-collapsed">/,
+    'Car Demo should start with sidebar and content collapsed');
+assert.doesNotMatch(
+    html,
+    /content-toggle|minimized-content|Info & code/,
+    'Car Demo should not use the removed Info & code minimize control');
 assert.match(html, /id="car-demo"/, 'Car Demo snippet host should exist');
 assert.match(
     html, /id="car-demo-viewer"/, 'Car Demo model-viewer should exist');

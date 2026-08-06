@@ -25,7 +25,6 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
-    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
     <link
       rel="shortcut icon"
@@ -275,23 +274,15 @@
       }
     </style>
   </head>
-  <body class="ld">
+  <body class="ld sidebar-collapsed content-collapsed">
     <div class="examples-page">
       <div class="sidebar" id="sidenav"></div>
       <div id="toggle"></div>
 
       <div class="examples-container">
-        <div class="sample minimized-content">
+        <div class="sample">
           <div id="car-demo" class="demo"></div>
           <div class="content">
-            <button
-              type="button"
-              class="content-toggle"
-              aria-expanded="false"
-              aria-controls="car-demo-content"
-            >
-              Info & code
-            </button>
             <div id="car-demo-content" class="wrapper">
               <h4 id="intro">
                 <span class="font-medium">Car Demo</span> by
@@ -1298,18 +1289,7 @@
       (() => {
         initFooterLinks();
       })();
-      (() => {
-        const sample = document.querySelector('#car-demo')?.closest('.sample');
-        const toggle = sample?.querySelector('.content-toggle');
-        if (sample == null || toggle == null) {
-          return;
-        }
 
-        toggle.addEventListener('click', () => {
-          const expanded = sample.classList.toggle('content-expanded');
-          toggle.setAttribute('aria-expanded', String(expanded));
-        });
-      })();
     </script>
 
     <!-- Documentation-specific dependencies: -->

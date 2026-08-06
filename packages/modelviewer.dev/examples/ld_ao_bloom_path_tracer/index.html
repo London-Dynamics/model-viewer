@@ -25,7 +25,6 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
-    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
     <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
     <link
       rel="shortcut icon"
@@ -122,17 +121,9 @@
       <div id="toggle"></div>
 
       <div class="examples-container">
-        <div class="sample minimized-content">
+        <div class="sample">
           <div id="ao-bloom-path-tracer" class="demo"></div>
           <div class="content">
-            <button
-              type="button"
-              class="content-toggle"
-              aria-expanded="false"
-              aria-controls="ao-bloom-path-tracer-content"
-            >
-              Info & code
-            </button>
             <div id="ao-bloom-path-tracer-content" class="wrapper">
               <h4 id="intro">
                 <span class="font-medium">LD AO+Bloom+Path Tracer</span> by
@@ -550,20 +541,7 @@
       (() => {
         initFooterLinks();
       })();
-      (() => {
-        const sample = document
-          .querySelector('#ao-bloom-path-tracer')
-          ?.closest('.sample');
-        const toggle = sample?.querySelector('.content-toggle');
-        if (sample == null || toggle == null) {
-          return;
-        }
 
-        toggle.addEventListener('click', () => {
-          const expanded = sample.classList.toggle('content-expanded');
-          toggle.setAttribute('aria-expanded', String(expanded));
-        });
-      })();
     </script>
 
     <!-- Documentation-specific dependencies: -->
