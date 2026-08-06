@@ -107,8 +107,7 @@ body.sidebar-collapsed .sidebar {
 .content-collapse-rail {
   align-items: center;
   background: #ffffff !important;
-  border: 0;
-
+  border: 0 !important;
   border-right: var(--border-style) !important;
   border-radius: 0 !important;
   box-shadow: none !important;
