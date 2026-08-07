@@ -110,6 +110,7 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   cameraControlMode: CameraControlMode;
   fpsKeyboardMove: boolean;
   fpsFlyMode: boolean;
+  fpsLookInverted: boolean;
   fpsLookSensitivity: number;
   fpsMoveSensitivity: number;
   changeSource: ChangeSource;
@@ -185,6 +186,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _cameraControlMode: CameraControlMode = 'orbit';
   private _fpsKeyboardMove: boolean = false;
   private _fpsFlyMode: boolean = false;
+  private _fpsLookInverted: boolean = false;
   private _fpsLookSensitivity: number = DEFAULT_FPS_LOOK_SENSITIVITY;
   private _fpsMoveSensitivity: number = DEFAULT_FPS_MOVE_SENSITIVITY;
   private _fpsPointerActive: boolean = false;
@@ -335,6 +337,14 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   set fpsFlyMode(value: boolean) {
     this._fpsFlyMode = value;
+  }
+
+  get fpsLookInverted(): boolean {
+    return this._fpsLookInverted;
+  }
+
+  set fpsLookInverted(value: boolean) {
+    this._fpsLookInverted = value;
   }
 
   get fpsLookSensitivity(): number {
@@ -744,9 +754,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     const sensitivity =
         0.004 * this._orbitSensitivity * this._fpsLookSensitivity;
-    this._fpsYaw += deltaX * sensitivity;
+    const lookDirection = this._fpsLookInverted ? -1 : 1;
+    this._fpsYaw += lookDirection * deltaX * sensitivity;
     this._fpsPitch = THREE.MathUtils.clamp(
-        this._fpsPitch - deltaY * sensitivity,
+        this._fpsPitch - lookDirection * deltaY * sensitivity,
         -Math.PI / 2 + 0.01,
         Math.PI / 2 - 0.01);
     this.applyFpsLookAtCurrentPosition();
@@ -1472,11 +1483,13 @@ export declare interface LDControlsInterface extends ControlsInterface {
   cameraControlMode: CameraControlMode;
   fpsKeyboardMove: boolean;
   fpsFlyMode: boolean;
+  fpsLookInverted: boolean;
   fpsLookSensitivity: number;
   fpsMoveSensitivity: number;
   setCameraControlsMode(mode: CameraControlMode, options?: {
     enableKeyboardMove?: boolean,
-    enableFlyMode?: boolean
+    enableFlyMode?: boolean,
+    invertLook?: boolean
   }): void;
 }
 
@@ -1497,6 +1510,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({type: Boolean, attribute: 'fps-fly-mode'})
     fpsFlyMode: boolean = false;
+
+    @property({type: Boolean, attribute: 'fps-look-inverted'})
+    fpsLookInverted: boolean = false;
 
     @property({type: Number, attribute: 'fps-look-sensitivity'})
     fpsLookSensitivity: number = DEFAULT_FPS_LOOK_SENSITIVITY;
@@ -1720,7 +1736,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     setCameraControlsMode(mode: CameraControlMode, options: {
       enableKeyboardMove?: boolean,
-      enableFlyMode?: boolean
+      enableFlyMode?: boolean,
+      invertLook?: boolean
     } = {}) {
       this.cameraControlMode = mode === 'fps' ? 'fps' : 'orbit';
       if (options.enableKeyboardMove != null) {
@@ -1728,6 +1745,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       if (options.enableFlyMode != null) {
         this.fpsFlyMode = options.enableFlyMode;
+      }
+      if (options.invertLook != null) {
+        this.fpsLookInverted = options.invertLook;
       }
     }
 
@@ -1826,6 +1846,10 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (changedProperties.has('fpsFlyMode')) {
         controls.fpsFlyMode = this.fpsFlyMode;
+      }
+
+      if (changedProperties.has('fpsLookInverted')) {
+        controls.fpsLookInverted = this.fpsLookInverted;
       }
 
       if (changedProperties.has('fpsLookSensitivity')) {
