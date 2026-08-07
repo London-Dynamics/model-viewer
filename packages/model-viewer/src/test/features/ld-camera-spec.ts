@@ -236,7 +236,7 @@ suite('LD Camera JSON', () => {
         expect((element as any).cameraControlMode).to.equal('orbit');
       });
 
-  test('FPS pointer drag right looks right', async () => {
+  test('FPS pointer drag right looks right by default', async () => {
     const controls = (element as any)[$controls];
     const cc = controls.thirdPartyControls;
     await cc.setLookAt(0, 0, 0, 0, 0, -1, false);
@@ -269,6 +269,39 @@ suite('LD Camera JSON', () => {
     expect(target.x).to.be.closeTo(Math.sin(0.05), 0.001);
   });
 
+  test('FPS inverted pointer drag right uses alternative direction', async () => {
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+    await cc.setLookAt(0, 0, 0, 0, 0, -1, false);
+    cc.update(0);
+
+    (element as any).setCameraControlsMode('fps', {invertLook: true});
+    await element.updateComplete;
+
+    const input = (element as any)[$userInputElement];
+    input.dispatchEvent(new PointerEvent('pointerdown', {
+      pointerId: 1,
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+      bubbles: true,
+      cancelable: true,
+    }));
+    input.dispatchEvent(new PointerEvent('pointermove', {
+      pointerId: 1,
+      button: 0,
+      clientX: 125,
+      clientY: 100,
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    const target = new Vector3();
+    cc.getTarget(target);
+    expect(target.x).to.be.lessThan(0);
+    expect(target.x).to.be.closeTo(-Math.sin(0.05), 0.001);
+  });
+
   test('FPS exposes look and movement sensitivity attributes', async () => {
     expect((element as any).fpsLookSensitivity).to.equal(0.5);
     expect((element as any).fpsMoveSensitivity).to.equal(0.3);
@@ -280,6 +313,22 @@ suite('LD Camera JSON', () => {
     const controls = (element as any)[$controls];
     expect(controls.fpsLookSensitivity).to.equal(0.25);
     expect(controls.fpsMoveSensitivity).to.equal(0.2);
+  });
+
+  test('FPS exposes look inversion attribute and method option', async () => {
+    expect((element as any).fpsLookInverted).to.equal(false);
+
+    (element as any).fpsLookInverted = true;
+    await element.updateComplete;
+
+    const controls = (element as any)[$controls];
+    expect(controls.fpsLookInverted).to.equal(true);
+
+    (element as any).setCameraControlsMode('fps', {invertLook: false});
+    await element.updateComplete;
+
+    expect((element as any).fpsLookInverted).to.equal(false);
+    expect(controls.fpsLookInverted).to.equal(false);
   });
 
   test('FPS keyboard movement defaults to thirty percent speed', async () => {

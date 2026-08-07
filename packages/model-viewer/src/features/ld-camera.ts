@@ -32,6 +32,7 @@ export type CameraView = CameraMeta['object']|{
   fieldOfView?: string;
   enableKeyboardMove?: boolean;
   enableFlyMode?: boolean;
+  invertLook?: boolean;
 };
 
 export type CameraEasing =|'linear'|'easeInSine'|'easeOutSine'|'easeInOutSine'|
@@ -661,13 +662,18 @@ function cameraPoseFromView(scene: any, view: CameraView): CameraPose|null {
 function applyCameraViewControlOptions(
     element: any,
     view: CameraView,
-    options: {enableKeyboardMove?: boolean, enableFlyMode?: boolean} = {}) {
+    options: {
+      enableKeyboardMove?: boolean,
+      enableFlyMode?: boolean,
+      invertLook?: boolean
+    } = {}) {
   const data: any = (view as any)?.object ?? view;
   const controlMode = data?.controlMode as CameraControlMode | undefined;
   if (controlMode && typeof element.setCameraControlsMode === 'function') {
     element.setCameraControlsMode(controlMode, {
       enableKeyboardMove: data.enableKeyboardMove ?? options.enableKeyboardMove,
       enableFlyMode: data.enableFlyMode ?? options.enableFlyMode,
+      invertLook: data.invertLook ?? options.invertLook,
     });
     return;
   }
@@ -677,6 +683,9 @@ function applyCameraViewControlOptions(
   }
   if (options.enableFlyMode != null) {
     element.fpsFlyMode = options.enableFlyMode;
+  }
+  if (options.invertLook != null) {
+    element.fpsLookInverted = options.invertLook;
   }
 }
 
