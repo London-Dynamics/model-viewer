@@ -473,6 +473,59 @@ export class ModelScene extends Scene {
     this.queueRender();
   }
 
+  /**
+   * Show or hide the base src model. Used by WebXR AR when `src-is-room` so
+   * the room shell is omitted from the AR view while placed content remains.
+   */
+  setBaseModelVisible(visible: boolean) {
+    const {model} = this;
+    if (model == null || model.visible === visible) {
+      return;
+    }
+
+    model.visible = visible;
+    this.queueRender();
+  }
+
+  /**
+   * Recompute boundingBox/size from visible content under `target`, excluding
+   * the base model when it is hidden. Used for AR placement sizing when the
+   * room shell is omitted.
+   */
+  updateBoundingBoxFromVisibleContent() {
+    const {model} = this;
+    const modelWasChild = model != null && model.parent === this.target;
+    if (modelWasChild) {
+      this.target.remove(model!);
+    }
+
+    const bound = (box: Box3, vertex: Vector3): Box3 => {
+      return box.expandByPoint(vertex);
+    };
+
+    let box = new Box3();
+    let hasContent = false;
+    for (const child of this.target.children) {
+      if (!child.visible) {
+        continue;
+      }
+      box = reduceVertices(child, bound, hasContent ? box : new Box3());
+      hasContent = true;
+    }
+
+    if (!hasContent) {
+      // No placed content — keep a tiny box so PlacementBox stays valid.
+      box.setFromCenterAndSize(new Vector3(), new Vector3(0.1, 0.1, 0.1));
+    }
+
+    this.boundingBox.copy(box);
+    this.boundingBox.getSize(this.size);
+
+    if (modelWasChild) {
+      this.target.add(model!);
+    }
+  }
+
   dispose() {
     this.reset();
     this.clearEnvironmentModel();

@@ -70,6 +70,7 @@ export declare interface ARInterface {
   arModes: string;
   arScale: string;
   arPlacement: string;
+  arSrc: string|null;
   iosSrc: string|null;
   xrEnvironment: boolean;
   arUsdzMaxTextureSize: string;
@@ -92,6 +93,8 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({type: String, attribute: 'ar-modes'})
     arModes: string = DEFAULT_AR_MODES;
+
+    @property({type: String, attribute: 'ar-src'}) arSrc: string|null = null;
 
     @property({type: String, attribute: 'ios-src'}) iosSrc: string|null = null;
 
@@ -186,7 +189,8 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (changedProperties.has('ar') || changedProperties.has('arModes') ||
-          changedProperties.has('src') || changedProperties.has('iosSrc') ||
+          changedProperties.has('src') || changedProperties.has('arSrc') ||
+          changedProperties.has('iosSrc') ||
           changedProperties.has('arUsdzMaxTextureSize')) {
         this[$selectARMode]();
       }
@@ -314,7 +318,7 @@ configuration or device capabilities');
     [$openSceneViewer]() {
       const location = self.location.toString();
       const locationUrl = new URL(location);
-      const modelUrl = new URL(this.src!, location);
+      const modelUrl = new URL(this.arSrc ?? this.src!, location);
       if (modelUrl.hash)
         modelUrl.hash = '';
       const params = new URLSearchParams(modelUrl.search);

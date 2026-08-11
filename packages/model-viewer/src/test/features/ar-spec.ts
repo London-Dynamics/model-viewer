@@ -117,6 +117,34 @@ suite('AR', () => {
       expect(search.get('title')).to.equal('bar');
       expect(search.get('link')).to.equal('http://linkme.com/');
     });
+
+    test('uses ar-src for Scene Viewer file when set', () => {
+      element.src = 'https://example.com/room.glb';
+      element.arSrc = 'https://example.com/arrangement.glb';
+      element.alt = 'alt';
+      (element as any)[$openSceneViewer]();
+
+      expect(intentUrls.length).to.be.equal(1);
+
+      const search = new URLSearchParams(new URL(intentUrls[0]).search);
+      const file = new URL(search.get('file') as any);
+
+      expect(file.href).to.equal('https://example.com/arrangement.glb');
+    });
+
+    test('falls back to src when ar-src is unset', () => {
+      element.src = 'https://example.com/room.glb';
+      element.arSrc = null;
+      element.alt = 'alt';
+      (element as any)[$openSceneViewer]();
+
+      expect(intentUrls.length).to.be.equal(1);
+
+      const search = new URLSearchParams(new URL(intentUrls[0]).search);
+      const file = new URL(search.get('file') as any);
+
+      expect(file.href).to.equal('https://example.com/room.glb');
+    });
   });
 
   suite('openQuickLook', () => {

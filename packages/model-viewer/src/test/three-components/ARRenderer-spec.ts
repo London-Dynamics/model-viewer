@@ -14,7 +14,7 @@
  */
 
 import {expect} from 'chai';
-import {Matrix4, PerspectiveCamera, Vector2, Vector3} from 'three';
+import {BoxGeometry, Matrix4, Mesh, PerspectiveCamera, Vector2, Vector3} from 'three';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
@@ -201,6 +201,45 @@ suite('ARRenderer', () => {
     expect(arRenderer.isPresenting).to.be.equal(false);
   });
 
+  suite('base model visibility helpers', () => {
+    let modelScene: ModelScene;
+
+    setup(async () => {
+      const sourceLoads = waitForEvent(element, 'poster-dismissed');
+      element.src = assetPath('models/Astronaut.glb');
+      await sourceLoads;
+      modelScene = element[$scene];
+    });
+
+    test('can hide the base model for AR and restore it afterwards', () => {
+      expect(modelScene.model!.visible).to.be.equal(true);
+
+      modelScene.setBaseModelVisible(false);
+      expect(modelScene.model!.visible).to.be.equal(false);
+
+      modelScene.setBaseModelVisible(true);
+      expect(modelScene.model!.visible).to.be.equal(true);
+    });
+
+    test('updateBoundingBoxFromVisibleContent skips a hidden base model', () => {
+      const placed = new Mesh(new BoxGeometry(0.2, 0.2, 0.2));
+      placed.position.set(1, 0, 0);
+      placed.userData.isPlacedObject = true;
+      modelScene.target.add(placed);
+
+      const roomSize = modelScene.size.clone();
+      modelScene.setBaseModelVisible(false);
+      modelScene.updateBoundingBoxFromVisibleContent();
+
+      expect(modelScene.size.x).to.be.lessThan(roomSize.x);
+      expect(modelScene.size.x).to.be.closeTo(0.2, 0.05);
+
+      modelScene.target.remove(placed);
+      modelScene.setBaseModelVisible(true);
+      modelScene.updateBoundingBox();
+    });
+  });
+
   suite('when presenting a scene', () => {
     let modelScene: ModelScene;
     let oldXRRay: any;
@@ -288,6 +327,90 @@ suite('ARRenderer', () => {
         expect(cameraToHit.dot(forwardProjection)).to.be.lessThan(0);
         expect(modelScene.yaw).to.be.equal(yaw);
       });
+    });
+  });
+
+  suite('when presenting a scene with src-is-room', () => {
+    let modelScene: ModelScene;
+    let oldXRRay: any;
+
+    setup(async () => {
+      const sourceLoads = waitForEvent(element, 'poster-dismissed');
+      element.src = assetPath('models/Astronaut.glb');
+      element.srcIsRoom = true;
+      await sourceLoads;
+      modelScene = element[$scene];
+      stubWebXrInterface(arRenderer);
+      setInputSources([]);
+
+      oldXRRay = (window as any).XRRay;
+      (window as any).XRRay = class MockXRRay implements XRRay {
+        readonly origin = new DOMPointReadOnly;
+        readonly direction = new DOMPointReadOnly;
+        matrix = new Float32Array;
+
+        constructor(_origin: DOMPointInit, _direction: DOMPointInit) {
+        }
+      }
+
+      expect(modelScene.model!.visible).to.be.equal(true);
+      await arRenderer.present(modelScene);
+    });
+
+    teardown(async () => {
+      (window as any).XRRay = oldXRRay;
+      await arRenderer.stopPresenting().catch(() => {});
+      element.srcIsRoom = false;
+    });
+
+    test('hides the base room model while presenting', () => {
+      expect(modelScene.model!.visible).to.be.equal(false);
+    });
+
+    suite('presentation ends', () => {
+      setup(async () => {
+        await arRenderer.stopPresenting();
+      });
+
+      test('restores the base room model visibility', () => {
+        expect(modelScene.model!.visible).to.be.equal(true);
+      });
+    });
+  });
+
+  suite('when presenting without src-is-room', () => {
+    let modelScene: ModelScene;
+    let oldXRRay: any;
+
+    setup(async () => {
+      const sourceLoads = waitForEvent(element, 'poster-dismissed');
+      element.src = assetPath('models/Astronaut.glb');
+      element.srcIsRoom = false;
+      await sourceLoads;
+      modelScene = element[$scene];
+      stubWebXrInterface(arRenderer);
+      setInputSources([]);
+
+      oldXRRay = (window as any).XRRay;
+      (window as any).XRRay = class MockXRRay implements XRRay {
+        readonly origin = new DOMPointReadOnly;
+        readonly direction = new DOMPointReadOnly;
+        matrix = new Float32Array;
+
+        constructor(_origin: DOMPointInit, _direction: DOMPointInit) {
+        }
+      }
+
+      await arRenderer.present(modelScene);
+    });
+
+    teardown(async () => {
+      (window as any).XRRay = oldXRRay;
+      await arRenderer.stopPresenting().catch(() => {});
+    });
+
+    test('keeps the base model visible', () => {
+      expect(modelScene.model!.visible).to.be.equal(true);
     });
   });
 });

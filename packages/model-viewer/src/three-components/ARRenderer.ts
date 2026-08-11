@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {BoxGeometry, BufferGeometry, Event as ThreeEvent, EventDispatcher, Line, Matrix4, Mesh, PerspectiveCamera, Quaternion, Vector3, WebGLRenderer, XRControllerEventType, XRTargetRaySpace} from 'three';
+import {Box3, BoxGeometry, BufferGeometry, Event as ThreeEvent, EventDispatcher, Line, Matrix4, Mesh, PerspectiveCamera, Quaternion, Vector3, WebGLRenderer, XRControllerEventType, XRTargetRaySpace} from 'three';
 import {XREstimatedLight} from 'three/examples/jsm/webxr/XREstimatedLight.js';
 
 import {CameraChangeDetails, ControlsInterface} from '../features/controls.js';
@@ -126,6 +126,9 @@ export class ARRenderer extends EventDispatcher<
   private frames = 0;
   private initialized = false;
   private oldTarget = new Vector3();
+  private oldBoundingBox: Box3|null = null;
+  private oldSize: Vector3|null = null;
+  private hidRoomForAR = false;
   private placementComplete = false;
   private isTranslating = false;
   private isRotating = false;
@@ -211,6 +214,7 @@ export class ARRenderer extends EventDispatcher<
 
     scene.setHotspotsVisibility(false);
     scene.setEnvironmentModelVisible(false);
+    this.applySrcIsRoomForAR(scene);
     scene.queueRender();
     // Render a frame to turn off the hotspots
     await waitForAnimationFrame;
@@ -474,11 +478,49 @@ export class ARRenderer extends EventDispatcher<
 
   onUpdateScene = () => {
     if (this.placementBox != null && this.isPresenting) {
+      const scene = this.presentedScene!;
+      this.applySrcIsRoomForAR(scene);
       this.placementBox!.dispose();
       this.placementBox = new PlacementBox(
-          this.presentedScene!, this.placeOnWall ? 'back' : 'bottom');
+          scene, this.placeOnWall ? 'back' : 'bottom');
     }
   };
+
+  /**
+   * When `src-is-room`, hide the room base model and size placement from the
+   * remaining placed content. Idempotent within a session (bounds cached once).
+   */
+  private applySrcIsRoomForAR(scene: ModelScene) {
+    if (!(scene.element as any).srcIsRoom) {
+      return;
+    }
+
+    if (!this.hidRoomForAR) {
+      this.oldBoundingBox = scene.boundingBox.clone();
+      this.oldSize = scene.size.clone();
+      this.hidRoomForAR = true;
+    }
+
+    scene.setBaseModelVisible(false);
+    scene.updateBoundingBoxFromVisibleContent();
+  }
+
+  private restoreSrcIsRoomAfterAR(scene: ModelScene) {
+    if (!this.hidRoomForAR) {
+      return;
+    }
+
+    scene.setBaseModelVisible(true);
+    if (this.oldBoundingBox != null) {
+      scene.boundingBox.copy(this.oldBoundingBox);
+    }
+    if (this.oldSize != null) {
+      scene.size.copy(this.oldSize);
+    }
+    this.oldBoundingBox = null;
+    this.oldSize = null;
+    this.hidRoomForAR = false;
+  }
 
   private postSessionCleanup() {
     const session = this.currentSession;
@@ -512,6 +554,7 @@ export class ARRenderer extends EventDispatcher<
       if (intensity != null) {
         scene.setShadowIntensity(intensity);
       }
+      this.restoreSrcIsRoomAfterAR(scene);
       scene.setEnvironmentModelVisible(true);
       scene.setEnvironmentAndSkybox(
           (element as any)[$currentEnvironmentMap],
