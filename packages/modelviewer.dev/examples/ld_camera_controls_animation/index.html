@@ -43,7 +43,10 @@
       }
     </style>
     <style type="text/tailwindcss"></style>
-    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script
+      src="../../styles/ld-ui-loader.js"
+      data-href="../../styles/ld-ui.css"
+    ></script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
   </head>
   <body class="ld">
@@ -112,8 +115,8 @@
                               Camera Controls & Animation
                             </h3>
                             <p class="ld-helper-text">
-                              FPS mode uses pointer drag to look around in place.
-                              Override enables WASD/arrows, Q/E vertical
+                              FPS mode uses pointer drag to look around in
+                              place. Override enables WASD/arrows, Q/E vertical
                               movement, and fly mode.
                             </p>
                           </div>
@@ -213,8 +216,7 @@
                           type: 'PerspectiveCamera',
                           controlMode: 'orbit',
                           position: [
-                            -5.929704696203918,
-                            1.4553818357243162,
+                            -5.929704696203918, 1.4553818357243162,
                             -3.423516602568318,
                           ],
                           worldTarget: [0, 0, 0],
@@ -231,8 +233,7 @@
                           type: 'PerspectiveCamera',
                           controlMode: 'orbit',
                           position: [
-                            5.42615830403639,
-                            0.6237445276814764,
+                            5.42615830403639, 0.6237445276814764,
                             -4.378098768155458,
                           ],
                           worldTarget: [0, 0, 0],
@@ -257,24 +258,19 @@
                             0.4047990592915244, 1,
                           ],
                           position: [
-                            0.018271036346186167,
-                            1.1473467580336285,
+                            0.018271036346186167, 1.1473467580336285,
                             0.4047990592915244,
                           ],
                           quaternion: [
-                            -0.0941475684732017,
-                            0.053834824743920595,
-                            0.0050985577011680395,
-                            0.9940885532510385,
+                            -0.0941475684732017, 0.053834824743920595,
+                            0.0050985577011680395, 0.9940885532510385,
                           ],
                           worldTarget: [
-                            -0.08780209612165772,
-                            0.9596157578417939,
+                            -0.08780209612165772, 0.9596157578417939,
                             -0.5716770346992259,
                           ],
                           target: [
-                            -0.08780209612165772,
-                            0.9596157578417939,
+                            -0.08780209612165772, 0.9596157578417939,
                             -0.5716770346992259,
                           ],
                           fov: 58,
@@ -302,25 +298,21 @@
                             truckSpeed: 1,
                             dollyToCursor: false,
                             target: [
-                              -0.08780209612165772,
-                              0.9596157578417939,
+                              -0.08780209612165772, 0.9596157578417939,
                               -0.5716770346992259,
                             ],
                             position: [
-                              0.018271036346186167,
-                              1.1473467580336285,
+                              0.018271036346186167, 1.1473467580336285,
                               0.4047990592915244,
                             ],
                             zoom: 1,
                             focalOffset: [0, 0, 0],
                             target0: [
-                              -0.10881897029496262,
-                              0.5724078218130786,
+                              -0.10881897029496262, 0.5724078218130786,
                               -0.6090967937765798,
                             ],
                             position0: [
-                              0.08251846345676345,
-                              0.9237167243421402,
+                              0.08251846345676345, 0.9237167243421402,
                               0.3074030924477068,
                             ],
                             zoom0: 1,
@@ -328,25 +320,21 @@
                           },
                           controlsPose: {
                             position: [
-                              0.018271036346186167,
-                              1.1473467580336285,
+                              0.018271036346186167, 1.1473467580336285,
                               0.4047990592915244,
                             ],
                             target: [
-                              -0.08780209612165772,
-                              0.9596157578417939,
+                              -0.08780209612165772, 0.9596157578417939,
                               -0.5716770346992259,
                             ],
                             focalOffset: [0, 0, 0],
                             zoom: 1,
                             target0: [
-                              -0.10881897029496262,
-                              0.5724078218130786,
+                              -0.10881897029496262, 0.5724078218130786,
                               -0.6090967937765798,
                             ],
                             position0: [
-                              0.08251846345676345,
-                              0.9237167243421402,
+                              0.08251846345676345, 0.9237167243421402,
                               0.3074030924477068,
                             ],
                             focalOffset0: [0, 0, 0],
@@ -430,14 +418,15 @@
                       document
                         .querySelector('#camera-toggle-animation')
                         .addEventListener('click', async () => {
-                          outsideIndex = (outsideIndex + 1) % outsideViews.length;
+                          outsideIndex =
+                            (outsideIndex + 1) % outsideViews.length;
                           await modelViewer.animateCameraTo(
                             outsideViews[outsideIndex](),
                             {
-                              duration: 1500,
+                              duration: 1400,
                               easing: 'easeInOutQuad',
                               avoidSubject: true,
-                              avoidMargin: 2,
+                              avoidMargin: 0,
                             }
                           );
                           setStatus(
@@ -494,7 +483,6 @@
       (() => {
         initFooterLinks();
       })();
-
     </script>
 
     <script type="module" src="../built/dependencies.js"></script>
