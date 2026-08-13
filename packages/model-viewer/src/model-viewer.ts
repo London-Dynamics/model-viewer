@@ -23,6 +23,7 @@ import { StagingMixin } from './features/staging.js';
 
 import { LDAmbientOcclusionMixin } from './features/ld-ambient-occlusion.js';
 import { LDAnimationMixin } from './features/ld-animation.js';
+import { LDARMixin } from './features/ld-ar.js';
 import { LDBloomMixin } from './features/ld-bloom.js';
 import { LDControlsMixin } from './features/ld-controls/index.js';
 import { LDDebugMixin } from './features/ld-debug.js';
@@ -68,9 +69,11 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
                                       StagingMixin(
                                         EnvironmentMixin(
                                           LDControlsMixin(
-                                            ARMixin(
-                                              LoadingMixin(
-                                                AnimationMixin(ModelViewerElementBase)
+                                            LDARMixin(
+                                              ARMixin(
+                                                LoadingMixin(
+                                                  AnimationMixin(ModelViewerElementBase)
+                                                )
                                               )
                                             )
                                           )

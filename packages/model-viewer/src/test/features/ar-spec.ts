@@ -14,10 +14,10 @@
  */
 
 import {expect} from 'chai';
+import {BoxGeometry, Mesh, MeshBasicMaterial} from 'three';
+import {USDZExporter} from 'three/examples/jsm/exporters/USDZExporter.js';
 
 import {IS_ANDROID, IS_IOS} from '../../constants.js';
-import {BoxGeometry, Mesh, MeshBasicMaterial} from 'three';
-
 import {$openIOSARQuickLook, $openSceneViewer} from '../../features/ar.js';
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
@@ -219,6 +219,32 @@ suite('AR', () => {
   });
 
   suite('prepareUSDZ', () => {
+    test(
+        'configures the USDZ exporter to decompress compressed textures',
+        async () => {
+          element.src = assetPath('models/cube.gltf');
+          await waitForEvent(element, 'poster-dismissed');
+
+          let textureUtils: {decompress?: Function}|undefined;
+          const restoreSetTextureUtils =
+              spy(USDZExporter.prototype, 'setTextureUtils', {
+                value: function(utils: {decompress?: Function}) {
+                  textureUtils = utils;
+                  (this as any).textureUtils = utils;
+                }
+              });
+
+          try {
+            const url = await (element as any).prepareUSDZ();
+            URL.revokeObjectURL(url);
+          } finally {
+            restoreSetTextureUtils();
+          }
+
+          expect(textureUtils).to.not.be.undefined;
+          expect(textureUtils!.decompress).to.be.a('function');
+        });
+
     test('hides and restores the environment model', async () => {
       element.src = assetPath('models/cube.gltf');
       await waitForEvent(element, 'poster-dismissed');
