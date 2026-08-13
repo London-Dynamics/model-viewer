@@ -16,7 +16,10 @@
 import {expect} from 'chai';
 
 import {IS_ANDROID, IS_IOS} from '../../constants.js';
+import {BoxGeometry, Mesh, MeshBasicMaterial} from 'three';
+
 import {$openIOSARQuickLook, $openSceneViewer} from '../../features/ar.js';
+import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses, spy} from '../helpers.js';
@@ -212,6 +215,55 @@ suite('AR', () => {
 
           expect(url.hash).to.equal(
               '#custom=path-to-banner.html&allowsContentScaling=0');
+        });
+  });
+
+  suite('prepareUSDZ', () => {
+    test('hides and restores the environment model', async () => {
+      element.src = assetPath('models/cube.gltf');
+      await waitForEvent(element, 'poster-dismissed');
+
+      const scene = element[$scene];
+      scene.setEnvironmentModel(
+          new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial()));
+
+      const visibility: boolean[] = [];
+      const original = scene.setEnvironmentModelVisible.bind(scene);
+      scene.setEnvironmentModelVisible = (visible: boolean) => {
+        visibility.push(visible);
+        original(visible);
+      };
+
+      const url = await (element as any).prepareUSDZ();
+      URL.revokeObjectURL(url);
+
+      expect(visibility).to.deep.equal([false, true]);
+      expect(scene.environmentRoot.visible).to.equal(true);
+    });
+
+    test(
+        'hides the room and restores it when src-is-room', async () => {
+          element.src = assetPath('models/cube.gltf');
+          element.srcIsRoom = true;
+          await waitForEvent(element, 'poster-dismissed');
+
+          const scene = element[$scene];
+          scene.target.add(
+              new Mesh(new BoxGeometry(0.2, 0.2, 0.2), new MeshBasicMaterial()));
+
+          const visibility: boolean[] = [];
+          const original = scene.setBaseModelVisible.bind(scene);
+          scene.setBaseModelVisible = (visible: boolean) => {
+            visibility.push(visible);
+            original(visible);
+          };
+
+          const url = await (element as any).prepareUSDZ();
+          URL.revokeObjectURL(url);
+
+          expect(visibility).to.deep.equal([false, true]);
+          expect(scene.model!.visible).to.equal(true);
+          expect(scene.model!.parent).to.equal(scene.target);
         });
   });
 

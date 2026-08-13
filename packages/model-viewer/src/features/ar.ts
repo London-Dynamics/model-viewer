@@ -434,49 +434,58 @@ configuration or device capabilities');
 
       await this[$triggerLoad]();
 
-      const {model, shadow, target} = this[$scene];
+      const scene = this[$scene];
+      const {model, shadow, target} = scene;
       if (model == null) {
         return '';
       }
 
-      let visible = false;
+      const srcIsRoom = !!(this as any).srcIsRoom;
+      let shadowVisible = false;
 
-      // Remove shadow from export
+      scene.setEnvironmentModelVisible(false);
+      if (srcIsRoom) {
+        scene.setBaseModelVisible(false);
+      }
       if (shadow != null) {
-        visible = shadow.visible;
+        shadowVisible = shadow.visible;
         shadow.visible = false;
       }
 
       updateSourceProgress(0.2);
 
-      const exporter = new USDZExporter();
+      try {
+        const exporter = new USDZExporter();
 
-      target.remove(model);
-      model.position.copy(target.position);
-      model.updateWorldMatrix(false, true);
+        target.remove(model);
+        if (!srcIsRoom) {
+          model.position.copy(target.position);
+          model.updateWorldMatrix(false, true);
+        }
 
-      const arraybuffer = await exporter.parseAsync(model, {
-        maxTextureSize: isNaN(this.arUsdzMaxTextureSize as any) ?
-            Infinity :
-            Math.max(parseInt(this.arUsdzMaxTextureSize), 16),
-      });
+        const arraybuffer = await exporter.parseAsync(
+            srcIsRoom ? target : model, {
+              maxTextureSize: isNaN(this.arUsdzMaxTextureSize as any) ?
+                  Infinity :
+                  Math.max(parseInt(this.arUsdzMaxTextureSize), 16),
+            });
 
-      model.position.set(0, 0, 0);
-      target.add(model);
-
-      const blob = new Blob([arraybuffer], {
-        type: 'model/vnd.usdz+zip',
-      });
-
-      const url = URL.createObjectURL(blob);
-
-      updateSourceProgress(1);
-
-      if (shadow != null) {
-        shadow.visible = visible;
+        const blob = new Blob([arraybuffer], {
+          type: 'model/vnd.usdz+zip',
+        });
+        return URL.createObjectURL(blob);
+      } finally {
+        model.position.set(0, 0, 0);
+        target.add(model);
+        scene.setEnvironmentModelVisible(true);
+        if (srcIsRoom) {
+          scene.setBaseModelVisible(true);
+        }
+        if (shadow != null) {
+          shadow.visible = shadowVisible;
+        }
+        updateSourceProgress(1);
       }
-
-      return url;
     }
   }
 
