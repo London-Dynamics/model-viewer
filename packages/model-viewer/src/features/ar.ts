@@ -52,6 +52,7 @@ const $arButtonContainer = Symbol('arButtonContainer');
 const $enterARWithWebXR = Symbol('enterARWithWebXR');
 export const $openSceneViewer = Symbol('openSceneViewer');
 export const $openIOSARQuickLook = Symbol('openIOSARQuickLook');
+export const $configureUSDZExporter = Symbol('configureUSDZExporter');
 const $canActivateAR = Symbol('canActivateAR');
 const $arMode = Symbol('arMode');
 const $arModes = Symbol('arModes');
@@ -307,6 +308,9 @@ configuration or device capabilities');
       }
     }
 
+    [$configureUSDZExporter](_exporter: USDZExporter, _maxTextureSize: number) {
+    }
+
     [$shouldAttemptPreload](): boolean {
       return super[$shouldAttemptPreload]() || this[$preload];
     }
@@ -456,6 +460,10 @@ configuration or device capabilities');
 
       try {
         const exporter = new USDZExporter();
+        const maxTextureSize = isNaN(this.arUsdzMaxTextureSize as any) ?
+            Infinity :
+            Math.max(parseInt(this.arUsdzMaxTextureSize), 16);
+        this[$configureUSDZExporter](exporter, maxTextureSize);
 
         target.remove(model);
         if (!srcIsRoom) {
@@ -463,11 +471,9 @@ configuration or device capabilities');
           model.updateWorldMatrix(false, true);
         }
 
-        const arraybuffer = await exporter.parseAsync(
-            srcIsRoom ? target : model, {
-              maxTextureSize: isNaN(this.arUsdzMaxTextureSize as any) ?
-                  Infinity :
-                  Math.max(parseInt(this.arUsdzMaxTextureSize), 16),
+        const arraybuffer =
+            await exporter.parseAsync(srcIsRoom ? target : model, {
+              maxTextureSize,
             });
 
         const blob = new Blob([arraybuffer], {
