@@ -14,7 +14,14 @@
  */
 
 import {expect} from 'chai';
-import {BoxGeometry, Mesh, MeshBasicMaterial} from 'three';
+import {
+  BoxGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  Object3D,
+  Quaternion,
+  Vector3
+} from 'three';
 import {USDZExporter} from 'three/examples/jsm/exporters/USDZExporter.js';
 
 import {IS_ANDROID, IS_IOS} from '../../constants.js';
@@ -290,6 +297,82 @@ suite('AR', () => {
           expect(visibility).to.deep.equal([false, true]);
           expect(scene.model!.visible).to.equal(true);
           expect(scene.model!.parent).to.equal(scene.target);
+        });
+
+    test(
+        'exports src-is-room placed children with distinct world transforms',
+        async () => {
+          element.src = assetPath('models/cube.gltf');
+          element.srcIsRoom = true;
+          await waitForEvent(element, 'poster-dismissed');
+
+          const scene = element[$scene];
+          const placements = [
+            {name: 'bike', position: [0, 0, -3.168], scale: [1, 1, 1]},
+            {name: 'runner', position: [2.739, 0, -3.055], scale: [1, 1, 1]},
+            {
+              name: 'elliptical',
+              position: [-2.377, 0, -2.832],
+              scale: [1.25, 1.25, 1.25]
+            },
+            {
+              name: 'cycle',
+              position: [1.209, 0, -2.734],
+              scale: [0.75, 0.75, 0.75]
+            },
+          ];
+
+          for (const placement of placements) {
+            const mesh = new Mesh(
+                new BoxGeometry(0.2, 0.2, 0.2), new MeshBasicMaterial());
+            mesh.name = placement.name;
+            mesh.position.fromArray(placement.position);
+            mesh.scale.fromArray(placement.scale);
+            scene.target.add(mesh);
+          }
+
+          let exportedObjectIsTarget = false;
+          let exportedChildNames: string[] = [];
+          const exportedTransforms = new Map<
+              string, {position: number[], scale: number[]}>();
+          const restoreParseAsync =
+              spy(USDZExporter.prototype, 'parseAsync', {
+                value: async function(object: Object3D) {
+                  exportedObjectIsTarget = object === scene.target;
+                  exportedChildNames = object.children.map(child => child.name);
+
+                  for (const child of object.children) {
+                    const worldPosition = new Vector3();
+                    const worldScale = new Vector3();
+                    child.matrixWorld.decompose(
+                        worldPosition, new Quaternion(), worldScale);
+                    exportedTransforms.set(child.name, {
+                      position: worldPosition.toArray(),
+                      scale: worldScale.toArray()
+                    });
+                  }
+
+                  return new ArrayBuffer(0);
+                }
+              });
+
+          try {
+            const url = await (element as any).prepareUSDZ();
+            URL.revokeObjectURL(url);
+          } finally {
+            restoreParseAsync();
+          }
+
+          expect(exportedObjectIsTarget).to.equal(true);
+          expect(exportedChildNames)
+              .to.have.members(placements.map(placement => placement.name));
+
+          for (const placement of placements) {
+            const transform = exportedTransforms.get(placement.name)!;
+
+            expect(transform.position).to.deep.equal(placement.position);
+            expect(transform.scale).to.deep.equal(placement.scale);
+          }
         });
   });
 

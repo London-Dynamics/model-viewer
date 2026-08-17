@@ -469,6 +469,8 @@ configuration or device capabilities');
         if (!srcIsRoom) {
           model.position.copy(target.position);
           model.updateWorldMatrix(false, true);
+        } else {
+          target.updateWorldMatrix(true, true);
         }
 
         const arraybuffer =
