@@ -101,6 +101,16 @@ const addPlacedPart = (
   return part;
 };
 
+const getPlacedObjects = (target: Object3D) => {
+  const nodes: Object3D[] = [];
+  target.traverse((child) => {
+    if (child.userData?.isPlacedObject && child !== target) {
+      nodes.push(child);
+    }
+  });
+  return nodes;
+};
+
 suite('ld-modular gltf reuse', () => {
   test('tryCloneExistingGltfScene returns null (placeholder)', () => {
     const scene = new Object3D();
@@ -187,6 +197,41 @@ suite('ld-modular replacePart / replaceManyParts', () => {
     expect(restored?.position.toArray()).to.deep.equal([0, 0, 0]);
   });
 
+  test('replacePart undo keeps unrelated placed objects', async () => {
+    const original = addPlacedPart(target, 'replace-me', [0, 0, 0], {
+      displayName: 'Replace Me',
+    });
+    const keepA = addPlacedPart(target, 'keep-a', [1, 0, 0]);
+    const keepB = addPlacedPart(target, 'keep-b', [2, 0, 0]);
+    const originalUuid = original.uuid;
+    const keepAUuid = keepA.uuid;
+    const keepBUuid = keepB.uuid;
+
+    await element.replacePart(originalUuid, 'replacement.glb');
+    const replacementUuid = getPlacedObjects(target).find(
+      (node) => node.uuid !== keepAUuid && node.uuid !== keepBUuid
+    )!.uuid;
+
+    expect(element.undo()).to.equal(true);
+    expect(element.getPart(originalUuid)).to.not.equal(null);
+    expect(element.getPart(keepAUuid)).to.equal(keepA);
+    expect(element.getPart(keepBUuid)).to.equal(keepB);
+
+    const placedUuids = getPlacedObjects(target).map((node) => node.uuid);
+    expect(placedUuids).to.have.members([originalUuid, keepAUuid, keepBUuid]);
+    expect(element.getPlacementTree().map((node) => node.uuid)).to.have.members([
+      originalUuid,
+      keepAUuid,
+      keepBUuid,
+    ]);
+
+    expect(element.redo()).to.equal(true);
+    expect(element.getPart(originalUuid)).to.equal(null);
+    expect(element.getPart(replacementUuid)).to.not.equal(null);
+    expect(element.getPart(keepAUuid)).to.equal(keepA);
+    expect(element.getPart(keepBUuid)).to.equal(keepB);
+  });
+
   test('replaceManyParts replaces multiple objects and batches undo', async () => {
     const first = addPlacedPart(target, 'bulk-a', [-1, 0, 0]);
     const second = addPlacedPart(target, 'bulk-b', [1, 0, 0]);
@@ -212,6 +257,45 @@ suite('ld-modular replacePart / replaceManyParts', () => {
     expect(element.undo()).to.equal(true);
     expect(element.getPart(first.uuid)).to.not.equal(null);
     expect(element.getPart(second.uuid)).to.not.equal(null);
+  });
+
+  test('replaceManyParts undo keeps unrelated placed objects', async () => {
+    const first = addPlacedPart(target, 'bulk-a', [-1, 0, 0]);
+    const second = addPlacedPart(target, 'bulk-b', [1, 0, 0]);
+    const keep = addPlacedPart(target, 'bulk-keep', [3, 0, 0]);
+    const firstUuid = first.uuid;
+    const secondUuid = second.uuid;
+    const keepUuid = keep.uuid;
+
+    await element.replaceManyParts(
+      [
+        {objectUuid: firstUuid, src: 'a.glb'},
+        {objectUuid: secondUuid, src: 'b.glb'},
+      ],
+      {concurrency: 2}
+    );
+    const replacementUuids = getPlacedObjects(target)
+      .map((node) => node.uuid)
+      .filter((uuid) => uuid !== keepUuid);
+
+    expect(element.undo()).to.equal(true);
+    expect(element.getPart(firstUuid)).to.not.equal(null);
+    expect(element.getPart(secondUuid)).to.not.equal(null);
+    expect(element.getPart(keepUuid)).to.equal(keep);
+    expect(element.getPlacementTree().map((node) => node.uuid)).to.have.members([
+      firstUuid,
+      secondUuid,
+      keepUuid,
+    ]);
+
+    expect(element.redo()).to.equal(true);
+    expect(element.getPart(firstUuid)).to.equal(null);
+    expect(element.getPart(secondUuid)).to.equal(null);
+    expect(element.getPart(keepUuid)).to.equal(keep);
+    expect(getPlacedObjects(target).map((node) => node.uuid)).to.have.members([
+      ...replacementUuids,
+      keepUuid,
+    ]);
   });
 
   test('replacePart attaches gltf lifecycle and releases on clearUndoHistory', async () => {

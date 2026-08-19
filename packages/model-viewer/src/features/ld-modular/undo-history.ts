@@ -189,7 +189,10 @@ export interface UndoHistoryHost {
   detachNode(node: Object3D, selectionUuids?: string[]): DetachedNodeRecord;
   reattachNode(record: DetachedNodeRecord): void;
   captureStructureMemento(nodes: Object3D[]): StructureNodeMemento[];
-  applyStructureMemento(mementos: StructureNodeMemento[]): void;
+  applyStructureMemento(
+    mementos: StructureNodeMemento[],
+    scopeUuids: ReadonlySet<string>
+  ): void;
   findSceneRoot(): Object3D | null;
   dispatchHistoryChange(detail: HistoryChangeDetail): void;
   requestRender(): void;
@@ -506,7 +509,10 @@ export class UndoHistoryManager {
         }
         break;
       case 'structure':
-        this._host.applyStructureMemento(entry.before);
+        this._host.applyStructureMemento(
+          entry.before,
+          this._getStructureReplayScope(entry)
+        );
         break;
       default:
         break;
@@ -541,7 +547,10 @@ export class UndoHistoryManager {
         }
         break;
       case 'structure':
-        this._host.applyStructureMemento(entry.after);
+        this._host.applyStructureMemento(
+          entry.after,
+          this._getStructureReplayScope(entry)
+        );
         break;
       default:
         break;
@@ -624,6 +633,13 @@ export class UndoHistoryManager {
     }
   }
 
+  private _getStructureReplayScope(entry: StructureEntry): ReadonlySet<string> {
+    return new Set([
+      ...entry.before.map((memento) => memento.uuid),
+      ...entry.after.map((memento) => memento.uuid),
+    ]);
+  }
+
   private _pruneOverflow(): void {
     while (this._undoStack.length > this._maxUndoSteps) {
       const pruned = this._undoStack.shift();
@@ -643,6 +659,14 @@ export class UndoHistoryManager {
     if (entry.kind === 'add') {
       uuids.add(entry.objectUuid);
     }
+    if (entry.kind === 'structure') {
+      for (const memento of entry.before) {
+        uuids.add(memento.uuid);
+      }
+      for (const memento of entry.after) {
+        uuids.add(memento.uuid);
+      }
+    }
     if (!this._isReferencedInStacks(uuids)) {
       for (const uuid of uuids) {
         this._disposeGraveyardNode(uuid);
@@ -660,6 +684,14 @@ export class UndoHistoryManager {
         }
         if (entry.kind === 'add' && uuids.has(entry.objectUuid)) {
           return true;
+        }
+        if (entry.kind === 'structure') {
+          for (const memento of entry.before) {
+            if (uuids.has(memento.uuid)) return true;
+          }
+          for (const memento of entry.after) {
+            if (uuids.has(memento.uuid)) return true;
+          }
         }
       }
       return false;

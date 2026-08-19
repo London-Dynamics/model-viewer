@@ -1700,8 +1700,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
             captureStructureMementoFromNodes(nodes, (obj) =>
               this._cloneTransformValues(obj)
             ),
-          applyStructureMemento: (mementos) =>
-            this._applyStructureMemento(mementos),
+          applyStructureMemento: (mementos, scopeUuids) =>
+            this._applyStructureMemento(mementos, scopeUuids),
           findSceneRoot: () => {
             const scene = (this as any)[$scene];
             return scene?.target ?? scene ?? null;
@@ -1833,7 +1833,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       (this as any)[$needsRender]();
     }
 
-    private _applyStructureMemento(mementos: StructureNodeMemento[]): void {
+    private _applyStructureMemento(
+      mementos: StructureNodeMemento[],
+      scopeUuids: ReadonlySet<string>
+    ): void {
       const history = this._ensureUndoHistory();
       const scene = (this as any)[$scene];
       const root = scene?.target ?? scene ?? null;
@@ -1847,6 +1850,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       root.traverse((child: Object3D) => {
         if (
           (child.userData?.isSnappedGroup || child.userData?.isPlacedObject) &&
+          scopeUuids.has(child.uuid) &&
           !validUuids.has(child.uuid)
         ) {
           nodesToRemove.push(child);
@@ -1867,11 +1871,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
         }
         if (node.parent) {
-          if (node.userData?.isSnappedGroup) {
-            history.detachToGraveyard(node);
-          } else {
-            node.parent.remove(node);
-          }
+          history.detachToGraveyard(node);
         }
       }
 
