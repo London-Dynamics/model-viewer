@@ -190,6 +190,8 @@ suite('ld-modular undo / redo', () => {
   test('groupSelectedObjects undo restores pre-group state', () => {
     const partA = addPlacedPart(target, 'part-a', 'Part A');
     const partB = addPlacedPart(target, 'part-b', 'Part B');
+    const unrelated = addPlacedPart(target, 'part-c', 'Part C');
+    const unrelatedUuid = unrelated.uuid;
     (element as any).selectedObjects = [partA, partB];
     (element as any).selectGroup = (group: Object3D) => {
       (element as any).selectedObjects = [group];
@@ -205,6 +207,32 @@ suite('ld-modular undo / redo', () => {
     expect(partB.parent?.userData?.isSnappedGroup).to.not.equal(true);
     expect(target.children.includes(partA)).to.equal(true);
     expect(target.children.includes(partB)).to.equal(true);
+    expect((element as any).getPart(unrelatedUuid)).to.equal(unrelated);
+
+    expect(element.redo()).to.equal(true);
+    expect(partA.parent?.userData?.isSnappedGroup).to.equal(true);
+    expect(partB.parent?.userData?.isSnappedGroup).to.equal(true);
+    expect((element as any).getPart(unrelatedUuid)).to.equal(unrelated);
+  });
+
+  test('empty-before structure undo removes only scoped nodes', () => {
+    const unrelated = addPlacedPart(target, 'part-a', 'Part A');
+    const group = new Object3D();
+    group.name = 'pasted-group';
+    group.userData.isSnappedGroup = true;
+    const child = addPlacedPart(group, 'group-child', 'Group Child');
+    target.add(group);
+
+    (element as any)._recordStructureChange(
+      [],
+      (element as any)._collectStructureNodes(group),
+      'Paste group'
+    );
+
+    expect(element.undo()).to.equal(true);
+    expect((element as any).getPart(unrelated.uuid)).to.equal(unrelated);
+    expect((element as any).getPart(group.uuid)).to.equal(null);
+    expect((element as any).getPart(child.uuid)).to.equal(null);
   });
 
   test('replay does not push new undo entries', () => {
