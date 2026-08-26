@@ -252,6 +252,18 @@ suite('LD Camera JSON', () => {
     expect((element as any).cameraControlMode).to.equal('orbit');
   });
 
+  test('FPS mode lifts orbit min-distance so the camera can sit inside the model', async () => {
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+    cc.minDistance = 5;
+
+    (element as any).setCameraControlsMode('fps');
+    await element.updateComplete;
+
+    expect(cc.minDistance).to.equal(0);
+    expect(cc.maxDistance).to.equal(Number.POSITIVE_INFINITY);
+  });
+
   test('FPS pointer drag right looks right', async () => {
     const controls = (element as any)[$controls];
     const cc = controls.thirdPartyControls;

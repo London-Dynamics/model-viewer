@@ -518,7 +518,33 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       controls.touches.one = CameraControls.ACTION.NONE;
       controls.touches.two = CameraControls.ACTION.NONE;
       controls.touches.three = CameraControls.ACTION.NONE;
+      // Orbit min-distance keeps FPS cameras (and WASD) outside the model.
+      controls.minDistance = 0;
+      controls.maxDistance = Number.POSITIVE_INFINITY;
+      controls.minPolarAngle = 0;
+      controls.maxPolarAngle = Math.PI;
+      controls.minAzimuthAngle = -Infinity;
+      controls.maxAzimuthAngle = Infinity;
       return;
+    }
+
+    if (this.options.minimumRadius !== undefined) {
+      controls.minDistance = this.options.minimumRadius;
+    }
+    if (this.options.maximumRadius !== undefined) {
+      controls.maxDistance = this.options.maximumRadius;
+    }
+    if (this.options.minimumPolarAngle !== undefined) {
+      controls.minPolarAngle = this.options.minimumPolarAngle;
+    }
+    if (this.options.maximumPolarAngle !== undefined) {
+      controls.maxPolarAngle = this.options.maximumPolarAngle;
+    }
+    if (this.options.minimumAzimuthalAngle !== undefined) {
+      controls.minAzimuthAngle = this.options.minimumAzimuthalAngle;
+    }
+    if (this.options.maximumAzimuthalAngle !== undefined) {
+      controls.maxAzimuthAngle = this.options.maximumAzimuthalAngle;
     }
 
     controls.mouseButtons.wheel =
