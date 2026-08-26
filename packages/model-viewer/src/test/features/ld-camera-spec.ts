@@ -90,6 +90,11 @@ suite('LD Camera JSON', () => {
     expect(scene.getTarget().x).to.be.closeTo(sceneTargetBeforePan.x, 0.001);
     expect(scene.getTarget().y).to.be.closeTo(sceneTargetBeforePan.y, 0.001);
     expect(scene.getTarget().z).to.be.closeTo(sceneTargetBeforePan.z, 0.001);
+
+    const apiTarget = element.getCameraTarget();
+    expect(apiTarget.x).to.be.closeTo(expectedModelTarget.x, 0.001);
+    expect(apiTarget.y).to.be.closeTo(expectedModelTarget.y, 0.001);
+    expect(apiTarget.z).to.be.closeTo(expectedModelTarget.z, 0.001);
   });
 
   test('setCameraFromJSON restores host payload after reset', async () => {
@@ -379,6 +384,41 @@ suite('LD Camera JSON', () => {
     expect(element.fieldOfView).to.equal('35deg');
     expect((element as any).fpsFlyMode).to.equal(true);
     expect(element.getFieldOfView()).to.be.closeTo(35, 0.1);
+  });
+
+  test('setCameraView with live pose does not move CameraControls look-at', async () => {
+    const scene = element[$scene];
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+    const position = scene.camera.position.clone();
+    await cc.setLookAt(
+      position.x,
+      position.y,
+      position.z,
+      position.x + 1.25,
+      position.y + 0.4,
+      position.z - 0.8,
+      false
+    );
+    cc.update(1);
+
+    const before = new Vector3();
+    cc.getTarget(before);
+
+    const orbit = element.getCameraOrbit();
+    const target = element.getCameraTarget();
+    await (element as any).setCameraView({
+      cameraOrbit: orbit.toString(),
+      cameraTarget: target.toString(),
+      fieldOfView: `${element.getFieldOfView()}deg`,
+    });
+    await timePasses();
+
+    const after = new Vector3();
+    cc.getTarget(after);
+    expect(after.x).to.be.closeTo(before.x, 0.01);
+    expect(after.y).to.be.closeTo(before.y, 0.01);
+    expect(after.z).to.be.closeTo(before.z, 0.01);
   });
 
   test('animateCameraTo accepts easing strings and avoid margin', async () => {

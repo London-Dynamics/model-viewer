@@ -16,6 +16,10 @@ import ModelViewerElementBase, {
 import { Constructor } from '../utilities.js';
 
 import { $controls } from './controls.js';
+import {
+  modelTargetToWorldSpace,
+  worldTargetToModelSpace,
+} from './ld-camera-space.js';
 
 import type { ViewportGizmoHandle } from './ld-controls/viewport-gizmo.js';
 
@@ -220,26 +224,6 @@ function hasAttributeStyleCameraView(data: any): boolean {
     typeof data?.cameraTarget === 'string' ||
     typeof data?.fieldOfView === 'string'
   );
-}
-
-/** Convert a world-space look-at point to model (pivot) space. */
-function worldTargetToModelSpace(scene: any, worldTarget: Vector3): Vector3 {
-  const modelTarget = worldTarget.clone();
-  if (scene?.pivot && typeof scene.pivot.worldToLocal === 'function') {
-    scene.updateMatrixWorld(true);
-    scene.pivot.worldToLocal(modelTarget);
-  }
-  return modelTarget;
-}
-
-/** Convert a model-space orbit center to world space. */
-function modelTargetToWorldSpace(scene: any, modelTarget: Vector3): Vector3 {
-  const worldTarget = modelTarget.clone();
-  if (scene?.pivot && typeof scene.pivot.localToWorld === 'function') {
-    scene.updateMatrixWorld(true);
-    scene.pivot.localToWorld(worldTarget);
-  }
-  return worldTarget;
 }
 
 /** camera-controls fromJSON expects a JSON string; tolerate parsed objects. */
@@ -1064,11 +1048,12 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       applyCameraViewControlOptions(this, data, options);
 
       if (hasAttributeStyleCameraView(data)) {
-        if (typeof data.cameraOrbit === 'string') {
-          (this as any).cameraOrbit = data.cameraOrbit;
-        }
+        // Target first: setOrbit keeps the current CameraControls look-at.
         if (typeof data.cameraTarget === 'string') {
           (this as any).cameraTarget = data.cameraTarget;
+        }
+        if (typeof data.cameraOrbit === 'string') {
+          (this as any).cameraOrbit = data.cameraOrbit;
         }
         if (typeof data.fieldOfView === 'string') {
           (this as any).fieldOfView = data.fieldOfView;

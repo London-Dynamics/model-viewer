@@ -52,6 +52,10 @@ import {ensureViewportGizmo, type ViewportGizmoHandle,} from './viewport-gizmo.j
 import {$controls, $fingerAnimatedContainers, $panElement, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
 import {DEFAULT_FOV_DEG, DEFAULT_MIN_FOV_DEG, DEFAULT_CAMERA_ORBIT, DEFAULT_CAMERA_TARGET, DEFAULT_FIELD_OF_VIEW, MINIMUM_RADIUS_RATIO, AZIMUTHAL_QUADRANT_LABELS, POLAR_TRIENT_LABELS, DEFAULT_INTERACTION_PROMPT_THRESHOLD, INTERACTION_PROMPT,} from '../controls.js';
+import {
+  modelTargetToWorldSpace,
+  worldTargetToModelSpace,
+} from '../ld-camera-space.js';
 
 export {
   DEFAULT_FOV_DEG,
@@ -1665,7 +1669,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     getCameraOrbit(): SphericalPosition {
-      const {theta, phi, radius} = this[$lastSpherical];
+      const {theta, phi, radius} =
+          this[$controls].getCameraSpherical(this[$lastSpherical]);
       return {
         theta,
         phi,
@@ -1677,9 +1682,17 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     getCameraTarget(): Vector3D {
-      return toVector3D(
-          this[$renderer].isPresenting ? this[$renderer].arRenderer.target :
-                                         this[$scene].getDynamicTarget());
+      if (this[$renderer].isPresenting) {
+        return toVector3D(this[$renderer].arRenderer.target);
+      }
+      const cc = (this[$controls] as any)?.thirdPartyControls;
+      if (cc && typeof cc.getTarget === 'function') {
+        const worldTarget = new THREE.Vector3();
+        cc.getTarget(worldTarget);
+        return toVector3D(
+            worldTargetToModelSpace(this[$scene], worldTarget));
+      }
+      return toVector3D(this[$scene].getDynamicTarget());
     }
 
     getFieldOfView(): number {
@@ -2094,19 +2107,30 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$syncCameraTarget](style: EvaluatedStyle<Vector3Intrinsics>) {
       const [x, y, z] = style;
       if (!this[$renderer].arRenderer.isPresenting) {
-        if ((this as any).environmentModel != null) {
-          const camera = this[$scene].camera;
-          const target = new THREE.Vector3(x, y, z);
-          this[$scene].target.localToWorld(target);
-          (this[$controls] as any)
-              .setLookAt(
-                  camera.position.x,
-                  camera.position.y,
-                  camera.position.z,
-                  target.x,
-                  target.y,
-                  target.z,
-                  false);
+        const cc = (this[$controls] as any)?.thirdPartyControls;
+        if (cc && typeof cc.setLookAt === 'function') {
+          // Orbit around the new look-at in world space. Do not
+          // scene.setTarget() (that translates the model) or setLookAt(keep
+          // camera.position) (that retargets without trucking).
+          const worldTarget = modelTargetToWorldSpace(
+              this[$scene], new THREE.Vector3(x, y, z));
+          const spherical = new THREE.Spherical();
+          if (typeof cc.getSpherical === 'function') {
+            cc.getSpherical(spherical);
+          }
+          const position =
+              new THREE.Vector3().setFromSpherical(spherical).add(worldTarget);
+          cc.setLookAt(
+              position.x,
+              position.y,
+              position.z,
+              worldTarget.x,
+              worldTarget.y,
+              worldTarget.z,
+              false);
+          if (typeof cc.update === 'function') {
+            cc.update(0);
+          }
         } else {
           this[$scene].setTarget(x, y, z);
         }
