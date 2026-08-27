@@ -5,6 +5,7 @@ import {
   Matrix4,
   Mesh,
   Quaternion,
+  Spherical,
   Vector3,
 } from 'three';
 
@@ -98,6 +99,10 @@ interface CameraPose {
   target: Vector3;
   fov?: number;
 }
+
+/** Matches the guards LDControls setOrbit applies, to avoid gimbal lock. */
+const MIN_ORBIT_RADIUS = 0.0001;
+const MIN_ORBIT_PHI = 0.01;
 
 const CAMERA_JSON_DEBUG =
   typeof globalThis !== 'undefined' &&
@@ -224,6 +229,119 @@ function hasAttributeStyleCameraView(data: any): boolean {
     typeof data?.cameraTarget === 'string' ||
     typeof data?.fieldOfView === 'string'
   );
+}
+
+function parseCssNumeric(
+  token: string,
+  kind: 'angle' | 'length'
+): number | null {
+  const raw = String(token || '')
+    .trim()
+    .toLowerCase();
+  if (!raw || raw === 'auto') {
+    return null;
+  }
+  const value = parseFloat(raw);
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  if (kind === 'angle' && raw.endsWith('deg')) {
+    return (value * Math.PI) / 180;
+  }
+  return value;
+}
+
+function parseFovDegrees(fieldOfView?: string): number | null {
+  const raw = String(fieldOfView || '')
+    .trim()
+    .toLowerCase();
+  if (!raw || raw === 'auto') {
+    return null;
+  }
+  const value = parseFloat(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+function cssTokens(value?: string): string[] {
+  const raw = String(value || '').trim();
+  return raw === '' ? [] : raw.split(/\s+/);
+}
+
+/**
+ * Resolve a camera-orbit / camera-target style view to a world eye + look-at.
+ * camera-target is the look-at and camera-orbit is spherical around it, which
+ * is the pair getCameraTarget / getCameraOrbit report back.
+ *
+ * Missing and `auto` tokens fall back to the current pose so a partially
+ * specified view resolves instead of being discarded.
+ */
+function poseFromOrbitTargetStrings(
+  scene: any,
+  controls: any,
+  cameraOrbit?: string,
+  cameraTarget?: string,
+  fieldOfView?: string
+): CameraPose | null {
+  const current = readCameraPose(scene, controls);
+  if (!current) {
+    return null;
+  }
+
+  const currentModelTarget = worldTargetToModelSpace(scene, current.target);
+  const targetParts = cssTokens(cameraTarget);
+  const modelTarget = new Vector3(
+    parseCssNumeric(targetParts[0], 'length') ?? currentModelTarget.x,
+    parseCssNumeric(targetParts[1], 'length') ?? currentModelTarget.y,
+    parseCssNumeric(targetParts[2], 'length') ?? currentModelTarget.z
+  );
+  if (!isFiniteVector3(modelTarget)) {
+    return null;
+  }
+  const target = modelTargetToWorldSpace(scene, modelTarget);
+
+  const currentSpherical = new Spherical().setFromVector3(
+    current.position.clone().sub(target)
+  );
+  const orbitParts = cssTokens(cameraOrbit);
+  const theta =
+    parseCssNumeric(orbitParts[0], 'angle') ?? currentSpherical.theta;
+  const phi = parseCssNumeric(orbitParts[1], 'angle') ?? currentSpherical.phi;
+  const radius =
+    parseCssNumeric(orbitParts[2], 'length') ?? currentSpherical.radius;
+
+  if (
+    !Number.isFinite(theta) ||
+    !Number.isFinite(phi) ||
+    !Number.isFinite(radius)
+  ) {
+    return null;
+  }
+
+  const position = new Vector3()
+    .setFromSphericalCoords(
+      Math.max(radius, MIN_ORBIT_RADIUS),
+      MathUtils.clamp(phi, MIN_ORBIT_PHI, Math.PI - MIN_ORBIT_PHI),
+      theta
+    )
+    .add(target);
+  if (!isFiniteVector3(position) || !isFiniteVector3(target)) {
+    return null;
+  }
+
+  const fov = parseFovDegrees(fieldOfView) ?? current.fov;
+  return {position, target, ...(fov != null ? {fov} : {})};
+}
+
+function arrayToVector3(value: unknown): Vector3 | null {
+  if (!Array.isArray(value) || value.length < 3) {
+    return null;
+  }
+  const vector = new Vector3(
+    Number(value[0]),
+    Number(value[1]),
+    Number(value[2])
+  );
+  return isFiniteVector3(vector) ? vector : null;
 }
 
 /** camera-controls fromJSON expects a JSON string; tolerate parsed objects. */
@@ -710,6 +828,14 @@ function awaitCameraSettled(cc?: any): Promise<void> {
   });
 }
 
+/** Re-read FPS yaw/pitch from the restored CameraControls look-at. */
+function syncFpsLookAfterRestore(element: any, controls: any): void {
+  if (element?.cameraControlMode !== 'fps' || !controls) {
+    return;
+  }
+  controls.cameraControlMode = 'fps';
+}
+
 function readCameraPose(scene: any, controls: any): CameraPose | null {
   const camera = scene?.camera;
   if (!camera) {
@@ -887,6 +1013,22 @@ function applyStoredLookAt(
   }
 }
 
+export type CameraPoseInput = {
+  position?: number[];
+  target?: number[];
+  worldTarget?: number[];
+  cameraOrbit?: string;
+  cameraTarget?: string;
+  fieldOfView?: string;
+  fov?: number;
+};
+
+export type CameraViewStrings = {
+  cameraOrbit: string;
+  cameraTarget: string;
+  fieldOfView: string;
+};
+
 export declare interface LDCameraInterface {
   resetCamera(): Promise<void>;
   rotateCamera(azimuth: number, polar: number, animate?: boolean): void;
@@ -895,6 +1037,7 @@ export declare interface LDCameraInterface {
 
   setCameraFromJSON(json: CameraMeta['object']): Promise<void>;
   getCameraJSON(): CameraMeta | null;
+  setCameraPose(pose: CameraPoseInput): boolean;
   setCameraView(
     view: CameraView,
     options?: {
@@ -902,7 +1045,8 @@ export declare interface LDCameraInterface {
       enableKeyboardMove?: boolean;
       enableFlyMode?: boolean;
     }
-  ): Promise<void>;
+  ): Promise<boolean>;
+  getCameraView(): CameraViewStrings;
   animateCameraTo(
     view: CameraView,
     options?: CameraAnimationOptions
@@ -1032,6 +1176,68 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       controls.saveState();
     }
 
+    /**
+     * Snap CameraControls to an eye + look-at, bypassing camera-orbit
+     * attributes and camera JSON. Returns false when the input does not
+     * describe a usable pose, so callers can fall back.
+     */
+    setCameraPose(pose: CameraPoseInput = {}): boolean {
+      const scene = this[$scene];
+      const controls = (this as any)[$controls] as any;
+      const cc = controls?.thirdPartyControls;
+      if (!scene || !cc || typeof cc.setLookAt !== 'function' || !pose) {
+        return false;
+      }
+
+      let position = arrayToVector3(pose.position);
+      let target = arrayToVector3(pose.worldTarget);
+      if (!target) {
+        const modelTarget = arrayToVector3(pose.target);
+        if (modelTarget) {
+          target = modelTargetToWorldSpace(scene, modelTarget);
+        }
+      }
+      let fov =
+        typeof pose.fov === 'number' && Number.isFinite(pose.fov)
+          ? pose.fov
+          : undefined;
+
+      if (
+        (!position || !target) &&
+        (typeof pose.cameraOrbit === 'string' ||
+          typeof pose.cameraTarget === 'string')
+      ) {
+        const fromOrbit = poseFromOrbitTargetStrings(
+          scene,
+          controls,
+          pose.cameraOrbit,
+          pose.cameraTarget,
+          pose.fieldOfView
+        );
+        if (fromOrbit) {
+          position = position ?? fromOrbit.position;
+          target = target ?? fromOrbit.target;
+          fov = fov ?? fromOrbit.fov;
+        }
+      }
+
+      if (!position || !target) {
+        return false;
+      }
+
+      if (typeof cc.stop === 'function') {
+        cc.stop();
+      }
+      applyCameraPose(
+        {position, target, ...(fov != null ? {fov} : {})},
+        scene,
+        controls,
+        () => this[$needsRender]()
+      );
+      syncFpsLookAfterRestore(this, controls);
+      return true;
+    }
+
     async setCameraView(
       view: CameraView,
       options: {
@@ -1042,7 +1248,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     ) {
       const data: any = (view as any)?.object ?? view;
       if (!data || typeof data !== 'object') {
-        return;
+        return false;
       }
 
       applyCameraViewControlOptions(this, data, options);
@@ -1063,11 +1269,30 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           (this as any).jumpCameraToGoal();
         }
         await (this as any).updateComplete;
+
+        // FPS look angles are tracked separately from CameraControls, so they
+        // have to be re-derived or the next mouse move snaps back.
+        syncFpsLookAfterRestore(this, (this as any)[$controls]);
+
         this[$needsRender]();
-        return;
+        return true;
       }
 
       await this.setCameraFromJSON(data);
+      return true;
+    }
+
+    /**
+     * Current pose as camera-orbit / camera-target / field-of-view strings,
+     * the shape setCameraView consumes.
+     */
+    getCameraView(): CameraViewStrings {
+      const self = this as any;
+      return {
+        cameraOrbit: self.getCameraOrbit().toString(),
+        cameraTarget: self.getCameraTarget().toString(),
+        fieldOfView: `${self.getFieldOfView()}deg`,
+      };
     }
 
     async animateCameraTo(
@@ -1087,20 +1312,31 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       applyCameraViewControlOptions(this, view);
-      let end = cameraPoseFromView(scene, view);
-      if (!end) {
-        await this.setCameraView(view);
-        end = readCameraPose(scene, controls);
-      }
+
+      // Resolve the destination without touching the camera. Probing it by
+      // calling setCameraView renders a frame at the end pose before the tween
+      // rewinds to the start, and strands the camera there when cancelled.
+      const data: any = (view as any)?.object ?? view;
+      const end =
+        cameraPoseFromView(scene, view) ??
+        poseFromOrbitTargetStrings(
+          scene,
+          controls,
+          data?.cameraOrbit,
+          data?.cameraTarget,
+          data?.fieldOfView
+        );
       if (!end) {
         return;
       }
 
+      // A control mode switch above can move the camera, so re-seat the start.
       applyCameraPose(start, scene, controls, () => this[$needsRender]());
 
       const duration = Math.max(0, options.duration ?? 300);
       if (duration === 0) {
         applyCameraPose(end, scene, controls, () => this[$needsRender]());
+        await this.landCameraOnCurrentPose();
         return;
       }
 
@@ -1124,8 +1360,8 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       const startFov = start.fov;
       const endFov = end.fov;
 
+      let cancelled = false;
       await new Promise<void>((resolve) => {
-        let cancelled = false;
         const startedAt = performance.now();
         this._cameraAnimationCancel = () => {
           cancelled = true;
@@ -1162,6 +1398,21 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         requestAnimationFrame(step);
       });
+
+      if (cancelled) {
+        return;
+      }
+
+      await this.landCameraOnCurrentPose();
+    }
+
+    /**
+     * The tween drives the camera directly, bypassing the orbit goal and the
+     * FPS look angles. Reflecting the pose it finished on brings both back in
+     * step, so the next drag or look input continues from here.
+     */
+    private async landCameraOnCurrentPose() {
+      await this.setCameraView(this.getCameraView());
     }
 
     /**
@@ -1227,6 +1478,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         this[$needsRender]();
         await awaitCameraSettled(controls?.thirdPartyControls);
+        syncFpsLookAfterRestore(this, controls);
         return;
       }
 
@@ -1235,6 +1487,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (restoreCameraControlsFromPartial(scene, controls, camera, data)) {
         this[$needsRender]();
         await awaitCameraSettled(cc);
+        syncFpsLookAfterRestore(this, controls);
         return;
       }
 
@@ -1300,6 +1553,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       camera.matrixAutoUpdate = true;
       this[$needsRender]();
+      syncFpsLookAfterRestore(this, controls);
     }
 
     /**

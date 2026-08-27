@@ -67,6 +67,10 @@ suite('LD Camera JSON', () => {
     cc.getTarget(worldTarget);
     const expectedModelTarget = worldTargetToModel(scene, worldTarget);
 
+    expect((element as any).getCameraPosition().x).to.be.closeTo(position.x, 0.01);
+    expect((element as any).getCameraPosition().y).to.be.closeTo(position.y, 0.01);
+    expect((element as any).getCameraPosition().z).to.be.closeTo(position.z, 0.01);
+
     const meta = element.getCameraJSON();
     expect(meta).to.not.be.null;
     expect(meta!.object.target).to.not.be.undefined;
@@ -262,6 +266,10 @@ suite('LD Camera JSON', () => {
 
     expect(cc.minDistance).to.equal(0);
     expect(cc.maxDistance).to.equal(Number.POSITIVE_INFINITY);
+
+    // Orbit limits are stored but not reapplied while FPS is active.
+    controls.applyOptions({minimumRadius: 5});
+    expect(cc.minDistance).to.equal(0);
   });
 
   test('FPS pointer drag right looks right', async () => {
@@ -378,6 +386,302 @@ suite('LD Camera JSON', () => {
     expect(cc.camera.position.x).to.be.closeTo(0, 0.001);
     expect(cc.camera.position.y).to.be.closeTo(-0.45, 0.001);
     expect(cc.camera.position.z).to.be.closeTo(0, 0.001);
+  });
+
+  test('setCameraPose moves the camera in fps mode', async () => {
+    await (element as any).setCameraControlsMode('fps', {
+      enableKeyboardMove: true,
+    });
+    (element as any).setCameraPose({
+      position: [1.25, 0.8, -2.1],
+      worldTarget: [0, 0.4, 0],
+      fov: 40,
+    });
+    await timePasses();
+
+    const position = (element as any).getCameraPosition();
+    expect(position.x).to.be.closeTo(1.25, 0.05);
+    expect(position.y).to.be.closeTo(0.8, 0.05);
+    expect(position.z).to.be.closeTo(-2.1, 0.05);
+    expect(element.getFieldOfView()).to.be.closeTo(40, 0.5);
+  });
+
+  test('setCameraView moves an fps camera to a saved context pose', async () => {
+    const scene = element[$scene];
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+
+    // Capture a pose in orbit mode, the way the Context editor does.
+    await (element as any).setCameraView({
+      controlMode: 'orbit',
+      cameraOrbit: '30deg 70deg 3.5m',
+      cameraTarget: '0m 0.2m 0m',
+      fieldOfView: '38deg',
+    });
+    await timePasses();
+    const saved = (element as any).getCameraView();
+    const expected = scene.camera.position.clone();
+
+    // Walk the camera away in FPS, as the viewer's user would.
+    await (element as any).setCameraControlsMode('fps', {
+      enableKeyboardMove: true,
+    });
+    await cc.setLookAt(6, 2, 6, 6.5, 2, 5.5, false);
+    cc.update(1);
+    await timePasses();
+
+    // Switching Context must land the saved pose, not orbit the stale look-at.
+    await (element as any).setCameraView(saved);
+    await timePasses();
+
+    expect((element as any).cameraControlMode).to.equal('fps');
+    expect(scene.camera.position.x).to.be.closeTo(expected.x, 0.05);
+    expect(scene.camera.position.y).to.be.closeTo(expected.y, 0.05);
+    expect(scene.camera.position.z).to.be.closeTo(expected.z, 0.05);
+    expect(element.getFieldOfView()).to.be.closeTo(38, 0.5);
+  });
+
+  test('animated fps restore lands the pose and keeps look angles in sync', async () => {
+    const scene = element[$scene];
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+
+    await (element as any).setCameraView({
+      controlMode: 'orbit',
+      cameraOrbit: '35deg 70deg 3.5m',
+      cameraTarget: '0m 0.2m 0m',
+      fieldOfView: '38deg',
+    });
+    await timePasses();
+    const saved = (element as any).getCameraView();
+    const expected = scene.camera.position.clone();
+
+    await (element as any).setCameraControlsMode('fps', {
+      enableKeyboardMove: true,
+    });
+    await cc.setLookAt(6, 2, 6, 6.5, 2, 5.5, false);
+    cc.update(1);
+    await timePasses();
+
+    await (element as any).animateCameraTo(saved, {duration: 40});
+    await timePasses();
+
+    expect((element as any).cameraControlMode).to.equal('fps');
+    expect(scene.camera.position.x).to.be.closeTo(expected.x, 0.05);
+    expect(scene.camera.position.y).to.be.closeTo(expected.y, 0.05);
+    expect(scene.camera.position.z).to.be.closeTo(expected.z, 0.05);
+
+    // Stale FPS yaw/pitch would swing the view somewhere unrelated on the
+    // first look input rather than nudging it.
+    const before = new Vector3();
+    cc.getTarget(before);
+    const beforeDirection = before
+      .clone()
+      .sub(scene.camera.position)
+      .normalize();
+
+    const input = (element as any)[$userInputElement];
+    input.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        pointerId: 1,
+        button: 0,
+        clientX: 100,
+        clientY: 100,
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    input.dispatchEvent(
+      new PointerEvent('pointermove', {
+        pointerId: 1,
+        button: 0,
+        clientX: 102,
+        clientY: 100,
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+
+    const after = new Vector3();
+    cc.getTarget(after);
+    const afterDirection = after.clone().sub(scene.camera.position).normalize();
+    expect(afterDirection.angleTo(beforeDirection)).to.be.lessThan(0.2);
+  });
+
+  test('animated restore resolves its destination without a probe jump', async () => {
+    const scene = element[$scene];
+
+    await (element as any).setCameraView({
+      controlMode: 'orbit',
+      cameraOrbit: '10deg 70deg 3m',
+      cameraTarget: '0m 0m 0m',
+    });
+    await timePasses();
+    const from = scene.camera.position.clone();
+
+    // Distance from the start pose at each setCameraView call. Resolving the
+    // destination by probing would land one here while still at the start.
+    const distanceAtLanding: number[] = [];
+    const original = (element as any).setCameraView.bind(element);
+    (element as any).setCameraView = async (view: any, options?: any) => {
+      distanceAtLanding.push(scene.camera.position.distanceTo(from));
+      return original(view, options);
+    };
+
+    try {
+      await (element as any).animateCameraTo(
+        {
+          controlMode: 'orbit',
+          cameraOrbit: '150deg 60deg 4m',
+          cameraTarget: '0m 0.3m 0m',
+        },
+        {duration: 40}
+      );
+      await timePasses();
+    } finally {
+      delete (element as any).setCameraView;
+    }
+
+    const total = from.distanceTo(scene.camera.position);
+    expect(total).to.be.greaterThan(0.5);
+    expect(distanceAtLanding).to.have.lengthOf(1);
+    expect(distanceAtLanding[0]).to.be.greaterThan(total * 0.9);
+  });
+
+  test('animated restore keeps the live orbit when the view omits it', async () => {
+    const scene = element[$scene];
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+
+    await (element as any).setCameraView({
+      controlMode: 'orbit',
+      cameraOrbit: '0deg 70deg 3m',
+      cameraTarget: '0m 0m 0m',
+    });
+    await timePasses();
+
+    // Move the camera the way a drag does, which leaves the camera-orbit
+    // attribute reading the last applied goal rather than the live pose.
+    await cc.setLookAt(4, 1, 0, 0, 0, 0, false);
+    cc.update(0);
+    await timePasses();
+    const moved = scene.camera.position.clone();
+
+    // A target-only view must re-aim from where the camera is, not fall back
+    // to the stale 3m attribute orbit.
+    await (element as any).animateCameraTo(
+      {cameraTarget: '0m 0.5m 0m'},
+      {duration: 40}
+    );
+    await timePasses();
+
+    const target = new Vector3();
+    cc.getTarget(target);
+    expect(target.y).to.be.closeTo(0.5, 0.05);
+    expect(scene.camera.position.x).to.be.closeTo(moved.x, 0.1);
+    expect(scene.camera.position.y).to.be.closeTo(moved.y, 0.1);
+    expect(scene.camera.position.z).to.be.closeTo(moved.z, 0.1);
+  });
+
+  test('animated restore still lands the pose when avoiding the subject', async () => {
+    const scene = element[$scene];
+    const controls = (element as any)[$controls];
+    const cc = controls.thirdPartyControls;
+
+    await (element as any).setCameraView({
+      controlMode: 'orbit',
+      cameraOrbit: '20deg 70deg 3m',
+      cameraTarget: '0m 0m 0m',
+    });
+    await timePasses();
+    const saved = (element as any).getCameraView();
+    const expected = scene.camera.position.clone();
+
+    // Start diametrically opposite so a straight line would cut the model.
+    await cc.setLookAt(-expected.x, expected.y, -expected.z, 0, 0, 0, false);
+    cc.update(1);
+    await timePasses();
+
+    await (element as any).animateCameraTo(saved, {
+      duration: 40,
+      avoidSubject: true,
+      avoidMargin: 0.25,
+    });
+    await timePasses();
+
+    expect(scene.camera.position.x).to.be.closeTo(expected.x, 0.05);
+    expect(scene.camera.position.y).to.be.closeTo(expected.y, 0.05);
+    expect(scene.camera.position.z).to.be.closeTo(expected.z, 0.05);
+  });
+
+  test('setCameraPose resolves orbit/target strings and partial views', async () => {
+    const scene = element[$scene];
+
+    expect(
+      (element as any).setCameraPose({
+        cameraOrbit: '0rad 1.2rad 3m',
+        cameraTarget: '0m 0m 0m',
+      })
+    ).to.equal(true);
+    await timePasses();
+    const full = scene.camera.position.clone();
+    expect(full.length()).to.be.closeTo(3, 0.05);
+
+    // Only azimuth given: polar and radius come from the current pose.
+    expect(
+      (element as any).setCameraPose({cameraOrbit: '1.5708rad auto auto'})
+    ).to.equal(true);
+    await timePasses();
+    expect(scene.camera.position.length()).to.be.closeTo(3, 0.05);
+    expect(scene.camera.position.distanceTo(full)).to.be.greaterThan(0.5);
+
+    // Nothing usable to work from.
+    expect((element as any).setCameraPose({})).to.equal(false);
+  });
+
+  test('setCameraView applies partial fps orbits instead of bailing', async () => {
+    const scene = element[$scene];
+
+    await (element as any).setCameraControlsMode('fps', {});
+    await (element as any).setCameraView({
+      cameraOrbit: '20deg 80deg 4m',
+      cameraTarget: '0m 0m 0m',
+    });
+    await timePasses();
+    const before = scene.camera.position.clone();
+
+    // `auto` tokens resolve through model-viewer's intrinsics; the explicit
+    // azimuth must still be applied rather than the whole view discarded.
+    await (element as any).setCameraView({
+      cameraOrbit: '90deg auto auto',
+      cameraTarget: '0m 0m 0m',
+    });
+    await timePasses();
+
+    expect(element.getCameraOrbit().theta).to.be.closeTo(Math.PI / 2, 0.02);
+    expect(scene.camera.position.distanceTo(before)).to.be.greaterThan(0.5);
+  });
+
+  test('getCameraView round-trips through setCameraView', async () => {
+    const scene = element[$scene];
+
+    await (element as any).setCameraView({
+      controlMode: 'orbit',
+      cameraOrbit: '15deg 65deg 5m',
+      cameraTarget: '0m 0.1m 0m',
+      fieldOfView: '30deg',
+    });
+    await timePasses();
+
+    const view = (element as any).getCameraView();
+    const before = scene.camera.position.clone();
+
+    await (element as any).setCameraView(view);
+    await timePasses();
+
+    expect(scene.camera.position.x).to.be.closeTo(before.x, 0.05);
+    expect(scene.camera.position.y).to.be.closeTo(before.y, 0.05);
+    expect(scene.camera.position.z).to.be.closeTo(before.z, 0.05);
   });
 
   test('setCameraView accepts attribute-style camera settings', async () => {

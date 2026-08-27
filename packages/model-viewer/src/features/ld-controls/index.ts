@@ -1002,6 +1002,13 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   applyOptions(options: any): void {
     Object.assign(this.options, options);
 
+    // Keep orbit limits stored for when we return to orbit; applying them
+    // while FPS is active reclamps minDistance and jumpCameraToGoal pulls
+    // the camera back out to the framed radius.
+    if (this._cameraControlMode === 'fps') {
+      return;
+    }
+
     // Map options to CameraControls properties
     if (options.minimumAzimuthalAngle !== undefined) {
       this.thirdPartyControls.minAzimuthAngle = options.minimumAzimuthalAngle;
@@ -1499,6 +1506,7 @@ const $syncMinFieldOfView = Symbol('syncMinFieldOfView');
 const $syncMaxFieldOfView = Symbol('syncMaxFieldOfView');
 
 export declare interface LDControlsInterface extends ControlsInterface {
+  getCameraPosition(): Vector3D;
   cameraControlMode: CameraControlMode;
   fpsKeyboardMove: boolean;
   fpsFlyMode: boolean;
@@ -1719,6 +1727,16 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
             worldTargetToModelSpace(this[$scene], worldTarget));
       }
       return toVector3D(this[$scene].getDynamicTarget());
+    }
+
+    getCameraPosition(): Vector3D {
+      const cc = (this[$controls] as any)?.thirdPartyControls;
+      const camera = cc?.camera ?? this[$scene]?.camera;
+      if (camera?.position) {
+        camera.updateMatrixWorld?.(true);
+        return toVector3D(camera.position);
+      }
+      return toVector3D(new THREE.Vector3());
     }
 
     getFieldOfView(): number {
@@ -2104,7 +2122,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         minimumPolarAngle: style[1],
         minimumRadius: style[2],
       });
-      this.jumpCameraToGoal();
+      if (this.cameraControlMode !== 'fps') {
+        this.jumpCameraToGoal();
+      }
     }
 
     [$syncMaxCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
@@ -2114,7 +2134,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         maximumRadius: style[2],
       });
       this[$updateCameraForRadius](style[2]);
-      this.jumpCameraToGoal();
+      if (this.cameraControlMode !== 'fps') {
+        this.jumpCameraToGoal();
+      }
     }
 
     [$syncMinFieldOfView](style: EvaluatedStyle<Intrinsics<['rad']>>) {
