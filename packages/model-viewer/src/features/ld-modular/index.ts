@@ -505,6 +505,15 @@ export declare interface LDModularInterface {
     clientY: number
   ): PointerInteractionTarget;
 
+  /**
+   * Intersects a ray with the scene and returns the object that was hit.
+   * @param pixelX X coordinate of the mouse.
+   * @param pixelY Y coordinate of the mouse.
+   * @returns the hit object, if no intersection is made then null is
+   * returned.
+   */
+  objectFromPoint(pixelX: number, pixelY: number): Object3D | null;
+
   // Higher-level API functions
   getSelectedObject: () => Object3D | null;
   getSelectedObjects?: () => Object3D[];
@@ -5138,6 +5147,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       clientY: number
     ): PointerInteractionTarget {
       return this._classifyPointerInteractionTarget(clientX, clientY);
+    }
+
+    objectFromPoint(pixelX: number, pixelY: number): Object3D | null {
+      const scene = this[$scene];
+      const ndcCoords = scene.getNDC(pixelX, pixelY);
+      const hit = scene.hitFromPoint(ndcCoords);
+
+      return hit?.object ?? null;
     }
 
     private _getRotationPointerAngleRad(
