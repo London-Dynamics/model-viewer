@@ -55,6 +55,16 @@ function getUpdatedLimits(
   };
 }
 
+function updateOrbitLimit(
+    value: string|undefined, position: number, limit?: number) {
+  const DEFAULT = 'auto auto auto';
+  const parts = (value == null ? DEFAULT : value).split(' ');
+  parts[position] =
+      limit == null ? 'auto' : `${roundToDigits(limit, DIGITS)}m`;
+  const result = parts.join(' ');
+  return result === DEFAULT ? undefined : result;
+}
+
 export function getOrbitString(orbit: SphericalPosition) {
   return `${roundToDigits(radToDeg(orbit.theta), DIGITS)}deg ${
       roundToDigits(
@@ -152,6 +162,18 @@ export function dispatchSetMinZoom(fovDeg?: number, radius?: number) {
   }
 }
 
+export interface ZoomLimits {
+  minRadius?: number;
+  maxRadius?: number;
+  minFov?: number;
+  maxFov?: number;
+}
+
+const SET_ZOOM_LIMITS = 'SET_ZOOM_LIMITS';
+export function dispatchZoomLimits(limits?: ZoomLimits) {
+  return {type: SET_ZOOM_LIMITS, payload: limits};
+}
+
 const SAVE_CAMERA_ORBIT = 'SAVE_CAMERA_ORBIT';
 export function dispatchSaveCameraOrbit(orbit?: SphericalPosition) {
   return {type: SAVE_CAMERA_ORBIT, payload: orbit};
@@ -235,27 +257,28 @@ export function configReducer(
     case SET_CAMERA_YAW_LIMITS:
       return {...state, ...getUpdatedLimits(state, action.payload, 0)};
     case SET_MIN_ZOOM:
-      const orbitLimits = getUpdatedLimits(
-          state,
-          {
-            enabled: action.payload.fov != null,
-            min: action.payload.radius,
-            max: -1
-          },
-          2);
-
-      const minFov = getMinString(
-          {
-            enabled: action.payload.fov != null,
-            min: action.payload.fov,
-            max: -1
-          },
-          'deg');
-
       return {
         ...state,
-        minCameraOrbit: orbitLimits.minCameraOrbit,
-        minFov: minFov === 'auto' ? undefined : minFov
+        minCameraOrbit:
+            updateOrbitLimit(state.minCameraOrbit, 2, action.payload.radius),
+        minFov: action.payload.fov == null ?
+            undefined :
+            `${roundToDigits(action.payload.fov, DIGITS)}deg`
+      };
+    case SET_ZOOM_LIMITS:
+      const zoomLimits = action.payload as ZoomLimits | undefined;
+      return {
+        ...state,
+        minCameraOrbit:
+            updateOrbitLimit(state.minCameraOrbit, 2, zoomLimits?.minRadius),
+        maxCameraOrbit:
+            updateOrbitLimit(state.maxCameraOrbit, 2, zoomLimits?.maxRadius),
+        minFov: zoomLimits?.minFov == null ?
+            undefined :
+            `${roundToDigits(zoomLimits.minFov, DIGITS)}deg`,
+        maxFov: zoomLimits?.maxFov == null ?
+            undefined :
+            `${roundToDigits(zoomLimits.maxFov, DIGITS)}deg`
       };
     default:
       return state;

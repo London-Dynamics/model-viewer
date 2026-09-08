@@ -2,6 +2,10 @@ import { expect } from 'chai';
 import { Box3, Vector3 } from 'three';
 
 import { $controls } from '../../features/controls.js';
+import {
+  channelProgress,
+  pickStaggerWindows,
+} from '../../features/ld-camera.js';
 import { $scene, $userInputElement } from '../../model-viewer-base.js';
 import { ModelViewerElement } from '../../model-viewer.js';
 import { timePasses, waitForEvent } from '../../utilities.js';
@@ -519,12 +523,13 @@ suite('LD Camera JSON', () => {
     await timePasses();
     const from = scene.camera.position.clone();
 
-    // Distance from the start pose at each setCameraView call. Resolving the
-    // destination by probing would land one here while still at the start.
-    const distanceAtLanding: number[] = [];
+    // animateCameraTo owns CameraControls directly. It must not probe or land
+    // through setCameraView, because that replays declarative limits and can
+    // produce a visible endpoint snap.
+    let setCameraViewCalls = 0;
     const original = (element as any).setCameraView.bind(element);
     (element as any).setCameraView = async (view: any, options?: any) => {
-      distanceAtLanding.push(scene.camera.position.distanceTo(from));
+      setCameraViewCalls += 1;
       return original(view, options);
     };
 
@@ -544,8 +549,7 @@ suite('LD Camera JSON', () => {
 
     const total = from.distanceTo(scene.camera.position);
     expect(total).to.be.greaterThan(0.5);
-    expect(distanceAtLanding).to.have.lengthOf(1);
-    expect(distanceAtLanding[0]).to.be.greaterThan(total * 0.9);
+    expect(setCameraViewCalls).to.equal(0);
   });
 
   test('animated restore keeps the live orbit when the view omits it', async () => {
@@ -606,6 +610,7 @@ suite('LD Camera JSON', () => {
       duration: 40,
       avoidSubject: true,
       avoidMargin: 0.25,
+      transitionStyle: 'direct',
     });
     await timePasses();
 
@@ -750,6 +755,7 @@ suite('LD Camera JSON', () => {
         easing: 'easeInOutQuad',
         avoidSubject: true,
         avoidMargin: 0,
+        transitionStyle: 'direct',
       }
     );
     await timePasses();
@@ -825,7 +831,7 @@ suite('LD Camera JSON', () => {
         up: [0, 1, 0],
         controlMode: 'orbit',
       },
-      { duration: 32, easing: 'linear', avoidSubject: true }
+      { duration: 32, easing: 'linear', avoidSubject: true, transitionStyle: 'direct' }
     );
 
     cc.setLookAt = originalSetLookAt;
@@ -836,5 +842,62 @@ suite('LD Camera JSON', () => {
       expect(call[4]).to.be.within(-0.101, 0.101);
       expect(call[5]).to.be.within(-0.101, 0.101);
     }
+  });
+
+  test('channelProgress remaps within stagger windows', () => {
+    const window = {start: 0.2, end: 0.6};
+    expect(channelProgress(0, window)).to.equal(0);
+    expect(channelProgress(0.2, window)).to.equal(0);
+    expect(channelProgress(0.4, window)).to.be.closeTo(0.5, 0.001);
+    expect(channelProgress(0.6, window)).to.equal(1);
+    expect(channelProgress(1, window)).to.equal(1);
+  });
+
+  test('pickStaggerWindows overlaps orbit with radius and couples target/fov', () => {
+    const out = pickStaggerWindows(1, 15);
+    expect(out.target).to.deep.equal(out.orbit);
+    expect(out.fov).to.deep.equal(out.radius);
+    expect(out.orbit.start).to.be.greaterThan(0);
+    expect(out.orbit.start).to.be.at.most(0.15);
+    // Out: orbit finishes last so timeline ease-out decelerates the swing.
+    expect(out.orbit.end).to.equal(1);
+    expect(out.radius.end).to.be.lessThan(out.orbit.end);
+    expect(out.radius.end).to.be.greaterThan(out.orbit.start);
+    expect(out.radius.start).to.equal(0);
+
+    const into = pickStaggerWindows(15, 1);
+    expect(into.target).to.deep.equal(into.orbit);
+    expect(into.fov).to.deep.equal(into.radius);
+    expect(into.orbit.start).to.equal(0);
+    // In: radius finishes last so timeline ease-out decelerates the zoom.
+    expect(into.radius.end).to.equal(1);
+    expect(into.orbit.end).to.be.lessThan(into.radius.end);
+    expect(into.orbit.end).to.be.greaterThan(into.radius.start);
+  });
+
+  test('staggered animateCameraTo lands on the destination pose', async () => {
+    const scene = element[$scene];
+
+    await (element as any).setCameraView({
+      cameraOrbit: '10deg 80deg 4m',
+      cameraTarget: '0m 0.2m 0m',
+      fieldOfView: '35deg',
+    });
+    await timePasses();
+
+    await (element as any).animateCameraTo(
+      {
+        cameraOrbit: '-120deg 70deg 2m',
+        cameraTarget: '0.1m 0.3m -0.1m',
+        fieldOfView: '50deg',
+      },
+      {duration: 40, transitionStyle: 'staggered'}
+    );
+    await timePasses();
+
+    const expected = (element as any).getCameraView();
+    // Land writes cameraOrbit/target/fov attributes from the finished pose.
+    expect(element.fieldOfView).to.equal(expected.fieldOfView);
+    expect(scene.camera.position.length()).to.be.closeTo(2, 0.15);
   });
 });

@@ -16,7 +16,11 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { Constructor } from '../utilities.js';
 
-import { $controls } from './controls.js';
+import {
+  $cancelPrompts,
+  $controls,
+  $programmaticCameraAnimation,
+} from './controls.js';
 import {
   modelTargetToWorldSpace,
   worldTargetToModelSpace,
@@ -87,11 +91,26 @@ export type CameraEasing =
   | 'easeOutBounce'
   | 'easeInOutBounce';
 
+export interface StaggerWindow {
+  start: number;
+  end: number;
+}
+
+export interface CameraStaggerOptions {
+  orbit?: StaggerWindow;
+  radius?: StaggerWindow;
+  fov?: StaggerWindow;
+  target?: StaggerWindow;
+}
+
 export interface CameraAnimationOptions {
   duration?: number;
   easing?: CameraEasing;
   avoidSubject?: boolean;
   avoidMargin?: number;
+  /** Default `staggered`: spherical channels with direction-aware timing. */
+  transitionStyle?: 'direct' | 'staggered';
+  stagger?: CameraStaggerOptions;
 }
 
 interface CameraPose {
@@ -218,8 +237,8 @@ const CAMERA_EASINGS: Record<CameraEasing, (x: number) => number> = {
 
 function getCameraEasing(name?: string): (x: number) => number {
   return (
-    CAMERA_EASINGS[(name as CameraEasing) || 'easeInOutQuad'] ??
-    CAMERA_EASINGS.easeInOutQuad
+    CAMERA_EASINGS[(name as CameraEasing) || 'easeInOutCubic'] ??
+    CAMERA_EASINGS.easeInOutCubic
   );
 }
 
@@ -833,7 +852,11 @@ function syncFpsLookAfterRestore(element: any, controls: any): void {
   if (element?.cameraControlMode !== 'fps' || !controls) {
     return;
   }
-  controls.cameraControlMode = 'fps';
+  if (typeof controls.syncFpsAnglesFromCamera === 'function') {
+    controls.syncFpsAnglesFromCamera();
+  } else {
+    controls.cameraControlMode = 'fps';
+  }
 }
 
 function readCameraPose(scene: any, controls: any): CameraPose | null {
@@ -903,11 +926,57 @@ function applyCameraViewControlOptions(
   }
 }
 
+type CameraControlsOrbitLimits = {
+  minDistance: number;
+  maxDistance: number;
+  minPolarAngle: number;
+  maxPolarAngle: number;
+};
+
+function readCameraControlsOrbitLimits(
+  cc: any
+): CameraControlsOrbitLimits | null {
+  if (!cc) {
+    return null;
+  }
+  return {
+    minDistance: cc.minDistance,
+    maxDistance: cc.maxDistance,
+    minPolarAngle: cc.minPolarAngle,
+    maxPolarAngle: cc.maxPolarAngle,
+  };
+}
+
+function applyCameraControlsOrbitLimits(
+  cc: any,
+  limits: CameraControlsOrbitLimits | null
+): void {
+  if (!cc || !limits) {
+    return;
+  }
+  cc.minDistance = limits.minDistance;
+  cc.maxDistance = limits.maxDistance;
+  cc.minPolarAngle = limits.minPolarAngle;
+  cc.maxPolarAngle = limits.maxPolarAngle;
+}
+
+/** Open orbit clamps so a tween can freely cross Interior↔Exterior radii. */
+function openCameraControlsOrbitLimits(cc: any): void {
+  if (!cc) {
+    return;
+  }
+  cc.minDistance = 0;
+  cc.maxDistance = Infinity;
+  cc.minPolarAngle = 0;
+  cc.maxPolarAngle = Math.PI;
+}
+
 function applyCameraPose(
   pose: CameraPose,
   scene: any,
   controls: any,
-  needsRender: () => void
+  needsRender: () => void,
+  skipConstraints: boolean = false
 ): void {
   const camera = scene?.camera;
   const cc = controls?.thirdPartyControls;
@@ -915,23 +984,73 @@ function applyCameraPose(
     return;
   }
 
-  cc.setLookAt(
-    pose.position.x,
-    pose.position.y,
-    pose.position.z,
-    pose.target.x,
-    pose.target.y,
-    pose.target.z,
-    false
-  );
+  const position = pose.position.clone();
+  if (!skipConstraints && controls?.cameraControlMode !== 'fps') {
+    const offset = pose.position.clone().sub(pose.target);
+    const radius = offset.length();
+    const minimumRadius = controls?.options?.minimumRadiusExplicit
+      ? controls.options.minimumRadius
+      : 0;
+    const maximumRadius = controls?.options?.maximumRadiusExplicit
+      ? controls.options.maximumRadius
+      : Infinity;
+    const clampedRadius = Math.max(
+      minimumRadius,
+      Math.min(maximumRadius, radius)
+    );
+    if (radius > 0 && clampedRadius !== radius) {
+      position.copy(pose.target).add(offset.setLength(clampedRadius));
+    }
+  }
 
   if (pose.fov != null && camera.isPerspectiveCamera) {
-    camera.fov = pose.fov;
+    if (skipConstraints) {
+      camera.fov = pose.fov;
+    } else {
+      const minimumFov = controls?.options?.minimumFieldOfViewExplicit
+        ? controls.options.minimumFieldOfView
+        : 0.01;
+      const maximumFov = controls?.options?.maximumFieldOfViewExplicit
+        ? controls.options.maximumFieldOfView
+        : 179;
+      camera.fov = Math.max(minimumFov, Math.min(maximumFov, pose.fov));
+    }
     camera.updateProjectionMatrix();
   }
 
-  cc.update(0);
-  camera.updateMatrixWorld(true);
+  if (skipConstraints) {
+    // Drive the Three.js camera directly. Calling cc.update() during a tween
+    // re-enters CameraControls' smoothDamp + limit path and fights the curve.
+    camera.position.copy(position);
+    camera.lookAt(pose.target);
+    camera.updateMatrixWorld(true);
+    cc.setLookAt(
+      position.x,
+      position.y,
+      position.z,
+      pose.target.x,
+      pose.target.y,
+      pose.target.z,
+      false
+    );
+    // Preserve focalOffset during the tween — clearing it under FPS (Interior)
+    // snaps the first frame. landCameraOnCurrentPose clears it once on land.
+    zeroCameraControlsVelocities(cc);
+    cc._needsUpdate = false;
+  } else {
+    cc.setLookAt(
+      position.x,
+      position.y,
+      position.z,
+      pose.target.x,
+      pose.target.y,
+      pose.target.z,
+      false
+    );
+    cc.update(0);
+    camera.updateMatrixWorld(true);
+  }
+
   needsRender();
 }
 
@@ -984,6 +1103,153 @@ function cameraCurve(
   }
 
   return new CubicBezierCurve3(start.clone(), controlA, controlB, end.clone());
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function normalizeStaggerWindow(
+  window: StaggerWindow | undefined,
+  fallback: StaggerWindow
+): StaggerWindow {
+  if (!window) {
+    return fallback;
+  }
+  let start = clamp01(window.start);
+  let end = clamp01(window.end);
+  if (end < start) {
+    const swap = start;
+    start = end;
+    end = swap;
+  }
+  if (end === start) {
+    end = Math.min(1, start + 0.0001);
+  }
+  return {start, end};
+}
+
+/** Remap global 0–1 clock into an eased 0–1 channel progress. */
+export function channelProgress(
+  rawT: number,
+  window: StaggerWindow,
+  easing: (x: number) => number = (x) => x
+): number {
+  const {start, end} = window;
+  if (rawT <= start) {
+    return 0;
+  }
+  if (rawT >= end) {
+    return 1;
+  }
+  return easing(clamp01((rawT - start) / (end - start)));
+}
+
+/**
+ * Direction-aware stagger windows. Out (radius↑): dolly early, orbit later.
+ * In (radius↓): orbit early, dolly later. FOV lags both.
+ */
+export function pickStaggerWindows(
+  startRadius: number,
+  endRadius: number,
+  stagger?: CameraStaggerOptions
+): {
+  orbit: StaggerWindow;
+  radius: StaggerWindow;
+  fov: StaggerWindow;
+  target: StaggerWindow;
+} {
+  const goingOut = endRadius >= startRadius;
+  // One timeline ease wraps the whole move; channels only choose *when*
+  // they run. The channel that ends at 1 rides the ease-out:
+  //   out → last motion is orbit; in → last motion is radius/FOV.
+  // Target locks to orbit; FOV locks to radius.
+  const defaults = goingOut ?
+      {
+        // Interior→Exterior: dolly finishes first; final swing gets ease-out.
+        radius: {start: 0, end: 0.75},
+        fov: {start: 0, end: 0.75},
+        orbit: {start: 0.1, end: 1},
+        target: {start: 0.1, end: 1},
+      } :
+      {
+        // Exterior→Interior: turn finishes first; final zoom gets ease-out.
+        orbit: {start: 0, end: 0.75},
+        target: {start: 0, end: 0.75},
+        radius: {start: 0.15, end: 1},
+        fov: {start: 0.15, end: 1},
+      };
+
+  return {
+    orbit: normalizeStaggerWindow(stagger?.orbit, defaults.orbit),
+    radius: normalizeStaggerWindow(stagger?.radius, defaults.radius),
+    fov: normalizeStaggerWindow(stagger?.fov, defaults.fov),
+    target: normalizeStaggerWindow(stagger?.target, defaults.target),
+  };
+}
+
+function poseToSpherical(position: Vector3, target: Vector3): Spherical {
+  const spherical = new Spherical().setFromVector3(
+      position.clone().sub(target));
+  spherical.makeSafe();
+  spherical.radius = Math.max(MIN_ORBIT_RADIUS, spherical.radius);
+  spherical.phi =
+      MathUtils.clamp(spherical.phi, MIN_ORBIT_PHI, Math.PI - MIN_ORBIT_PHI);
+  return spherical;
+}
+
+function sphericalToPosition(target: Vector3, spherical: Spherical): Vector3 {
+  return target.clone().add(new Vector3().setFromSpherical(spherical));
+}
+
+/** Shortest-path azimuth lerp (handles ±π wrap). */
+function lerpTheta(from: number, to: number, t: number): number {
+  let delta = to - from;
+  while (delta > Math.PI) {
+    delta -= Math.PI * 2;
+  }
+  while (delta < -Math.PI) {
+    delta += Math.PI * 2;
+  }
+  return from + delta * t;
+}
+
+function sampleStaggeredPose(
+  start: CameraPose,
+  end: CameraPose,
+  startSpherical: Spherical,
+  endSpherical: Spherical,
+  windows: ReturnType<typeof pickStaggerWindows>,
+  /** Already timeline-eased 0–1 progress (channels remap linearly). */
+  progress: number
+): CameraPose {
+  const tOrbit = channelProgress(progress, windows.orbit);
+  const tRadius = channelProgress(progress, windows.radius);
+  const tTarget = channelProgress(progress, windows.target);
+  const tFov = channelProgress(progress, windows.fov);
+
+  const target = start.target.clone().lerp(end.target, tTarget);
+  const spherical = new Spherical(
+      MathUtils.lerp(startSpherical.radius, endSpherical.radius, tRadius),
+      MathUtils.lerp(startSpherical.phi, endSpherical.phi, tOrbit),
+      lerpTheta(startSpherical.theta, endSpherical.theta, tOrbit));
+  spherical.makeSafe();
+  spherical.radius = Math.max(MIN_ORBIT_RADIUS, spherical.radius);
+  spherical.phi =
+      MathUtils.clamp(spherical.phi, MIN_ORBIT_PHI, Math.PI - MIN_ORBIT_PHI);
+
+  const pose: CameraPose = {
+    position: sphericalToPosition(target, spherical),
+    target,
+  };
+
+  if (start.fov != null && end.fov != null) {
+    pose.fov = MathUtils.lerp(start.fov, end.fov, tFov);
+  } else if (end.fov != null && tFov >= 1) {
+    pose.fov = end.fov;
+  }
+
+  return pose;
 }
 
 /** Apply a stored look-at to scene pivot (SmoothControls). */
@@ -1062,12 +1328,15 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDCameraInterface> & T => {
   class LDCameraModelViewerElement extends ModelViewerElement {
+    [$programmaticCameraAnimation] = false;
     private _pointerDwn = [0, 0];
     private _pointerUp = [0, 0];
     private _interactionListenersAttached = false;
     private _cameraAnimationCancel: (() => void) | null = null;
+    private _cameraAnimationRequest = 0;
 
     private _onPointerDown = (event: PointerEvent) => {
+      this.cancelCameraAnimation();
       this._pointerDwn = [event.offsetX, event.offsetY];
     };
 
@@ -1078,6 +1347,51 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _onClick = (event: MouseEvent) => {
       this.handleClick(event);
     };
+
+    private cancelCameraAnimation(invalidateRequest: boolean = true) {
+      if (invalidateRequest) {
+        this._cameraAnimationRequest += 1;
+      }
+      const wasAnimating = this._cameraAnimationCancel != null;
+      if (this._cameraAnimationCancel) {
+        this._cameraAnimationCancel();
+        this._cameraAnimationCancel = null;
+      }
+      this[$programmaticCameraAnimation] = false;
+      if (wasAnimating) {
+        const controls = (this as any)[$controls] as any;
+        const cc = controls?.thirdPartyControls;
+        if (cc) {
+          zeroCameraControlsVelocities(cc);
+        }
+      }
+    }
+
+    private async waitForCurrentModelLoad(request: number): Promise<boolean> {
+      const self = this as any;
+      await self.updateComplete;
+      if (request !== this._cameraAnimationRequest) {
+        return false;
+      }
+      if (!self.src || self.loaded) {
+        return true;
+      }
+
+      const loaded = await new Promise<boolean>((resolve) => {
+        const finish = (event: Event) => {
+          this.removeEventListener('load', finish);
+          this.removeEventListener('error', finish);
+          resolve(event.type === 'load');
+        };
+        this.addEventListener('load', finish);
+        this.addEventListener('error', finish);
+      });
+      return (
+        loaded &&
+        request === this._cameraAnimationRequest &&
+        (this as any).loaded
+      );
+    }
 
     handleClick(event: MouseEvent) {
       const { _pointerDwn, _pointerUp } = this;
@@ -1299,111 +1613,202 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       view: CameraView,
       options: CameraAnimationOptions = {}
     ) {
+      const request = ++this._cameraAnimationRequest;
+      this.cancelCameraAnimation(false);
+      // Raise the flag before any await so $tick cannot run CameraControls
+      // damping between cancel and the first animation frame.
+      this[$programmaticCameraAnimation] = true;
+
+      if (!(await this.waitForCurrentModelLoad(request))) {
+        if (request === this._cameraAnimationRequest) {
+          this[$programmaticCameraAnimation] = false;
+        }
+        return;
+      }
+
       const scene = this[$scene];
       const controls = (this as any)[$controls] as any;
+      const cc = controls?.thirdPartyControls;
+
+      (this as any)[$cancelPrompts]?.();
+      settleCameraControls(cc);
+
+      // Read start AFTER settle so the curve matches the live settled pose
+      // (FPS Interior looks can disagree with a pre-settle snapshot).
       const start = readCameraPose(scene, controls);
       if (!start) {
+        if (request === this._cameraAnimationRequest) {
+          this[$programmaticCameraAnimation] = false;
+        }
         return;
       }
 
-      if (this._cameraAnimationCancel) {
-        this._cameraAnimationCancel();
-        this._cameraAnimationCancel = null;
-      }
+      // Keep orbit clamps open for the whole tween so Interior↔Exterior paths
+      // are not re-clamped between frames (or by a mid-tween mode switch).
+      const savedOrbitLimits = readCameraControlsOrbitLimits(cc);
+      openCameraControlsOrbitLimits(cc);
 
-      applyCameraViewControlOptions(this, view);
+      // On success: leave limits open for Agora's post-tween constraint apply,
+      // and defer clearing the programmatic flag so jumpCameraToGoal / sync
+      // handlers in the same turn still see the flag. On cancel/error: restore
+      // the pre-tween limits immediately.
+      const finishProgrammaticAnimation = (restoreLimits: boolean) => {
+        if (restoreLimits) {
+          applyCameraControlsOrbitLimits(cc, savedOrbitLimits);
+        }
+        if (request === this._cameraAnimationRequest) {
+          queueMicrotask(() => {
+            if (request === this._cameraAnimationRequest) {
+              this[$programmaticCameraAnimation] = false;
+            }
+          });
+        }
+      };
 
-      // Resolve the destination without touching the camera. Probing it by
-      // calling setCameraView renders a frame at the end pose before the tween
-      // rewinds to the start, and strands the camera there when cancelled.
-      const data: any = (view as any)?.object ?? view;
-      const end =
-        cameraPoseFromView(scene, view) ??
-        poseFromOrbitTargetStrings(
-          scene,
-          controls,
-          data?.cameraOrbit,
-          data?.cameraTarget,
-          data?.fieldOfView
-        );
-      if (!end) {
-        return;
-      }
+      try {
+        // Defer control-mode switches until after the tween. Applying orbit
+        // mode at t=0 while still at an Interior eye causes a visible snap;
+        // Agora already applies mode after animateCameraTo returns.
+        // Resolve the destination without touching the camera.
+        const data: any = (view as any)?.object ?? view;
+        const end =
+          cameraPoseFromView(scene, view) ??
+          poseFromOrbitTargetStrings(
+            scene,
+            controls,
+            data?.cameraOrbit,
+            data?.cameraTarget,
+            data?.fieldOfView
+          );
+        if (!end) {
+          finishProgrammaticAnimation(true);
+          return;
+        }
 
-      // A control mode switch above can move the camera, so re-seat the start.
-      applyCameraPose(start, scene, controls, () => this[$needsRender]());
+        // Do not re-seat start via applyCameraPose — that lookAt path fights
+        // the live FPS frame and snaps Interior→Exterior at t=0. The settled
+        // live frame is the curve start; first rAF applies progress > 0.
 
-      const duration = Math.max(0, options.duration ?? 300);
-      if (duration === 0) {
-        applyCameraPose(end, scene, controls, () => this[$needsRender]());
-        await this.landCameraOnCurrentPose();
-        return;
-      }
+        const duration = Math.max(0, options.duration ?? 400);
+        if (duration === 0) {
+          applyCameraPose(
+            end, scene, controls, () => this[$needsRender](), true);
+          await this.landCameraOnCurrentPose();
+          applyCameraViewControlOptions(this, view);
+          finishProgrammaticAnimation(false);
+          return;
+        }
 
-      const avoidBox =
-        options.avoidSubject &&
-        scene?.boundingBox &&
-        !scene.boundingBox.isEmpty()
-          ? scene.boundingBox
-              .clone()
-              .expandByScalar(Math.max(0, options.avoidMargin ?? 0))
-          : null;
-      const positionCurve = cameraCurve(start.position, end.position, avoidBox);
-      const targetAvoidBox =
-        avoidBox &&
-        !avoidBox.containsPoint(start.target) &&
-        !avoidBox.containsPoint(end.target)
-          ? avoidBox
-          : null;
-      const targetCurve = cameraCurve(start.target, end.target, targetAvoidBox);
-      const easing = getCameraEasing(options.easing);
-      const startFov = start.fov;
-      const endFov = end.fov;
+        const easing = getCameraEasing(options.easing);
+        const transitionStyle = options.transitionStyle ?? 'staggered';
+        const startFov = start.fov;
+        const endFov = end.fov;
 
-      let cancelled = false;
-      await new Promise<void>((resolve) => {
-        const startedAt = performance.now();
-        this._cameraAnimationCancel = () => {
-          cancelled = true;
-          resolve();
-        };
-
-        const step = (now: number) => {
-          if (cancelled) {
-            return;
-          }
-
-          const rawProgress = Math.min(1, (now - startedAt) / duration);
-          const progress = easing(rawProgress);
-          const pose: CameraPose = {
-            position: positionCurve.getPoint(progress),
-            target: targetCurve.getPoint(progress),
+        let cancelled = false;
+        await new Promise<void>((resolve) => {
+          const startedAt = performance.now();
+          this._cameraAnimationCancel = () => {
+            cancelled = true;
+            resolve();
           };
 
-          if (startFov != null && endFov != null) {
-            pose.fov = MathUtils.lerp(startFov, endFov, progress);
+          let applyProgress: (rawProgress: number) => void;
+
+          if (transitionStyle === 'direct') {
+            const avoidBox =
+              options.avoidSubject &&
+              scene?.boundingBox &&
+              !scene.boundingBox.isEmpty()
+                ? scene.boundingBox
+                    .clone()
+                    .expandByScalar(Math.max(0, options.avoidMargin ?? 0))
+                : null;
+            const positionCurve =
+                cameraCurve(start.position, end.position, avoidBox);
+            const targetAvoidBox =
+              avoidBox &&
+              !avoidBox.containsPoint(start.target) &&
+              !avoidBox.containsPoint(end.target)
+                ? avoidBox
+                : null;
+            const targetCurve =
+                cameraCurve(start.target, end.target, targetAvoidBox);
+
+            applyProgress = (rawProgress: number) => {
+              const progress = easing(rawProgress);
+              const pose: CameraPose = {
+                position: positionCurve.getPoint(progress),
+                target: targetCurve.getPoint(progress),
+              };
+
+              if (startFov != null && endFov != null) {
+                pose.fov = MathUtils.lerp(startFov, endFov, progress);
+              }
+
+              applyCameraPose(
+                pose, scene, controls, () => this[$needsRender](), true);
+            };
+          } else {
+            const startSpherical =
+                poseToSpherical(start.position, start.target);
+            const endSpherical = poseToSpherical(end.position, end.target);
+            const windows = pickStaggerWindows(
+                startSpherical.radius, endSpherical.radius, options.stagger);
+
+            applyProgress = (rawProgress: number) => {
+              // Ease the shared clock once (same as direct). Per-channel easing
+              // on a linear clock makes the composite path feel constant-speed.
+              const progress = easing(rawProgress);
+              const pose = sampleStaggeredPose(
+                  start,
+                  end,
+                  startSpherical,
+                  endSpherical,
+                  windows,
+                  progress);
+              applyCameraPose(
+                pose, scene, controls, () => this[$needsRender](), true);
+            };
           }
 
-          applyCameraPose(pose, scene, controls, () => this[$needsRender]());
+          // Do not applyProgress(0): the live settled frame is already the
+          // start pose. A t=0 applyCameraPose (lookAt + FPS focalOffset) snaps
+          // Interior→Exterior before motion ramps.
 
-          if (rawProgress < 1) {
-            requestAnimationFrame(step);
-            return;
-          }
+          const step = (now: number) => {
+            if (cancelled) {
+              return;
+            }
 
-          applyCameraPose(end, scene, controls, () => this[$needsRender]());
-          this._cameraAnimationCancel = null;
-          resolve();
-        };
+            const rawProgress = Math.min(1, (now - startedAt) / duration);
+            applyProgress(rawProgress);
 
-        requestAnimationFrame(step);
-      });
+            if (rawProgress < 1) {
+              requestAnimationFrame(step);
+              return;
+            }
 
-      if (cancelled) {
-        return;
+            applyCameraPose(
+              end, scene, controls, () => this[$needsRender](), true);
+            this._cameraAnimationCancel = null;
+            resolve();
+          };
+
+          requestAnimationFrame(step);
+        });
+
+        if (cancelled) {
+          applyCameraControlsOrbitLimits(cc, savedOrbitLimits);
+          return;
+        }
+
+        await this.landCameraOnCurrentPose();
+        applyCameraViewControlOptions(this, view);
+        finishProgrammaticAnimation(false);
+      } catch (error) {
+        finishProgrammaticAnimation(true);
+        throw error;
       }
-
-      await this.landCameraOnCurrentPose();
     }
 
     /**
@@ -1412,7 +1817,30 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
      * step, so the next drag or look input continues from here.
      */
     private async landCameraOnCurrentPose() {
-      await this.setCameraView(this.getCameraView());
+      const controls = (this as any)[$controls] as any;
+      const cc = controls?.thirdPartyControls;
+      const view = this.getCameraView();
+      (this as any).cameraTarget = view.cameraTarget;
+      (this as any).cameraOrbit = view.cameraOrbit;
+      (this as any).fieldOfView = view.fieldOfView;
+      await (this as any).updateComplete;
+      settleCameraControls(cc);
+      // Clear FPS truck/pan residue once after the tween so orbit update does
+      // not fight the landed pose (deferred from applyCameraPose skip path).
+      if (cc?._focalOffset?.set) {
+        cc._focalOffset.set(0, 0, 0);
+      }
+      if (cc?._focalOffsetEnd?.set) {
+        cc._focalOffsetEnd.set(0, 0, 0);
+      }
+      if (cc) {
+        zeroCameraControlsVelocities(cc);
+      }
+      if (cc && typeof cc.saveState === 'function') {
+        cc.saveState();
+      }
+      syncFpsLookAfterRestore(this, controls);
+      this[$needsRender]();
     }
 
     /**

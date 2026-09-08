@@ -49,7 +49,16 @@ import {timeline, TimingFunction} from '../../utilities/animation.js';
 
 import {ensureViewportGizmo, type ViewportGizmoHandle,} from './viewport-gizmo.js';
 
-import {$controls, $fingerAnimatedContainers, $panElement, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
+/**
+ * Fixed CameraControls damping for LD product viewers. Host
+ * `interpolation-decay` is kept for API compatibility but ignored.
+ * Drag uses 0.08s smoothDamp (a bit softer than Damper 50ms); programmatic
+ * moves keep smoothTime at 0 so post-tween limit sync does not coast.
+ */
+const LD_SMOOTH_TIME = 0;
+const LD_DRAGGING_SMOOTH_TIME = 0.08;
+
+import {$cancelPrompts, $controls, $fingerAnimatedContainers, $panElement, $programmaticCameraAnimation, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
 import {DEFAULT_FOV_DEG, DEFAULT_MIN_FOV_DEG, DEFAULT_CAMERA_ORBIT, DEFAULT_CAMERA_TARGET, DEFAULT_FIELD_OF_VIEW, MINIMUM_RADIUS_RATIO, AZIMUTHAL_QUADRANT_LABELS, POLAR_TRIENT_LABELS, DEFAULT_INTERACTION_PROMPT_THRESHOLD, INTERACTION_PROMPT,} from '../controls.js';
 import {
@@ -95,6 +104,11 @@ const DEFAULT_FPS_MOVE_SENSITIVITY = 0.3;
 
 function normalizeFpsSensitivity(value: number, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function hasExplicitOrbitRadius(value: string): boolean {
+  const radius = value.trim().split(/\s+/)[2];
+  return radius != null && radius.toLowerCase() !== 'auto';
 }
 
 /**
@@ -154,12 +168,16 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   options: {
     minimumFieldOfView?: number;
     maximumFieldOfView?: number;
+    minimumFieldOfViewExplicit?: boolean;
+    maximumFieldOfViewExplicit?: boolean;
     minimumAzimuthalAngle?: number;
     minimumPolarAngle?: number;
     minimumRadius?: number;
+    minimumRadiusExplicit?: boolean;
     maximumAzimuthalAngle?: number;
     maximumPolarAngle?: number;
     maximumRadius?: number;
+    maximumRadiusExplicit?: boolean;
     touchAction?: string;
   };
 }
@@ -222,12 +240,16 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   options: {
     minimumFieldOfView?: number;
     maximumFieldOfView?: number;
+    minimumFieldOfViewExplicit?: boolean;
+    maximumFieldOfViewExplicit?: boolean;
     minimumAzimuthalAngle?: number;
     minimumPolarAngle?: number;
     minimumRadius?: number;
+    minimumRadiusExplicit?: boolean;
     maximumAzimuthalAngle?: number;
     maximumPolarAngle?: number;
     maximumRadius?: number;
+    maximumRadiusExplicit?: boolean;
     touchAction?: string;
   } = {};
 
@@ -368,9 +390,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.scene = scene;  // Store scene reference for recenter functionality
     this.canEnableInteraction = canEnableInteraction;
 
-    // Initialize default settings to match SmoothControls behavior
-    this.thirdPartyControls.smoothTime = 0.25;
-    this.thirdPartyControls.draggingSmoothTime = 0.125;
+    // Fixed damping (see LD_SMOOTH_TIME); host interpolation-decay is ignored.
+    this.thirdPartyControls.smoothTime = LD_SMOOTH_TIME;
+    this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
 
     // Ensure camera has valid initial values before any calculations
     if (!camera.position.isVector3 || camera.position.length() === 0) {
@@ -479,6 +501,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.addEventListener('controlstart', () => {
       if (this.changeSource !== ChangeSource.AUTOMATIC) {
         this.changeSource = ChangeSource.USER_INTERACTION;
+        // Settle model-pivot Damper so scene.updateTarget does not run in
+        // parallel with CameraControls orbit smoothing during the drag.
+        this.scene?.jumpToGoal?.();
       }
     });
 
@@ -855,7 +880,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     }
   }
 
-  private syncFpsAnglesFromCamera(): void {
+  /** Re-read FPS yaw/pitch from the current camera / look-at. */
+  syncFpsAnglesFromCamera(): void {
     const camera = this.thirdPartyControls.camera;
     const target = new THREE.Vector3();
     this.thirdPartyControls.getTarget(target);
@@ -1049,13 +1075,11 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     }
   }
 
-  setDamperDecayTime(decay: number): void {
-    // Convert decay time (milliseconds) to smoothTime (seconds)
-    // SmoothControls uses decay in ms, CameraControls uses smoothTime in
-    // seconds
-    this.thirdPartyControls.smoothTime = decay / 1000;
-    this.thirdPartyControls.draggingSmoothTime =
-        decay / 2000;  // Half for dragging
+  setDamperDecayTime(_decay: number): void {
+    // LD controls use fixed CameraControls damping. The interpolation-decay
+    // attribute remains for API compatibility but its value is ignored.
+    this.thirdPartyControls.smoothTime = LD_SMOOTH_TIME;
+    this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
   }
 
   jumpToGoal(): void {
@@ -1064,9 +1088,15 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   setFieldOfView(fov: number): void {
-    // Set camera field of view directly
     if (this.thirdPartyControls.camera instanceof THREE.PerspectiveCamera) {
-      this.thirdPartyControls.camera.fov = fov;
+      const minimum = this.options.minimumFieldOfViewExplicit ?
+          this.options.minimumFieldOfView! :
+          0.01;
+      const maximum = this.options.maximumFieldOfViewExplicit ?
+          this.options.maximumFieldOfView! :
+          179;
+      this.thirdPartyControls.camera.fov =
+          Math.max(minimum, Math.min(maximum, fov));
       this.thirdPartyControls.camera.updateProjectionMatrix();
     }
   }
@@ -1376,9 +1406,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Create new CameraControls with the new camera
     this.thirdPartyControls = new CameraControls(newCamera, this.domElement);
 
-    // Restore settings
-    this.thirdPartyControls.smoothTime = 0.25;
-    this.thirdPartyControls.draggingSmoothTime = 0.125;
+    // Restore fixed damping (see LD_SMOOTH_TIME)
+    this.thirdPartyControls.smoothTime = LD_SMOOTH_TIME;
+    this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
     this.thirdPartyControls.enabled = wasEnabled;
     this.syncFpsAnglesFromCamera();
 
@@ -1481,7 +1511,6 @@ const $a11y = Symbol('a11y');
 const $updateA11y = Symbol('updateA11y');
 const $updateCameraForRadius = Symbol('updateCameraForRadius');
 
-const $cancelPrompts = Symbol('cancelPrompts');
 const $onChange = Symbol('onChange');
 const $onPointerChange = Symbol('onPointerChange');
 
@@ -1521,6 +1550,8 @@ export declare interface LDControlsInterface extends ControlsInterface {
 export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     ModelViewerElement: T): Constructor<LDControlsInterface>&T => {
   class ControlsModelViewerElement extends ModelViewerElement {
+    [$programmaticCameraAnimation] = false;
+
     @property({type: Boolean, attribute: 'camera-controls'})
     cameraControls: boolean = false;
 
@@ -1660,6 +1691,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     disableTap: boolean = false;
 
     @property({type: Number, attribute: 'interpolation-decay'})
+    // Kept for API compatibility; LDControls uses fixed CameraControls damping
+    // (LD_SMOOTH_TIME / LD_DRAGGING_SMOOTH_TIME) and ignores this value.
     interpolationDecay: number = DECAY_MILLISECONDS;
 
     @property() a11y: A11yTranslationsInterface|string|null = null;
@@ -1941,8 +1974,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (changedProperties.has('interpolationDecay')) {
+        // Attribute kept for API compatibility; LD damping is fixed.
         controls.setDamperDecayTime(this.interpolationDecay);
-        scene.setTargetDamperDecayTime(this.interpolationDecay);
+        scene.setTargetDamperDecayTime(DECAY_MILLISECONDS);
       }
 
       if (changedProperties.has('a11y')) {
@@ -2096,12 +2130,18 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const scene = this[$scene];
       scene.framedFoVDeg = (style[0] * 180) / Math.PI;
       controls.changeSource = ChangeSource.NONE;
-      controls.setFieldOfView(scene.adjustedFoV(scene.framedFoVDeg));
+      if (!this[$programmaticCameraAnimation]) {
+        controls.setFieldOfView(scene.adjustedFoV(scene.framedFoVDeg));
+      }
       this[$cancelPrompts]();
     }
 
     [$syncCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
       const controls = this[$controls];
+      if (this[$programmaticCameraAnimation]) {
+        this[$cancelPrompts]();
+        return;
+      }
       if (this[$maintainThetaPhi]) {
         const {theta, phi} = this.getCameraOrbit();
         style[0] = theta;
@@ -2121,10 +2161,12 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         minimumAzimuthalAngle: style[0],
         minimumPolarAngle: style[1],
         minimumRadius: style[2],
+        minimumRadiusExplicit:
+            hasExplicitOrbitRadius(this.minCameraOrbit),
       });
-      if (this.cameraControlMode !== 'fps') {
-        this.jumpCameraToGoal();
-      }
+      // Do not jumpCameraToGoal here: after preset tweens Agora applies new
+      // limits and a jump produces a visible snap. Limits take effect on the
+      // next CameraControls.update() / user interaction instead.
     }
 
     [$syncMaxCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
@@ -2132,29 +2174,34 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         maximumAzimuthalAngle: style[0],
         maximumPolarAngle: style[1],
         maximumRadius: style[2],
+        maximumRadiusExplicit:
+            hasExplicitOrbitRadius(this.maxCameraOrbit),
       });
       this[$updateCameraForRadius](style[2]);
-      if (this.cameraControlMode !== 'fps') {
-        this.jumpCameraToGoal();
-      }
+      // See $syncMinCameraOrbit — apply limits without snapping the camera.
     }
 
     [$syncMinFieldOfView](style: EvaluatedStyle<Intrinsics<['rad']>>) {
       this[$controls].applyOptions({
         minimumFieldOfView: (style[0] * 180) / Math.PI,
+        minimumFieldOfViewExplicit: this.minFieldOfView !== 'auto',
       });
-      this.jumpCameraToGoal();
+      // Apply FOV limits without jumpCameraToGoal (same rationale as orbit).
     }
 
     [$syncMaxFieldOfView](style: EvaluatedStyle<Intrinsics<['rad']>>) {
       const fov = this[$scene].adjustedFoV((style[0] * 180) / Math.PI);
-      this[$controls].applyOptions({maximumFieldOfView: fov});
-      this.jumpCameraToGoal();
+      this[$controls].applyOptions({
+        maximumFieldOfView: fov,
+        maximumFieldOfViewExplicit: this.maxFieldOfView !== 'auto',
+      });
+      // Apply FOV limits without jumpCameraToGoal (same rationale as orbit).
     }
 
     [$syncCameraTarget](style: EvaluatedStyle<Vector3Intrinsics>) {
       const [x, y, z] = style;
-      if (!this[$renderer].arRenderer.isPresenting) {
+      if (!this[$programmaticCameraAnimation] &&
+          !this[$renderer].arRenderer.isPresenting) {
         const cc = (this[$controls] as any)?.thirdPartyControls;
         if (cc && typeof cc.setLookAt === 'function') {
           // Orbit around the new look-at in world space. Do not
@@ -2199,7 +2246,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const scene = this[$scene];
 
       const now = performance.now();
-      if (this[$waitingToPromptUser]) {
+      if (!this[$programmaticCameraAnimation] &&
+          this[$waitingToPromptUser]) {
         if (this.loaded &&
             now > this[$loadedTime] + this.interactionPromptThreshold) {
           this[$waitingToPromptUser] = false;
@@ -2211,7 +2259,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       let interactionPromptAdjustedOrbit = false;
 
-      if (isFinite(this[$promptElementVisibleTime]) &&
+      if (!this[$programmaticCameraAnimation] &&
+          isFinite(this[$promptElementVisibleTime]) &&
           this.interactionPromptStyle === InteractionPromptStyle.WIGGLE) {
         const animationTime =
             ((now - this[$promptElementVisibleTime]) / PROMPT_ANIMATION_TIME) %
@@ -2237,8 +2286,25 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      const cameraMoved = controls.update(time, delta);
-      const targetMoved = scene.updateTarget(delta);
+      let cameraMoved: boolean;
+      let targetMoved: boolean;
+      if (this[$programmaticCameraAnimation]) {
+        // The animation loop drives the camera directly via applyCameraPose;
+        // running CameraControls.update() or scene.updateTarget() here would
+        // fight it with their own damping and constraint enforcement.
+        cameraMoved = true;
+        targetMoved = false;
+        this[$needsRender]();
+      } else {
+        cameraMoved = controls.update(time, delta);
+        // Skip model-pivot Damper while the user is dragging — otherwise it
+        // fights CameraControls smoothDamp and feels like two animations.
+        if (controls.changeSource === ChangeSource.USER_INTERACTION) {
+          targetMoved = false;
+        } else {
+          targetMoved = scene.updateTarget(delta);
+        }
+      }
 
       if (cameraMoved || targetMoved) {
         this[$onChange]();

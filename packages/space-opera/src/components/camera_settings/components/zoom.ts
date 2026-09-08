@@ -20,9 +20,23 @@ import {customElement, state} from 'lit/decorators.js';
 
 import {reduxStore} from '../../../space_opera_base.js';
 import {zoomStyles} from '../../../styles.css.js';
-import {dispatchSetMinZoom} from '../../config/reducer.js';
+import {State} from '../../../types.js';
+import {
+  dispatchZoomLimits,
+  getConfig,
+  ZoomLimits,
+} from '../../config/reducer.js';
 import {ConnectedLitElement} from '../../connected_lit_element/connected_lit_element.js';
 import {getModelViewer} from '../../model_viewer_preview/reducer.js';
+
+function numericToken(value?: string, position: number = 0) {
+  const token = value?.trim().split(/\s+/)[position];
+  if (!token || token === 'auto') {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(token);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 /** The Camera Settings panel. */
 @customElement('me-camera-zoom-limits')
@@ -32,15 +46,54 @@ export class ZooomLimits extends ConnectedLitElement {
   @state() enabled = false;
   @state() minRadius?: number = undefined;
   @state() minFov?: number = undefined;
+  @state() maxRadius?: number = undefined;
+  @state() maxFov?: number = undefined;
+  private limitsKey?: string;
+
+  stateChanged(state: State) {
+    const config = getConfig(state);
+    const limitsKey = [
+      config.minCameraOrbit,
+      config.maxCameraOrbit,
+      config.minFov,
+      config.maxFov,
+    ].join('|');
+    if (limitsKey === this.limitsKey) {
+      return;
+    }
+    this.limitsKey = limitsKey;
+    this.minRadius = numericToken(config.minCameraOrbit, 2);
+    this.maxRadius = numericToken(config.maxCameraOrbit, 2);
+    this.minFov = numericToken(config.minFov);
+    this.maxFov = numericToken(config.maxFov);
+    this.enabled = [
+      this.minRadius,
+      this.maxRadius,
+      this.minFov,
+      this.maxFov,
+    ].some(value => value != null);
+  }
 
   onToggle(event: Event) {
     this.enabled = (event.target as HTMLInputElement).checked;
 
-    if (this.enabled) {
-      reduxStore.dispatch(dispatchSetMinZoom(this.minFov, this.minRadius));
-    } else {
-      reduxStore.dispatch(dispatchSetMinZoom());
+    if (!this.enabled) {
+      this.minRadius = undefined;
+      this.minFov = undefined;
+      this.maxRadius = undefined;
+      this.maxFov = undefined;
+      reduxStore.dispatch(dispatchZoomLimits());
     }
+  }
+
+  private dispatchLimits() {
+    const limits: ZoomLimits = {
+      minRadius: this.minRadius,
+      maxRadius: this.maxRadius,
+      minFov: this.minFov,
+      maxFov: this.maxFov,
+    };
+    reduxStore.dispatch(dispatchZoomLimits(limits));
   }
 
   dispatchMin() {
@@ -48,13 +101,35 @@ export class ZooomLimits extends ConnectedLitElement {
     this.minFov = modelViewer.getFieldOfView();
     const currentOrbit = modelViewer.getCameraOrbit();
     this.minRadius = currentOrbit.radius;
-    reduxStore.dispatch(dispatchSetMinZoom(this.minFov, this.minRadius));
+    if (this.maxRadius != null && this.maxRadius < this.minRadius) {
+      this.maxRadius = this.minRadius;
+    }
+    if (this.maxFov != null && this.maxFov < this.minFov) {
+      this.maxFov = this.minFov;
+    }
+    this.dispatchLimits();
   }
 
-  dispatchResetMin() {
+  dispatchMax() {
+    const modelViewer = getModelViewer()!;
+    this.maxFov = modelViewer.getFieldOfView();
+    const currentOrbit = modelViewer.getCameraOrbit();
+    this.maxRadius = currentOrbit.radius;
+    if (this.minRadius != null && this.minRadius > this.maxRadius) {
+      this.minRadius = this.maxRadius;
+    }
+    if (this.minFov != null && this.minFov > this.maxFov) {
+      this.minFov = this.maxFov;
+    }
+    this.dispatchLimits();
+  }
+
+  dispatchReset() {
     this.minRadius = undefined;
     this.minFov = undefined;
-    reduxStore.dispatch(dispatchSetMinZoom());
+    this.maxRadius = undefined;
+    this.maxFov = undefined;
+    reduxStore.dispatch(dispatchZoomLimits());
   }
 
   render() {
@@ -68,9 +143,11 @@ export class ZooomLimits extends ConnectedLitElement {
     ${
         this.enabled ? html`
       <mwc-button id="set-min-button" class="SetButton" unelevated
-      @click="${this.dispatchMin}">Set Min</mwc-button>
-      <mwc-button id="set-min-button" class="SetButton" unelevated icon="undo"
-      @click="${this.dispatchResetMin}">Reset Min</mwc-button>
+        @click="${this.dispatchMin}">Set Minimum</mwc-button>
+      <mwc-button id="set-max-button" class="SetButton" unelevated
+        @click="${this.dispatchMax}">Set Maximum</mwc-button>
+      <mwc-button id="reset-button" class="SetButton" unelevated icon="undo"
+        @click="${this.dispatchReset}">Reset Limits</mwc-button>
     ` :
                        html``}
 `;

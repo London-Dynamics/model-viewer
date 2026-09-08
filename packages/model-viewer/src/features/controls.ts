@@ -251,6 +251,13 @@ export const $panElement = Symbol('panElement');
 export const $promptElement = Symbol('promptElement');
 export const $promptAnimatedContainer = Symbol('promptAnimatedContainer');
 export const $fingerAnimatedContainers = Symbol('fingerAnimatedContainers');
+/**
+ * True while an LD camera API owns the camera pose. Controls use this to
+ * avoid applying automatic prompt motion over a programmatic transition.
+ */
+export const $programmaticCameraAnimation = Symbol(
+  'programmaticCameraAnimation'
+);
 
 const $deferInteractionPrompt = Symbol('deferInteractionPrompt');
 const $updateAria = Symbol('updateAria');
@@ -258,7 +265,7 @@ const $a11y = Symbol('a11y');
 const $updateA11y = Symbol('updateA11y');
 const $updateCameraForRadius = Symbol('updateCameraForRadius');
 
-const $cancelPrompts = Symbol('cancelPrompts');
+export const $cancelPrompts = Symbol('cancelPrompts');
 const $onChange = Symbol('onChange');
 const $onPointerChange = Symbol('onPointerChange');
 
