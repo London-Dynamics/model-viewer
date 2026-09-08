@@ -57,14 +57,13 @@ import {ensureViewportGizmo, type ViewportGizmoHandle,} from './viewport-gizmo.j
  */
 const LD_SMOOTH_TIME = 0;
 const LD_DRAGGING_SMOOTH_TIME = 0.08;
+/** Click-to-pan look-at truck; restored to LD_SMOOTH_TIME when it settles. */
+const TAP_SMOOTH_TIME = 0.12;
 
 import {$cancelPrompts, $controls, $fingerAnimatedContainers, $panElement, $programmaticCameraAnimation, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
 import {DEFAULT_FOV_DEG, DEFAULT_MIN_FOV_DEG, DEFAULT_CAMERA_ORBIT, DEFAULT_CAMERA_TARGET, DEFAULT_FIELD_OF_VIEW, MINIMUM_RADIUS_RATIO, AZIMUTHAL_QUADRANT_LABELS, POLAR_TRIENT_LABELS, DEFAULT_INTERACTION_PROMPT_THRESHOLD, INTERACTION_PROMPT,} from '../controls.js';
-import {
-  modelTargetToWorldSpace,
-  worldTargetToModelSpace,
-} from '../ld-camera-space.js';
+import {modelTargetToWorldSpace, worldTargetToModelSpace,} from '../ld-camera-space.js';
 
 export {
   DEFAULT_FOV_DEG,
@@ -106,9 +105,16 @@ function normalizeFpsSensitivity(value: number, fallback: number): number {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-function hasExplicitOrbitRadius(value: string): boolean {
+function hasExplicitOrbitRadius(value: string|null|undefined): boolean {
+  if (value == null || value === '') {
+    return false;
+  }
   const radius = value.trim().split(/\s+/)[2];
   return radius != null && radius.toLowerCase() !== 'auto';
+}
+
+function hasExplicitStyleValue(value: string|null|undefined): boolean {
+  return value != null && value !== '' && value !== 'auto';
 }
 
 /**
@@ -182,8 +188,9 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   };
 }
 
-// Constants for tap detection (matching SmoothControls)
-const TAP_DISTANCE = 2;
+// Constants for tap detection. 4px matches ld-camera click slop so a
+// slight pointer jitter still counts as a tap, not an orbit.
+const TAP_DISTANCE = 4;
 const TAP_MS = 300;
 
 /**
@@ -221,6 +228,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _internalDragDisableCount: number = 0;
   /** API disables via disableCameraDrag / enableCameraDrag. */
   private _externalDragDisableCount: number = 0;
+  private _tapListenersAttached: boolean = false;
+  private _tapPointerId: number|null = null;
+  private _tapSmoothGeneration: number = 0;
 
   private get isDragInteractionDisabled(): boolean {
     return (
@@ -321,8 +331,6 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   set enableTap(value: boolean) {
     this._enableTap = value;
-    // Tap handling is implemented via pointer event listeners in
-    // enableInteraction/disableInteraction
   }
 
   get interactionMode(): InteractionMode {
@@ -498,21 +506,29 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // pointer events. Without this, interaction-prompt wiggle leaves
     // changeSource as AUTOMATIC and user drags are not recognized (prompt never
     // dismisses).
-    this.thirdPartyControls.addEventListener('controlstart', () => {
-      if (this.changeSource !== ChangeSource.AUTOMATIC) {
-        this.changeSource = ChangeSource.USER_INTERACTION;
-        // Settle model-pivot Damper so scene.updateTarget does not run in
-        // parallel with CameraControls orbit smoothing during the drag.
-        this.scene?.jumpToGoal?.();
-      }
-    });
-
-    this.thirdPartyControls.addEventListener('controlend', () => {
-      if (this.changeSource === ChangeSource.USER_INTERACTION) {
-        this.changeSource = ChangeSource.NONE;
-      }
-    });
+    this.bindCameraControlsLifecycleListeners();
   }
+
+  private bindCameraControlsLifecycleListeners(): void {
+    this.thirdPartyControls.addEventListener(
+        'controlstart', this.onControlStart);
+    this.thirdPartyControls.addEventListener('controlend', this.onControlEnd);
+  }
+
+  private onControlStart = () => {
+    if (this.changeSource !== ChangeSource.AUTOMATIC) {
+      this.changeSource = ChangeSource.USER_INTERACTION;
+      // Settle model-pivot Damper so scene.updateTarget does not run in
+      // parallel with CameraControls orbit smoothing during the drag.
+      this.scene?.jumpToGoal?.();
+    }
+  };
+
+  private onControlEnd = () => {
+    if (this.changeSource === ChangeSource.USER_INTERACTION) {
+      this.changeSource = ChangeSource.NONE;
+    }
+  };
 
   private applyInteractionBindings(): void {
     const controls = this.thirdPartyControls;
@@ -673,21 +689,37 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
   /**
    * Turn on CameraControls and tap listeners without resetting drag-disabled
-   * state.
+   * state. Tap listeners are tracked separately because CameraControls starts
+   * enabled, so an `enabled` check would skip the first attach.
    */
   private ensureControlsListening(): void {
     if (!this.canEnableInteraction()) {
       return;
     }
-    const wasEnabled = this.thirdPartyControls.enabled;
     this.thirdPartyControls.enabled = true;
-    if (wasEnabled) {
+    this.attachTapListeners();
+  }
+
+  private attachTapListeners(): void {
+    if (this._tapListenersAttached) {
       return;
     }
-    this.domElement.addEventListener('mousedown', this.onMouseDown);
-    this.domElement.addEventListener('mouseup', this.onMouseUp);
-    this.domElement.addEventListener('touchstart', this.onTouchStart);
-    this.domElement.addEventListener('touchend', this.onTouchEnd);
+    this.domElement.addEventListener('pointerdown', this.onTapPointerDown);
+    this.domElement.addEventListener('pointerup', this.onTapPointerUp);
+    this.domElement.addEventListener('pointercancel', this.onTapPointerCancel);
+    this._tapListenersAttached = true;
+  }
+
+  private detachTapListeners(): void {
+    if (!this._tapListenersAttached) {
+      return;
+    }
+    this.domElement.removeEventListener('pointerdown', this.onTapPointerDown);
+    this.domElement.removeEventListener('pointerup', this.onTapPointerUp);
+    this.domElement.removeEventListener(
+        'pointercancel', this.onTapPointerCancel);
+    this._tapListenersAttached = false;
+    this._tapPointerId = null;
   }
 
   private applyDragDisabledBindings(): void {
@@ -717,58 +749,40 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   disableInteraction(): void {
     this._internalDragDisableCount = 0;
     this.thirdPartyControls.enabled = false;
-    // Remove tap detection listeners
-    this.domElement.removeEventListener('mousedown', this.onMouseDown);
-    this.domElement.removeEventListener('mouseup', this.onMouseUp);
-    this.domElement.removeEventListener('touchstart', this.onTouchStart);
-    this.domElement.removeEventListener('touchend', this.onTouchEnd);
+    this.detachTapListeners();
   }
 
-  /**
-   * Handle mouse down for tap detection
-   */
-  private onMouseDown = (event: MouseEvent) => {
-    // Only track left mouse button
-    if (event.button !== 0)
+  private onTapPointerDown = (event: PointerEvent) => {
+    if (event.button !== 0) {
       return;
+    }
     this.startTime = performance.now();
     this.startPointerPosition.clientX = event.clientX;
     this.startPointerPosition.clientY = event.clientY;
+    this._tapPointerId = event.pointerId;
   };
 
-  /**
-   * Handle touch start for tap detection
-   */
-  private onTouchStart = (event: TouchEvent) => {
-    if (event.changedTouches.length === 0)
+  private onTapPointerUp = (event: PointerEvent) => {
+    if (event.button !== 0) {
       return;
-    this.startTime = performance.now();
-    this.startPointerPosition.clientX = event.changedTouches[0].clientX;
-    this.startPointerPosition.clientY = event.changedTouches[0].clientY;
-  };
-
-  /**
-   * Handle mouse up - check if it was a tap and recenter if so
-   */
-  private onMouseUp = (event: MouseEvent) => {
-    // Only handle left mouse button
-    if (event.button !== 0)
+    }
+    if (this._tapPointerId != null && event.pointerId !== this._tapPointerId) {
       return;
+    }
+    this._tapPointerId = null;
+    if (this._cameraControlMode === 'fps') {
+      return;
+    }
     if (this._enablePan && this._enableTap) {
       this.recenter(event.clientX, event.clientY);
     }
   };
 
-  /**
-   * Handle touch end - check if it was a tap and recenter if so
-   */
-  private onTouchEnd = (event: TouchEvent) => {
-    if (event.changedTouches.length === 0)
+  private onTapPointerCancel = (event: PointerEvent) => {
+    if (this._tapPointerId != null && event.pointerId !== this._tapPointerId) {
       return;
-    if (this._enablePan && this._enableTap) {
-      this.recenter(
-          event.changedTouches[0].clientX, event.changedTouches[0].clientY);
     }
+    this._tapPointerId = null;
   };
 
   private onFpsPointerDown = (event: PointerEvent) => {
@@ -992,6 +1006,40 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   /**
+   * Truck the CameraControls look-at to a world point, keeping orbit angles
+   * and radius. Does not call scene.setTarget() (that translates the model).
+   */
+  private truckLookAtToWorldPoint(worldTarget: THREE.Vector3): void {
+    const spherical = new THREE.Spherical();
+    if (typeof this.thirdPartyControls.getSpherical === 'function') {
+      this.thirdPartyControls.getSpherical(spherical, false);
+    }
+    const position =
+        new THREE.Vector3().setFromSpherical(spherical).add(worldTarget);
+    const generation = ++this._tapSmoothGeneration;
+    this.thirdPartyControls.smoothTime = TAP_SMOOTH_TIME;
+    const result = this.thirdPartyControls.setLookAt(
+        position.x,
+        position.y,
+        position.z,
+        worldTarget.x,
+        worldTarget.y,
+        worldTarget.z,
+        true);
+    const restore = () => {
+      if (generation === this._tapSmoothGeneration) {
+        this.thirdPartyControls.smoothTime = LD_SMOOTH_TIME;
+      }
+    };
+    if (result != null &&
+        typeof (result as Promise<void>).then === 'function') {
+      (result as Promise<void>).then(restore, restore);
+    } else {
+      restore();
+    }
+  }
+
+  /**
    * Recenter the camera target on tap (matching SmoothControls behavior)
    * This is called when the user taps (short click without dragging)
    */
@@ -1019,9 +1067,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       // Zoom all the way out (increase radius)
       this.thirdPartyControls.dolly(-1, true);
     } else {
-      // Hit something - set target to hit position
-      scene.target.worldToLocal(hit.position);
-      scene.setTarget(hit.position.x, hit.position.y, hit.position.z);
+      this.truckLookAtToWorldPoint(hit.position);
     }
   }
 
@@ -1410,6 +1456,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.smoothTime = LD_SMOOTH_TIME;
     this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
     this.thirdPartyControls.enabled = wasEnabled;
+    this.bindCameraControlsLifecycleListeners();
     this.syncFpsAnglesFromCamera();
 
     // Restore sensitivity settings
@@ -1756,8 +1803,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (cc && typeof cc.getTarget === 'function') {
         const worldTarget = new THREE.Vector3();
         cc.getTarget(worldTarget);
-        return toVector3D(
-            worldTargetToModelSpace(this[$scene], worldTarget));
+        return toVector3D(worldTargetToModelSpace(this[$scene], worldTarget));
       }
       return toVector3D(this[$scene].getDynamicTarget());
     }
@@ -2161,8 +2207,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         minimumAzimuthalAngle: style[0],
         minimumPolarAngle: style[1],
         minimumRadius: style[2],
-        minimumRadiusExplicit:
-            hasExplicitOrbitRadius(this.minCameraOrbit),
+        minimumRadiusExplicit: hasExplicitOrbitRadius(this.minCameraOrbit),
       });
       // Do not jumpCameraToGoal here: after preset tweens Agora applies new
       // limits and a jump produces a visible snap. Limits take effect on the
@@ -2174,8 +2219,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         maximumAzimuthalAngle: style[0],
         maximumPolarAngle: style[1],
         maximumRadius: style[2],
-        maximumRadiusExplicit:
-            hasExplicitOrbitRadius(this.maxCameraOrbit),
+        maximumRadiusExplicit: hasExplicitOrbitRadius(this.maxCameraOrbit),
       });
       this[$updateCameraForRadius](style[2]);
       // See $syncMinCameraOrbit — apply limits without snapping the camera.
@@ -2184,7 +2228,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$syncMinFieldOfView](style: EvaluatedStyle<Intrinsics<['rad']>>) {
       this[$controls].applyOptions({
         minimumFieldOfView: (style[0] * 180) / Math.PI,
-        minimumFieldOfViewExplicit: this.minFieldOfView !== 'auto',
+        minimumFieldOfViewExplicit: hasExplicitStyleValue(this.minFieldOfView),
       });
       // Apply FOV limits without jumpCameraToGoal (same rationale as orbit).
     }
@@ -2193,7 +2237,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const fov = this[$scene].adjustedFoV((style[0] * 180) / Math.PI);
       this[$controls].applyOptions({
         maximumFieldOfView: fov,
-        maximumFieldOfViewExplicit: this.maxFieldOfView !== 'auto',
+        maximumFieldOfViewExplicit: hasExplicitStyleValue(this.maxFieldOfView),
       });
       // Apply FOV limits without jumpCameraToGoal (same rationale as orbit).
     }
@@ -2207,8 +2251,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           // Orbit around the new look-at in world space. Do not
           // scene.setTarget() (that translates the model) or setLookAt(keep
           // camera.position) (that retargets without trucking).
-          const worldTarget = modelTargetToWorldSpace(
-              this[$scene], new THREE.Vector3(x, y, z));
+          const worldTarget =
+              modelTargetToWorldSpace(this[$scene], new THREE.Vector3(x, y, z));
           const spherical = new THREE.Spherical();
           if (typeof cc.getSpherical === 'function') {
             cc.getSpherical(spherical);
@@ -2246,8 +2290,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const scene = this[$scene];
 
       const now = performance.now();
-      if (!this[$programmaticCameraAnimation] &&
-          this[$waitingToPromptUser]) {
+      if (!this[$programmaticCameraAnimation] && this[$waitingToPromptUser]) {
         if (this.loaded &&
             now > this[$loadedTime] + this.interactionPromptThreshold) {
           this[$waitingToPromptUser] = false;

@@ -128,6 +128,16 @@ suite('LD camera transitions', () => {
     expect(element.getCameraOrbit().radius).to.be.closeTo(5, 0.1);
   });
 
+  test('removing orbit limit attributes does not throw', async () => {
+    element.minCameraOrbit = 'auto auto 2m';
+    element.maxCameraOrbit = 'auto 95deg auto';
+    await element.updateComplete;
+
+    element.removeAttribute('min-camera-orbit');
+    element.removeAttribute('max-camera-orbit');
+    await element.updateComplete;
+  });
+
   test('allows pointer interaction to cancel a transition', async () => {
     const animation = (element as any)
                           .animateCameraTo(
