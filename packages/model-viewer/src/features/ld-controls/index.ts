@@ -1947,6 +1947,18 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
+      if (changedProperties.has('disableZoom')) {
+        controls.disableZoom = this.disableZoom;
+      }
+
+      if (changedProperties.has('disablePan')) {
+        controls.enablePan = !this.disablePan;
+      }
+
+      if (changedProperties.has('disableTap')) {
+        controls.enableTap = !this.disableTap;
+      }
+
       if (changedProperties.has('cameraControlMode')) {
         controls.cameraControlMode = this.cameraControlMode;
         if (interactionAllowed) {
@@ -1970,18 +1982,6 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (changedProperties.has('fpsMoveSensitivity')) {
         controls.fpsMoveSensitivity = this.fpsMoveSensitivity;
-      }
-
-      if (changedProperties.has('disableZoom')) {
-        controls.disableZoom = this.disableZoom;
-      }
-
-      if (changedProperties.has('disablePan')) {
-        controls.enablePan = !this.disablePan;
-      }
-
-      if (changedProperties.has('disableTap')) {
-        controls.enableTap = !this.disableTap;
       }
 
       if (changedProperties.has('interactionPrompt') ||

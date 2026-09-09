@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import CameraControls from 'camera-controls';
 import { Box3, Vector3 } from 'three';
 
 import { $controls } from '../../features/controls.js';
@@ -258,6 +259,33 @@ suite('LD Camera JSON', () => {
     await element.updateComplete;
 
     expect((element as any).cameraControlMode).to.equal('orbit');
+  });
+
+  test('FPS to orbit restores wheel zoom when disableZoom is false', async () => {
+    const cc = (element as any)[$controls].thirdPartyControls;
+
+    (element as any).setCameraControlsMode('fps');
+    await element.updateComplete;
+    expect(cc.mouseButtons.wheel).to.equal(CameraControls.ACTION.NONE);
+
+    (element as any).setCameraControlsMode('orbit');
+    await element.updateComplete;
+    expect(cc.mouseButtons.wheel).to.not.equal(CameraControls.ACTION.NONE);
+  });
+
+  test('clearing disableZoom after FPS restores orbit wheel zoom', async () => {
+    const cc = (element as any)[$controls].thirdPartyControls;
+
+    element.disableZoom = true;
+    (element as any).setCameraControlsMode('fps');
+    await element.updateComplete;
+    expect(cc.mouseButtons.wheel).to.equal(CameraControls.ACTION.NONE);
+
+    element.disableZoom = false;
+    (element as any).setCameraControlsMode('orbit');
+    await element.updateComplete;
+    expect(element.disableZoom).to.equal(false);
+    expect(cc.mouseButtons.wheel).to.not.equal(CameraControls.ACTION.NONE);
   });
 
   test('FPS mode lifts orbit min-distance so the camera can sit inside the model', async () => {
