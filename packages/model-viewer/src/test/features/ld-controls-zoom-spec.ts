@@ -1,6 +1,7 @@
 import {expect} from 'chai';
 
 import {$controls} from '../../features/controls.js';
+import {$userInputElement} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {timePasses, waitForEvent} from '../../utilities.js';
 import {assetPath} from '../helpers.js';
@@ -39,9 +40,23 @@ suite('LD controls zoom', () => {
     const cc = controls.thirdPartyControls as any;
 
     for (let i = 0; i < 200; i++) {
-      cc._dollyInternal(1, 0, 0);
+      cc._dollyInternal(-1, 0, 0);
     }
     cc.update(0);
+
+    expect(element.getCameraOrbit().radius).to.be.closeTo(radius, 0.00001);
+    expect(element.getFieldOfView()).to.be.closeTo(10, 0.00001);
+  });
+
+  test('narrows FOV for wheel zoom-in at minimum radius', async () => {
+    const radius = await clampAtMinimumRadius();
+
+    for (let i = 0; i < 200; i++) {
+      element[$userInputElement].dispatchEvent(new WheelEvent('wheel', {
+        deltaY: -30,
+        cancelable: true,
+      }));
+    }
 
     expect(element.getCameraOrbit().radius).to.be.closeTo(radius, 0.00001);
     expect(element.getFieldOfView()).to.be.closeTo(10, 0.00001);

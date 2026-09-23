@@ -525,15 +525,16 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     const dollyInternal = controls._dollyInternal.bind(this.thirdPartyControls);
     controls._dollyInternal = (delta: number, x: number, y: number) => {
       const result = dollyInternal(delta, x, y);
-      this.adjustFieldOfViewForDolly(
-          delta * this.thirdPartyControls.dollySpeed);
+      this.adjustFieldOfViewByLogDelta(
+          delta * this.thirdPartyControls.dollySpeed *
+          LOG_FOV_ZOOM_PER_DOLLY_DELTA);
       return result;
     };
     controls._ldFovCoupledDolly = true;
   }
 
-  private adjustFieldOfViewForDolly(delta: number): void {
-    if (delta === 0 ||
+  private adjustFieldOfViewByLogDelta(deltaLogFov: number): void {
+    if (deltaLogFov === 0 ||
         !(this.thirdPartyControls.camera instanceof THREE.PerspectiveCamera)) {
       return;
     }
@@ -543,10 +544,9 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       return;
     }
 
-    // CameraControls uses positive dolly deltas for zoom-in. SmoothControls
-    // applies zoom in log-FOV space, so keep the same visual progression even
-    // when radius is already clamped at minDistance.
-    const goalLogFov = Math.log(fov) - delta * LOG_FOV_ZOOM_PER_DOLLY_DELTA;
+    // SmoothControls applies zoom in log-FOV space, so keep the same visual
+    // progression even when radius is already clamped at minDistance.
+    const goalLogFov = Math.log(fov) + deltaLogFov;
     this.setFieldOfView(Math.exp(goalLogFov));
   }
 
@@ -1274,7 +1274,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
         goal.theta - deltaTheta, goal.phi - deltaPhi, false);
     if (deltaRadius !== 0) {
       this.thirdPartyControls.dolly(deltaRadius, false);
-      this.adjustFieldOfViewForDolly(deltaRadius);
+      this.adjustFieldOfViewByLogDelta(
+          -deltaRadius * LOG_FOV_ZOOM_PER_DOLLY_DELTA);
     }
     this.thirdPartyControls.update(0);
   }
