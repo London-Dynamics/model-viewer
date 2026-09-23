@@ -59,6 +59,8 @@ const LD_SMOOTH_TIME = 0;
 const LD_DRAGGING_SMOOTH_TIME = 0.08;
 /** Click-to-pan look-at truck; restored to LD_SMOOTH_TIME when it settles. */
 const TAP_SMOOTH_TIME = 0.12;
+/** SmoothControls changes log(FOV) by 0.04 for a 30px wheel zoom step. */
+const LOG_FOV_ZOOM_PER_DOLLY_DELTA = 0.04;
 
 import {$cancelPrompts, $controls, $fingerAnimatedContainers, $panElement, $programmaticCameraAnimation, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
@@ -490,6 +492,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Set up sensitivity mappings
     this.updateSensitivity();
+    this.installCoupledDollyHandler();
     this.applyInteractionBindings();
     this.domElement.addEventListener('pointerdown', this.onFpsPointerDown);
     this.domElement.addEventListener('pointermove', this.onFpsPointerMove);
@@ -507,6 +510,44 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // changeSource as AUTOMATIC and user drags are not recognized (prompt never
     // dismisses).
     this.bindCameraControlsLifecycleListeners();
+  }
+
+  private installCoupledDollyHandler(): void {
+    const controls = this.thirdPartyControls as unknown as {
+      _dollyInternal?: (delta: number, x: number, y: number) => unknown,
+      _ldFovCoupledDolly?: boolean,
+    };
+    if (controls._ldFovCoupledDolly ||
+        typeof controls._dollyInternal !== 'function') {
+      return;
+    }
+
+    const dollyInternal = controls._dollyInternal.bind(this.thirdPartyControls);
+    controls._dollyInternal = (delta: number, x: number, y: number) => {
+      const result = dollyInternal(delta, x, y);
+      this.adjustFieldOfViewForDolly(
+          delta * this.thirdPartyControls.dollySpeed);
+      return result;
+    };
+    controls._ldFovCoupledDolly = true;
+  }
+
+  private adjustFieldOfViewForDolly(delta: number): void {
+    if (delta === 0 ||
+        !(this.thirdPartyControls.camera instanceof THREE.PerspectiveCamera)) {
+      return;
+    }
+
+    const fov = this.getFieldOfView();
+    if (!Number.isFinite(fov) || fov <= 0) {
+      return;
+    }
+
+    // CameraControls uses positive dolly deltas for zoom-in. SmoothControls
+    // applies zoom in log-FOV space, so keep the same visual progression even
+    // when radius is already clamped at minDistance.
+    const goalLogFov = Math.log(fov) - delta * LOG_FOV_ZOOM_PER_DOLLY_DELTA;
+    this.setFieldOfView(Math.exp(goalLogFov));
   }
 
   private bindCameraControlsLifecycleListeners(): void {
@@ -1233,6 +1274,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
         goal.theta - deltaTheta, goal.phi - deltaPhi, false);
     if (deltaRadius !== 0) {
       this.thirdPartyControls.dolly(deltaRadius, false);
+      this.adjustFieldOfViewForDolly(deltaRadius);
     }
     this.thirdPartyControls.update(0);
   }
@@ -1457,6 +1499,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
     this.thirdPartyControls.enabled = wasEnabled;
     this.bindCameraControlsLifecycleListeners();
+    this.installCoupledDollyHandler();
     this.syncFpsAnglesFromCamera();
 
     // Restore sensitivity settings
