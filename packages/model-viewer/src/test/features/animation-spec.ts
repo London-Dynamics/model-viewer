@@ -57,6 +57,23 @@ const animationWithIndexIsPlaying = (element: any, animationIndex = 0):
       return false;
     }
 
+const appendedAction = (element: any, name: string): any => {
+  const scene = element[$scene];
+  const clip = scene.animationsByName.get(name);
+  return clip != null ? scene.mixer.existingAction(clip, scene) : null;
+};
+
+const waitForLoadOf = (element: any, url: string) =>
+    new Promise<void>(resolve => {
+      const onLoad = (event: any) => {
+        if (event.detail.url === url) {
+          element.removeEventListener('load', onLoad);
+          resolve();
+        }
+      };
+      element.addEventListener('load', onLoad);
+    });
+
 suite('Animation', () => {
   suite('a model with animations', () => {
     let element: ModelViewerElement;
@@ -233,6 +250,130 @@ suite('Animation', () => {
             expect(element.currentTime).to.be.equal(0);
             expect(animationIsPlaying(element, 'Punch')).to.be.false;
           });
+
+      test('keeps appended animations playing with their weight and time', async () => {
+        element.play();
+        element.appendAnimation('Wave', {weight: 0.5} as any);
+        await timePasses(200);
+        const timeBefore = appendedAction(element, 'Wave').time;
+
+        const beforeRender = waitForEvent(element, 'before-render');
+        element.src = `${ANIMATED_GLB_PATH}?preserve-appended`;
+        await beforeRender;
+
+        const action = appendedAction(element, 'Wave');
+        expect(action).to.exist;
+        expect(action.isRunning()).to.be.true;
+        expect(action.weight).to.be.closeTo(0.5, 0.001);
+        expect(action.time).to.be.closeTo(timeBefore, TOLERANCE_SEC);
+        expect(element.appendedAnimations).to.include('Wave');
+        expect(element.paused).to.be.false;
+        expect(animationIsPlaying(element, 'Punch')).to.be.true;
+
+        await waitForEvent(element, 'load');
+      });
+
+      test('keeps a finished appended one-shot at its end pose', async () => {
+        element.play();
+        const finished = waitForEvent(element, 'finished');
+        const waveDuration =
+            (element as any)[$scene].animationsByName.get('Wave').duration;
+        element.appendAnimation(
+            'Wave', {repetitions: 1, time: waveDuration - 0.05} as any);
+        await finished;
+        expect(element.appendedAnimations).to.not.include('Wave');
+
+        const beforeRender = waitForEvent(element, 'before-render');
+        element.src = `${ANIMATED_GLB_PATH}?preserve-finished-appended`;
+        await beforeRender;
+
+        const action = appendedAction(element, 'Wave');
+        expect(action).to.exist;
+        expect(action.isScheduled()).to.be.true;
+        expect(action.paused).to.be.true;
+        expect(action.time).to.be.closeTo(waveDuration, TOLERANCE_SEC);
+        expect(element.appendedAnimations).to.not.include('Wave');
+
+        await waitForEvent(element, 'load');
+      });
+
+      test('does not restore an animation that is being detached', async () => {
+        element.play();
+        element.appendAnimation('Wave', {weight: 1} as any);
+        await timePasses(100);
+        element.detachAnimation('Wave');
+
+        const beforeRender = waitForEvent(element, 'before-render');
+        element.src = `${ANIMATED_GLB_PATH}?preserve-detached`;
+        await beforeRender;
+
+        expect(appendedAction(element, 'Wave')).to.not.exist;
+        expect(element.appendedAnimations).to.not.include('Wave');
+
+        await waitForEvent(element, 'load');
+      });
+
+      test('drops appended animations missing from the new model', async () => {
+        element.play();
+        element.appendAnimation('Wave', {weight: 1} as any);
+
+        const loaded = waitForEvent(element, 'load');
+        element.src = `${NON_ANIMATED_GLB_PATH}?preserve-missing-appended`;
+        await loaded;
+
+        expect(element.appendedAnimations).to.be.empty;
+      });
+
+      test('keeps the snapshot when src changes again before loading', async () => {
+        element.play();
+        element.appendAnimation('Wave', {weight: 0.5} as any);
+        element.pause();
+        element.currentTime = 0.5;
+
+        element.src = `${ANIMATED_GLB_PATH}?preserve-rapid-a`;
+        await element.updateComplete;
+        const finalSrc = `${ANIMATED_GLB_PATH}?preserve-rapid-b`;
+        const loaded = waitForLoadOf(element, finalSrc);
+        element.src = finalSrc;
+        await loaded;
+
+        expect(element.paused).to.be.true;
+        expect(element.currentTime).to.be.closeTo(0.5, TOLERANCE_SEC);
+        expect(element.appendedAnimations).to.include('Wave');
+        expect(appendedAction(element, 'Wave').weight)
+            .to.be.closeTo(0.5, 0.001);
+      });
+
+      test('does not let autoplay override the restored state', async () => {
+        element.autoplay = true;
+        await element.updateComplete;
+        element.pause();
+        element.currentTime = 0.5;
+
+        const beforeRender = waitForEvent(element, 'before-render');
+        element.src = `${ANIMATED_GLB_PATH}?preserve-autoplay`;
+        await beforeRender;
+
+        expect(element.paused).to.be.true;
+        expect(element.currentTime).to.be.closeTo(0.5, TOLERANCE_SEC);
+
+        await waitForEvent(element, 'load');
+      });
+    });
+
+    suite('when appending animations without preserving state', () => {
+      test('clears appended animations when src changes', async () => {
+        element.play();
+        element.appendAnimation('Wave', {weight: 1} as any);
+        expect(element.appendedAnimations).to.include('Wave');
+
+        const loaded = waitForEvent(element, 'load');
+        element.src = `${ANIMATED_GLB_PATH}?no-preserve-appended`;
+        await loaded;
+
+        expect(element.appendedAnimations).to.be.empty;
+        expect(appendedAction(element, 'Wave')).to.not.exist;
+      });
     });
 
     suite('when configured to autoplay', () => {

@@ -97,10 +97,24 @@ export interface MarkedAnimation {
 export interface AnimationState {
   name: string;
   time: number;
+  loopCount: number;
   loopMode: AnimationActionLoopStyles;
   repetitionCount: number;
   clampWhenFinished: boolean;
   paused: boolean;
+}
+
+export interface AppendedAnimationState extends AnimationState {
+  weight: number;
+  timeScale: number;
+  finished: boolean;
+}
+
+export interface AnimationSnapshot {
+  main: AnimationState | null;
+  appended: Array<AppendedAnimationState>;
+  marked: Array<MarkedAnimation>;
+  elementPaused: boolean;
 }
 
 export type IlluminationRole = 'primary' | 'secondary';
@@ -153,6 +167,9 @@ export class ModelScene extends Scene {
   public externalRenderer: RendererInterface | null = null;
   public appendedAnimations: Array<string> = [];
   public markedAnimations: Array<MarkedAnimation> = [];
+  // Appended one-shots that finished clamped: no longer in appendedAnimations
+  // but still contributing their end pose.
+  public finishedAppendedAnimations: Set<string> = new Set();
 
   // These default camera values are never used, as they are reset once the
   // model is loaded and framing is computed.
@@ -444,6 +461,9 @@ export class ModelScene extends Scene {
 
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this);
+    this.appendedAnimations = [];
+    this.markedAnimations = [];
+    this.finishedAppendedAnimations.clear();
   }
 
   setEnvironmentModel(model: Object3D | null, dispose?: () => void) {
@@ -989,41 +1009,156 @@ export class ModelScene extends Scene {
     return this.currentAnimationAction != null;
   }
 
-  getCurrentAnimationState(): AnimationState | null {
-    const action = this.currentAnimationAction;
-    if (action == null) {
+  /**
+   * Captures the main and appended animation actions so they can be
+   * re-applied to a replacement model with same-named clips.
+   */
+  getAnimationSnapshot(): AnimationSnapshot | null {
+    const mainAction = this.currentAnimationAction;
+    const main = mainAction != null ? this.getActionState(mainAction) : null;
+
+    const appended: Array<AppendedAnimationState> = [];
+    const names = new Set([
+      ...this.appendedAnimations,
+      ...this.finishedAppendedAnimations,
+    ]);
+
+    for (const name of names) {
+      const clip = this.animationsByName.get(name);
+      if (clip == null) {
+        continue;
+      }
+
+      const action = this.mixer.existingAction(clip, this);
+      if (
+        action == null ||
+        action === mainAction ||
+        !action.enabled ||
+        !action.isScheduled()
+      ) {
+        continue;
+      }
+
+      appended.push({
+        ...this.getActionState(action),
+        weight: action.weight,
+        // The effective time scale is 0 while paused.
+        timeScale: action.paused
+          ? action.timeScale
+          : action.getEffectiveTimeScale(),
+        finished: !this.appendedAnimations.includes(name),
+      });
+    }
+
+    if (main == null && appended.length === 0) {
       return null;
     }
 
     return {
-      name: action.getClip().name,
-      time: action.time,
-      loopMode: action.loop,
-      repetitionCount: action.repetitions,
-      clampWhenFinished: action.clampWhenFinished,
-      paused: this.element.paused || action.paused,
+      main,
+      appended,
+      marked: this.markedAnimations.map((marked) => ({ ...marked })),
+      elementPaused: this.element.paused,
     };
   }
 
-  applyInitialAnimationState(state: AnimationState): boolean {
-    const animationClip = this.animationsByName.get(state.name);
-    if (animationClip == null) {
-      return false;
+  /**
+   * Re-applies a snapshot taken with getAnimationSnapshot() to the current
+   * model. Clips missing from the current model are skipped. Returns true if
+   * any animation was restored.
+   */
+  applyAnimationSnapshot(snapshot: AnimationSnapshot): boolean {
+    let restored = false;
+    const { main } = snapshot;
+    const { animationName } = this.element;
+    const mainOverridden =
+      animationName != null &&
+      main != null &&
+      animationName !== main.name &&
+      this.animationsByName.has(animationName);
+
+    if (main != null && !mainOverridden) {
+      const clip = this.animationsByName.get(main.name);
+      if (clip != null) {
+        // Runs while the element is paused, which stops all other actions, so
+        // appended animations must be restored afterwards.
+        this.playAnimation(main.name, 0, main.loopMode, main.repetitionCount);
+
+        const action = this.currentAnimationAction;
+        if (action != null && action.getClip() === clip) {
+          this.restoreActionState(action, clip, main);
+          restored = true;
+        }
+      }
     }
 
-    this.playAnimation(state.name, 0, state.loopMode, state.repetitionCount);
+    for (const state of snapshot.appended) {
+      const clip = this.animationsByName.get(state.name);
+      if (clip == null || state.name === animationName) {
+        continue;
+      }
 
-    const action = this.currentAnimationAction;
-    if (action == null) {
-      return false;
+      const action = this.mixer.clipAction(clip, this);
+      if (action === this.currentAnimationAction) {
+        continue;
+      }
+
+      action.setLoop(state.loopMode, state.repetitionCount);
+      action.weight = state.weight;
+      action.timeScale = state.timeScale;
+      action.enabled = true;
+      action.play();
+      this.restoreActionState(action, clip, state);
+
+      if (state.finished) {
+        this.finishedAppendedAnimations.add(state.name);
+      } else if (!this.appendedAnimations.includes(state.name)) {
+        this.appendedAnimations.push(state.name);
+      }
+      restored = true;
     }
 
+    this.markedAnimations = snapshot.marked.filter((marked) =>
+      this.appendedAnimations.includes(marked.name)
+    );
+
+    if (restored) {
+      this.updateAnimation(0);
+    }
+
+    return restored;
+  }
+
+  private getActionState(action: AnimationAction): AnimationState {
+    return {
+      name: action.getClip().name,
+      time: action.time,
+      loopCount: (action as any)._loopCount,
+      loopMode: action.loop,
+      repetitionCount: action.repetitions,
+      clampWhenFinished: action.clampWhenFinished,
+      paused: action.paused,
+    };
+  }
+
+  private restoreActionState(
+    action: AnimationAction,
+    clip: AnimationClip,
+    state: AnimationState
+  ) {
     action.clampWhenFinished = state.clampWhenFinished;
-    action.time = Math.min(Math.max(state.time, 0), animationClip.duration);
-    action.paused = false;
-    this.updateAnimation(0);
+    action.time = Math.min(Math.max(state.time, 0), clip.duration);
+    action.paused = state.paused;
 
-    return true;
+    // The loop count drives ping-pong direction and remaining repetitions.
+    if (state.loopMode !== LoopOnce && state.loopCount > 0) {
+      (action as any)._loopCount = state.loopCount;
+      (action as any)._setEndings(
+        false,
+        false,
+        state.loopMode === LoopPingPong
+      );
+    }
   }
 
   /**
@@ -1265,6 +1400,7 @@ export class ModelScene extends Scene {
       if (!this.appendedAnimations.includes(name)) {
         this.element[$scene].appendedAnimations.push(name);
       }
+      this.finishedAppendedAnimations.delete(name);
     } catch (error) {
       console.error(error);
     }
@@ -1322,6 +1458,7 @@ export class ModelScene extends Scene {
         (i) => i !== name
       );
       this.element[$scene].appendedAnimations = result;
+      this.finishedAppendedAnimations.delete(name);
     } catch (error) {
       console.error(error);
     }

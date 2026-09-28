@@ -1114,7 +1114,7 @@
       {
         "name": "preserve-animation-state",
         "htmlName": "preserveAnimationState",
-        "description": "If this is true, <span class='attribute'>&lt;model-viewer&gt;</span> preserves the active animation clip name, time, loop mode, and paused/playing state across a <span class='attribute'>src</span> change when the replacement model has an animation clip with the same name. The preserved pose is applied before the new model's first render. If the clip is missing, loading falls back to the default animation behavior.",
+        "description": "If this is true, <span class='attribute'>&lt;model-viewer&gt;</span> preserves the active animation clip and any animations added with <span class='attribute'>appendAnimation()</span> (name, time, loop mode, weight, time scale, and paused/playing state) across a <span class='attribute'>src</span> change when the replacement model has animation clips with the same names. Appended one-shots that finished at their end pose keep that pose; animations being detached are not restored. The preserved pose is applied before the new model's first render. Clips missing from the replacement model are skipped and fall back to the default animation behavior.",
         "default": {
           "default": "false",
           "options": "true, false"
