@@ -1110,6 +1110,15 @@
           "default": "false",
           "options": "true, false"
         }
+      },
+      {
+        "name": "preserve-animation-state",
+        "htmlName": "preserveAnimationState",
+        "description": "If this is true, <span class='attribute'>&lt;model-viewer&gt;</span> preserves the active animation clip name, time, loop mode, and paused/playing state across a <span class='attribute'>src</span> change when the replacement model has an animation clip with the same name. The preserved pose is applied before the new model's first render. If the clip is missing, loading falls back to the default animation behavior.",
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
       }
     ],
     "Properties": [

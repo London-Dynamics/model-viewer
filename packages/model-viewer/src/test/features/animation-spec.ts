@@ -166,6 +166,75 @@ suite('Animation', () => {
       });
     });
 
+    suite('when preserving animation state across a src change', () => {
+      setup(async () => {
+        (element as any).preserveAnimationState = true;
+        element.animationName = 'Punch';
+        await element.updateComplete;
+      });
+
+      test(
+          'applies a paused end pose before the new model load event',
+          async () => {
+            element.play({repetitions: 1, pingpong: false});
+            element.pause();
+            element.currentTime = element.duration;
+
+            const events: string[] = [];
+            const beforeRender = waitForEvent(element, 'before-render');
+            const loaded = waitForEvent(element, 'load');
+            element.addEventListener('before-render', () => {
+              events.push('before-render');
+            });
+            element.addEventListener('load', () => {
+              events.push('load');
+            });
+
+            element.src = `${ANIMATED_GLB_PATH}?preserve-end-pose`;
+            await beforeRender;
+
+            expect(events).to.deep.equal(['before-render']);
+            expect(element.paused).to.be.true;
+            expect(element.currentTime)
+                .to.be.closeTo(element.duration, TOLERANCE_SEC);
+
+            await loaded;
+          });
+
+      test(
+          'keeps a playing animation running from the preserved time',
+          async () => {
+            element.play();
+            element.currentTime = 0.5;
+
+            const beforeRender = waitForEvent(element, 'before-render');
+            element.src = `${ANIMATED_GLB_PATH}?preserve-playing-pose`;
+            await beforeRender;
+
+            expect(element.paused).to.be.false;
+            expect(element.currentTime).to.be.closeTo(0.5, TOLERANCE_SEC);
+            expect(animationIsPlaying(element, 'Punch')).to.be.true;
+
+            await waitForEvent(element, 'load');
+          });
+
+      test(
+          'falls back without errors when the replacement model has no clip',
+          async () => {
+            element.play({repetitions: 1, pingpong: false});
+            element.pause();
+            element.currentTime = element.duration;
+
+            const loaded = waitForEvent(element, 'load');
+            element.src = `${NON_ANIMATED_GLB_PATH}?preserve-missing-clip`;
+            await loaded;
+
+            expect(element.paused).to.be.true;
+            expect(element.currentTime).to.be.equal(0);
+            expect(animationIsPlaying(element, 'Punch')).to.be.false;
+          });
+    });
+
     suite('when configured to autoplay', () => {
       setup(async () => {
         element.autoplay = true;

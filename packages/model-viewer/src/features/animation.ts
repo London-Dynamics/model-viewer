@@ -16,7 +16,15 @@
 import {property} from 'lit/decorators.js';
 import {LoopOnce, LoopPingPong, LoopRepeat} from 'three';
 
-import ModelViewerElementBase, {$getModelIsVisible, $needsRender, $onModelLoad, $renderer, $scene, $tick} from '../model-viewer-base.js';
+import ModelViewerElementBase, {
+  $getModelIsVisible,
+  $needsRender,
+  $onModelLoad,
+  $renderer,
+  $scene,
+  $tick
+} from '../model-viewer-base.js';
+import {AnimationState} from '../three-components/ModelScene.js';
 import {Constructor} from '../utilities.js';
 
 const MILLISECONDS_PER_SECOND = 1000.0
@@ -25,6 +33,7 @@ const $changeAnimation = Symbol('changeAnimation');
 const $appendAnimation = Symbol('appendAnimation');
 const $detachAnimation = Symbol('detachAnimation');
 const $paused = Symbol('paused');
+const $preservedAnimationState = Symbol('preservedAnimationState');
 
 interface PlayAnimationOptions {
   repetitions: number, pingpong: boolean,
@@ -62,6 +71,7 @@ const DEFAULT_DETACH_OPTIONS: DetachAnimationOptions = {
 
 export declare interface AnimationInterface {
   autoplay: boolean;
+  preserveAnimationState: boolean;
   animationName: string|void;
   animationCrossfadeDuration: number;
   readonly availableAnimations: Array<string>;
@@ -81,12 +91,15 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
     ModelViewerElement: T): Constructor<AnimationInterface>&T => {
   class AnimationModelViewerElement extends ModelViewerElement {
     @property({type: Boolean}) autoplay: boolean = false;
+    @property({type: Boolean, attribute: 'preserve-animation-state'})
+    preserveAnimationState: boolean = false;
     @property({type: String, attribute: 'animation-name'})
     animationName: string|undefined = undefined;
     @property({type: Number, attribute: 'animation-crossfade-duration'})
     animationCrossfadeDuration: number = 300;
 
     protected[$paused]: boolean = true;
+    protected[$preservedAnimationState]: AnimationState|null = null;
 
     constructor(...args: any[]) {
       super(args);
@@ -211,6 +224,15 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$changeAnimation]();
       }
 
+      const preservedAnimationState = this[$preservedAnimationState];
+      this[$preservedAnimationState] = null;
+
+      if (preservedAnimationState != null &&
+          this[$scene].applyInitialAnimationState(preservedAnimationState)) {
+        this[$paused] = preservedAnimationState.paused;
+        this[$needsRender]();
+      }
+
       if (this.autoplay) {
         this.play();
       }
@@ -230,6 +252,16 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     updated(changedProperties: Map<string, any>) {
+      if (changedProperties.has('src')) {
+        if (this.preserveAnimationState && this.loaded &&
+            this.src !== this[$scene].url) {
+          this[$preservedAnimationState] =
+              this[$scene].getCurrentAnimationState();
+        } else {
+          this[$preservedAnimationState] = null;
+        }
+      }
+
       super.updated(changedProperties);
 
       if (changedProperties.has('autoplay') && this.autoplay) {

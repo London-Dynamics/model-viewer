@@ -94,6 +94,15 @@ export interface MarkedAnimation {
   repetitionCount: number;
 }
 
+export interface AnimationState {
+  name: string;
+  time: number;
+  loopMode: AnimationActionLoopStyles;
+  repetitionCount: number;
+  clampWhenFinished: boolean;
+  paused: boolean;
+}
+
 export type IlluminationRole = 'primary' | 'secondary';
 export type ShadowMode = 'none' | 'soft-shadow' | 'path-tracer';
 
@@ -978,6 +987,43 @@ export class ModelScene extends Scene {
 
   get hasActiveAnimation(): boolean {
     return this.currentAnimationAction != null;
+  }
+
+  getCurrentAnimationState(): AnimationState | null {
+    const action = this.currentAnimationAction;
+    if (action == null) {
+      return null;
+    }
+
+    return {
+      name: action.getClip().name,
+      time: action.time,
+      loopMode: action.loop,
+      repetitionCount: action.repetitions,
+      clampWhenFinished: action.clampWhenFinished,
+      paused: this.element.paused || action.paused,
+    };
+  }
+
+  applyInitialAnimationState(state: AnimationState): boolean {
+    const animationClip = this.animationsByName.get(state.name);
+    if (animationClip == null) {
+      return false;
+    }
+
+    this.playAnimation(state.name, 0, state.loopMode, state.repetitionCount);
+
+    const action = this.currentAnimationAction;
+    if (action == null) {
+      return false;
+    }
+
+    action.clampWhenFinished = state.clampWhenFinished;
+    action.time = Math.min(Math.max(state.time, 0), animationClip.duration);
+    action.paused = false;
+    this.updateAnimation(0);
+
+    return true;
   }
 
   /**
