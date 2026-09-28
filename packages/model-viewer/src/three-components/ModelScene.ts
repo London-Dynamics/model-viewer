@@ -193,6 +193,11 @@ export class ModelScene extends Scene {
   public size = new Vector3();
   public idealAspect = 0;
   public framedFoVDeg = 0;
+  /**
+   * Model-space camera-target used as the framing sphere centre when the
+   * controls orbit a look-at instead of moving the pivot via setTarget().
+   */
+  public framingTarget: Vector3 | null = null;
 
   public shadow: Shadow | null = null;
   public shadowMode: ShadowMode = 'soft-shadow';
@@ -441,6 +446,7 @@ export class ModelScene extends Scene {
       this.shadow.setIntensity(0);
     }
     this.bakedShadows.clear();
+    this.framingTarget = null;
 
     const { _model } = this;
     if (_model != null) {
@@ -739,7 +745,7 @@ export class ModelScene extends Scene {
 
     this.element.requestUpdate('cameraTarget');
     await this.element.updateComplete;
-    center.copy(this.getTarget());
+    center.copy(this.framingTarget ?? this.getTarget());
 
     const radiusSquared = (value: number, vertex: Vector3): number => {
       return Math.max(value, center!.distanceToSquared(vertex));

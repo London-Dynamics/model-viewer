@@ -347,8 +347,27 @@ function poseFromOrbitTargetStrings(
     return null;
   }
 
-  const fov = parseFovDegrees(fieldOfView) ?? current.fov;
+  // A missing FOV means the framed FOV, not the current one: user zoom narrows
+  // FOV past the minimum radius, and presets must not inherit that.
+  const fov =
+    parseFovDegrees(fieldOfView) ??
+    (current.fov != null
+      ? framedFieldOfView(scene) ?? current.fov
+      : undefined);
   return {position, target, ...(fov != null ? {fov} : {})};
+}
+
+function framedFieldOfView(scene: any): number | undefined {
+  const framed = scene?.framedFoVDeg;
+  if (
+    typeof framed !== 'number' ||
+    !(framed > 0) ||
+    typeof scene.adjustedFoV !== 'function'
+  ) {
+    return undefined;
+  }
+  const fov = scene.adjustedFoV(framed);
+  return Number.isFinite(fov) && fov > 0 ? fov : undefined;
 }
 
 function arrayToVector3(value: unknown): Vector3 | null {
@@ -1577,6 +1596,11 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
         if (typeof data.fieldOfView === 'string') {
           (this as any).fieldOfView = data.fieldOfView;
+        } else {
+          const framedFov = framedFieldOfView(this[$scene]);
+          if (framedFov != null) {
+            (this as any)[$controls]?.setFieldOfView(framedFov);
+          }
         }
         await (this as any).updateComplete;
         if (typeof (this as any).jumpCameraToGoal === 'function') {

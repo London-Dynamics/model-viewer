@@ -100,7 +100,7 @@
   "dependencies": {
     "@london-dynamics/three-viewport-gizmo": "2.2.1-ld.0",
     "@monogrid/gainmap-js": "^3.1.0",
-    "camera-controls": "^3.1.0",
+    "camera-controls": "3.1.0",
     "lit": "^3.2.1",
     "three-gpu-pathtracer": "^0.0.23",
     "utility-types": "3.11.0"

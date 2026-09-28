@@ -59,6 +59,11 @@ const LD_SMOOTH_TIME = 0;
 const LD_DRAGGING_SMOOTH_TIME = 0.08;
 /** Click-to-pan look-at truck; restored to LD_SMOOTH_TIME when it settles. */
 const TAP_SMOOTH_TIME = 0.12;
+/**
+ * CameraControls scales radius by 0.95^delta per dolly unit; overflow past the
+ * radius limit is spent on log(FOV) at the same visual rate.
+ */
+const LOG_SCALE_PER_DOLLY_DELTA = -Math.log(0.95);
 
 import {$cancelPrompts, $controls, $fingerAnimatedContainers, $panElement, $programmaticCameraAnimation, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
@@ -231,6 +236,8 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private _tapListenersAttached: boolean = false;
   private _tapPointerId: number|null = null;
   private _tapSmoothGeneration: number = 0;
+  /** Perspective FOV captured by the last CameraControls saveState(). */
+  private _savedFieldOfView: number|null = null;
 
   private get isDragInteractionDisabled(): boolean {
     return (
@@ -490,6 +497,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
 
     // Set up sensitivity mappings
     this.updateSensitivity();
+    this.installCameraControlsHooks();
     this.applyInteractionBindings();
     this.domElement.addEventListener('pointerdown', this.onFpsPointerDown);
     this.domElement.addEventListener('pointermove', this.onFpsPointerMove);
@@ -507,6 +515,117 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // changeSource as AUTOMATIC and user drags are not recognized (prompt never
     // dismisses).
     this.bindCameraControlsLifecycleListeners();
+  }
+
+  private installCameraControlsHooks(): void {
+    const controls = this.thirdPartyControls as unknown as {
+      _dollyInternal?: (delta: number, x: number, y: number) => void,
+      saveState: () => void,
+      _ldHooksInstalled?: boolean,
+    };
+    if (controls._ldHooksInstalled) {
+      return;
+    }
+    controls._ldHooksInstalled = true;
+
+    // CameraControls.reset() restores position/target/zoom but not
+    // perspective FOV, so remember it alongside every saveState() caller.
+    const saveState = controls.saveState.bind(this.thirdPartyControls);
+    controls.saveState = () => {
+      saveState();
+      const {camera} = this.thirdPartyControls;
+      this._savedFieldOfView =
+          camera instanceof THREE.PerspectiveCamera ? camera.fov : null;
+    };
+
+    // Private CameraControls API (pinned camera-controls version): it is the
+    // single entry point for wheel, pinch and middle-drag dolly.
+    if (typeof controls._dollyInternal !== 'function') {
+      console.warn(
+          'LDControls: CameraControls._dollyInternal is unavailable; ' +
+          'zoom will not narrow the field of view past the minimum radius.');
+      return;
+    }
+    const dollyInternal = controls._dollyInternal.bind(this.thirdPartyControls);
+    controls._dollyInternal = (delta: number, x: number, y: number) => {
+      const logScale = delta * this.thirdPartyControls.dollySpeed *
+          LOG_SCALE_PER_DOLLY_DELTA;
+      if (logScale > 0) {
+        // Zoom out: widen a narrowed FOV back to its maximum before the
+        // radius grows, so radius and FOV never drift apart.
+        const widened = this.widenFieldOfViewForZoomOut(logScale);
+        dollyInternal(delta * (1 - widened / logScale), x, y);
+        return;
+      }
+
+      const startRadius = this.getGoalRadius();
+      dollyInternal(delta, x, y);
+      if (logScale < 0 && startRadius > 0) {
+        // Zoom in: whatever the radius clamp swallowed narrows the FOV.
+        const overflow =
+            logScale - Math.log(this.getGoalRadius() / startRadius);
+        if (overflow < -1e-9) {
+          this.narrowFieldOfViewForZoomIn(overflow);
+        }
+      }
+    };
+  }
+
+  private getGoalRadius(): number {
+    return this.thirdPartyControls.getSpherical(new THREE.Spherical(), true)
+        .radius;
+  }
+
+  private getFramedFieldOfView(): number|null {
+    const framed = this.scene?.framedFoVDeg;
+    if (typeof framed !== 'number' || !(framed > 0) ||
+        typeof this.scene.adjustedFoV !== 'function') {
+      return null;
+    }
+    const fov = this.scene.adjustedFoV(framed);
+    return Number.isFinite(fov) && fov > 0 ? fov : null;
+  }
+
+  /**
+   * FOV range available to user zoom. `auto` follows SmoothControls
+   * (DEFAULT_MIN_FOV_DEG .. framed FOV), unlike the wide clamp that
+   * setFieldOfView keeps for programmatic poses.
+   */
+  private getUserZoomFovLimits(): {minimum: number, maximum: number} {
+    const maximum = this.options.maximumFieldOfViewExplicit ?
+        this.options.maximumFieldOfView! :
+        (this.getFramedFieldOfView() ?? this.getFieldOfView());
+    const minimum = this.options.minimumFieldOfViewExplicit ?
+        this.options.minimumFieldOfView! :
+        DEFAULT_MIN_FOV_DEG;
+    return {minimum: Math.min(minimum, maximum), maximum};
+  }
+
+  private narrowFieldOfViewForZoomIn(logDelta: number): void {
+    if (!(this.thirdPartyControls.camera instanceof THREE.PerspectiveCamera)) {
+      return;
+    }
+    const fov = this.thirdPartyControls.camera.fov;
+    const {minimum} = this.getUserZoomFovLimits();
+    if (!(fov > minimum)) {
+      return;
+    }
+    this.setFieldOfView(Math.max(minimum, fov * Math.exp(logDelta)));
+  }
+
+  /** Returns the log-scale consumed by widening the FOV. */
+  private widenFieldOfViewForZoomOut(logDelta: number): number {
+    if (!(this.thirdPartyControls.camera instanceof THREE.PerspectiveCamera)) {
+      return 0;
+    }
+    const fov = this.thirdPartyControls.camera.fov;
+    const {maximum} = this.getUserZoomFovLimits();
+    if (!(fov > 0) || fov >= maximum * (1 - 1e-9)) {
+      return 0;
+    }
+    const consumed = Math.min(logDelta, Math.log(maximum / fov));
+    this.setFieldOfView(fov * Math.exp(consumed));
+    return consumed;
   }
 
   private bindCameraControlsLifecycleListeners(): void {
@@ -1066,6 +1185,10 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       scene.element.cameraTarget = cameraTarget;
       // Zoom all the way out (increase radius)
       this.thirdPartyControls.dolly(-1, true);
+      const framedFov = this.getFramedFieldOfView();
+      if (framedFov != null) {
+        this.setFieldOfView(framedFov);
+      }
     } else {
       this.truckLookAtToWorldPoint(hit.position);
     }
@@ -1329,7 +1452,12 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   }
 
   reset(): Promise<void[]> {
-    return this.thirdPartyControls.reset();
+    const result = this.thirdPartyControls.reset();
+    const fov = this._savedFieldOfView ?? this.getFramedFieldOfView();
+    if (fov != null) {
+      this.setFieldOfView(fov);
+    }
+    return result;
   }
 
   /**
@@ -1457,6 +1585,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
     this.thirdPartyControls.enabled = wasEnabled;
     this.bindCameraControlsLifecycleListeners();
+    this.installCameraControlsHooks();
     this.syncFpsAnglesFromCamera();
 
     // Restore sensitivity settings
@@ -2244,6 +2373,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     [$syncCameraTarget](style: EvaluatedStyle<Vector3Intrinsics>) {
       const [x, y, z] = style;
+      // The pivot stays at the origin (see below), so framing needs the
+      // target explicitly or the bounding sphere is centred on the origin.
+      this[$scene].framingTarget = new THREE.Vector3(x, y, z);
       if (!this[$programmaticCameraAnimation] &&
           !this[$renderer].arRenderer.isPresenting) {
         const cc = (this[$controls] as any)?.thirdPartyControls;
