@@ -2373,6 +2373,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     [$syncCameraTarget](style: EvaluatedStyle<Vector3Intrinsics>) {
       const [x, y, z] = style;
+      // The pivot stays at the origin (see below), so framing needs the
+      // target explicitly or the bounding sphere is centred on the origin.
+      this[$scene].framingTarget = new THREE.Vector3(x, y, z);
       if (!this[$programmaticCameraAnimation] &&
           !this[$renderer].arRenderer.isPresenting) {
         const cc = (this[$controls] as any)?.thirdPartyControls;
