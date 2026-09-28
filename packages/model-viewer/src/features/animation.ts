@@ -16,7 +16,15 @@
 import {property} from 'lit/decorators.js';
 import {LoopOnce, LoopPingPong, LoopRepeat} from 'three';
 
-import ModelViewerElementBase, {$getModelIsVisible, $needsRender, $onModelLoad, $renderer, $scene, $tick} from '../model-viewer-base.js';
+import ModelViewerElementBase, {
+  $getModelIsVisible,
+  $needsRender,
+  $onModelLoad,
+  $renderer,
+  $scene,
+  $tick
+} from '../model-viewer-base.js';
+import {AnimationSnapshot} from '../three-components/ModelScene.js';
 import {Constructor} from '../utilities.js';
 
 const MILLISECONDS_PER_SECOND = 1000.0
@@ -25,6 +33,7 @@ const $changeAnimation = Symbol('changeAnimation');
 const $appendAnimation = Symbol('appendAnimation');
 const $detachAnimation = Symbol('detachAnimation');
 const $paused = Symbol('paused');
+const $preservedAnimationState = Symbol('preservedAnimationState');
 
 interface PlayAnimationOptions {
   repetitions: number, pingpong: boolean,
@@ -62,9 +71,11 @@ const DEFAULT_DETACH_OPTIONS: DetachAnimationOptions = {
 
 export declare interface AnimationInterface {
   autoplay: boolean;
+  preserveAnimationState: boolean;
   animationName: string|void;
   animationCrossfadeDuration: number;
   readonly availableAnimations: Array<string>;
+  readonly appendedAnimations: Array<string>;
   readonly paused: boolean;
   readonly duration: number;
   currentTime: number;
@@ -81,12 +92,15 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
     ModelViewerElement: T): Constructor<AnimationInterface>&T => {
   class AnimationModelViewerElement extends ModelViewerElement {
     @property({type: Boolean}) autoplay: boolean = false;
+    @property({type: Boolean, attribute: 'preserve-animation-state'})
+    preserveAnimationState: boolean = false;
     @property({type: String, attribute: 'animation-name'})
     animationName: string|undefined = undefined;
     @property({type: Number, attribute: 'animation-crossfade-duration'})
     animationCrossfadeDuration: number = 300;
 
     protected[$paused]: boolean = true;
+    protected[$preservedAnimationState]: AnimationSnapshot|null = null;
 
     constructor(...args: any[]) {
       super(args);
@@ -118,6 +132,9 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
           const filterdList = this[$scene].appendedAnimations.filter(
               i => i !== e.action._clip.name);
           this[$scene].appendedAnimations = filterdList;
+          if (e.action.clampWhenFinished) {
+            this[$scene].finishedAppendedAnimations.add(e.action._clip.name);
+          }
         }
         this.dispatchEvent(new CustomEvent('finished'));
       });
@@ -211,7 +228,20 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$changeAnimation]();
       }
 
-      if (this.autoplay) {
+      const snapshot = this[$preservedAnimationState];
+      let restored = false;
+
+      // A load cancelled by a newer src change still reaches this point, but
+      // without a model; keep the snapshot for the load that superseded it.
+      if (snapshot != null && this[$scene].currentGLTF != null) {
+        this[$preservedAnimationState] = null;
+        restored = this[$scene].applyAnimationSnapshot(snapshot);
+      }
+
+      if (restored) {
+        this[$paused] = snapshot!.elementPaused;
+        this[$needsRender]();
+      } else if (this.autoplay) {
         this.play();
       }
     }
@@ -230,6 +260,16 @@ export const AnimationMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     updated(changedProperties: Map<string, any>) {
+      if (changedProperties.has('src')) {
+        if (!this.preserveAnimationState || this.src == null) {
+          this[$preservedAnimationState] = null;
+        } else if (this.loaded && this.src !== this[$scene].url) {
+          this[$preservedAnimationState] = this[$scene].getAnimationSnapshot();
+        }
+        // Otherwise the previous swap has not loaded yet: its snapshot still
+        // describes what was last on screen, so keep it.
+      }
+
       super.updated(changedProperties);
 
       if (changedProperties.has('autoplay') && this.autoplay) {
