@@ -38,20 +38,50 @@ jobs:
             exit 1
           fi
 
+      # A tag pushed twice queues a second run (see concurrency); by the time
+      # it starts the version is already published, so skip instead of failing.
+      - name: Check whether version is already published
+        id: published
+        working-directory: packages/model-viewer
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          # Run outside the repo so the project .npmrc does not override the
+          # registry auth written by setup-node.
+          set +e
+          OUT="$(cd "$RUNNER_TEMP" && npm view "$NAME@$VERSION" version 2>&1)"
+          CODE=$?
+          set -e
+          if [ $CODE -eq 0 ] && [ "$OUT" = "$VERSION" ]; then
+            echo "$NAME@$VERSION is already published; skipping release."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [ $CODE -eq 0 ] || echo "$OUT" | grep -q E404; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$OUT"
+            exit 1
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install dependencies
+        if: steps.published.outputs.exists != 'true'
         run: npm ci
         env:
           LONDON_DYNAMICS_NPM_AUTH_TOKEN: ${{ secrets.LONDON_DYNAMICS_NPM_AUTH_TOKEN }}
 
       - name: Build package
+        if: steps.published.outputs.exists != 'true'
         run: npm run build --workspace=packages/model-viewer
 
       - name: Publish to GitHub Packages
+        if: steps.published.outputs.exists != 'true'
         working-directory: packages/model-viewer
         run: rm -f .npmrc ../../.npmrc && npm publish --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: softprops/action-gh-release@v2
+        if: steps.published.outputs.exists != 'true'
         with:
           generate_release_notes: true
