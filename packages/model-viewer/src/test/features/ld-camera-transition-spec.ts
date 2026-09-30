@@ -1,6 +1,7 @@
 import {expect} from 'chai';
 import {Vector3} from 'three';
 
+import {$controls} from '../../features/controls.js';
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {timePasses, waitForEvent} from '../../utilities.js';
@@ -136,6 +137,83 @@ suite('LD camera transitions', () => {
     element.removeAttribute('min-camera-orbit');
     element.removeAttribute('max-camera-orbit');
     await element.updateComplete;
+  });
+
+  suite('orbit limits after a transition', () => {
+    const DEG = Math.PI / 180;
+    const cameraControls = () =>
+        ((element as any)[$controls] as any).thirdPartyControls;
+
+    setup(async () => {
+      element.minCameraOrbit = 'auto 0deg 0.5m';
+      element.maxCameraOrbit = 'auto 95deg 4m';
+      await element.updateComplete;
+    });
+
+    test('keeps unchanged limits in force', async () => {
+      await (element as any)
+          .animateCameraTo(
+              {cameraOrbit: '45deg 70deg 3m', cameraTarget: '0m 0m 0m'},
+              {duration: 20});
+
+      const cc = cameraControls();
+      expect(cc.maxPolarAngle).to.be.closeTo(95 * DEG, 1e-6);
+      expect(cc.minPolarAngle).to.be.closeTo(0, 1e-6);
+      expect(cc.maxDistance).to.be.closeTo(4, 1e-6);
+      expect(cc.minDistance).to.be.closeTo(0.5, 1e-6);
+    });
+
+    test('keeps limits in force for an instant transition', async () => {
+      await (element as any)
+          .animateCameraTo(
+              {cameraOrbit: '45deg 70deg 3m', cameraTarget: '0m 0m 0m'},
+              {duration: 0});
+
+      expect(cameraControls().maxPolarAngle).to.be.closeTo(95 * DEG, 1e-6);
+      expect(cameraControls().maxDistance).to.be.closeTo(4, 1e-6);
+    });
+
+    test('limits written after the transition win', async () => {
+      await (element as any)
+          .animateCameraTo(
+              {cameraOrbit: '45deg 70deg 3m', cameraTarget: '0m 0m 0m'},
+              {duration: 20});
+      element.maxCameraOrbit = 'auto 80deg 5m';
+      await element.updateComplete;
+
+      expect(cameraControls().maxPolarAngle).to.be.closeTo(80 * DEG, 1e-6);
+      expect(cameraControls().maxDistance).to.be.closeTo(5, 1e-6);
+    });
+
+    test('limits changed mid-transition apply without clamping it', async () => {
+      const animation = (element as any)
+                            .animateCameraTo(
+                                {
+                                  cameraOrbit: '45deg 85deg 3m',
+                                  cameraTarget: '0m 0m 0m',
+                                },
+                                {duration: 200});
+      await timePasses(50);
+      element.maxCameraOrbit = 'auto 80deg 4m';
+      await element.updateComplete;
+      await animation;
+
+      expect(element.getCameraOrbit().phi).to.be.closeTo(85 * DEG, 0.01);
+      expect(cameraControls().maxPolarAngle).to.be.closeTo(80 * DEG, 1e-6);
+    });
+
+    test('FPS mode keeps limits open', async () => {
+      (element as any).setCameraControlsMode('fps');
+      await element.updateComplete;
+
+      await (element as any)
+          .animateCameraTo(
+              {cameraOrbit: '45deg 70deg 3m', cameraTarget: '0m 0m 0m'},
+              {duration: 20});
+
+      expect(cameraControls().maxPolarAngle).to.be.closeTo(Math.PI, 1e-6);
+      expect(cameraControls().maxDistance).to.equal(Infinity);
+    });
   });
 
   test('allows pointer interaction to cancel a transition', async () => {

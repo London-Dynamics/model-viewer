@@ -1672,10 +1672,15 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
       const savedOrbitLimits = readCameraControlsOrbitLimits(cc);
       openCameraControlsOrbitLimits(cc);
 
-      // On success: leave limits open for Agora's post-tween constraint apply,
-      // and defer clearing the programmatic flag so jumpCameraToGoal / sync
-      // handlers in the same turn still see the flag. On cancel/error: restore
-      // the pre-tween limits immediately.
+      // On success the limits come from the current min/max-camera-orbit
+      // options (restoreLimitsAfterTween), so hosts that keep identical limits
+      // across moves need not re-write the attributes. Clearing the
+      // programmatic flag is deferred so jumpCameraToGoal / sync handlers in
+      // the same turn still see it. On cancel/error: restore the pre-tween
+      // limits immediately.
+      const restoreLimitsAfterTween = () => {
+        controls?.restoreOrbitLimitsFromOptions?.();
+      };
       const finishProgrammaticAnimation = (restoreLimits: boolean) => {
         if (restoreLimits) {
           applyCameraControlsOrbitLimits(cc, savedOrbitLimits);
@@ -1717,6 +1722,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (duration === 0) {
           applyCameraPose(
             end, scene, controls, () => this[$needsRender](), true);
+          restoreLimitsAfterTween();
           await this.landCameraOnCurrentPose();
           applyCameraViewControlOptions(this, view);
           finishProgrammaticAnimation(false);
@@ -1826,6 +1832,7 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
           return;
         }
 
+        restoreLimitsAfterTween();
         await this.landCameraOnCurrentPose();
         applyCameraViewControlOptions(this, view);
         finishProgrammaticAnimation(false);

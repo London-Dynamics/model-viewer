@@ -160,6 +160,7 @@ interface ControlsAdapter extends ExposedCameraControlsMethods {
   applyOptions(options: any): void;
   updateTouchActionStyle(): void;
   setDamperDecayTime(decay: number): void;
+  restoreOrbitLimitsFromOptions(): void;
   jumpToGoal(): void;
   setFieldOfView(fov: number): void;
   getFieldOfView(): number;
@@ -688,24 +689,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
       return;
     }
 
-    if (this.options.minimumRadius !== undefined) {
-      controls.minDistance = this.options.minimumRadius;
-    }
-    if (this.options.maximumRadius !== undefined) {
-      controls.maxDistance = this.options.maximumRadius;
-    }
-    if (this.options.minimumPolarAngle !== undefined) {
-      controls.minPolarAngle = this.options.minimumPolarAngle;
-    }
-    if (this.options.maximumPolarAngle !== undefined) {
-      controls.maxPolarAngle = this.options.maximumPolarAngle;
-    }
-    if (this.options.minimumAzimuthalAngle !== undefined) {
-      controls.minAzimuthAngle = this.options.minimumAzimuthalAngle;
-    }
-    if (this.options.maximumAzimuthalAngle !== undefined) {
-      controls.maxAzimuthAngle = this.options.maximumAzimuthalAngle;
-    }
+    this.restoreOrbitLimitsFromOptions();
 
     controls.mouseButtons.wheel =
         this._disableZoom ? CameraControls.ACTION.NONE : wheelZoomAction;
@@ -1251,6 +1235,35 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     this.thirdPartyControls.draggingSmoothTime = LD_DRAGGING_SMOOTH_TIME;
   }
 
+  /**
+   * Push the stored min/max-camera-orbit options onto CameraControls. No-op in
+   * FPS mode, where orbit limits must stay open.
+   */
+  restoreOrbitLimitsFromOptions(): void {
+    if (this._cameraControlMode === 'fps') {
+      return;
+    }
+    const controls = this.thirdPartyControls;
+    if (this.options.minimumRadius !== undefined) {
+      controls.minDistance = this.options.minimumRadius;
+    }
+    if (this.options.maximumRadius !== undefined) {
+      controls.maxDistance = this.options.maximumRadius;
+    }
+    if (this.options.minimumPolarAngle !== undefined) {
+      controls.minPolarAngle = this.options.minimumPolarAngle;
+    }
+    if (this.options.maximumPolarAngle !== undefined) {
+      controls.maxPolarAngle = this.options.maximumPolarAngle;
+    }
+    if (this.options.minimumAzimuthalAngle !== undefined) {
+      controls.minAzimuthAngle = this.options.minimumAzimuthalAngle;
+    }
+    if (this.options.maximumAzimuthalAngle !== undefined) {
+      controls.maxAzimuthAngle = this.options.maximumAzimuthalAngle;
+    }
+  }
+
   jumpToGoal(): void {
     // Stop any ongoing transitions and immediately move to target
     this.thirdPartyControls.stop();
@@ -1591,28 +1604,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
     // Restore sensitivity settings
     this.updateSensitivity();
 
-    // Restore constraints from options
-    if (this.options.minimumAzimuthalAngle !== undefined) {
-      this.thirdPartyControls.minAzimuthAngle =
-          this.options.minimumAzimuthalAngle;
-    }
-    if (this.options.maximumAzimuthalAngle !== undefined) {
-      this.thirdPartyControls.maxAzimuthAngle =
-          this.options.maximumAzimuthalAngle;
-    }
-    if (this.options.minimumPolarAngle !== undefined) {
-      this.thirdPartyControls.minPolarAngle = this.options.minimumPolarAngle;
-    }
-    if (this.options.maximumPolarAngle !== undefined) {
-      this.thirdPartyControls.maxPolarAngle = this.options.maximumPolarAngle;
-    }
-    if (this.options.minimumRadius !== undefined) {
-      this.thirdPartyControls.minDistance = this.options.minimumRadius;
-    }
-    if (this.options.maximumRadius !== undefined) {
-      this.thirdPartyControls.maxDistance = this.options.maximumRadius;
-    }
-
+    // Restores constraints from options (orbit) or opens them (FPS).
     this.applyInteractionBindings();
 
     // Restore the camera position and target
