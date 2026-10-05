@@ -1,22 +1,29 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WebGL wave sampler using CPU readback from FFT displacement textures.
  */
 
 import * as THREE from "three/webgpu";
 import type { IWaveSampler, WaveSample } from "../IWaveSampler";
-import { MAX_SAMPLE_POINTS } from "../IWaveSampler";
+import { MAX_SAMPLE_POINTS, WAVE_INVERSE_SOLVE_ITERATIONS } from "../IWaveSampler";
 import type { WebGLWaveSimulation } from "./WebGLWaveSimulation";
 
 export { MAX_SAMPLE_POINTS };
 
-interface GerstnerDisplacement {
-  dx: number;
-  dy: number;
-  dz: number;
-  nx: number;
-  ny: number;
-  nz: number;
+/** GPU->CPU readback of one cascade's displacement and normal textures. */
+interface CascadeReadState {
+  resolution: number;
+  scale: number;
+  displacement: Float32Array;
+  normal: Float32Array;
 }
+
+/** Resolved element type of `readRenderTargetPixelsAsync` (a typed array). */
+type ReadbackArray = Awaited<
+  ReturnType<THREE.WebGPURenderer["readRenderTargetPixelsAsync"]>
+>;
 
 /**
  * WebGL wave sampler using CPU readback from displacement textures.
@@ -33,10 +40,9 @@ export class WebGLWaveSampler implements IWaveSampler {
   // Cached results
   private cachedResults: WaveSample[] = [];
 
-  // Displacement texture readback buffers
-  private displacementReadBuffer: Float32Array | null = null;
-  private normalReadBuffer: Float32Array | null = null;
-  private lastReadResolution: number = 0;
+  // Per-cascade GPU->CPU readback of displacement + normal textures, indexed
+  // to match the simulation's cascades (coarsest first).
+  private cascadeReads: CascadeReadState[] = [];
   private _disposed = false;
 
   // Pre-allocated temps for bilinear interpolation (avoids per-frame GC pressure)
@@ -75,100 +81,65 @@ export class WebGLWaveSampler implements IWaveSampler {
   }
 
   /**
-   * Evaluate Gerstner wave displacement and analytical normal on CPU.
+   * Compute bilinear texel indices and weights for a world position, matching
+   * the hardware linear-filtered texture sampling the surface uses.
+   *
+   * Texel `i` is centered at `(i + 0.5)`, so the lookup is shifted half a texel
+   * before flooring. Without that shift the CPU samples half a texel — `scale /
+   * (2 * resolution)` world units — off from the rendered surface, which reads as
+   * a height offset that grows with wave steepness.
    */
-  private evaluateGerstnerCPU(
-    worldX: number,
-    worldZ: number,
-    waveData: THREE.Vector4[],
-    waveCount: number,
-    time: number,
-  ): GerstnerDisplacement {
-    let dx = 0;
-    let dy = 0;
-    let dz = 0;
-    let totalNx = 0;
-    let totalNySub = 0;
-    let totalNz = 0;
-
-    for (let i = 0; i < waveCount; i++) {
-      const params0 = waveData[i * 2];
-      const params1 = waveData[i * 2 + 1];
-      const dirX = params0.x;
-      const dirZ = params0.y;
-      const amplitude = params0.z;
-      const wavelength = params0.w;
-      const steepness = params1.x;
-      const phaseOffset = params1.y;
-      const omega = params1.z;
-
-      const k = (2 * Math.PI) / (wavelength + 0.0001);
-      const phase = (dirX * worldX + dirZ * worldZ) * k - omega * time + phaseOffset;
-      const cosPhase = Math.cos(phase);
-      const sinPhase = Math.sin(phase);
-
-      dx += -steepness * amplitude * dirX * sinPhase;
-      dy += amplitude * cosPhase;
-      dz += -steepness * amplitude * dirZ * sinPhase;
-
-      const kA = k * amplitude;
-      totalNx += dirX * kA * sinPhase;
-      totalNySub += steepness * kA * cosPhase;
-      totalNz += dirZ * kA * sinPhase;
-    }
-
-    const rawNx = totalNx;
-    const rawNy = 1.0 - totalNySub;
-    const rawNz = totalNz;
-    const len = Math.sqrt(rawNx * rawNx + rawNy * rawNy + rawNz * rawNz) + 0.0001;
-
-    return {
-      dx,
-      dy,
-      dz,
-      nx: rawNx / len,
-      ny: rawNy / len,
-      nz: rawNz / len,
-    };
-  }
-
-  /**
-   * Sample displacement from the texture at the given world position.
-   */
-  private sampleDisplacement(
+  private texelLerp(
     worldX: number,
     worldZ: number,
     resolution: number,
     scale: number,
-  ): THREE.Vector3 {
-    if (!this.displacementReadBuffer) {
-      return new THREE.Vector3(0, 0, 0);
-    }
+  ): { x0: number; y0: number; x1: number; y1: number; fx: number; fy: number } {
+    // Tile size is the cascade's world-space scale (matches spectrum.ts).
+    // World coords to wrapped [0, 1) UV (same mapping as the shader).
+    const u = (((worldX / scale + 0.5) % 1) + 1) % 1;
+    const v = (((worldZ / scale + 0.5) % 1) + 1) % 1;
 
-    // Convert world coords to pixel coords (same formula as shader)
-    const baseRes = 256.0;
-    const effectiveScale = (scale * resolution) / baseRes;
+    // The WebGL backend flips render-target textures vertically when the surface
+    // samples them (TextureNode applies flipY for isRenderTargetTexture: v -> 1 - v),
+    // while the GPU->CPU readback returns raw bottom-up rows. Flip V here so the
+    // CPU reads the same texels the surface renders from.
+    const vFlipped = 1 - v;
 
-    const u = worldX / effectiveScale + 0.5;
-    const v = worldZ / effectiveScale + 0.5;
+    // Half-texel shift onto texel centers, then bilinear with wraparound.
+    const px = u * resolution - 0.5;
+    const py = vFlipped * resolution - 0.5;
 
-    // Wrap to [0, 1]
-    const wrappedU = ((u % 1) + 1) % 1;
-    const wrappedV = ((v % 1) + 1) % 1;
+    const px0 = Math.floor(px);
+    const py0 = Math.floor(py);
+    const fx = px - px0;
+    const fy = py - py0;
 
-    // Bilinear interpolation
-    const px = wrappedU * resolution;
-    const py = wrappedV * resolution;
-
-    const x0 = Math.floor(px);
-    const y0 = Math.floor(py);
+    const x0 = ((px0 % resolution) + resolution) % resolution;
+    const y0 = ((py0 % resolution) + resolution) % resolution;
     const x1 = (x0 + 1) % resolution;
     const y1 = (y0 + 1) % resolution;
 
-    const fx = px - x0;
-    const fy = py - y0;
+    return { x0, y0, x1, y1, fx, fy };
+  }
 
-    const buf = this.displacementReadBuffer!;
+  /**
+   * Sample a cascade's displacement at a world position. Returns a reused temp
+   * vector — read its components before the next sample call.
+   */
+  private sampleCascadeDisplacement(
+    cascade: CascadeReadState,
+    worldX: number,
+    worldZ: number,
+  ): THREE.Vector3 {
+    const { resolution, scale, displacement: buf } = cascade;
+    const { x0, y0, x1, y1, fx, fy } = this.texelLerp(
+      worldX,
+      worldZ,
+      resolution,
+      scale,
+    );
+
     const setDisp = (out: THREE.Vector3, x: number, y: number): void => {
       const idx = (y * resolution + x) * 4;
       out.set(buf[idx], buf[idx + 1], buf[idx + 2]);
@@ -186,39 +157,23 @@ export class WebGLWaveSampler implements IWaveSampler {
   }
 
   /**
-   * Sample normal from the texture at the given world position.
+   * Sample a cascade's surface normal at a world position. Decodes `[0,1]` to
+   * `[-1,1]` but does not normalize — cascades are RNM-blended then normalized
+   * once by the caller, matching the surface shader. Returns a reused temp.
    */
-  private sampleNormal(
+  private sampleCascadeNormal(
+    cascade: CascadeReadState,
     worldX: number,
     worldZ: number,
-    resolution: number,
-    scale: number,
   ): THREE.Vector3 {
-    if (!this.normalReadBuffer) {
-      return new THREE.Vector3(0, 1, 0);
-    }
+    const { resolution, scale, normal: buf } = cascade;
+    const { x0, y0, x1, y1, fx, fy } = this.texelLerp(
+      worldX,
+      worldZ,
+      resolution,
+      scale,
+    );
 
-    const baseRes = 256.0;
-    const effectiveScale = (scale * resolution) / baseRes;
-
-    const u = worldX / effectiveScale + 0.5;
-    const v = worldZ / effectiveScale + 0.5;
-
-    const wrappedU = ((u % 1) + 1) % 1;
-    const wrappedV = ((v % 1) + 1) % 1;
-
-    const px = wrappedU * resolution;
-    const py = wrappedV * resolution;
-
-    const x0 = Math.floor(px);
-    const y0 = Math.floor(py);
-    const x1 = (x0 + 1) % resolution;
-    const y1 = (y0 + 1) % resolution;
-
-    const fx = px - x0;
-    const fy = py - y0;
-
-    const buf = this.normalReadBuffer!;
     const setNormal = (out: THREE.Vector3, x: number, y: number): void => {
       const idx = (y * resolution + x) * 4;
       // Convert from [0,1] to [-1,1]
@@ -233,7 +188,88 @@ export class WebGLWaveSampler implements IWaveSampler {
     // Bilinear blend using pre-allocated temps
     this._tRow0.copy(this._t00).lerp(this._t10, fx);
     this._tRow1.copy(this._t01).lerp(this._t11, fx);
-    return this._tRow0.lerp(this._tRow1, fy).normalize();
+    return this._tRow0.lerp(this._tRow1, fy);
+  }
+
+  /**
+   * Read back each cascade's displacement and normal textures into CPU buffers,
+   * (re)allocating per-cascade buffers when a cascade's resolution changes.
+   */
+  private async readCascades(cascadeCount: number): Promise<void> {
+    // Phase 1: ensure per-cascade state and issue every readback up front.
+    // Issuing before awaiting lets the GPU service them concurrently, so the
+    // await below is a single CPU<-GPU sync for all cascades rather than one
+    // round-trip per cascade. `targets[t]` owns `reads[2t]` (displacement) and
+    // `reads[2t + 1]` (normal).
+    const targets: CascadeReadState[] = [];
+    const reads: Promise<ReadbackArray>[] = [];
+
+    for (let c = 0; c < cascadeCount; c++) {
+      const resolution = this.simulation.getResolution(c);
+      const scale = this.simulation.getScale(c);
+
+      let state = this.cascadeReads[c];
+      if (!state || state.resolution !== resolution) {
+        state = {
+          resolution,
+          scale,
+          displacement: new Float32Array(resolution * resolution * 4),
+          normal: new Float32Array(resolution * resolution * 4),
+        };
+        this.cascadeReads[c] = state;
+      } else {
+        state.scale = scale;
+      }
+
+      const displacementRT = this.simulation.getDisplacementRenderTarget(c);
+      const normalRT = this.simulation.getNormalRenderTarget(c);
+      if (!displacementRT || !normalRT) continue;
+
+      targets.push(state);
+      reads.push(
+        this.renderer.readRenderTargetPixelsAsync(
+          displacementRT, 0, 0, resolution, resolution,
+        ),
+        this.renderer.readRenderTargetPixelsAsync(
+          normalRT, 0, 0, resolution, resolution,
+        ),
+      );
+    }
+
+    // Drop cascades that no longer exist (e.g. quality level lowered).
+    if (this.cascadeReads.length > cascadeCount) {
+      this.cascadeReads.length = cascadeCount;
+    }
+
+    if (reads.length === 0) return;
+
+    // Phase 2: one sync point for every cascade. `allSettled` so a single failed
+    // readback keeps that buffer's previous frame instead of dropping all.
+    const settled = await Promise.allSettled(reads);
+    if (this._disposed) return;
+
+    for (let t = 0; t < targets.length; t++) {
+      const state = targets[t];
+      const dispResult = settled[t * 2];
+      const normalResult = settled[t * 2 + 1];
+      if (dispResult.status === "fulfilled") {
+        state.displacement = this.storeReadback(dispResult.value, state.displacement);
+      }
+      if (normalResult.status === "fulfilled") {
+        state.normal = this.storeReadback(normalResult.value, state.normal);
+      }
+    }
+  }
+
+  /**
+   * Store a readback result into a cascade buffer. The renderer normally hands
+   * back a `Float32Array` we can keep directly; otherwise copy into the existing
+   * buffer.
+   */
+  private storeReadback(data: ReadbackArray, fallback: Float32Array): Float32Array {
+    if (data instanceof Float32Array) return data;
+    fallback.set(new Float32Array(data.buffer));
+    return fallback;
   }
 
   public updateLowLatency(): Promise<void> {
@@ -243,108 +279,68 @@ export class WebGLWaveSampler implements IWaveSampler {
   public async update(): Promise<void> {
     if (this._disposed || this.currentSampleCount === 0) return;
 
-    const resolution = this.simulation.getResolution(0);
-    const scale = this.simulation.getScale(0);
-
-    // Reallocate buffers if resolution changed
-    if (resolution !== this.lastReadResolution) {
-      this.displacementReadBuffer = new Float32Array(resolution * resolution * 4);
-      this.normalReadBuffer = new Float32Array(resolution * resolution * 4);
-      this.lastReadResolution = resolution;
-    }
-
-    // Read back texture data from GPU render targets
-    const displacementRT = this.simulation.getDisplacementRenderTarget(0);
-    const normalRT = this.simulation.getNormalRenderTarget(0);
-
-    if (displacementRT && normalRT) {
-      try {
-        const [dispData, normalData] = await Promise.all([
-          this.renderer.readRenderTargetPixelsAsync(
-            displacementRT, 0, 0, resolution, resolution,
-          ),
-          this.renderer.readRenderTargetPixelsAsync(
-            normalRT, 0, 0, resolution, resolution,
-          ),
-        ]);
-
-        // Disposed during async readback — abandon results
-        if (this._disposed) return;
-
-        if (dispData instanceof Float32Array) {
-          this.displacementReadBuffer = dispData;
-        } else {
-          this.displacementReadBuffer!.set(new Float32Array(dispData.buffer));
-        }
-
-        if (normalData instanceof Float32Array) {
-          this.normalReadBuffer = normalData;
-        } else {
-          this.normalReadBuffer!.set(new Float32Array(normalData.buffer));
-        }
-      } catch {
-        // Readback failed — fall back to Gerstner-only sampling
-      }
-    }
-
+    const cascadeCount = this.simulation.getCapabilities().cascadeCount;
+    await this.readCascades(cascadeCount);
     if (this._disposed) return;
 
-    // Get Gerstner wave state
-    const gerstner = this.simulation.getGerstnerCPUState();
-    const hasGerstner = gerstner.waveCount > 0 && gerstner.waveData !== null;
+    const cascades = this.cascadeReads;
 
     for (let i = 0; i < this.currentSampleCount; i++) {
       const pos = this.positions[i];
-      let x = pos.x;
-      let z = pos.y;
+      const baseX = pos.x;
+      const baseZ = pos.y;
 
+      // Invert the horizontal displacement the surface applies — every FFT
+      // cascade (summed at the same position, as the WebGL surface does) —
+      // so height and normal are read at the surface parameter that renders
+      // at the query position: solve u + D_xz(u) = base by fixed-point
+      // iteration u <- base - D_xz(u). The correction must use the *same*
+      // terms the vertex shader displaces by; omitting any leaves the sample
+      // shifted, a visible offset at high choppiness where displacement
+      // reaches meters.
+      let x = baseX;
+      let z = baseZ;
+      for (let k = 0; k < WAVE_INVERSE_SOLVE_ITERATIONS; k++) {
+        let dispX = 0;
+        let dispZ = 0;
+        for (let c = 0; c < cascades.length; c++) {
+          const disp = this.sampleCascadeDisplacement(cascades[c], x, z);
+          dispX += disp.x;
+          dispZ += disp.z;
+        }
+        x = baseX - dispX;
+        z = baseZ - dispZ;
+      }
+
+      // Height: sum all FFT cascades at the converged parameter.
       let finalHeight = 0;
+      for (let c = 0; c < cascades.length; c++) {
+        finalHeight += this.sampleCascadeDisplacement(cascades[c], x, z).y;
+      }
+
+      // Normal: RNM-blend the FFT cascades (cascade 0 is the base), then
+      // normalize once — matching the surface shader.
       let fnx = 0;
       let fny = 1;
       let fnz = 0;
-
-      // Sample FFT displacement if available
-      if (this.displacementReadBuffer) {
-        const disp = this.sampleDisplacement(x, z, resolution, scale);
-        finalHeight = disp.y;
-
-        // Apply horizontal displacement correction
-        x -= disp.x;
-        z -= disp.z;
+      for (let c = 0; c < cascades.length; c++) {
+        const n = this.sampleCascadeNormal(cascades[c], x, z);
+        if (c === 0) {
+          fnx = n.x;
+          fny = n.y;
+          fnz = n.z;
+        } else {
+          fnx += n.x;
+          fny += n.y - 1.0;
+          fnz += n.z;
+        }
       }
 
-      // Sample normal from texture
-      if (this.normalReadBuffer) {
-        const normal = this.sampleNormal(x, z, resolution, scale);
-        fnx = normal.x;
-        fny = normal.y;
-        fnz = normal.z;
-      }
-
-      // Add Gerstner displacement and blend normals
-      if (hasGerstner) {
-        const g = this.evaluateGerstnerCPU(
-          x,
-          z,
-          gerstner.waveData!,
-          gerstner.waveCount,
-          gerstner.time,
-        );
-        finalHeight += g.dy;
-
-        // Blend normals using RNM
-        fnx = fnx + g.nx;
-        fny = fny + (g.ny - 1.0);
-        fnz = fnz + g.nz;
-        const len = Math.sqrt(fnx * fnx + fny * fny + fnz * fnz) + 0.0001;
-        fnx /= len;
-        fny /= len;
-        fnz /= len;
-      }
+      const len = Math.sqrt(fnx * fnx + fny * fny + fnz * fnz) + 0.0001;
 
       // Store results
       this.cachedResults[i].height = finalHeight;
-      this.cachedResults[i].normal.set(fnx, fny, fnz);
+      this.cachedResults[i].normal.set(fnx / len, fny / len, fnz / len);
     }
   }
 
@@ -372,7 +368,6 @@ export class WebGLWaveSampler implements IWaveSampler {
     this.currentSampleCount = 0;
     this.positions = [];
     this.cachedResults = [];
-    this.displacementReadBuffer = null;
-    this.normalReadBuffer = null;
+    this.cascadeReads = [];
   }
 }

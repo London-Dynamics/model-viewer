@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import {
   mix,
@@ -18,7 +21,6 @@ import {
 import { fbm2D } from "../../shaders/noise";
 import { Caustics } from "../../shaders/caustics";
 import { FloorDisplacementUniforms } from "../../uniforms";
-import type { TSLBuffer } from "../../types/tsl";
 import type { OceanFloorOptions } from "./types";
 import type { IWaveSimulation } from "../../simulation/waves";
 
@@ -30,6 +32,7 @@ import sandDispUrl from "../../assets/sand_disp_1k.jpg";
 import rockyColorUrl from "../../assets/rocky_diff_1k.jpg";
 import rockyNormalUrl from "../../assets/rocky_norm_1k.jpg";
 import rockyDispUrl from "../../assets/rocky_disp_1k.jpg";
+import { RenderOrder } from "../../rendering/renderOrder";
 
 // Re-export types for public API
 export type { OceanFloorOptions };
@@ -93,7 +96,7 @@ export class OceanFloor {
    * @returns Promise resolving to the initialized OceanFloor
    */
   static async create(options: OceanFloorOptions): Promise<OceanFloor> {
-    const { size, depth, meshResolution = 32, tileSize = 400 } = options;
+    const { size, depth, meshResolution = 32, tileSize = 20 } = options;
 
     // Create geometry
     const geometry = new THREE.PlaneGeometry(
@@ -185,7 +188,7 @@ export class OceanFloor {
 
     // Set mesh position and enable shadows
     instance.mesh.position.y = -depth;
-    instance.mesh.renderOrder = -100;
+    instance.mesh.renderOrder = RenderOrder.opaque.oceanFloor;
     instance.mesh.receiveShadow = true;
 
     return instance;
@@ -484,29 +487,11 @@ export class OceanFloor {
   }
 
   /**
-   * Set wave buffer references for wave-based caustics (WebGPU).
-   * Must be called before the material is first rendered to take effect.
-   */
-  setWaveBuffers(options: {
-    normalBuffer: TSLBuffer;
-    resolution: number;
-    scale: number;
-  }): void {
-    this.caustics.setWaveBuffers(options);
-
-    // Re-apply material to use wave-based caustics
-    if (this.sandTextures && this.rockyTextures) {
-      this.applyMaterial(this.sandTextures, this.rockyTextures);
-    }
-  }
-
-  /**
-   * Set wave texture reference for wave-based caustics (WebGL).
+   * Set the wave-normal texture used by wave-based caustics.
    * Must be called before the material is first rendered to take effect.
    */
   setWaveTexture(options: {
     normalTexture: THREE.Texture;
-    resolution: number;
     scale: number;
   }): void {
     this.caustics.setWaveTexture(options);
@@ -518,31 +503,18 @@ export class OceanFloor {
   }
 
   /**
-   * Updates buffer resolution and scale at runtime.
-   *
-   * @param resolution - Resolution in texels.
-   * @param scale - World-space scale in units.
-   */
-  updateBufferParams(resolution: number, scale: number): void {
-    this.caustics.updateBufferParams(resolution, scale);
-  }
-
-  /**
-   * Rebind to the wave simulation. Pulls cascade-0 normal texture,
-   * resolution, and scale — the inputs the caustics shader consumes to
-   * modulate the procedural caustic pattern with the live wave surface.
+   * Rebind to the wave simulation. Pulls the cascade-0 normal texture and
+   * scale used to modulate the procedural caustic pattern with live waves.
    * Called whenever cascade configuration changes or the wave sim is
    * recreated.
    */
   onCascadeChanged(sim: IWaveSimulation): void {
-    const resolution = sim.getResolution(0);
     const scale = sim.getScale(0);
     const normalTexture = sim.getNormalTexture(0);
 
     if (normalTexture) {
-      this.setWaveTexture({ normalTexture, resolution, scale });
+      this.setWaveTexture({ normalTexture, scale });
     }
-    this.updateBufferParams(resolution, scale);
   }
 
   /** Dispose of all resources */

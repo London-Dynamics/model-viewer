@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -50,9 +53,9 @@ export function createGeometryFolder(
   });
 
   advanced.addSlider("Base Size (m)", {
-    min: 100,
-    max: 1000,
-    step: 100,
+    min: 50,
+    max: 800,
+    step: 50,
     binding: () => ui.params.clipmap.baseSize,
     onChange: (v) => {
       ui.params.clipmap.baseSize = v;

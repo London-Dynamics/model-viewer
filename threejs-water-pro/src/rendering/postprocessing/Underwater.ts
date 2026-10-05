@@ -1,7 +1,9 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { PassNode } from "three/webgpu";
 import {
-  exp,
   float,
   floor,
   Fn,
@@ -19,15 +21,14 @@ import {
 import type { Node } from "../../shaders/types";
 import type { TextureNode } from "three/webgpu";
 import type { IWaterDepthPass } from "../passes/IWaterDepthPass";
+import type { SceneDepthSampler } from "../passes/SceneDepthSampler";
+import type { WaterColor } from "../../shaders/waterColor";
 
 /**
  * Underwater applies screen-space post-processing effects for pixels
- * below the water surface: per-channel Beer-Lambert attenuation matching
- * the above-water surface composite (`WaterColor`). Absorption coefficient
- * and intrinsic water color are bound from the same `WaterColor` uniform
- * nodes that drive the surface shader, so a pixel just above the waterline
- * and a pixel just below it converge to the same color as column
- * thickness → 0.
+ * below the water surface. It reads the same physical or custom `WaterColor`
+ * model as the surface shader, so attenuation remains continuous across the
+ * waterline.
  *
  * UV distortion (refraction warp) is handled separately by
  * {@link UnderwaterDistortion}, which produces a shared distorted UV node
@@ -75,12 +76,8 @@ export class Underwater {
   // Multiplicative color graded over the entire underwater region.
   private _tintColor = uniform(new THREE.Color(1, 1, 1));
 
-  // Shared Beer-Lambert nodes — bound to `WaterColor` via `bindColorNodes`.
-  // Placeholders default to zero so the pass is a no-op until binding (any
-  // unbound frame between construction and wire-up renders the scene with
-  // no fog rather than with a bogus color).
-  private _absorptionColorNode: Node = uniform(new THREE.Color(0, 0, 0));
-  private _waterColorNode: Node = uniform(new THREE.Color(0, 0, 0));
+  // Shared physical/custom model used by the surface shader.
+  private _waterColor: WaterColor | null = null;
 
   // Depth source — owned by `RenderPassManager`, samples routed through
   // its `sampleX(uv)` builders so the backend split (WebGPU
@@ -88,13 +85,13 @@ export class Underwater {
   // post-process node graph.
   private _waterDepthPass: IWaterDepthPass | null = null;
 
-  // Scene depth texture from DepthPass (R=depth)
-  private sceneDepthTextureNode: ReturnType<typeof texture>;
+  // Scene-depth sampler from the capture pass (normalized linear depth).
+  private _sceneDepth: SceneDepthSampler | null = null;
 
   // Transparent object color texture (premultiplied alpha in RGB)
   private transparentColorTextureNode: ReturnType<typeof texture>;
 
-  // Transparent object depth/alpha texture (B = depth, A = opacity)
+  // Transparent object depth texture (R = normalized linear depth)
   private transparentDepthTextureNode: ReturnType<typeof texture>;
 
   // Depth reconstruction uniforms
@@ -118,7 +115,6 @@ export class Underwater {
       return tex;
     };
 
-    this.sceneDepthTextureNode = texture(createPlaceholder());
     this.transparentColorTextureNode = texture(createPlaceholder());
     this.transparentDepthTextureNode = texture(createPlaceholder());
   }
@@ -133,9 +129,10 @@ export class Underwater {
     this._waterDepthPass = waterDepthPass;
   }
 
-  /** Set the scene depth texture from DepthPass. */
-  public setSceneDepthTexture(tex: THREE.Texture): void {
-    this.sceneDepthTextureNode.value = tex;
+  /** Bind the scene-depth sampler from the capture pass. Called once —
+   * target rebuilds and camera changes propagate through the sampler. */
+  public setSceneDepth(sceneDepth: SceneDepthSampler): void {
+    this._sceneDepth = sceneDepth;
   }
 
   /** Set the transparent object color texture from DepthPass. */
@@ -154,18 +151,9 @@ export class Underwater {
     this.cameraFarUniform.value = far;
   }
 
-  /**
-   * Bind the surface Beer-Lambert uniform nodes. Called from
-   * `WaterSystem.create` after both `Underwater` and the `WaterColor`
-   * instance exist. Underwater fog reads these directly — no per-frame
-   * sync, no duplicated uniforms.
-   *
-   * @param absorptionColor `WaterColor._absorptionColorNode` (vec3).
-   * @param waterColor      `WaterColor._waterColorNode` (vec3).
-   */
-  public bindColorNodes(absorptionColor: Node, waterColor: Node): void {
-    this._absorptionColorNode = absorptionColor;
-    this._waterColorNode = waterColor;
+  /** Bind the same water-color model used by the surface shader. */
+  public bindWaterColor(waterColor: WaterColor): void {
+    this._waterColor = waterColor;
   }
 
   /** Whether underwater effects are enabled. */
@@ -217,10 +205,19 @@ export class Underwater {
         "Underwater.createEffectNode: setWaterDepthPass() must be called before building the post-process node graph.",
       );
     }
-    const absorptionColor = this._absorptionColorNode;
-    const waterColor = this._waterColorNode;
+    const sceneDepth = this._sceneDepth;
+    if (!sceneDepth) {
+      throw new Error(
+        "Underwater.createEffectNode: setSceneDepth() must be called before building the post-process node graph.",
+      );
+    }
+    const waterColor = this._waterColor;
+    if (!waterColor) {
+      throw new Error(
+        "Underwater.createEffectNode: bindWaterColor() must be called first.",
+      );
+    }
     const tintColor = this._tintColor;
-    const sceneDepthTex = this.sceneDepthTextureNode;
     const transColorTex = this.transparentColorTextureNode;
     const transDepthTex = this.transparentDepthTextureNode;
     const near = this.cameraNearUniform;
@@ -282,17 +279,17 @@ export class Underwater {
         // alpha comes from the transparent-colour target's A channel below — that
         // is material-agnostic (any material, including node-driven opacity), unlike
         // the depth pass's per-quad constant opacity.
-        const transNormDepth = transDepthTex.sample(sampleUV).z;
+        const transNormDepth = transDepthTex.sample(sampleUV).r;
 
-        // The scene depth target uses NEAREST sampling; the scene color
+        // The hardware depth texture samples NEAREST; the scene color
         // target uses LINEAR. At a sub-pixel-offset distortedUV near a
         // silhouette, NEAREST snaps depth across the discontinuity while
         // LINEAR blends the color, so the depth-derived fog factor came
         // from one side and the sampled color from the other — producing
         // the bright "water-behind" halo around plants. Manually bilerping
-        // the opaque depth puts the fog factor in the same interpolation
-        // regime as the scene color, smoothing the silhouette transition
-        // without sacrificing the warp visual.
+        // the (linearized) opaque depth puts the fog factor in the same
+        // interpolation regime as the scene color, smoothing the silhouette
+        // transition without sacrificing the warp visual.
         const dPx = float(1.0).div(screenSize.x);
         const dPy = float(1.0).div(screenSize.y);
         const dPixelCoord = sampleUV.mul(screenSize).sub(vec2(0.5, 0.5));
@@ -300,10 +297,10 @@ export class Underwater {
         const dFx = dPixelCoord.x.sub(dBase.x);
         const dFy = dPixelCoord.y.sub(dBase.y);
         const dUV00 = dBase.add(vec2(0.5, 0.5)).div(screenSize);
-        const d00 = sceneDepthTex.sample(dUV00).x;
-        const d10 = sceneDepthTex.sample(dUV00.add(vec2(dPx, float(0.0)))).x;
-        const d01 = sceneDepthTex.sample(dUV00.add(vec2(float(0.0), dPy))).x;
-        const d11 = sceneDepthTex.sample(dUV00.add(vec2(dPx, dPy))).x;
+        const d00 = sceneDepth.sample(dUV00);
+        const d10 = sceneDepth.sample(dUV00.add(vec2(dPx, float(0.0))));
+        const d01 = sceneDepth.sample(dUV00.add(vec2(float(0.0), dPy)));
+        const d11 = sceneDepth.sample(dUV00.add(vec2(dPx, dPy)));
         const opaqueNormDepth = mix(
           mix(d00, d10, dFx),
           mix(d01, d11, dFx),
@@ -337,20 +334,15 @@ export class Underwater {
         const bgColumn = min(opaqueLinearDepth, waterLinearDepth);
         const transColumn = min(transLinearDepth, waterLinearDepth);
 
-        // Per-channel clear fraction `exp(-absorption · column)` — same
-        // formula as the surface composite in waterColor.ts:172-174.
-        const clearOpaque = exp(
-          vec3(absorptionColor).negate().mul(bgColumn),
-        );
-        const clearTrans = exp(
-          vec3(absorptionColor).negate().mul(transColumn),
-        );
+        const clearOpaque = waterColor.buildClearFactor(bgColumn);
+        const clearTrans = waterColor.buildClearFactor(transColumn);
+        const opaqueMediumColor = waterColor.buildMediumColor();
 
         const sceneColorSampled = sceneTexture.sample(sampleUV);
 
         // Background fog (no transparent object at this pixel).
         const standardFogged = vec4(
-          mix(vec3(waterColor), sceneColorSampled.rgb, clearOpaque),
+          mix(opaqueMediumColor, sceneColorSampled.rgb, clearOpaque),
           float(1.0),
         );
 
@@ -368,23 +360,31 @@ export class Underwater {
           .max(float(0.0));
         const oneMinusAlpha = float(1.0).sub(transAlpha);
         const foggedTrans = mix(
-          vec3(waterColor).mul(transAlpha),
+          opaqueMediumColor.mul(transAlpha),
           transColorPremul,
           clearTrans,
         );
         const foggedBg = mix(
-          vec3(waterColor).mul(oneMinusAlpha),
+          opaqueMediumColor.mul(oneMinusAlpha),
           bgContrib,
           clearOpaque,
         );
         const decomposedFogged = vec4(foggedTrans.add(foggedBg), float(1.0));
 
-        // A transparent object counts only where it is actually present and in
-        // front of the opaque scene — the transparent-depth target no longer
-        // depth-tests against opaques, so that occlusion is resolved here.
+        // A transparent object counts only where it is actually present, in
+        // front of the opaque scene (the transparent-depth target no longer
+        // depth-tests against opaques, so that occlusion is resolved here),
+        // AND inside the water segment of the ray — closer than the point
+        // where the ray exits through the surface. An above-water object
+        // reaches a submerged camera only through the surface's own optics
+        // (Snell's-window refraction, or not at all under total internal
+        // reflection), which the beauty pixel already composited;
+        // decomposing it here would paint it over TIR regions where the
+        // surface shows only reflection.
         const hasTransparent = transNormDepth
           .lessThan(float(0.999))
-          .and(transNormDepth.lessThan(opaqueNormDepth));
+          .and(transNormDepth.lessThan(opaqueNormDepth))
+          .and(transLinearDepth.lessThan(waterLinearDepth));
         const underwaterFogged = hasTransparent.select(
           decomposedFogged,
           standardFogged,

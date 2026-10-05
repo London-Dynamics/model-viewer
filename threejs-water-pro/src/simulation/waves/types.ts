@@ -1,38 +1,53 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Shared types for wave simulation implementations.
  */
 
-/**
- * Configuration for a single cascade level (from presets).
- * Resolution and enabled state come from quality level.
- */
-export interface CascadeConfig {
-  /** World-space scale of this cascade's tile */
-  scale: number;
-  /** Amplitude multiplier for this cascade */
-  amplitudeScale: number;
-}
+import { SEAM_MODE_DENSITY } from "./cascadeBands";
 
 /**
- * Cascades configuration with named groups (from presets).
- * Gerstner waves replace the old FFT swells cascade analytically.
+ * Cascades configuration authored by presets.
+ *
+ * A single tile size sizes the whole FFT set. The largest cascade uses
+ * `maxScale`; every finer cascade derives from it and the per-cascade
+ * resolutions (see `deriveCascadeScale`). Resolution and enablement come from
+ * the quality level, and each cascade's resolution can be overridden
+ * independently; amplitude is the global `waves.fft.amplitude`.
  */
 export interface CascadesConfig {
-  /** Medium scale (waves) */
-  waves: CascadeConfig;
-  /** Smallest scale (ripples) */
-  ripples: CascadeConfig;
+  /** World-space tile size of the largest cascade, in meters. */
+  maxScale: number;
 }
 
 /**
- * Helper to get cascade configs as array (for indexed access).
- * Order: [waves, ripples] - largest to smallest scale.
- * Waves is always enabled; ripples is disabled at lower quality levels.
+ * Tile size of the cascade at `index`, working down from the largest.
+ *
+ * Cascade 0 is `maxScale`. Each finer cascade multiplies the previous tile by
+ * `(3 · SEAM_MODE_DENSITY) / resolution`, where `resolution` is the *previous*
+ * (coarser) cascade's own resolution. That ratio places the new cascade's
+ * fundamental wavelength `SEAM_MODE_DENSITY` mode-rings below the coarser
+ * cascade's seam — see `assignCascadeBands` for why that margin prevents
+ * visible tiling. The `3` factor folds in the `1.5²` crossfade half-width on
+ * each side of the seam (`BAND_CROSSFADE_RATIO`).
+ *
+ * Only the resolutions of cascades *before* `index` affect its tile size —
+ * changing cascade `i`'s resolution reshapes every cascade after it and
+ * never the cascades before it, so lowering any one resolution only ever
+ * coarsens the detail floor of the finest cascade, never reintroduces a
+ * sparse, tiling-prone band partway through the chain.
  */
-export function getCascadeConfigsArray(
-  cascades: CascadesConfig,
-): CascadeConfig[] {
-  return [cascades.waves, cascades.ripples];
+export function deriveCascadeScale(
+  maxScale: number,
+  resolutions: number[],
+  index: number,
+): number {
+  let scale = maxScale;
+  for (let i = 0; i < index; i++) {
+    scale = (scale * 3 * SEAM_MODE_DENSITY) / resolutions[i];
+  }
+  return scale;
 }
 
 /**
@@ -40,7 +55,6 @@ export function getCascadeConfigsArray(
  * Only cascade-specific values — shared wave physics params live in WaveUniforms.
  */
 export interface CascadeSimulationParams {
-  amplitudeScale: number;
   resolution: number;
   scale: number;
 }
@@ -50,14 +64,13 @@ export interface CascadeSimulationParams {
  */
 export interface WavesConfig {
   amplitude: number;
-  frequency: number;
   animationSpeed: number;
   windSpeed: number;
   windDirection: number;
   choppiness: number;
-  scale: number;
+  peakWavelength: number;
+  maxScale: number;
   gravity: number;
-  amplitudeScale: number;
   jonswapGamma: number;
   spectralSharpness: number;
 }

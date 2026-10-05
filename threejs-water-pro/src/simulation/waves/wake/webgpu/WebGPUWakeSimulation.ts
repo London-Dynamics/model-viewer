@@ -1,6 +1,9 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { instancedArray } from "three/tsl";
-import type { TSLBuffer, TSLComputeShader } from "../../../../types/tsl";
+import type { TSLBuffer, TSLComputeShader, TSLUniformNode } from "../../../../types/tsl";
 import type {
   IWakeSimulation,
   InjectAlongPathParams,
@@ -10,18 +13,10 @@ import type { IWakeFieldSampler } from "../IWakeFieldSampler";
 import { WakeIWaveCompute } from "./WakeIWaveCompute";
 import type { WakeBuffers, WakeDisplacementOutput } from "./WakeIWaveCompute";
 import { WebGPUWakeFieldSampler } from "./WebGPUWakeFieldSampler";
-
-/** Kernel half-size — P=10 gives `∝κ` dispersion across the wake band (see wiki/wake/iwave.md). */
-const KERNEL_HALF = 10;
-/** Source gain: scales the baked per-frame source so a hull pass forms a ~`depth` trough. */
-const SOURCE_GAIN = 0.5;
-/** Hull speed (m/s) at which the turbulent-track foam reaches full intensity. */
-const FOAM_SPEED_REF = 6.0;
-/** dt-clamp Courant-like factor for the explicit leapfrog: `dt ≤ FACTOR·√(Δ/g)`. */
-const DT_STABILITY = 0.3;
+import { DT_STABILITY, FOAM_SPEED_REF, KERNEL_HALF, SOURCE_GAIN } from "../constants";
 
 /**
- * WebGPU dispersive wake simulator (Tessendorf's iWave; `wiki/wake/iwave.md`).
+ * WebGPU dispersive wake simulator (Tessendorf's iWave).
  *
  * A height grid advanced by a `√(−∇²)` convolution + explicit leapfrog, giving
  * deep-water dispersion. The convolution is a rank-2 separable approximation of
@@ -67,6 +62,8 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
   private _firstFrame = true;
   /** When set, the next step zeroes the field (stored content is invalid). */
   private _pendingReset = true;
+  /** Sleeps the solver while every persistent field buffer is known to be zero. */
+  private _solverSleeping = true;
 
   /** Generators written this frame; consumed and reset by {@link step}. */
   private _genWriteIndex = 0;
@@ -149,6 +146,9 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
 
   injectAlongPath(params: InjectAlongPathParams): void {
     if (this._genWriteIndex >= this._params.maxGenerators) return;
+    // Any accepted source wakes the solver until the next explicit clear;
+    // detecting decay back to zero would require a GPU readback.
+    this._solverSleeping = false;
     // Bake the per-frame source stamp. sourceStrength = −depth·speed·gain/radius:
     // over the footprint-crossing dwell the added displacement totals ~depth,
     // independent of speed and radius. speedNorm sets turbulent-track foam.
@@ -165,7 +165,7 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
   }
 
   reset(): void {
-    this._clearField();
+    this._clearFieldAndSleep();
     // Re-anchor (and discard any pending injection) on the next step so the
     // field comes back cleanly if the wake is re-enabled.
     this._pendingReset = true;
@@ -176,8 +176,11 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
     const { resolution } = this._params;
     const dx = this._compute.worldSizeValue / resolution;
 
-    // Explicit-leapfrog stability clamp (and frame-hitch guard).
-    const gravity = 9.81; // matches the shared uniform's default magnitude
+    // Explicit-leapfrog stability clamp (and frame-hitch guard). Read the live
+    // gravity from the shared uniform — it drives the leapfrog's `cCoeff`, so
+    // the clamp must track it rather than assume the default. Floored away from
+    // zero so a degenerate gravity can't produce a NaN dt.
+    const gravity = Math.max((this._params.gravity as TSLUniformNode).value, 1e-4);
     const dtMax = DT_STABILITY * Math.sqrt(dx / gravity);
     this._compute.dt = Math.min(dt, dtMax);
 
@@ -185,19 +188,25 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
     const shiftX = this._firstFrame ? 0 : Math.round((originX - this._prevOriginX) / dx);
     const shiftZ = this._firstFrame ? 0 : Math.round((originZ - this._prevOriginZ) / dx);
 
+    if (this._pendingReset) {
+      this._clearFieldAndSleep();
+      this._anchorSleepingField(originX, originZ);
+      this._pendingReset = false;
+      return;
+    }
+
+    // While sleeping, follow the camera by updating only the field mapping and
+    // skip both full-grid compute passes.
+    if (this._solverSleeping && this._genWriteIndex === 0) {
+      this._anchorSleepingField(originX, originZ);
+      return;
+    }
+
     const bigJump =
       Math.abs(shiftX) > resolution * 0.25 || Math.abs(shiftZ) > resolution * 0.25;
-    if (this._pendingReset || bigJump) {
-      this._clearField();
-      this._compute.originX = originX;
-      this._compute.originZ = originZ;
-      this._prevOriginX = originX;
-      this._prevOriginZ = originZ;
-      this._lastShiftX = 0;
-      this._lastShiftZ = 0;
-      this._firstFrame = false;
-      this._pendingReset = false;
-      this._genWriteIndex = 0; // discard this frame's injection onto a cleared field
+    if (bigJump) {
+      this._clearFieldAndSleep();
+      this._anchorSleepingField(originX, originZ);
       return;
     }
 
@@ -227,8 +236,8 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
     this._genWriteIndex = 0;
   }
 
-  /** Zero every field buffer (3 height + 3 foam + displacement) and reset the phase. */
-  private _clearField(): void {
+  /** Zero every field buffer and put the solver to sleep. */
+  private _clearFieldAndSleep(): void {
     const buffers = [...this._height, ...this._foam, this._displacement];
     for (const buf of buffers) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -237,6 +246,19 @@ export class WebGPUWakeSimulation implements IWakeSimulation {
       attr.needsUpdate = true;
     }
     this._phase = 0;
+    this._solverSleeping = true;
+  }
+
+  /** Re-anchor the field while the solver sleeps. */
+  private _anchorSleepingField(originX: number, originZ: number): void {
+    this._compute.originX = originX;
+    this._compute.originZ = originZ;
+    this._prevOriginX = originX;
+    this._prevOriginZ = originZ;
+    this._lastShiftX = 0;
+    this._lastShiftZ = 0;
+    this._firstFrame = false;
+    this._genWriteIndex = 0;
   }
 
   dispose(): void {

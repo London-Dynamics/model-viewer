@@ -1,28 +1,31 @@
-import type { PresetConfig } from "./types";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
 
-/**
- * MOONLIT - Serene Night
- * Calm nighttime ocean with moonlight reflections and gentle swells
- */
-export const MOONLIT_PRESET: PresetConfig = {
+import type { WaterSceneConfig } from "./types";
+
+export const MOONLIT_PRESET: WaterSceneConfig = {
   caustics: {
     enabled: true,
     surface: { strength: 0.1, scale: 0.02, speed: 0.15 },
   },
   clipmap: {
-    baseSize: 800,
+    baseSize: 200,
     levels: 5,
   },
+  environment: {
+    intensity: 1.0,
+  },
   fog: {
-    color: "#212121",
+    color: "#000000",
     enabled: true,
-    fadeEnd: 3800,
-    fadePower: 0.7,
-    fadeStart: 0,
-    skyBlendDistance: 10000,
+    fadeEnd: 730,
+    fadePower: 1.1,
+    fadeStart: 280,
+    skyBlendDistance: 875,
   },
   color: {
-    absorptionColor: "#191414",
+    mode: "custom",
+    absorptionColor: "#5c4e4e",
     transmissionColor: "#ffffff",
     waterColor: "#182325",
   },
@@ -31,7 +34,7 @@ export const MOONLIT_PRESET: PresetConfig = {
       enabled: true,
       opacity: 0.05,
       color: "#c0c8d0",
-      size: 206,
+      size: 26,
       coverage: 0.16,
       texture: "foam1",
     },
@@ -39,13 +42,8 @@ export const MOONLIT_PRESET: PresetConfig = {
       enabled: true,
       opacity: 0.65,
       color: "#ffffff",
-      size: 149,
-      coverage: 0.4,
-      peakIntensity: 0.2,
+      size: 19,
       windStretch: 0.5,
-      crestCoverage: 0.2,
-      waveWeight: 0.8,
-      rippleWeight: 0.5,
       texture: "foam3",
       persistence: {
         decayTime: 0.5,
@@ -56,9 +54,9 @@ export const MOONLIT_PRESET: PresetConfig = {
     shoreline: {
       enabled: true,
       opacity: 0.05,
-      size: 33,
+      size: 4,
       coverage: 0.84,
-      range: 35,
+      range: 1.8,
       color: "#edf9fd",
       texture: "foam2",
     },
@@ -66,9 +64,6 @@ export const MOONLIT_PRESET: PresetConfig = {
   fresnel: {
     surface: {
       iorRatio: 1.33,
-      normalStrength: 0.3,
-      fadeStart: 150,
-      fadePower: 4.1,
       refractionStrength: 0.5,
     },
     underwater: {
@@ -82,21 +77,21 @@ export const MOONLIT_PRESET: PresetConfig = {
   oceanFloor: {
     blendSoftness: 0.3,
     blendThreshold: 0.5,
-    depth: 100,
-    displacementScale: 140,
-    displacementStrength: 8,
+    depth: 8,
+    displacementScale: 7,
+    displacementStrength: 0.4,
     enabled: true,
     lacunarity: 1.8,
     meshResolution: 64,
     normalScale: 0.2,
     persistence: 0.75,
     textureDisplacementStrength: 0.5,
-    tileSize: 400,
+    tileSize: 20,
     caustics: {
       depthAttenuation: 0,
       enabled: true,
       intensity: 0.9,
-      scale: 150,
+      scale: 7.5,
       waveDistortion: 0.26,
     },
     sunShafts: {
@@ -136,8 +131,8 @@ export const MOONLIT_PRESET: PresetConfig = {
       intensity: 0.1,
       rippleDecay: 1.0,
       rippleDensity: 1.0,
-      rippleFadeEnd: 500,
-      rippleSize: 2.5,
+      rippleFadeEnd: 60,
+      rippleSize: 0.3,
       rippleStrength: 0.5,
       streakLength: 1.0,
       streakWidth: 0.01,
@@ -148,10 +143,10 @@ export const MOONLIT_PRESET: PresetConfig = {
       color: "#ffffff",
       count: 1000,
       enabled: true,
-      farDistance: 209,
-      maxSize: 0.5,
-      minSize: 0.1,
-      nearDistance: 9,
+      farDistance: 40,
+      maxSize: 0.15,
+      minSize: 0.03,
+      nearDistance: 2,
       opacity: 0.1,
     },
   },
@@ -163,14 +158,14 @@ export const MOONLIT_PRESET: PresetConfig = {
     fadeOutTime: 0.5,
     opacity: 0.4,
     respawnTime: 1.0,
-    size: 27.5,
+    size: 3,
     spawnJitterTime: 0.0,
     stretchX: 1.88,
     stretchY: 1.0,
-    submersionDepth: 0.5,
+    submersionDepth: 0.15,
     velocityHeightFactor: 0.0,
     velocityScaleFactor: 0.0,
-    velocityThreshold: 3.9,
+    velocityThreshold: 0.8,
   },
   ssr: {
     enabled: true,
@@ -181,22 +176,13 @@ export const MOONLIT_PRESET: PresetConfig = {
     intensity: 0.2,
     power: 3.0,
   },
-  lighting: {
-    ambient: {
-      skyColor: "#5a6a85",
-      groundColor: "#1b2238",
-      intensity: 0.5,
-    },
-  },
   sky: {
     source: {
       type: "hdri",
       url: "hdris/NightSkyHDRI008_4K_HDR.jpg",
     },
-    brightness: 0.4,
-    reflectionBlurDistance: 10000,
-    reflectionDistanceBlur: 0.51,
-    reflectionRoughness: 0,
+    brightness: 0.1,
+    reflectionRoughness: 0.15,
     sun: {
       azimuth: 65,
       diskColor: "#fffef5",
@@ -205,13 +191,13 @@ export const MOONLIT_PRESET: PresetConfig = {
       diskEmissiveIntensity: 2,
       diskRadius: 0.015,
       elevation: 36,
-      intensity: 0.7,
+      intensity: 1.5,
     },
   },
   sparkle: {
     enabled: true,
-    fadeDistance: 1650,
-    intensity: 1.0,
+    fadeDistance: 170,
+    intensity: 0.5,
     minDistance: 0,
     power: 960,
   },
@@ -224,23 +210,16 @@ export const MOONLIT_PRESET: PresetConfig = {
   waves: {
     fft: {
       amplitude: 1,
-      frequency: 1.35,
-      animationSpeed: 1.7,
-      windSpeed: 10.9,
+      animationSpeed: 1,
+      windSpeed: 3,
       windDirection: 0.9075712110370514,
       choppiness: 0.94,
+      peakWavelength: 80,
       spectralSharpness: 0.3,
       standingWaveRatio: 0.86,
       cascades: {
-        ripples: { scale: 139, amplitudeScale: 0.06 },
-        waves: { scale: 1760, amplitudeScale: 0.24 },
+        maxScale: 1024,
       },
-    },
-    gerstner: {
-      wavelength: 450,
-      amplitude: 0,
-      wavelengthSpread: 2.0,
-      directionalSpread: 0.7,
     },
   },
 };

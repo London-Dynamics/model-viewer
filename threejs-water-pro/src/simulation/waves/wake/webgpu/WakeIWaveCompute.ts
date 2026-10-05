@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import {
   Fn,
@@ -17,27 +20,12 @@ import {
 import type { Node } from "three/webgpu";
 import type { TSLBuffer, TSLComputeShader } from "../../../../types/tsl";
 import { buildIWaveKernel, operatorScale, separableKernel } from "../kernel";
-
-/**
- * Separable rank of the `√(−∇²)` kernel. The kernel is symmetric and radial, so
- * its eigenvalues decay fast; rank 2 reproduces the operator to ~1% (see
- * {@link separableKernel}). Coupled to the `vec2` scratch buffer: one channel
- * per term.
- */
-const SEPARABLE_RANK = 2;
-/** Sponge band width as a fraction of resolution; absorbs waves before the rim. */
-const SPONGE_FRACTION = 0.18;
-/**
- * Per-frame amplitude scale at the very edge of the sponge. Strong (→0) so the
- * outer band is a real absorbing layer: the convolution uses clamp-to-border
- * reads (a reflecting boundary), so without a hard sponge — especially at low
- * friction — reflected waves build up at the rim and blow up. `smoothstep` keeps
- * the ramp gradual, so the interior wake is untouched.
- */
-const SPONGE_EDGE_DAMP = 0.0;
-/** Safety clamp on the height field — bounds any residual instability into a
- * visible artifact rather than an infinite spike. Far above real wake amplitude. */
-const MAX_WAKE_HEIGHT = 8.0;
+import {
+  MAX_WAKE_HEIGHT,
+  SEPARABLE_RANK,
+  SPONGE_EDGE_DAMP,
+  SPONGE_FRACTION,
+} from "../constants";
 
 /** Height (current + previous) and foam state for one ping-pong side. */
 export interface WakeBuffers {
@@ -55,7 +43,7 @@ export interface WakeDisplacementOutput {
 
 /**
  * Owns the iWave uniform nodes and builds the explicit leapfrog update
- * (Tessendorf 2004, Eq. 3; see `wiki/wake/iwave.md`).
+ * (Tessendorf 2004, Eq. 3).
  *
  * The `√(−∇²)` operator is a non-local convolution; rather than the naive
  * `(2P+1)²` 2D stencil (441 taps at P=10), the kernel is factored into a rank-2
@@ -98,7 +86,7 @@ export class WakeIWaveCompute {
   private _foamBreakThreshold = uniform(0.05);
 
   // Buffer geometry.
-  private _worldSize = uniform(400.0);
+  private _worldSize = uniform(100.0);
   private _originX = uniform(0.0);
   private _originZ = uniform(0.0);
   // Camera-shift for the CURRENT level (cur, written 1 frame ago).

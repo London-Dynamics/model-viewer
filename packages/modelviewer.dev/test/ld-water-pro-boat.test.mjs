@@ -53,12 +53,15 @@ assert.ok(Math.abs(size.beam - 2.971) < 0.001, 'Ri230 beam matches the 2.971 m w
 assert.ok(size.length > size.beam, 'length axis is longer than the beam');
 
 const placement = centurionDemoPlacement();
+assert.equal(DEMO_BOAT_SCALE, 1);
 assert.equal(placement.scale, DEMO_BOAT_SCALE);
 assert.equal(placement.yaw, -Math.PI / 2);
 assert.ok(
-    Math.abs(placement.worldLength - size.length * 15) < 0.001,
-    'demo scale multiplies real length by 15');
-assert.ok(placement.buoyancy.sampleLength > 90, 'buoyancy spans the scaled hull, not the 7.6 m sample');
+    Math.abs(placement.worldLength - size.length * DEMO_BOAT_SCALE) < 0.001,
+    'placement length is the real hull at metre scale');
+assert.ok(
+    placement.buoyancy.sampleLength > placement.worldLength * 0.8,
+    'buoyancy spans most of the hull');
 assert.ok(
     placement.buoyancy.sampleLength < placement.worldLength,
     'bow and stern samples sit inboard of the AABB tips');
@@ -89,9 +92,9 @@ const sunset = {
     fft: {
       amplitude: 1.56,
       windSpeed: 17.9,
-      cascades: {ripples: {scale: 379}, waves: {scale: 2088}},
+      peakWavelength: 140,
+      cascades: {maxScale: 1024},
     },
-    gerstner: {wavelength: 852, amplitude: 2.06},
   },
 };
 
@@ -99,46 +102,43 @@ const light = lakeLook(sunset, {time: 'sunset', sea: 'light'});
 assert.equal(REFERENCE_QUALITY, 'high');
 assert.equal(REFERENCE_PEAK_WAVELENGTH, 22);
 assert.equal(LIGHT_PEAK_WAVELENGTH, 22);
-assert.equal(light.waves.gerstner.wavelength, 22);
-assert.equal(light.waves.gerstner.amplitude, 2.06);
+assert.equal(light.waves.gerstner, undefined);
+assert.equal(light.waves.fft.peakWavelength, 22);
 assert.equal(light.waves.fft.amplitude, REFERENCE_FFT_AMPLITUDE);
 assert.equal(REFERENCE_FFT_AMPLITUDE, 1);
-assert.equal(light.waves.fft.cascades.ripples.scale, 379);
-assert.equal(light.waves.fft.cascades.waves.scale, 2088);
+assert.equal(light.waves.fft.cascades.maxScale, 1024);
 assert.equal(light.clipmap.baseSize, 800);
 assert.equal(light.waves.fft.windSpeed, LIGHT_WIND_SPEED);
 assert.equal(LIGHT_WIND_SPEED, 6.7);
 assert.equal(REFERENCE_CLOUD_COVERAGE, 0.05);
 assert.equal(light.color.waterColor, '#14557a');
-assert.equal(light.color.absorptionColor, '#3a140c');
-assert.equal(light.oceanFloor.depth, 420);
-assert.equal(light.fresnel.surface.iorRatio, 1.08);
+assert.equal(light.color.absorptionColor, undefined);
+assert.equal(light.oceanFloor, undefined);
+assert.equal(light.lighting, undefined);
 assert.equal(light.ssr.strength, 0.14);
 assert.equal(light.sky.reflectionRoughness, 0.2);
 assert.equal(light.sky.sun.elevation, 11);
 assert.equal(light.fog.color, '#e08a55');
 
 const calm = lakeLook(sunset, {time: 'sunset', sea: 'calm'});
-assert.equal(calm.waves.gerstner.wavelength, 852);
+assert.equal(calm.waves.fft.peakWavelength, 140);
 assert.equal(calm.clipmap.baseSize, 800);
 assert.equal(CALM_WAVE_GAIN, 0.45);
-assert.ok(Math.abs(calm.waves.gerstner.amplitude - 2.06 * CALM_WAVE_GAIN) < 1e-9);
 assert.ok(Math.abs(calm.waves.fft.amplitude - 1.56 * CALM_WAVE_GAIN) < 1e-9);
 assert.equal(calm.waves.fft.windSpeed, CALM_WIND_SPEED);
 assert.equal(CALM_WIND_SPEED, 4);
 assert.equal(calm.sky.sun.elevation, 11);
-assert.ok(calm.waves.gerstner.amplitude < light.waves.gerstner.amplitude);
-assert.ok(calm.waves.gerstner.amplitude > light.waves.gerstner.amplitude * 0.4);
+assert.ok(calm.waves.fft.amplitude < light.waves.fft.amplitude);
+assert.ok(calm.waves.fft.amplitude > light.waves.fft.amplitude * 0.4);
 
 const midday = lakeLook(sunset, {time: 'midday', sea: 'calm'});
-assert.equal(midday.waves.gerstner.wavelength, 852);
+assert.equal(midday.waves.fft.peakWavelength, 140);
 assert.equal(midday.sky.sun.elevation, 74);
 assert.equal(midday.fog.color, '#c9e4f6');
 assert.equal(midday.color.waterColor, '#3ec8e6');
 assert.notEqual(midday.color.waterColor, light.color.waterColor);
-assert.equal(midday.fresnel.surface.iorRatio, 1.08);
-assert.ok(midday.waves.gerstner.amplitude < light.waves.gerstner.amplitude);
-assert.ok(midday.waves.gerstner.amplitude > light.waves.gerstner.amplitude * 0.4);
+assert.ok(midday.waves.fft.amplitude < light.waves.fft.amplitude);
+assert.ok(midday.waves.fft.amplitude > light.waves.fft.amplitude * 0.4);
 assert.ok(lakePresentation('midday').skyBrightness > lakePresentation('afternoon').skyBrightness);
 assert.ok(lakePresentation('afternoon').skyBrightness > lakePresentation('sunset').skyBrightness);
 assert.ok(lakePresentation('midday').exposure > lakePresentation('afternoon').exposure);
@@ -155,11 +155,16 @@ assert.equal(afternoon.sky.sun.diskEnabled, true);
 assert.ok(afternoon.sky.sun.elevation > light.sky.sun.elevation);
 assert.ok(afternoon.sky.sun.elevation < midday.sky.sun.elevation);
 assert.equal(afternoon.waves.fft.windSpeed, 6.7);
-assert.equal(afternoon.waves.gerstner.wavelength, 22);
+assert.equal(afternoon.waves.fft.peakWavelength, 22);
 assert.equal(afternoon.waves.fft.amplitude, 1);
+assert.equal(afternoon.color.absorptionColor, undefined);
 assert.equal(hdriForTime('afternoon').includes('kloofendal_43d_clear'), true);
 assert.match(demoJs, /getPresetParams\('dusk'\)/);
+assert.match(demoJs, /new Sky\(renderer,/);
+assert.doesNotMatch(demoJs, /setElevation/);
+assert.doesNotMatch(demoJs, /reflectionBlurDistance/);
 assert.match(demoJs, /'high'/);
+assert.match(html, /v3\.5\.1/);
 
 assert.equal(hdriForTime('sunset').includes('industrial_sunset'), true);
 assert.equal(hdriForTime('midday').includes('kloofendal_43d_clear'), true);
@@ -171,9 +176,9 @@ assert.ok(Math.abs(ri245.length - 8.232) < 0.01, 'Ri245 length is about 8.23 m o
 assert.ok(Math.abs(ri245.beam - 3.882) < 0.01, 'Ri245 beam is about 3.88 m on Z');
 assert.ok(ri245.length > size.length, 'Ri245 is longer than the Ri230 fixture');
 const ri245Placement = centurionDemoPlacement(CENTURION_RI245_BOUNDS);
-assert.equal(ri245Placement.scale, 15);
+assert.equal(ri245Placement.scale, DEMO_BOAT_SCALE);
 assert.equal(ri245Placement.buoyancy.heightOffset, 0);
-assert.ok(ri245Placement.worldLength > 120 && ri245Placement.worldLength < 125);
+assert.ok(ri245Placement.worldLength > 8.2 && ri245Placement.worldLength < 8.3);
 assert.equal(CENTURION_RI245_SKU, 'ri245-my-2027');
 assert.ok(CENTURION_RI245_WINDSHIELD[0] > 1, 'windshield sits forward of the origin');
 const ri245Bow = demoParentPoint(
@@ -211,20 +216,20 @@ assert.ok(Math.abs(aquilaSpanX - 4.607) < 0.01, 'Aquila beam is about 4.61 m on 
 assert.ok(Math.abs(aquilaSpanZ - 14.179) < 0.01, 'Aquila length is about 14.18 m on Z');
 assert.ok(aquilaSpanZ > aquilaSpanX, 'Aquila length is the Z axis');
 const aquila = boatDemoPlacement(BOATS.aquila);
-assert.equal(aquila.scale, 15);
+assert.equal(aquila.scale, DEMO_BOAT_SCALE);
 assert.equal(aquila.yaw, 0);
-assert.equal(aquila.buoyancy.heightOffset, -AQUILA_WATERLINE_Y * 15);
-assert.ok(aquila.buoyancy.heightOffset < -10, 'Aquila sinks to the rub rail');
+assert.equal(aquila.buoyancy.heightOffset, -AQUILA_WATERLINE_Y * DEMO_BOAT_SCALE);
+assert.ok(aquila.buoyancy.heightOffset < -1, 'Aquila sinks to the rub rail');
 const ri245Registry = boatDemoPlacement(BOATS.ri245);
-assert.equal(ri245Registry.buoyancy.heightOffset, -RI245_WATERLINE_Y * 15);
+assert.equal(ri245Registry.buoyancy.heightOffset, -RI245_WATERLINE_Y * DEMO_BOAT_SCALE);
 assert.equal(boatDemoPlacement(BOATS.demo).buoyancy.heightOffset, 0);
 const aquilaWaterline = demoParentPoint([0, AQUILA_WATERLINE_Y, 0], aquila);
 assert.ok(
     Math.abs(aquilaWaterline[1] + aquila.buoyancy.heightOffset) < 1e-6,
     'Aquila rub-rail height meets the lake after the draft offset');
-assert.ok(Math.abs(aquila.worldLength - aquilaSpanZ * 15) < 1e-6);
-assert.ok(Math.abs(aquila.worldBeam - aquilaSpanX * 15) < 1e-6);
-assert.ok(aquila.worldLength > 210 && aquila.worldLength < 215);
+assert.ok(Math.abs(aquila.worldLength - aquilaSpanZ * DEMO_BOAT_SCALE) < 1e-6);
+assert.ok(Math.abs(aquila.worldBeam - aquilaSpanX * DEMO_BOAT_SCALE) < 1e-6);
+assert.ok(aquila.worldLength > 14 && aquila.worldLength < 14.2);
 assert.ok(
     aquila.buoyancy.sampleLength > aquila.worldLength * 0.8 &&
         aquila.buoyancy.sampleLength < aquila.worldLength,
@@ -246,7 +251,9 @@ assert.ok(aquilaBow[2] > aquilaStern[2], 'Aquila bow +Z stays on +Z');
 assert.ok(AQUILA_45_WINDSHIELD[2] > 1, 'Aquila windshield sits forward of the origin');
 const aquilaGlass = demoParentPoint(AQUILA_45_WINDSHIELD, aquila);
 assert.ok(aquilaGlass[2] > 0, 'Aquila windshield faces demo +Z');
-assert.ok(aquilaGlass[1] > 30, 'Aquila windshield is above the scaled waterline');
+assert.ok(
+    aquilaGlass[1] > AQUILA_WATERLINE_Y * DEMO_BOAT_SCALE,
+    'Aquila windshield is above the waterline');
 
 const heroDirection = (pose) => {
   const d = [
@@ -266,7 +273,7 @@ assert.equal(demoPose.target[1], demoPlacement.worldCenterY);
 assert.ok(
     demoPose.position[1] < BOATS.demo.bounds.max[1] * DEMO_BOAT_SCALE,
     'the hero eye stays under the demo ship mast so the rigging meets the sky');
-assert.ok(demoPose.position[1] > 100, 'the hero eye stays clear of the lake');
+assert.ok(demoPose.position[1] > 2, 'the hero eye stays clear of the lake');
 const demoSpan = Math.max(
     demoPlacement.worldLength, demoPlacement.worldHeight, demoPlacement.worldBeam);
 const demoDistance = Math.hypot(

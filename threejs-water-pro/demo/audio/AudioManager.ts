@@ -1,7 +1,10 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Manages ambient ocean audio that changes based on wind speed and camera position.
- * - Wind speed < 10: tranquil sounds
- * - Wind speed < 25: calm sounds
+ * - Wind speed < 6: tranquil sounds
+ * - Wind speed < 12: calm sounds
  * - Wind speed >= 25: storm sounds
  * - When camera is underwater: underwater ambience
  *
@@ -49,9 +52,9 @@ export class AudioManager {
    * Get the appropriate track name for a given wind speed
    */
   private getTrackForWindSpeed(windSpeed: number): string {
-    if (windSpeed < 10) {
+    if (windSpeed < 6) {
       return "tranquil";
-    } else if (windSpeed < 25) {
+    } else if (windSpeed < 12) {
       return "calm";
     } else {
       return "storm";

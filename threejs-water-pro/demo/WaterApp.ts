@@ -1,16 +1,17 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   WaterSystem,
-  BuoyancyDebugVisualizer,
-  SprayDebugVisualizer,
-  WakeDebugVisualizer,
-  Sky,
   getPresetParams,
   applyPresetToParams,
+  normalizeWaterColorConfig,
   type PresetName,
   type QualityLevel,
-  type WaterPreset,
+  type WaterColorConfig,
+  type WaterPresetConfig,
 } from "threejs-water-pro";
 
 import { AudioManager } from "./audio/AudioManager";
@@ -20,8 +21,10 @@ import {
   type LoadedModels,
 } from "./scene/ModelLoader";
 import { FishManager } from "./scene/FishManager";
-import { HdriManager } from "./scene/HdriManager";
-import { SceneVisibility } from "./scene/SceneVisibility";
+import { FogTestGrid } from "./scene/FogTestGrid";
+import { UnderwaterScenery } from "./scene/UnderwaterScenery";
+import { SkyManager } from "./scene/SkyManager";
+import { WaterDebug, type WaterDebugParams } from "./scene/WaterDebug";
 import {
   setupPostProcessing,
   type PostProcessingUniforms,
@@ -30,44 +33,42 @@ import { ParamsStore, deepMerge } from "./persistence/ParamsStore";
 import { ShipController } from "./ship/ShipController";
 import { CameraController } from "./ship/CameraController";
 import { ShipHUD } from "./ship/ShipHUD";
-import {
-  computeBuoyancySampling,
-  computeSprayProbes,
-} from "./ship/shipHullPoints";
 import { extractPresetParams } from "./ui/Controls";
 import { LoadingOverlay } from "./ui/LoadingOverlay";
-import {
-  PerformanceTracker,
-  DynamicResolutionManager,
-} from "./utils/PerformanceTracker";
-
-// Demo-specific buoyancy config (not part of library presets)
-interface BuoyancyObjectParams {
-  enabled: boolean;
-  showSamplePoints: boolean;
-  multiPoint: boolean;
-  heightOffset: number;
-  tiltAmount: number;
-  heightSmoothing: number;
-  tiltSmoothing: number;
-}
+import { PerformanceTracker } from "./utils/PerformanceTracker";
 
 export type AntialiasingMode = "none" | "fxaa" | "smaa";
 
-interface DemoParams extends WaterPreset {
+interface DemoParams extends WaterPresetConfig {
   activePreset: PresetName;
   antialiasing: AntialiasingMode;
-  buoyancy: {
-    ship: BuoyancyObjectParams;
-    buoy: BuoyancyObjectParams;
-  };
+  buoyancy: WaterDebugParams;
   debug: {
     forceWebGL: boolean;
   };
   hdriUrl: string;
 }
 
-const WIP_STORAGE_KEY = "wip-params";
+// Earlier demo snapshots may contain fields from an abandoned color model;
+// start clean before restoring the supported physical or custom shape.
+const WIP_STORAGE_KEY = "wip-params-v4";
+
+/** Restore demo state while treating the color discriminated union atomically. */
+function mergeDemoParams(target: DemoParams, source: unknown): void {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new TypeError("Saved demo parameters must be an object.");
+  }
+
+  const sourceRecord = source as Record<string, unknown>;
+  const { color: colorInput, ...rest } = sourceRecord;
+  const color =
+    colorInput === undefined
+      ? undefined
+      : normalizeWaterColorConfig(colorInput as WaterColorConfig);
+
+  deepMerge(target, rest);
+  if (color) target.color = color;
+}
 
 async function createRenderer(): Promise<THREE.WebGPURenderer> {
   const forceWebGL =
@@ -85,62 +86,59 @@ async function createRenderer(): Promise<THREE.WebGPURenderer> {
 }
 
 export class WaterApp {
-  // Private state
-  private renderer!: THREE.WebGPURenderer;
+  // Set once in init(), exposed through getters below.
+  private _renderer!: THREE.WebGPURenderer;
+  private _waterSystem!: WaterSystem;
+  private _camera!: THREE.PerspectiveCamera;
+  private _controls!: OrbitControls;
+  private _models!: LoadedModels;
+  private _skyManager!: SkyManager;
+  private _rig!: WaterDebug;
+  private _shipController!: ShipController;
+  private _cameraController!: CameraController;
+  private _shipHUD!: ShipHUD;
+  private _scenery!: UnderwaterScenery;
+  private _postProcessingUniforms!: PostProcessingUniforms;
+
+  // Internal state
   private fishManager!: FishManager;
-  /** Bow + stern ship wake generators (index 0 = bow, 1 = stern). */
-  public readonly shipWakeIds: number[] = [];
-  public readonly islandBuoyWakeIds: number[] = [];
   private postProcessing!: THREE.PostProcessing;
   private scenePass!: THREE.PassNode;
   private performanceTracker!: PerformanceTracker;
-  private dynamicResolution!: DynamicResolutionManager;
   private paramsStore!: ParamsStore<DemoParams>;
   private readonly loadingOverlay = new LoadingOverlay();
-  private readonly hdri = new HdriManager();
-  private _visibility!: SceneVisibility;
+  /** Fog × transparency verification rig; created lazily on first enable. */
+  private _fogTestGrid: FogTestGrid | null = null;
   private lastFrameTime = performance.now();
+  /** Frames the render loop has actually drawn. Sampled by the demo FPS
+   * readouts so they measure the render rate, not the display's vsync cadence. */
+  private _frameCount = 0;
   private isChangingQuality = false;
   /** The currently-running `animate` frame, so a quality switch can wait for it
    * to finish rendering before disposing the resources it's still drawing. */
   private _frameInFlight: Promise<void> | null = null;
 
-  // Public readonly fields (set once during init)
-  public readonly waterSystem!: WaterSystem;
-  public readonly camera!: THREE.PerspectiveCamera;
-  public readonly controls!: OrbitControls;
-  public readonly models!: LoadedModels;
-  public readonly sky!: Sky;
-  public readonly buoyancyDebugVisualizer!: BuoyancyDebugVisualizer;
-  public readonly sprayDebugVisualizer!: SprayDebugVisualizer;
-  public readonly wakeDebugVisualizer!: WakeDebugVisualizer;
-  public readonly shipController!: ShipController;
-  public readonly cameraController!: CameraController;
-  public readonly shipBuoyancyId: number = -1;
-  public readonly islandBuoyIds: number[] = [];
   public readonly audioManager = new AudioManager();
-  public shipHUD!: ShipHUD;
-  public postProcessingUniforms!: PostProcessingUniforms;
 
   public params: DemoParams = {
-    ...getPresetParams("dusk"),
-    activePreset: "dusk",
+    ...getPresetParams("blackFlag"),
+    activePreset: "blackFlag",
     antialiasing: "smaa" as AntialiasingMode,
     buoyancy: {
       ship: {
         enabled: true,
         showSamplePoints: false,
         multiPoint: true,
-        heightOffset: -1.7,
+        heightOffset: -0.3,
         tiltAmount: 0.5,
-        heightSmoothing: 0,
-        tiltSmoothing: 0.02,
+        heightSmoothing: 0.1,
+        tiltSmoothing: 0.25,
       },
       buoy: {
         enabled: true,
         showSamplePoints: false,
         multiPoint: true,
-        heightOffset: -0.9,
+        heightOffset: -0.05,
         tiltAmount: 0.5,
         heightSmoothing: 0,
         tiltSmoothing: 0.04,
@@ -155,10 +153,7 @@ export class WaterApp {
   public performanceParams = {
     quality: "high" as QualityLevel,
     showMonitor: true,
-    dynamicResolution: false,
-    targetFps: 30,
-    minPixelRatio: 0.5,
-    maxPixelRatio: Math.min(window.devicePixelRatio, 1),
+    pixelRatio: 1,
   };
 
   public static async create(): Promise<WaterApp> {
@@ -169,60 +164,130 @@ export class WaterApp {
 
   protected async init(): Promise<void> {
     this.initParamsStore();
-    this.assign("renderer", await createRenderer());
+    this._renderer = await createRenderer();
     this.initCamera();
 
     const scene = new THREE.Scene();
+
     const [models, waterSystem] = await Promise.all([
       loadAllModels(),
       WaterSystem.create(
-        this.renderer,
+        this._renderer,
         scene,
-        this.camera,
+        this._camera,
         this.performanceParams.quality,
         { deterministic: false },
       ),
     ]);
-    this.assign("models", models);
-    this.assign("waterSystem", waterSystem);
-
-    // Sky must construct after WaterSystem so it can capture the
-    // Lighting-owned sun direction uniform in the disk overlay shader.
-    await this.initSky();
+    this._models = models;
+    this._waterSystem = waterSystem;
 
     waterSystem.loadPreset(this.params);
-    waterSystem.setSky(this.sky);
-    for (const mesh of this.sky.getMeshes()) scene.add(mesh);
+
+    this._skyManager = await SkyManager.create({
+      params: this.params,
+      renderer: this._renderer,
+      waterSystem,
+    });
 
     await this.initScene(scene);
-    this._visibility = new SceneVisibility(this.models, this.fishManager);
+    this._scenery = new UnderwaterScenery(this._models, this.fishManager);
+    this._scenery.setFloorDepth(this.params.oceanFloor.depth);
 
     this.initControls();
-    this.setupBuoyancy();
+    this._rig = new WaterDebug(waterSystem, this._models, this.params.buoyancy);
     this.initShipControls();
-    this.setupWaterMask();
 
     this.rebuildPostProcessing();
     this.initPerformanceTracking();
     this.setupEventListeners();
 
-    await this.renderer.compileAsync(waterSystem.scene, this.camera);
+    await this._renderer.compileAsync(waterSystem.scene, this._camera);
 
     this.paramsStore.startAutoSave();
     this._scheduleFrame();
   }
 
   // ════════════════════════════════════════
-  // Public API
+  // Core accessors
   // ════════════════════════════════════════
 
-  /** HDRI options exposed for the Sky UI folder. */
-  public get hdriOptions(): ReadonlyArray<{ label: string; url: string }> {
-    return this.hdri.options;
+  public get waterSystem(): WaterSystem {
+    return this._waterSystem;
   }
 
-  public get visibility(): SceneVisibility {
-    return this._visibility;
+  public get camera(): THREE.PerspectiveCamera {
+    return this._camera;
+  }
+
+  public get controls(): OrbitControls {
+    return this._controls;
+  }
+
+  public get models(): LoadedModels {
+    return this._models;
+  }
+
+  /** Model↔water bindings (buoyancy, wake, spray) and their debug visualizers. */
+  public get rig(): WaterDebug {
+    return this._rig;
+  }
+
+  public get shipController(): ShipController {
+    return this._shipController;
+  }
+
+  public get cameraController(): CameraController {
+    return this._cameraController;
+  }
+
+  public get shipHUD(): ShipHUD {
+    return this._shipHUD;
+  }
+
+  public get scenery(): UnderwaterScenery {
+    return this._scenery;
+  }
+
+  public get postProcessingUniforms(): PostProcessingUniforms {
+    return this._postProcessingUniforms;
+  }
+
+  /**
+   * Monotonic count of frames the render loop has actually drawn. Increments
+   * once per rendered frame in {@link animate} and stalls while a quality
+   * switch pauses rendering. Sampling its delta over wall-clock yields the
+   * true render rate, as opposed to a bare `requestAnimationFrame` counter
+   * which reports the display's vsync cadence regardless of render speed.
+   */
+  public get frameCount(): number {
+    return this._frameCount;
+  }
+
+  /** Both skies, the active source, and the HDRI asset list. */
+  public get skyManager(): SkyManager {
+    return this._skyManager;
+  }
+
+  // ════════════════════════════════════════
+  // Debug & rendering options
+  // ════════════════════════════════════════
+
+  /** The fog × transparency test rig, if it has been shown at least once. */
+  public get fogTestGrid(): FogTestGrid | null {
+    return this._fogTestGrid;
+  }
+
+  /** Show/hide the fog × transparency test grid (Debug menu); created on first show. */
+  public get showTransparencyTest(): boolean {
+    return this._fogTestGrid?.enabled ?? false;
+  }
+  public set showTransparencyTest(value: boolean) {
+    if (!value && !this._fogTestGrid) return;
+    if (!this._fogTestGrid) {
+      this._fogTestGrid = new FogTestGrid(this._waterSystem);
+    }
+    this._fogTestGrid.enabled = value;
   }
 
   /**
@@ -231,74 +296,54 @@ export class WaterApp {
    * {@link rebuildPostProcessing} after changing it.
    */
   public get toneMapping(): THREE.ToneMapping {
-    return this.renderer.toneMapping;
+    return this._renderer.toneMapping;
   }
   public set toneMapping(value: THREE.ToneMapping) {
-    this.renderer.toneMapping = value;
+    this._renderer.toneMapping = value;
   }
 
   /** Tone-mapping exposure (output brightness). Applied live as a uniform. */
   public get toneMappingExposure(): number {
-    return this.renderer.toneMappingExposure;
+    return this._renderer.toneMappingExposure;
   }
   public set toneMappingExposure(value: number) {
-    this.renderer.toneMappingExposure = value;
+    this._renderer.toneMappingExposure = value;
   }
+
+  // ════════════════════════════════════════
+  // Public methods
+  // ════════════════════════════════════════
 
   public rebuildPostProcessing(): void {
     const result = setupPostProcessing(
-      this.renderer,
-      this.waterSystem,
+      this._renderer,
+      this._waterSystem,
       this.params,
       this.params.antialiasing,
     );
     this.postProcessing = result.postProcessing;
-    this.postProcessingUniforms = result.uniforms;
+    this._postProcessingUniforms = result.uniforms;
     this.scenePass = result.scenePass;
   }
 
   public setPixelRatio(ratio: number): void {
-    this.dynamicResolution.setPixelRatio(ratio, this.renderer);
+    this.performanceParams.pixelRatio = ratio;
+    this._renderer.setPixelRatio(ratio);
+    this._waterSystem.resize();
   }
 
-  public async applyPreset(preset: PresetName | WaterPreset): Promise<void> {
+  public async applyPreset(
+    preset: PresetName | WaterPresetConfig,
+  ): Promise<void> {
     if (typeof preset === "string") {
       this.params.activePreset = preset;
     }
     const resolved =
       typeof preset === "string" ? getPresetParams(preset) : preset;
-    this.waterSystem.loadPreset(preset);
+    this._waterSystem.loadPreset(preset);
     applyPresetToParams(this.params, preset);
-
-    this.sky.applySunOverlay({
-      enabled: this.params.sky.sun.diskEnabled,
-      radius: this.params.sky.sun.diskRadius,
-      color: this.params.sky.sun.diskColor,
-      emissiveColor: this.params.sky.sun.diskEmissiveColor,
-      emissiveIntensity: this.params.sky.sun.diskEmissiveIntensity,
-    });
-
-    this.sky.brightnessUniform.value = this.params.sky.brightness;
-    this.sky.reflectionBlurDistanceUniform.value = this.params.sky.reflectionBlurDistance;
-    this.sky.reflectionDistanceBlurUniform.value = this.params.sky.reflectionDistanceBlur;
-    this.sky.reflectionRoughnessUniform.value = this.params.sky.reflectionRoughness;
-
-    // If the preset specifies an image sky source, load it. Presets without
-    // `sky.source` leave the current texture alone.
-    if (resolved.sky.source?.type === "hdri") {
-      await this.setHDRI(resolved.sky.source.url);
-    }
-  }
-
-  /**
-   * Load the equirect at `url` (relative to `demo/public/`) and swap it in
-   * on the active sky. Records the choice on `params.hdriUrl` and
-   * `params.sky.source` so it persists across auto-saves and preset exports.
-   */
-  public async setHDRI(url: string): Promise<void> {
-    this.params.hdriUrl = url;
-    this.params.sky.source = { type: "hdri", url };
-    await this.hdri.apply(url, this.sky, this.renderer);
+    this._scenery.setFloorDepth(this.params.oceanFloor.depth);
+    await this._skyManager.applyPreset(resolved.sky);
   }
 
   public async updateQualityLevel(): Promise<void> {
@@ -319,16 +364,16 @@ export class WaterApp {
     }
 
     try {
-      await this.waterSystem.setQualityLevel(currentQuality, this.params);
+      await this._waterSystem.setQualityLevel(currentQuality, this.params);
       this.rebuildPostProcessing();
-      await this.renderer.compileAsync(this.waterSystem.scene, this.camera);
+      await this._renderer.compileAsync(this._waterSystem.scene, this._camera);
 
       // Render a frame before hiding the overlay to ensure water is visible
-      await this.waterSystem.update(0);
+      await this._waterSystem.update(0);
       if (this.params.postProcessing.enabled) {
         this.postProcessing.render();
       } else {
-        this.waterSystem.render();
+        this._waterSystem.render();
       }
     } catch (error) {
       console.error("[Quality] Error during quality change:", error);
@@ -346,221 +391,85 @@ export class WaterApp {
   private initParamsStore(): void {
     this.paramsStore = new ParamsStore(WIP_STORAGE_KEY, this.params, () => {
       // Many UI controls bind directly to the live shader-class instance
-      // (`object: ui.water.spray, key: "size"`, see src/shaders/CLAUDE.md)
+      // (`object: ui.water.spray, key: "size"`, see src/shaders/AGENTS.md)
       // and bypass `this.params` entirely. Deep-merge — not assign —
       // preserves object identity for any UI control that *does* still bind
       // to a sub-object of `this.params`.
-      const live = extractPresetParams(this.waterSystem, this.sky, this.params);
-      deepMerge(this.params, live);
-    });
+      const live = extractPresetParams(
+        this._waterSystem,
+        this._skyManager.sky,
+        this.params,
+      );
+      mergeDemoParams(this.params, live);
+    }, mergeDemoParams);
     this.paramsStore.load();
-
-    // Drop a persisted HDRI URL that no longer matches any bundled option —
-    // e.g. an asset was renamed / removed since the user last loaded it.
-    if (!this.hdri.isValid(this.params.hdriUrl)) {
-      this.params.hdriUrl = this.hdri.options[0].url;
-    }
   }
 
   private initCamera(): void {
-    this.assign(
-      "camera",
-      new THREE.PerspectiveCamera(
-        60,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        50000,
-      ),
+    this._camera = new THREE.PerspectiveCamera(
+      60,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      5000,
     );
-    this.camera.position.set(-300, 50, 300);
-    this.camera.lookAt(0, 0, 0);
-  }
-
-  private async initSky(): Promise<void> {
-    const equirect = await this.hdri.load(this.params.hdriUrl);
-    const skyParams = this.params.sky;
-    const sun = skyParams.sun;
-    this.assign(
-      "sky",
-      new Sky({
-        equirect,
-        brightness: skyParams.brightness,
-        reflectionBlurDistance: skyParams.reflectionBlurDistance,
-        reflectionDistanceBlur: skyParams.reflectionDistanceBlur,
-        reflectionRoughness: skyParams.reflectionRoughness,
-        sunDirection: this.waterSystem.lighting.sun.direction,
-        sunOverlay: {
-          enabled: sun.diskEnabled,
-          radius: sun.diskRadius,
-          color: sun.diskColor,
-          emissiveColor: sun.diskEmissiveColor,
-          emissiveIntensity: sun.diskEmissiveIntensity,
-        },
-      }),
-    );
+    this._camera.position.set(-15, 2.5, 15);
+    this._camera.lookAt(0, 0, 0);
   }
 
   private async initScene(scene: THREE.Scene): Promise<void> {
-    addModelsToScene(scene, this.models);
+    addModelsToScene(scene, this._models);
     this.fishManager = new FishManager(scene);
     await this.fishManager.load();
   }
 
   private initControls(): void {
-    this.assign(
-      "controls",
-      new OrbitControls(this.camera, this.renderer.domElement),
-    );
-    // Frame both the ship and the island in the opening view: orbit their
-    // midpoint and pull the camera well back and up.
-    const midpoint = this.models.shipModel.position
-      .clone()
-      .add(this.models.islandModel.position)
-      .multiplyScalar(0.5);
-    this.controls.target.copy(midpoint);
-    this.camera.position.set(
-      midpoint.x - 700,
-      midpoint.y + 120,
-      midpoint.z + 700,
-    );
-    this.controls.enableDamping = true;
-    this.controls.minDistance = 10;
-    this.controls.maxDistance = 3000;
-    this.controls.maxPolarAngle = Math.PI;
-    this.controls.update();
+    this._controls = new OrbitControls(this._camera, this._renderer.domElement);
+    // Open framed on the ship: keep the camera pulled back and up, with the
+    // orbit target at the ship's deck height.
+    const shipPosition = this._models.shipModel.position.clone();
+    this._controls.target.copy(shipPosition.add(new THREE.Vector3(0, 5, 0)));
+    this._camera.position.set(shipPosition.x - 50, 15, shipPosition.z + 25);
+    this._controls.enableDamping = true;
+    this._controls.minDistance = 2;
+    this._controls.maxDistance = 150;
+    this._controls.update();
   }
 
   private initShipControls(): void {
-    this.assign(
-      "shipController",
-      new ShipController(
-        this.models.shipModel,
-        this.shipBuoyancyId,
-        this.waterSystem,
-      ),
+    this._shipController = new ShipController(
+      this._models.shipModel,
+      this._rig.shipBuoyancyId,
+      this._waterSystem,
     );
 
-    this.assign(
-      "cameraController",
-      new CameraController(
-        this.camera,
-        this.renderer.domElement,
-        this.models.shipModel,
-        this.shipController,
-        this.controls,
-      ),
+    this._cameraController = new CameraController(
+      this._camera,
+      this._renderer.domElement,
+      this._models.shipModel,
+      this._shipController,
+      this._controls,
     );
-    this.cameraController.onModeChange((mode) => {
+    this._cameraController.onModeChange((mode) => {
       this.syncActiveCamera();
       if (mode === "thirdPerson") {
-        this.shipController.enable();
+        this._shipController.enable();
       } else {
-        this.shipController.disable();
+        this._shipController.disable();
       }
     });
-    this.cameraController.enable();
+    this._cameraController.enable();
 
-    this.shipHUD = new ShipHUD(this.audioManager);
+    this._shipHUD = new ShipHUD(this.audioManager);
   }
 
   private initPerformanceTracking(): void {
     this.performanceTracker = new PerformanceTracker();
-    this.performanceTracker.setBackend(this.waterSystem.backend);
-    this.dynamicResolution = new DynamicResolutionManager(
-      this.performanceParams.maxPixelRatio,
-    );
-    this.dynamicResolution.setPixelRatio(
-      this.performanceParams.maxPixelRatio,
-      this.renderer,
-    );
-  }
-
-  private setupBuoyancy(): void {
-    this.assign(
-      "buoyancyDebugVisualizer",
-      new BuoyancyDebugVisualizer(this.waterSystem.scene),
-    );
-    const showDebug =
-      this.params.buoyancy.ship.showSamplePoints ||
-      this.params.buoyancy.buoy.showSamplePoints;
-    this.buoyancyDebugVisualizer.setEnabled(showDebug);
-
-    // Wake generator indicators (off by default; toggled from the Wake folder).
-    this.assign(
-      "wakeDebugVisualizer",
-      new WakeDebugVisualizer(this.waterSystem.scene),
-    );
-
-    const shipParams = this.params.buoyancy.ship;
-    // Inset the bow/stern sample points inboard of the bounding-box tips so they
-    // ride the hull. The bow needs a far larger inset than the stern because the
-    // bowsprit stretches the AABB forward well past the actual bow.
-    const shipSampling = computeBuoyancySampling(this.models.shipModel, {
-      bow: 90,
-      stern: 20,
-    });
-    this.assign(
-      "shipBuoyancyId",
-      this.waterSystem.buoyancy.addObject(this.models.shipModel, {
-        multiPoint: shipParams.multiPoint,
-        heightOffset: shipParams.heightOffset,
-        rotationInfluence: shipParams.tiltAmount,
-        heightSmoothing: shipParams.heightSmoothing,
-        rotationSmoothing: shipParams.tiltSmoothing,
-        useBoundingBox: false,
-        ...shipSampling,
-      }),
-    );
-
-    const buoyParams = this.params.buoyancy.buoy;
-    (this.islandBuoyIds as number[]).length = 0;
-    (this.islandBuoyWakeIds as number[]).length = 0;
-    for (const buoy of this.models.islandBuoys) {
-      (this.islandBuoyIds as number[]).push(
-        this.waterSystem.buoyancy.addObject(buoy, {
-          multiPoint: buoyParams.multiPoint,
-          heightOffset: buoyParams.heightOffset,
-          rotationInfluence: buoyParams.tiltAmount,
-          heightSmoothing: buoyParams.heightSmoothing,
-          rotationSmoothing: buoyParams.tiltSmoothing,
-        }),
-      );
-      // (Buoy wake generators disabled — debugging the wake with a single
-      // generator at the ship's bow.)
-    }
-
-    // Single generator at the bow (debugging the wake). Offset is derived from
-    // the hull bounding box, so it tracks the model's size.
-    (this.shipWakeIds as number[]).length = 0;
-    (this.shipWakeIds as number[]).push(
-      this.waterSystem.wake.addGenerator(this.models.shipModel, {
-        depth: 10.0,
-        radius: 36.5,
-        offset: new THREE.Vector3(0, 0, -100),
-      }),
-    );
-
-    this.assign(
-      "sprayDebugVisualizer",
-      new SprayDebugVisualizer(this.waterSystem.scene),
-    );
-    this.sprayDebugVisualizer.setEnabled(false);
-
-    if (this.waterSystem.spray) {
-      this.waterSystem.spray.addEmitter(this.models.shipModel, {
-        probes: computeSprayProbes(this.models.shipModel),
-      });
-    }
-  }
-
-  private setupWaterMask(): void {
-    if (this.models.shipWaterMask) {
-      this.waterSystem.masking.add(this.models.shipWaterMask);
-    }
+    this.performanceTracker.setBackend(this._waterSystem.backend);
+    this.setPixelRatio(this.performanceParams.pixelRatio);
   }
 
   private setupEventListeners(): void {
-    window.addEventListener("resize", () => this.waterSystem.resize());
+    window.addEventListener("resize", () => this._waterSystem.resize());
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") {
@@ -580,8 +489,8 @@ export class WaterApp {
   }
 
   private syncActiveCamera(): void {
-    const cam = this.cameraController.activeCamera;
-    this.waterSystem.camera = cam;
+    const cam = this._cameraController.activeCamera;
+    this._waterSystem.camera = cam;
     if (this.scenePass) {
       this.scenePass.camera = cam;
     }
@@ -597,61 +506,42 @@ export class WaterApp {
       return;
     }
 
-    this.shipController.update(deltaTime);
-    this.cameraController.update(deltaTime);
-    this.shipHUD.update(this.shipController, this.cameraController);
+    this._shipController.update(deltaTime);
+    this._cameraController.update(deltaTime);
+    this._shipHUD.update(this._shipController, this._cameraController);
 
-    if (this.cameraController.shouldUpdateOrbitControls) {
-      this.controls.update();
+    if (this._cameraController.shouldUpdateOrbitControls) {
+      this._controls.update();
     }
 
-    const activeCamera = this.cameraController.activeCamera;
+    const activeCamera = this._cameraController.activeCamera;
+    this._fogTestGrid?.update(activeCamera);
     this.audioManager.update(
       this.params.waves.fft.windSpeed,
       deltaTime,
       activeCamera.position.y,
     );
 
-    if (this.waterSystem.underwater.enabled) {
+    if (this._waterSystem.underwater.enabled) {
       this.fishManager.update(deltaTime);
     }
 
-    await this.waterSystem.update(deltaTime);
+    await this._waterSystem.update(deltaTime);
 
-    if (this.buoyancyDebugVisualizer.isEnabled()) {
-      this.buoyancyDebugVisualizer.update(
-        this.waterSystem.buoyancy.getDebugData(),
-      );
-    }
+    this._rig.update();
 
-    if (this.sprayDebugVisualizer.isEnabled() && this.waterSystem.spray) {
-      this.sprayDebugVisualizer.update(
-        this.waterSystem.spray.getProbeDebugData(),
-      );
-    }
-
-    if (this.wakeDebugVisualizer.isEnabled()) {
-      this.wakeDebugVisualizer.update(this.waterSystem.wake.getDebugData());
-    }
-
-    this.renderer.info.reset();
+    this._renderer.info.reset();
 
     if (this.params.postProcessing.enabled) {
       this.postProcessing.render();
     } else {
-      this.waterSystem.render();
+      this._waterSystem.render();
     }
 
-    const avgFrameTime = this.performanceTracker.update(
-      deltaTime,
-      this.renderer,
-    );
-    this.dynamicResolution.update(
-      avgFrameTime,
-      this.renderer,
-      this.performanceParams,
-    );
-    this.performanceTracker.setPixelRatio(this.renderer.getPixelRatio());
+    this._frameCount++;
+
+    this.performanceTracker.update(deltaTime, this._renderer);
+    this.performanceTracker.setPixelRatio(this._renderer.getPixelRatio());
 
     this._scheduleFrame();
   };
@@ -667,13 +557,5 @@ export class WaterApp {
         this._frameInFlight = null;
       });
     });
-  }
-
-  /**
-   * Assignment to readonly fields during init.
-   * Fields are readonly to prevent external mutation but need to be set once during init().
-   */
-  private assign(key: string, value: unknown): void {
-    (this as Record<string, unknown>)[key] = value;
   }
 }

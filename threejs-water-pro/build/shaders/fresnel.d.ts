@@ -19,17 +19,11 @@ export declare const fresnelDielectric: import("three/src/nodes/TSL.js").ShaderN
 }>]>;
 /** Preset-facing parameters for surface fresnel. */
 export interface FresnelParams {
-    /** Power curve for distance fade falloff. */
-    fadePower: number;
-    /** Distance at which normal detail begins to fade (world units). */
-    fadeStart: number;
     /**
      * Refractive index of water relative to air. 1.33 is physical seawater.
      * Higher values shrink Snell's window and raise grazing reflectance.
      */
     iorRatio: number;
-    /** How much the surface normal influences the fresnel term (0–1). */
-    normalStrength: number;
     /**
      * Screen-space refraction UV-offset strength. Scales the wave-normal
      * displacement applied when sampling the scene through the water surface
@@ -40,23 +34,31 @@ export interface FresnelParams {
 }
 /** Output nodes produced by {@link Fresnel.build}. */
 export interface FresnelResult {
-    /** Fresnel distance fade factor (1 at close range, 0 at distance). */
-    distanceFade: Node;
     /** Distance from the camera to the fragment (world units). */
     distanceToCamera: Node;
-    /** The uniform node for fade end distance (for other stages that need it). */
+    /** Uniform node for the distance-fade range end, consumed by SSS. */
     fadeEnd: Node;
-    /** The uniform node for fade start distance (for other stages that need it). */
-    fadeStart: Node;
     /** Fresnel reflectance for the front-face viewing direction (0–1). */
     fresnel: Node;
     /** Surface normal blended toward flat based on distance and strength. */
     fresnelNormal: Node;
+    /**
+     * `fresnelNormal` bent in the view–normal plane so the view ray never
+     * sees it back-facing. Use for above-water reflection directions only;
+     * underwater paths need the signed cosine of {@link fresnelNormal} for
+     * total internal reflection.
+     */
+    reflectionNormal: Node;
 }
 /** Parameters for {@link Fresnel.build}. */
 export interface FresnelBuildParams {
     /** Interpolated surface normal. */
     interpolatedNormal: Node;
+    /**
+     * Sub-footprint slope variance (0-1) from the cascade normal mips. Caps the
+     * grazing reflectance so a wind-roughened / distant surface is not a mirror.
+     */
+    slopeVariance: Node;
     /** View direction (from surface toward camera). */
     viewDir: Node;
     /** Undisplaced world X coordinate. */
@@ -65,29 +67,23 @@ export interface FresnelBuildParams {
     worldZ: Node;
 }
 /**
- * Full dielectric Fresnel for the air–water interface with distance-based
- * normal fading for a clean horizon line.
+ * Full dielectric Fresnel for the air–water interface.
  *
  * Owns its own TSL uniform nodes. External code reads/writes parameters
  * through getters and setters; the shader graph binds to the private
- * uniform nodes via {@link build}.
+ * uniform nodes via {@link build}. Also owns the `fadeEnd` distance-fade
+ * range consumed by SSS.
  */
 export declare class Fresnel {
     private _fadeEnd;
-    private _fadePower;
-    private _fadeStart;
     private _iorRatio;
-    private _normalStrength;
     private _refractionStrength;
-    /** Distance at which normal detail fully fades (world units). */
+    /**
+     * End of the distance-fade range (world units), consumed by SSS.
+     * Auto-synced to the water extent by `WaterSystem`.
+     */
     get fadeEnd(): number;
     set fadeEnd(value: number);
-    /** Power curve for distance fade falloff. */
-    get fadePower(): number;
-    set fadePower(value: number);
-    /** Distance at which normal detail begins to fade (world units). */
-    get fadeStart(): number;
-    set fadeStart(value: number);
     /**
      * Refractive index of water relative to air. 1.33 is physical seawater.
      * Same value is used on both sides of the interface; the underwater
@@ -101,9 +97,6 @@ export declare class Fresnel {
      * @internal
      */
     get _iorRatioNode(): Node;
-    /** How much the surface normal influences the fresnel term (0–1). */
-    get normalStrength(): number;
-    set normalStrength(value: number);
     /**
      * Screen-space refraction UV-offset strength. Drives how far the
      * wave-perturbed surface displaces sampled scene UVs for both the
@@ -121,13 +114,13 @@ export declare class Fresnel {
     /** Bulk-set parameters from a preset or params object. */
     update(params: FresnelParams): void;
     /**
-     * Builds the dielectric Fresnel reflectance with distance-based normal
-     * fading. The returned `fresnel` node is the reflectance `F` for the
-     * front-face view direction; it can be used directly as the mix weight
-     * between refraction (weight `1 - F`) and reflection (weight `F`).
+     * Builds the dielectric Fresnel reflectance. The returned `fresnel` node
+     * is the reflectance `F` for the front-face view direction; it can be
+     * used directly as the mix weight between refraction (weight `1 - F`)
+     * and reflection (weight `F`).
      *
      * @param params - View direction, surface normal, and world coordinates.
-     * @returns Fresnel value, modified normal, distance metrics, and fade uniform nodes.
+     * @returns Fresnel value, modified normals, distance metrics, and fade uniform nodes.
      */
     build(params: FresnelBuildParams): FresnelResult;
 }

@@ -1,6 +1,5 @@
 import * as THREE from "three/webgpu";
 import { Caustics } from "../../shaders/caustics";
-import type { TSLBuffer } from "../../types/tsl";
 import type { OceanFloorOptions } from "./types";
 import type { IWaveSimulation } from "../../simulation/waves";
 export type { OceanFloorOptions };
@@ -90,34 +89,16 @@ export declare class OceanFloor {
      */
     updateCausticsConfig(config: OceanFloorOptions["caustics"]): void;
     /**
-     * Set wave buffer references for wave-based caustics (WebGPU).
-     * Must be called before the material is first rendered to take effect.
-     */
-    setWaveBuffers(options: {
-        normalBuffer: TSLBuffer;
-        resolution: number;
-        scale: number;
-    }): void;
-    /**
-     * Set wave texture reference for wave-based caustics (WebGL).
+     * Set the wave-normal texture used by wave-based caustics.
      * Must be called before the material is first rendered to take effect.
      */
     setWaveTexture(options: {
         normalTexture: THREE.Texture;
-        resolution: number;
         scale: number;
     }): void;
     /**
-     * Updates buffer resolution and scale at runtime.
-     *
-     * @param resolution - Resolution in texels.
-     * @param scale - World-space scale in units.
-     */
-    updateBufferParams(resolution: number, scale: number): void;
-    /**
-     * Rebind to the wave simulation. Pulls cascade-0 normal texture,
-     * resolution, and scale — the inputs the caustics shader consumes to
-     * modulate the procedural caustic pattern with the live wave surface.
+     * Rebind to the wave simulation. Pulls the cascade-0 normal texture and
+     * scale used to modulate the procedural caustic pattern with live waves.
      * Called whenever cascade configuration changes or the wave sim is
      * recreated.
      */

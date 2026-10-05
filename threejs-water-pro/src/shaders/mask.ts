@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * TSL functions for water masking and clipping.
  * Masks allow hiding water in specific screen-space regions (e.g., inside boat hulls).

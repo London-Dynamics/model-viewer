@@ -1,1 +1,1 @@
-{"version":3,"file":"timing.d.ts","sourceRoot":"","sources":["../../../src/simulation/waves/timing.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;;;;GAkBG;AACH,eAAO,MAAM,wBAAwB,OAAO,CAAC;AAE7C,mFAAmF;AACnF,eAAO,MAAM,oBAAoB,QAA2C,CAAC"}
+{"version":3,"file":"timing.d.ts","sourceRoot":"","sources":["../../../src/simulation/waves/timing.ts"],"names":[],"mappings":"AAGA;;;;;;;;;;;;;;;;;;GAkBG;AACH,eAAO,MAAM,wBAAwB,OAAO,CAAC;AAE7C,mFAAmF;AACnF,eAAO,MAAM,oBAAoB,QAA2C,CAAC"}

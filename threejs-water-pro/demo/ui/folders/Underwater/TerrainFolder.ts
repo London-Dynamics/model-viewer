@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -23,7 +26,7 @@ export function createTerrainFolder(
   const folder = parent.addFolder("Terrain", { expanded: false });
 
   folder.addSlider("Depth (m)", {
-    min: 5,
+    min: 2,
     max: 100,
     step: 1,
     object: ui.params.oceanFloor,
@@ -31,6 +34,7 @@ export function createTerrainFolder(
     onChange: () => {
       ui.water.color.waterDepth = ui.params.oceanFloor.depth;
       ui.water.floor.setDepth(ui.params.oceanFloor.depth);
+      ui.app.scenery.setFloorDepth(ui.params.oceanFloor.depth);
       syncFloorParams();
     },
   });

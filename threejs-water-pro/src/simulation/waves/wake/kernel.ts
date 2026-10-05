@@ -1,7 +1,10 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * iWave convolution kernel — the real-space form of the deep-water "vertical
  * derivative" operator √(−∇²) (Tessendorf, "Interactive Water Surfaces", Game
- * Programming Gems 4, 2004; `wiki/wake/iwave.md`).
+ * Programming Gems 4, 2004).
  *
  * On a Fourier mode of wavenumber `k`, √(−∇²) returns `|k|`, so the wake PDE
  * `∂²h/∂t² = −g·√(−∇²)·h` has dispersion `ω² = g·k` — different wavelengths

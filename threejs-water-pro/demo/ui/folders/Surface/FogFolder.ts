@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -24,15 +27,15 @@ export function createFogFolder(
 
   folder.addSlider("Fade Start (m)", {
     min: 0,
-    max: 5000,
+    max: 500,
     step: 50,
     object: ui.water.fog,
     key: "fadeStart",
   });
 
   folder.addSlider("Fade End (m)", {
-    min: 100,
-    max: 10000,
+    min: 10,
+    max: 2000,
     step: 50,
     object: ui.water.fog,
     key: "fadeEnd",
@@ -40,7 +43,7 @@ export function createFogFolder(
 
   folder.addSlider("Sky Blend Distance (m)", {
     min: 0,
-    max: 10000,
+    max: 2000,
     step: 50,
     object: ui.water.fog,
     key: "skyBlendDistance",

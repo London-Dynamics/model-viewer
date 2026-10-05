@@ -1,12 +1,17 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { uniform } from "three/tsl";
 import type { IWaveSimulation } from "../../simulation/waves";
 import type { RainRipples } from "../../simulation/ripples";
-import type { FoamAccumulation } from "../../simulation/foam/FoamAccumulation";
-import type { Sky } from "../sky/Sky";
+import type { IFoamFieldSampler } from "../../simulation/foam";
+import type { SkyProvider } from "../sky/SkyProvider";
 import type { SurfaceUniforms } from "../../uniforms";
 import type { Node, TSLUniformNode } from "../../types/tsl";
 import type { IWakeFieldSampler } from "../../simulation/waves/wake";
+import { SceneDepthSampler } from "../../rendering/passes/SceneDepthSampler";
+import type { IWaterDepthPass } from "../../rendering/passes/IWaterDepthPass";
 import {
   type QualityLevel,
   type QualityLevelConfig,
@@ -40,7 +45,6 @@ export interface SharedMaterialUniforms {
   windDirection: TSLUniformNode;
 
   // Shader class instances (owned by WaterSystem, stable across quality changes)
-  foamAccumulation: FoamAccumulation | null;
   fresnel: Fresnel;
   rainRipples: RainRipples | null;
   shorelineFoam: ShorelineFoam;
@@ -56,20 +60,22 @@ export interface SharedMaterialUniforms {
   // quality-rebuilt material re-binds the wake automatically, like the shader
   // instances above. Null on backends/configs without a wake field.
   wakeFieldSampler: IWakeFieldSampler | null;
+
+  // Persistent wave-crest foam-energy sampler (owned by WaterSystem). Carried
+  // here so a quality-rebuilt material re-binds it automatically. Null on
+  // quality tiers where persistent foam is off.
+  foamFieldSampler: IFoamFieldSampler | null;
 }
 
 export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
   private oceanSim: IWaveSimulation;
-  private sky: Sky | null = null;
+  private sky: SkyProvider | null = null;
 
   // Quality tier features - determines which shader nodes are included
   private features: QualityLevelConfig["features"];
 
-  // Number of active cascades (1 or 2) - determines shader code paths
-  private cascadeCount: 1 | 2;
-
-  // Gerstner wave compile-time max (0 = disabled, determines shader loop bounds)
-  private gerstnerMaxWaves: number = 0;
+  // Number of active cascades (1-3) - determines shader code paths
+  private cascadeCount: 1 | 2 | 3;
 
   // ============= Shader Class Instances =============
   // All injected from WaterSystem via SharedMaterialUniforms.
@@ -100,18 +106,20 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
   public clipmapOffsetUniform = uniform(new THREE.Vector2(0, 0));
   public windDirectionUniform: TSLUniformNode;
 
-  // Depth texture uniforms for per-pixel water depth calculation
-  private depthTexture: THREE.Texture;
-  public cameraNearUniform = uniform(0.1);
-  public cameraFarUniform = uniform(50000.0);
+  // Scene depth sampler for per-pixel water depth calculation
+  private sceneDepth: SceneDepthSampler;
   public useDepthTextureUniform = uniform(0.0); // 0 = fallback mode, 1 = use depth texture
+
+  // Water-surface depth source for the refracted-column measurement.
+  // Null until RenderPassManager binds it.
+  private _waterDepth: IWaterDepthPass | null = null;
 
   // 1.0 when the camera is below the water surface, 0.0 above. Written each
   // frame by UnderwaterStateController; drives the front/back-face split.
   public cameraSubmergedUniform = uniform(0.0);
 
   // Clip plane uniforms for partial submersion effect
-  public clipPlaneDistanceUniform = uniform(20.0); // Distance from camera
+  public clipPlaneDistanceUniform = uniform(0.5); // Distance from camera (m)
   public cameraForwardUniform = uniform(new THREE.Vector3(0, 0, -1)); // Camera forward direction
 
   // Waterline meniscus (injected via SharedMaterialUniforms)
@@ -121,19 +129,20 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
   private sceneColorTexture: THREE.Texture;
   public useSceneColorTextureUniform = uniform(0.0); // 0 = sky only, 1 = use scene texture
 
-  // Mask texture for hiding water in specific areas (e.g., inside boat hulls)
-  private maskTexture: THREE.Texture;
+  // Mask texture enters the shader graph only while masking is active.
+  private maskTexture: THREE.Texture | null = null;
 
   // Rain ripple simulation (optional - only set when rain is enabled)
   public rainRipples: RainRipples | null = null;
 
-  // Persistent wave-crest foam accumulation (optional — WebGPU + quality gated).
-  public foamAccumulation: FoamAccumulation | null = null;
+  // Persistent wave-crest foam-energy sampler (optional — quality gated). Read
+  // by the fragment graph as the wave-crest foam energy source.
+  private _foamFieldSampler: IFoamFieldSampler | null = null;
 
   constructor(
     oceanSim: IWaveSimulation,
     sharedUniforms: SharedMaterialUniforms,
-    sky?: Sky,
+    sky?: SkyProvider,
     quality: QualityLevel | QualityLevelConfig["features"] = "high",
   ) {
     super();
@@ -153,7 +162,7 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     this.sss = sharedUniforms.sss;
     this.surfaceFoam = sharedUniforms.surfaceFoam;
     this.rainRipples = sharedUniforms.rainRipples;
-    this.foamAccumulation = sharedUniforms.foamAccumulation;
+    this._foamFieldSampler = sharedUniforms.foamFieldSampler;
     this.waterColor = sharedUniforms.waterColor;
     this.waterline = sharedUniforms.waterline;
     this.waveFoam = sharedUniforms.waveFoam;
@@ -171,9 +180,9 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     const capabilities = this.oceanSim.getCapabilities();
     if (capabilities.backend === "webgpu" && capabilities.cascadeCount >= 1) {
       this.cascadeCount = Math.min(
-        2,
+        3,
         Math.max(1, capabilities.cascadeCount),
-      ) as 1 | 2;
+      ) as 1 | 2 | 3;
       this.cascadeSampler = new CascadeSampler(this.cascadeCount);
     } else {
       // WebGL fallback - no cascade sampling
@@ -181,36 +190,17 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
       this.cascadeSampler = null;
     }
 
-    // Gerstner waves work on both backends (uniformArray-based)
-    this.gerstnerMaxWaves = this.oceanSim.getGerstnerMaxWaves();
-
-    // Create a default depth texture (white = max depth / far plane) as fallback
-    // This will be replaced when setDepthTexture is called
-    const defaultDepthData = new Float32Array([1, 1, 1, 1]); // RGBA white = max depth
-    this.depthTexture = new THREE.DataTexture(
-      defaultDepthData,
-      1,
-      1,
-      THREE.RGBAFormat,
-      THREE.FloatType,
-    );
+    // Placeholder scene-depth sampler so the node graph compiles before the
+    // render passes exist. Never meaningfully sampled: `useDepthTexture`
+    // stays 0 (fallback water depth) until setSceneDepth binds the real
+    // sampler from SceneCapturePass.
+    this.sceneDepth = new SceneDepthSampler(new THREE.DepthTexture(1, 1));
 
     // Create a default scene color texture (black) as fallback
     // This will be replaced when setSceneColorTexture is called
     const defaultSceneData = new Float32Array([0, 0, 0, 1]); // RGBA black
     this.sceneColorTexture = new THREE.DataTexture(
       defaultSceneData,
-      1,
-      1,
-      THREE.RGBAFormat,
-      THREE.FloatType,
-    );
-
-    // Create a default mask texture (black = no mask) as fallback
-    // This will be replaced when setMaskTexture is called
-    const defaultMaskData = new Float32Array([0, 0, 0, 1]); // RGBA black = no mask
-    this.maskTexture = new THREE.DataTexture(
-      defaultMaskData,
       1,
       1,
       THREE.RGBAFormat,
@@ -254,16 +244,19 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     this.updateCascadeUniforms();
   }
 
-  public setSky(sky: Sky) {
+  public setSky(sky: SkyProvider | null) {
     this.sky = sky;
     this.setupMaterial();
     this.needsUpdate = true;
   }
 
-  public setDepthTexture(depthTex: THREE.Texture, near: number, far: number) {
-    this.depthTexture = depthTex;
-    this.cameraNearUniform.value = near;
-    this.cameraFarUniform.value = far;
+  /**
+   * Bind the scene-depth sampler from the capture pass and rebuild the
+   * shader graph. The sampler tracks target rebuilds and camera-plane
+   * changes internally, so this is called once per material instance.
+   */
+  public setSceneDepth(sceneDepth: SceneDepthSampler) {
+    this.sceneDepth = sceneDepth;
     this.useDepthTextureUniform.value = 1.0;
     this.setupMaterial();
     this.needsUpdate = true;
@@ -272,6 +265,17 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
   public setSceneColorTexture(sceneColorTex: THREE.Texture) {
     this.sceneColorTexture = sceneColorTex;
     this.useSceneColorTextureUniform.value = 1.0;
+    this.setupMaterial();
+    this.needsUpdate = true;
+  }
+
+  /**
+   * Bind the water-depth pass and rebuild the shader graph. The refraction
+   * path samples it so the refracted water column is measured from the
+   * surface depth along the sampled ray.
+   */
+  public setWaterDepth(waterDepth: IWaterDepthPass) {
+    this._waterDepth = waterDepth;
     this.setupMaterial();
     this.needsUpdate = true;
   }
@@ -289,10 +293,12 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
   }
 
   /**
-   * Set the mask texture for hiding water in specific areas.
-   * @param maskTex - Screen-space mask texture from MaskPass
+   * Bind the active mask texture, or remove masking from the shader graph.
+   *
+   * @param maskTex - Screen-space mask texture from MaskPass, or `null`.
    */
-  public setMaskTexture(maskTex: THREE.Texture) {
+  public setMaskTexture(maskTex: THREE.Texture | null) {
+    if (this.maskTexture === maskTex) return;
     this.maskTexture = maskTex;
     this.setupMaterial();
     this.needsUpdate = true;
@@ -308,6 +314,19 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
    */
   public setWakeFieldSampler(sampler: IWakeFieldSampler | null) {
     this._wakeFieldSampler = sampler;
+    this.setupMaterial();
+    this.needsUpdate = true;
+  }
+
+  /**
+   * Bind the world-fixed foam field sampler. Triggers a material rebuild so the
+   * fragment graph reads the new sampler. Re-call when the field is rebuilt
+   * (resolution change). Pass null to remove persistent foam.
+   *
+   * @param sampler - Foam field sampler, or null.
+   */
+  public setFoamFieldSampler(sampler: IFoamFieldSampler | null) {
+    this._foamFieldSampler = sampler;
     this.setupMaterial();
     this.needsUpdate = true;
   }
@@ -330,8 +349,13 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
 
     this.side = THREE.DoubleSide;
     this.depthWrite = true;
+
+    // `polygonOffsetFactor` becomes WebGPU's `depthBiasSlopeScale`, which
+    // scales with the polygon's depth slope. The surface is edge-on at the
+    // horizon where that slope diverges, so only the constant
+    // `polygonOffsetUnits` bias is usable here.
     this.polygonOffset = true;
-    this.polygonOffsetFactor = 1;
+    this.polygonOffsetFactor = 0;
     this.polygonOffsetUnits = 1;
 
     // Assemble the slimmed-down uber-uniform (only infrastructure remains)
@@ -357,7 +381,6 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
       clipmapOffset: this.clipmapOffsetUniform,
       oceanSim: this.oceanSim,
       cascadeSampler: this.cascadeSampler,
-      gerstnerMaxWaves: this.gerstnerMaxWaves,
       wakeFieldSampler: this._wakeFieldSampler,
     });
 
@@ -369,9 +392,9 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
       vertex,
       oceanSim: this.oceanSim,
       textures: {
-        depth: this.depthTexture,
-        mask: this.maskTexture,
+        mask: this.maskTexture ?? undefined,
         sceneColor: this.sceneColorTexture,
+        sceneDepth: this.sceneDepth,
       },
       waterColor: this.waterColor,
       fresnel: this.fresnel,
@@ -382,12 +405,11 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
       ssr: this.ssr,
       sss: this.sss,
       sky: this.sky,
-      jacobianFoam: this.features.jacobianFoam,
       cascadeSampler: this.cascadeSampler,
-      foamAccumulation: this.foamAccumulation,
-      gerstnerMaxWaves: this.gerstnerMaxWaves,
+      foamFieldSampler: this._foamFieldSampler,
       rainRipples: this.rainRipples,
       wakeFieldSampler: this._wakeFieldSampler,
+      waterDepth: this._waterDepth,
       isWebGL: this.oceanSim.getCapabilities().backend === "webgl",
     });
   }
@@ -446,10 +468,5 @@ export class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
   /** The wave simulation backing this material. Used by the SSR G-buffer pass. */
   get waveSimulation(): IWaveSimulation {
     return this.oceanSim;
-  }
-
-  /** Compile-time max Gerstner wave count. Used by the SSR G-buffer pass. */
-  get gerstnerWaveCount(): number {
-    return this.gerstnerMaxWaves;
   }
 }

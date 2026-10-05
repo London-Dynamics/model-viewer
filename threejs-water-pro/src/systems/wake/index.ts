@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 export { WakeSystem } from "./WakeSystem";
 export { WakeDebugVisualizer } from "./WakeDebugVisualizer";
 
@@ -66,9 +69,9 @@ export interface WakeGeneratorOptions extends Partial<WakeGeneratorInjectionOpti
 
 /** Default injection parameters applied to options not supplied at registration. */
 export const DEFAULT_WAKE_GENERATOR_OPTIONS: WakeGeneratorInjectionOptions = {
-  depth: 1.2,
+  depth: 0.4,
   offset: new THREE.Vector3(0, 0, 0),
-  radius: 4.0,
+  radius: 2.0,
   teleportThreshold: 5.0,
 };
 

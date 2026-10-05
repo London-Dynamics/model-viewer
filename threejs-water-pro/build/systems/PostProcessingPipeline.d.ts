@@ -4,8 +4,10 @@
  * Owns two related concerns:
  *
  * 1. **Node-graph composition.** The hard-coded chain
- *    `atmospheric fog → underwater → screen-space caustics → sun shafts → rain`
+ *    `underwater → screen-space caustics → sun shafts → rain`
  *    that produces the final TSL output node for Three.js post-processing.
+ *    (Atmospheric fog is not a pass — it applies per material via
+ *    `scene.fogNode`, so it is already in the scene colour.)
  *    Exposed as {@link buildNode}.
  *
  * 2. **Per-frame conditional pass gating.** Which of the screen-space
@@ -19,7 +21,7 @@
  */
 import type * as THREE from "three/webgpu";
 import type { Node, PassNode } from "three/webgpu";
-import type { AtmosphericFog, Underwater } from "../rendering/postprocessing";
+import type { Underwater } from "../rendering/postprocessing";
 import type { UnderwaterDistortion } from "../shaders/underwaterDistortion";
 import type { SunShafts } from "../shaders/sunShafts";
 import type { SSR } from "../shaders/ssr";
@@ -33,7 +35,6 @@ import type { WaterSubsystem } from "./types";
  * TSL node-graph chain.
  */
 export interface PostProcessingPipelineRefs {
-    atmosphericFog: AtmosphericFog;
     rainSystem: RainSystem;
     rpm: RenderPassManager;
     ssr: SSR;
@@ -52,13 +53,13 @@ export declare class PostProcessingPipeline implements WaterSubsystem {
      * `postProcessing.outputNode = ...`. The returned node chains live
      * uniform references — UI tweaks propagate without rebuilding.
      *
-     * Order is fixed: atmospheric fog runs first (so it tints everything,
-     * including geometry visible through Snell's window), underwater fog
-     * picks above/below water per fragment, sun shafts composite on top,
-     * and rain composites last so the streaks layer above everything else
-     * but below the user's downstream effects. Caustics are baked into
-     * the ocean-floor material itself, so they're already in the scene
-     * colour and need no post-process layer.
+     * Order is fixed: underwater fog picks above/below water per fragment
+     * (atmospheric fog is already in the scene colour — it applies per
+     * material via `scene.fogNode`), sun shafts composite on top, and rain
+     * composites last so the streaks layer above everything else but below
+     * the user's downstream effects. Caustics are baked into the ocean-floor
+     * material itself, so they're already in the scene colour and need no
+     * post-process layer.
      *
      * @param scenePass - The Three.js post-processing scene pass.
      * @param inputColor - Optional input colour to chain after. Defaults
@@ -71,18 +72,20 @@ export declare class PostProcessingPipeline implements WaterSubsystem {
      * material's surface composition. Hooked into the {@link WaterSubsystem}
      * `renderPass` slot so `WaterSystem` iterates it through the registry.
      *
-     * - **Depth pass** always runs — the water material samples it for
-     *   shoreline alpha fade in addition to the post-processing chain.
+     * - **Scene capture** always runs — the water material samples its
+     *   depth for shoreline alpha fade and its colour for refraction; the
+     *   transparent sub-passes run only when underwater is enabled (only
+     *   the fog decomposition consumes them).
      * - **Mask pass** runs only when at least one masking object is
      *   registered with the render pass manager.
-     * - **Scene colour pass** runs when SSR or underwater is enabled
-     *   (both sample the colour texture).
-     * - **Water depth pass** runs only when underwater is enabled.
+     * - **Water depth pass** always runs — the surface refraction samples
+     *   it for the refracted column's surface depth, and the underwater fog
+     *   for per-pixel submersion.
      * - **Sun shaft pass** is delegated to `SunShafts.renderPass`, which
      *   self-gates on its own enabled flag plus the underwater state.
-     * - **SSR G-buffer + SSR pass** — G-buffer is skipped when SSR is
-     *   disabled (the SSR shader's `_enabled` guard short-circuits before
-     *   reading the stale G-buffer, and the result RT stays cleared).
+     * - **SSR G-buffer + SSR pass** — both draws are skipped when SSR is
+     *   disabled. The persistent result target is cleared once on the
+     *   enabled-to-disabled transition (and after resize), then left untouched.
      */
     renderPass(renderer: THREE.WebGPURenderer): Promise<void>;
     dispose(): void;

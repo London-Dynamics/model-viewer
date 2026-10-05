@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * TSL-based normal computation shader for WebGL FFT.
  * Uses MeshBasicNodeMaterial with outputNode for render-to-texture passes.
@@ -19,6 +22,7 @@ import {
   cos,
   sin,
   max,
+  mix,
   smoothstep,
   clamp,
   mod,
@@ -78,10 +82,9 @@ export function createNormalsMaterial(params: NormalsMaterialParams): NormalsMat
     const dispUp = displacementTextureNode.sample(uvUp).xyz;
     const dispDown = displacementTextureNode.sample(uvDown).xyz;
 
-    // Grid spacing (resolution-normalized scale)
-    const baseRes = float(256.0);
-    const effectiveScale = cascade.scale.mul(res).div(baseRes);
-    const gridSpacing = effectiveScale.div(res);
+    // Physical grid spacing dx = scale / resolution: the tile size is the
+    // cascade's world-space scale (matches spectrum.ts).
+    const gridSpacing = cascade.scale.div(res);
 
     // Gradients using central finite differences
     const dDx_dx = dispRight.x.sub(dispLeft.x).div(gridSpacing.mul(2.0));
@@ -127,10 +130,11 @@ export function createNormalsMaterial(params: NormalsMaterialParams): NormalsMat
       windAlignment,
     );
 
-    // Apply wind bias
-    const biasedLeading = float(1.0).sub(leadingEdgeFactor).mul(foamWindBias).add(
-      leadingEdgeFactor.mul(float(1.0).sub(foamWindBias)).add(foamWindBias),
-    );
+    // Apply bias to control distribution between leading and trailing edges.
+    // bias=0: equal foam on both sides (factor stays at 1.0)
+    // bias=1: leading edge only (factor follows leadingEdgeFactor)
+    const biasedLeading = mix(float(1.0), leadingEdgeFactor, foamWindBias);
+    // Allow some foam to bleed onto trailing edges, derived from the same bias.
     const trailingFactor = float(1.0).sub(leadingEdgeFactor);
     const trailingBleed = trailingFactor.mul(float(1.0).sub(foamWindBias));
     const finalEdgeFactor = clamp(biasedLeading.add(trailingBleed), 0.0, 1.0);

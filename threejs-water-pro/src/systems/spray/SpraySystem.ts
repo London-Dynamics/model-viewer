@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Scene-driven spray particle system.
  *
@@ -258,31 +261,16 @@ export class SpraySystem {
   private _buildComputePasses(): void {
     if (!this._particleBufferNode || !this._registry) return;
 
-    const dispBuffer0 = this._oceanSim.getDisplacementBuffer(0);
-    const dispBuffer1 = this._oceanSim.getDisplacementBuffer(1);
-    if (!dispBuffer0) return;
-
-    const gerstnerMaxWaves = this._oceanSim.getGerstnerMaxWaves();
-    const gerstnerBuffer = this._oceanSim.getGerstnerWaveBuffer();
-    const gerstnerCount = this._oceanSim.getGerstnerWaveCountUniform();
-    const timeUniform = this._oceanSim.getTimeUniform();
-
-    const gerstner =
-      gerstnerMaxWaves > 0 && gerstnerBuffer && gerstnerCount && timeUniform
-        ? {
-            maxWaves: gerstnerMaxWaves,
-            time: timeUniform,
-            waveBuffer: gerstnerBuffer,
-            waveCount: gerstnerCount,
-          }
-        : null;
+    const displacementBuffers = Array.from(
+      { length: this._cascadeSampler.cascadeCount },
+      (_, i) => this._oceanSim.getDisplacementBuffer(i),
+    );
+    if (!displacementBuffers[0]) return;
 
     this._emissionCompute = createEmissionCompute({
       cascadeSampler: this._cascadeSampler,
       deltaTime: this._deltaTime,
-      displacementBuffer0: dispBuffer0,
-      displacementBuffer1: dispBuffer1 ?? undefined,
-      gerstner,
+      displacementBuffers,
       maxEmitters: MAX_EMITTERS,
       maxProbesPerEmitter: MAX_PROBES_PER_EMITTER,
       meanY: this._meanY,
@@ -296,9 +284,7 @@ export class SpraySystem {
     this._simulateCompute = createSimulateCompute({
       cascadeSampler: this._cascadeSampler,
       deltaTime: this._deltaTime,
-      displacementBuffer0: dispBuffer0,
-      displacementBuffer1: dispBuffer1 ?? undefined,
-      gerstner,
+      displacementBuffers,
       maxCount: this._maxCount,
       meanY: this._meanY,
       particleBuffer: this._particleBufferNode,

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WebGPU-based wave sampler using GPU compute shaders.
  */
@@ -14,10 +17,15 @@ import {
   vec4,
   normalize,
 } from "three/tsl";
+import { WAVE_INVERSE_SOLVE_ITERATIONS } from "../IWaveSampler";
 import type { IWaveSampler, WaveSample } from "../IWaveSampler";
 import type { WebGPUWaveSimulation } from "./WebGPUWaveSimulation";
-import { computeGerstner } from "../../../shaders/gerstner";
-import { sampleDisplacementXYZ, sampleNormal } from "./shaders/sampleBuffers";
+import {
+  sampleDisplacementXYZ,
+  sampleNormalTexture,
+} from "./shaders/sampleBuffers";
+import type { Node, StorageBufferNode } from "../../../shaders/types";
+import type { UniformFloatNode } from "../../../types/tsl";
 
 export { MAX_SAMPLE_POINTS } from "../IWaveSampler";
 
@@ -25,9 +33,9 @@ export { MAX_SAMPLE_POINTS } from "../IWaveSampler";
  * WebGPU wave sampler using GPU compute shaders.
  * Samples water height and surface normals at arbitrary world positions.
  *
- * Both FFT cascade displacement/normals and Gerstner wave displacement/normals
- * are evaluated on the GPU in the compute shader, including the inverse
- * position solve for horizontal displacement correction.
+ * FFT cascade displacement/normals are evaluated on the GPU in the compute
+ * shader, including the inverse position solve for horizontal displacement
+ * correction.
  */
 export class WebGPUWaveSampler implements IWaveSampler {
   private renderer: THREE.WebGPURenderer;
@@ -44,15 +52,11 @@ export class WebGPUWaveSampler implements IWaveSampler {
   // Number of active samples this frame
   private sampleCountUniform = uniform(0);
 
-  // Cascade uniforms
-  private cascadeUniforms = {
-    count: uniform(1),
-    cascade0: { resolution: uniform(256), scale: uniform(500.0) },
-    cascade1: { resolution: uniform(256), scale: uniform(2500.0) },
-  };
-
-  // Gerstner compile-time max waves (determines shader loop bound)
-  private gerstnerMaxWaves: number;
+  // Cascade uniforms, one per active cascade. Fixed for this sampler's
+  // lifetime — a cascade-count change rebuilds the whole sampler (see
+  // `WaterSystem.setQualityLevel`), so the compute shader below unrolls a
+  // plain TS loop over these instead of gating cascades at runtime.
+  private cascadeUniforms: { resolution: UniformFloatNode; scale: UniformFloatNode }[] = [];
 
   // Compute shader node
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,7 +77,6 @@ export class WebGPUWaveSampler implements IWaveSampler {
   constructor(oceanSim: WebGPUWaveSimulation, renderer: THREE.WebGPURenderer) {
     this.oceanSim = oceanSim;
     this.renderer = renderer;
-    this.gerstnerMaxWaves = oceanSim.getGerstnerMaxWaves();
 
     for (let i = 0; i < WebGPUWaveSampler.MAX_POINTS; i++) {
       this.cachedResults.push({
@@ -102,112 +105,88 @@ export class WebGPUWaveSampler implements IWaveSampler {
       WebGPUWaveSampler.MAX_POINTS,
     );
 
+    for (let i = 0; i < this.oceanSim.getCascadeCount(); i++) {
+      this.cascadeUniforms.push({
+        resolution: uniform(256),
+        scale: uniform(500.0),
+      });
+    }
+
     this.updateCascadeUniforms();
     this.createComputeShader();
   }
 
   public updateCascadeUniforms(): void {
-    const cascadeCount = this.oceanSim.getCascadeCount();
-    this.cascadeUniforms.count.value = cascadeCount;
-
     const resolutions = this.oceanSim.getCascadeResolutions();
     const scales = this.oceanSim.getCascadeScales();
 
-    if (resolutions.length >= 1) {
-      this.cascadeUniforms.cascade0.resolution.value = resolutions[0];
-      this.cascadeUniforms.cascade0.scale.value = scales[0];
-    }
-    if (resolutions.length >= 2) {
-      this.cascadeUniforms.cascade1.resolution.value = resolutions[1];
-      this.cascadeUniforms.cascade1.scale.value = scales[1];
+    for (let i = 0; i < this.cascadeUniforms.length; i++) {
+      this.cascadeUniforms[i].resolution.value = resolutions[i];
+      this.cascadeUniforms[i].scale.value = scales[i];
     }
   }
 
   private createComputeShader(): void {
-    // Get buffers from ocean simulation (max 2 cascades)
-    const dispBuffer0 = this.oceanSim.getDisplacementBuffer(0);
-    const dispBuffer1 = this.oceanSim.getDisplacementBuffer(1) ?? dispBuffer0;
+    const cascadeCount = this.cascadeUniforms.length;
+    const dispBuffers: (StorageBufferNode | null)[] = [];
+    const normalTextures: (THREE.Texture | null)[] = [];
+    for (let i = 0; i < cascadeCount; i++) {
+      dispBuffers.push(this.oceanSim.getDisplacementBuffer(i));
+      normalTextures.push(this.oceanSim.getNormalTexture(i));
+    }
 
-    const normBuffer0 = this.oceanSim.getNormalBuffer(0);
-    const normBuffer1 = this.oceanSim.getNormalBuffer(1) ?? normBuffer0;
-
-    if (!dispBuffer0 || !normBuffer0) {
-      console.warn("WebGPUWaveSampler: No storage buffers available");
+    if (!dispBuffers[0] || !normalTextures[0]) {
+      console.warn("WebGPUWaveSampler: Wave resources are unavailable");
       return;
     }
 
-    // Get Gerstner resources
-    const gerstnerWaveBuffer = this.oceanSim.getGerstnerWaveBuffer();
-    const gerstnerWaveCount = this.oceanSim.getGerstnerWaveCountUniform();
-    const gerstnerTime = this.oceanSim.getTimeUniform();
-    const gerstnerMaxWaves = this.gerstnerMaxWaves;
-
     // Capture uniforms for closure
     const sampleCount = this.sampleCountUniform;
-    const {
-      count: cascadeCount,
-      cascade0,
-      cascade1,
-    } = this.cascadeUniforms;
+    const cascadeUniforms = this.cascadeUniforms;
     const positionBuffer = this.positionBufferNode;
     const outputBuffer = this.outputBufferNode;
 
     /**
-     * Sample combined FFT + Gerstner displacement at a position.
-     * Returns { totalDisp, sampleX0, sampleZ0, sampleX1, sampleZ1 }
+     * Sample combined FFT displacement at a position, hierarchically: each
+     * cascade after the first samples at coordinates displaced by the
+     * running sum of every coarser cascade's displacement. Returns the
+     * total displacement plus the per-cascade sample coordinates, reused
+     * below to sample normals at matching positions.
      */
-    const sampleCombinedDisplacement = (
-      sampleX: ReturnType<typeof float>,
-      sampleZ: ReturnType<typeof float>,
-      hasCascade1: ReturnType<typeof float>,
-    ) => {
-      // FFT Cascade 0 (waves): sample at original position
-      const d0 = sampleDisplacementXYZ(
-        sampleX,
-        sampleZ,
-        dispBuffer0!,
-        cascade0.resolution,
-        cascade0.scale,
-      );
+    const sampleCombinedDisplacement = (sampleX: Node, sampleZ: Node) => {
+      let x = sampleX;
+      let z = sampleZ;
+      let totalDisp: Node = vec3(0, 0, 0);
+      const sampleCoords: { x: Node; z: Node }[] = [];
 
-      // FFT Cascade 1 (ripples): sample at position displaced by waves
-      const sampleX1 = sampleX.add(d0.x);
-      const sampleZ1 = sampleZ.add(d0.z);
-      const d1 = sampleDisplacementXYZ(
-        sampleX1,
-        sampleZ1,
-        dispBuffer1!,
-        cascade1.resolution,
-        cascade1.scale,
-      );
-
-      let totalDisp = vec3(
-        d0.x.add(d1.x.mul(hasCascade1)),
-        d0.y.add(d1.y.mul(hasCascade1)),
-        d0.z.add(d1.z.mul(hasCascade1)),
-      );
-
-      // Add Gerstner displacement (compiles to no-op when maxWaves === 0)
-      if (gerstnerMaxWaves > 0 && gerstnerWaveBuffer && gerstnerWaveCount && gerstnerTime) {
-        const gerstner = computeGerstner({
-          worldX: sampleX,
-          worldZ: sampleZ,
-          time: gerstnerTime,
-          waveBuffer: gerstnerWaveBuffer,
-          waveCount: gerstnerWaveCount,
-          maxWaves: gerstnerMaxWaves,
-        });
-        totalDisp = vec3(
-          totalDisp.x.add(gerstner.displacement.x),
-          totalDisp.y.add(gerstner.displacement.y),
-          totalDisp.z.add(gerstner.displacement.z),
+      for (let i = 0; i < cascadeCount; i++) {
+        sampleCoords.push({ x, z });
+        const d = sampleDisplacementXYZ(
+          x,
+          z,
+          dispBuffers[i]!,
+          cascadeUniforms[i].resolution,
+          cascadeUniforms[i].scale,
         );
+        totalDisp =
+          i === 0
+            ? d
+            : vec3(
+                totalDisp.x.add(d.x),
+                totalDisp.y.add(d.y),
+                totalDisp.z.add(d.z),
+              );
+
+        if (i < cascadeCount - 1) {
+          x = x.add(d.x);
+          z = z.add(d.z);
+        }
       }
 
-      return { totalDisp, sampleX0: sampleX, sampleZ0: sampleZ, sampleX1, sampleZ1 };
+      return { totalDisp, sampleCoords };
     };
 
-    // Create compute shader function (FFT cascades + Gerstner)
+    // Create compute shader function (FFT cascades)
     const computeFn = Fn(() => {
       const idx = instanceIndex;
       const isActive = step(float(idx), float(sampleCount).sub(0.5));
@@ -216,58 +195,38 @@ export class WebGPUWaveSampler implements IWaveSampler {
       const worldX = pos.x;
       const worldZ = pos.y;
 
-      const hasCascade1 = step(1.5, float(cascadeCount));
+      // Invert the horizontal (choppy) displacement: solve u + D_xz(u) = world
+      // by fixed-point iteration u <- world - D_xz(u). One step suffices in calm
+      // water; steep crests at high choppiness need several to converge.
+      let result = sampleCombinedDisplacement(worldX, worldZ);
+      for (let i = 0; i < WAVE_INVERSE_SOLVE_ITERATIONS; i++) {
+        const correctedX = worldX.sub(result.totalDisp.x);
+        const correctedZ = worldZ.sub(result.totalDisp.z);
+        result = sampleCombinedDisplacement(correctedX, correctedZ);
+      }
 
-      // Pass 1: estimate combined displacement for inverse solve
-      const result1 = sampleCombinedDisplacement(worldX, worldZ, hasCascade1);
+      const totalHeight = result.totalDisp.y;
 
-      // Correct for horizontal displacement
-      const correctedX = worldX.sub(result1.totalDisp.x);
-      const correctedZ = worldZ.sub(result1.totalDisp.z);
-
-      // Pass 2: sample at corrected position for accurate height + normal
-      const result2 = sampleCombinedDisplacement(correctedX, correctedZ, hasCascade1);
-
-      const totalHeight = result2.totalDisp.y;
-
-      // Sample FFT normals at corrected cascade positions
-      const n0 = sampleNormal(
-        result2.sampleX0,
-        result2.sampleZ0,
-        normBuffer0!,
-        cascade0.resolution,
-        cascade0.scale,
-      );
-      const n1 = sampleNormal(
-        result2.sampleX1,
-        result2.sampleZ1,
-        normBuffer1!,
-        cascade1.resolution,
-        cascade1.scale,
-      );
-
-      // Blend FFT normals
-      let blendedNormal = vec3(
-        n0.x.add(n1.x.mul(hasCascade1)),
-        n0.y.add(n1.y.sub(1.0).mul(hasCascade1)),
-        n0.z.add(n1.z.mul(hasCascade1)),
-      );
-
-      // Blend Gerstner normals using RNM (Reoriented Normal Mapping)
-      if (gerstnerMaxWaves > 0 && gerstnerWaveBuffer && gerstnerWaveCount && gerstnerTime) {
-        const gerstner = computeGerstner({
-          worldX: correctedX,
-          worldZ: correctedZ,
-          time: gerstnerTime,
-          waveBuffer: gerstnerWaveBuffer,
-          waveCount: gerstnerWaveCount,
-          maxWaves: gerstnerMaxWaves,
-        });
-        blendedNormal = vec3(
-          blendedNormal.x.add(gerstner.normal.x),
-          blendedNormal.y.add(gerstner.normal.y.sub(1.0)),
-          blendedNormal.z.add(gerstner.normal.z),
+      // Sample and blend FFT normals (RNM) at the same hierarchical
+      // positions used for displacement above.
+      let blendedNormal: Node = vec3(0, 1, 0);
+      for (let i = 0; i < cascadeCount; i++) {
+        const coords = result.sampleCoords[i];
+        const n = sampleNormalTexture(
+          coords.x,
+          coords.z,
+          normalTextures[i]!,
+          cascadeUniforms[i].resolution,
+          cascadeUniforms[i].scale,
         );
+        blendedNormal =
+          i === 0
+            ? n
+            : vec3(
+                blendedNormal.x.add(n.x),
+                blendedNormal.y.add(n.y.sub(1.0)),
+                blendedNormal.z.add(n.z),
+              );
       }
 
       const finalNormal = normalize(blendedNormal);

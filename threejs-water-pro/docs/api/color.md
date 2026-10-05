@@ -1,41 +1,74 @@
 # Color & Transparency
 
-Physical Beer-Lambert water color, plus the dielectric Fresnel that drives reflection / refraction mixing.
+Physical or artist-authored water color, plus the dielectric Fresnel that drives reflection / refraction mixing.
 
 ## `water.color`
 
-The depth-dependent appearance of the water falls out of the physics rather than from a shallow→deep color blend. At a fragment that views the seabed through `d` units of water:
+Set `water.color.mode` to `"physical"` or `"custom"`. Both modes drive surface color, underwater attenuation, and wave-crest transmission.
 
-```
-transmitted = refractedScene · exp(−absorption · d)
-            + waterColor    · (1 − exp(−absorption · d))
-```
+### Physical mode
 
-Where `absorption` is a `vec3` — per-channel extinction. This is what makes clear ocean turn blue-green with depth: red light absorbs much faster than blue, so as `d` grows, the seabed reading shifts toward `waterColor`.
+Physical mode derives water color from three relative constituent amounts.
 
-| Property            | Type          | Default   | Description                                                                                                                                                                                       |
-| ------------------- | ------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `absorptionColor`   | `THREE.Color` | `#0a0503` | Per-channel Beer-Lambert absorption coefficient (1/m), as a hex color. Each RGB byte is its own extinction rate — e.g. `#0a0503` ≈ R=0.04, G=0.02, B=0.01 per metre. Larger values = murkier water. |
-| `transmissionColor` | `THREE.Color` | `#00ffcc` | Light transmission color (SSS)                                                                                                                                                                    |
-| `waterColor`        | `THREE.Color` | `#003366` | Intrinsic water color — what the in-scattered radiance from the water column looks like, independent of what's behind it. Shallow water reads as seabed tinted toward this; deep water reads as this directly. |
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `mode` | `"physical"` | `"physical"` | Selects physical mode. |
+| `algae` | `number` | `0` | Relative phytoplankton amount; raises green relative to blue and red. |
+| `silt` | `number` | `0.19` | Relative suspended-mineral amount; increases broad backscatter and turbidity. |
+| `stain` | `number` | `0.01` | Relative colored dissolved organic matter; absorbs blue and shifts water toward brown. |
 
-Transparency is driven entirely by absorption: per-fragment surface alpha is `1 − (1 − F) · max(clearFactor.rgb)` on the front face, where `F` is the dielectric Fresnel reflectance and `clearFactor = exp(−absorptionColor · depth)`. Looking straight down at thin water, alpha drops toward `F` so the underwater scene shows through; at grazing or over deep water, alpha → 1. To get more translucent water everywhere, lower `absorptionColor`; to make it opaque sooner, raise it.
+Use `setJerlovType()` to select physical mode and seed the constituent values, then adjust them if needed:
 
 ```typescript
-water.color.waterColor = new THREE.Color("#124973");
-// Clearer water: lower absorption per channel, blue passes farthest.
-water.color.absorptionColor = new THREE.Color("#070302");
+water.color.setJerlovType("Oceanic IB");
+water.color.silt = 0.25;
 ```
+
+The built-in values are adjustable starting points rather than measured concentrations:
+
+| Jerlov type | `algae` | `silt` | `stain` |
+| --- | ---: | ---: | ---: |
+| `Oceanic I` | 0 | 0.03 | 0 |
+| `Oceanic IA` | 0 | 0.08 | 0 |
+| `Oceanic IB` | 0 | 0.19 | 0.01 |
+| `Oceanic II` | 0.08 | 0.3 | 0.03 |
+| `Oceanic III` | 0.16 | 0.45 | 0.08 |
+| `Coastal 1C` | 0.25 | 0.6 | 0.15 |
+| `Coastal 3C` | 0.4 | 0.85 | 0.3 |
+| `Coastal 5C` | 0.6 | 1.15 | 0.55 |
+| `Coastal 7C` | 0.8 | 1.5 | 0.9 |
+| `Coastal 9C` | 1.05 | 2 | 1.3 |
+
+### Custom mode
+
+Custom mode uses one intrinsic water color and per-channel Beer-Lambert absorption. Shallow water shows more of the refracted scene; deeper water approaches `waterColor`.
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `mode` | `"custom"` | — | Selects custom mode. |
+| `waterColor` | `THREE.Color \| string` | `#003366` | Intrinsic water color approached with depth. |
+| `absorptionColor` | `THREE.Color \| string` | `#0a0503` | Per-channel absorption coefficient encoded as a color. |
+| `transmissionColor` | `THREE.Color \| string` | `#50a890` | Wave-crest transmission tint. |
+
+Larger `absorptionColor` channel values absorb that channel sooner.
+
+```typescript
+water.color.update({
+  mode: "custom",
+  waterColor: "#006b8f",
+  absorptionColor: "#a45b5b",
+  transmissionColor: "#46fbf8",
+});
+```
+
+Use `WaterColorConfig` for physical or custom configurations. `normalizeWaterColorConfig()` validates a configuration and returns a fresh object with an explicit mode.
 
 ## `water.fresnel`
 
-Full dielectric Fresnel (Pharr et al., *PBR* §9.5.1) for the air–water interface. The same equation drives reflection / refraction mixing both above water and below (Snell's window / TIR), so there is one IOR knob rather than separate above- and below-water curves.
+Full dielectric Fresnel (Pharr et al., *PBR* §9.5.1) for the air–water interface. The same equation drives reflection / refraction mixing both above water and below (Snell's window and total internal reflection), so there is a single index-of-refraction parameter rather than separate above- and below-water curves.
 
 | Property             | Type     | Default | Description                                                                                  |
 | -------------------- | -------- | ------- | -------------------------------------------------------------------------------------------- |
-| `fadeEnd`            | `number` | auto    | Distance where Fresnel normal detail finishes fading. Auto-set to the water extent (outermost LOD edge) and reset on geometry changes — not normally tuned by hand. |
-| `fadePower`          | `number` | `1.0`   | Distance fade power curve                                                                    |
-| `fadeStart`          | `number` | `50.0`  | Distance where normal detail begins fade                                                     |
+| `fadeEnd`            | `number` | auto    | Distance where the subsurface-scattering glow finishes fading out; the fade begins at half this distance. Auto-set to the water extent (outermost LOD edge) and reset on geometry changes; not normally tuned by hand. |
 | `iorRatio`           | `number` | `1.33`  | Refractive index of water relative to air (physical seawater)                                |
-| `normalStrength`     | `number` | `0.1`   | Normal perturbation strength (0–1)                                                           |
 | `refractionStrength` | `number` | `0.1`   | Screen-space refraction UV-offset strength. Drives the seabed wobble seen from above and the Snell's-window warp seen from below. |

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -12,24 +15,17 @@ import type { Panel, Folder } from "../../SimpleUI";
 export function createWakeFolder(ui: UIManager, pane: Panel | Folder): Folder {
   const folder = pane.addFolder("Wake", { expanded: false });
 
-  // Locally-held per-generator state, mirrored to both ship generators (bow +
-  // stern) on change. `strength` is the UI name for the generator's `depth` —
-  // it scales the wake amplitude.
+  // Locally-held per-generator state, mirrored to the ship's generators on
+  // change. `strength` is the UI name for the generator's `depth` — it scales
+  // the wake amplitude.
   const generator = {
-    strength: 10.0,
-    radius: 36.5,
+    strength: 0.6,
+    radius: 3,
   };
 
   const updateShipGenerators = (): void => {
-    const ids = ui.app.shipWakeIds;
-    if (ids.length === 0) return;
-    // index 0 = bow (+Z); index 1 = stern (−Z) when present.
-    ui.water.wake.updateGenerator(ids[0], {
-      depth: generator.strength,
-      radius: generator.radius,
-    });
-    if (ids.length > 1) {
-      ui.water.wake.updateGenerator(ids[1], {
+    for (const id of ui.app.rig.shipWakeIds) {
+      ui.water.wake.updateGenerator(id, {
         depth: generator.strength,
         radius: generator.radius,
       });
@@ -52,9 +48,9 @@ export function createWakeFolder(ui: UIManager, pane: Panel | Folder): Folder {
     key: "enabled",
   });
   folder.addCheckbox("Show Generators", {
-    binding: () => ui.app.wakeDebugVisualizer.isEnabled(),
+    binding: () => ui.app.rig.wakeDebugVisualizer.isEnabled(),
     onChange: (v) => {
-      ui.app.wakeDebugVisualizer.setEnabled(v);
+      ui.app.rig.wakeDebugVisualizer.setEnabled(v);
     },
   });
   folder.addSelect("Resolution", {
@@ -83,7 +79,7 @@ export function createWakeFolder(ui: UIManager, pane: Panel | Folder): Folder {
     object: generator,
     key: "strength",
     min: 0.0,
-    max: 100.0,
+    max: 10.0,
     step: 0.5,
     onChange: updateShipGenerators,
   });
@@ -92,7 +88,7 @@ export function createWakeFolder(ui: UIManager, pane: Panel | Folder): Folder {
     object: generator,
     key: "radius",
     min: 0.5,
-    max: 200.0,
+    max: 20.0,
     step: 0.5,
     onChange: updateShipGenerators,
   });

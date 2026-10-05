@@ -1,16 +1,15 @@
 /**
  * Configuration interfaces for reactive params API.
  */
+/** Artist-authored water color configuration. */
 export interface ColorConfig {
     absorptionColor: string;
+    mode?: "custom";
     transmissionColor: string;
     waterColor: string;
 }
 export interface FresnelConfig {
-    fadePower: number;
-    fadeStart: number;
     iorRatio: number;
-    normalStrength: number;
     refractionStrength: number;
 }
 export interface SSSConfig {

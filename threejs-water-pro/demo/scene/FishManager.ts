@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
@@ -11,7 +14,8 @@ interface FishInstance {
   speed: number;
   targetSpeed: number;
   animationMixer: THREE.AnimationMixer;
-  initialDepth: number;
+  /** Swim height above the ocean floor, in metres. */
+  height: number;
 }
 
 interface FishManagerOptions {
@@ -19,21 +23,23 @@ interface FishManagerOptions {
   spawnRadius?: number;
   centerX?: number;
   centerZ?: number;
-  minDepth?: number;
-  maxDepth?: number;
+  /** Lowest swim height above the ocean floor, in metres. */
+  minHeight?: number;
+  /** Highest swim height above the ocean floor, in metres. */
+  maxHeight?: number;
   minSpeed?: number;
   maxSpeed?: number;
 }
 
 const DEFAULT_OPTIONS: Required<FishManagerOptions> = {
   count: 10,
-  spawnRadius: 500,
-  centerX: -300,
-  centerZ: 300,
-  minDepth: -70,
-  maxDepth: -50,
-  minSpeed: 10,
-  maxSpeed: 20,
+  spawnRadius: 25,
+  centerX: -15,
+  centerZ: 15,
+  minHeight: 1.5,
+  maxHeight: 2.5,
+  minSpeed: 0.5,
+  maxSpeed: 1,
 };
 
 // Reusable objects to avoid allocations
@@ -55,6 +61,8 @@ export class FishManager {
   constructor(scene: THREE.Scene, options: FishManagerOptions = {}) {
     this.scene = scene;
     this.options = { ...DEFAULT_OPTIONS, ...options };
+    // Fish positions are relative to this group, whose origin sits on the
+    // ocean floor.
     this.group = new THREE.Group();
     this.group.name = "FishGroup";
     this.scene.add(this.group);
@@ -73,13 +81,13 @@ export class FishManager {
     const animations = gltf.animations;
 
     // Spawn fish instances
-    const { count, spawnRadius, centerX, centerZ, minDepth, maxDepth } =
+    const { count, spawnRadius, centerX, centerZ, minHeight, maxHeight } =
       this.options;
 
     for (let i = 0; i < count; i++) {
       // Use SkeletonUtils for proper skinned mesh cloning with animations
       const clone = SkeletonUtils.clone(template);
-      const scale = 10 + Math.random() * 10;
+      const scale = 0.7 + Math.random() * 0.6;
       clone.scale.set(scale, scale, scale);
       clone.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
@@ -93,7 +101,7 @@ export class FishManager {
       const radius = Math.sqrt(Math.random()) * spawnRadius;
       const x = centerX + Math.cos(angle) * radius;
       const z = centerZ + Math.sin(angle) * radius;
-      const y = minDepth + Math.random() * (maxDepth - minDepth);
+      const y = minHeight + Math.random() * (maxHeight - minHeight);
       clone.position.set(x, y, z);
 
       // Random initial direction (horizontal only)
@@ -103,9 +111,6 @@ export class FishManager {
         0,
         Math.sin(dirAngle),
       );
-
-      // Store initial depth for this fish
-      const initialDepth = y;
 
       // Set initial rotation to face movement direction
       _lookMatrix.lookAt(
@@ -141,7 +146,7 @@ export class FishManager {
         speed,
         targetSpeed: speed,
         animationMixer: mixer,
-        initialDepth,
+        height: y,
       });
     }
 
@@ -207,7 +212,7 @@ export class FishManager {
       // Update position (horizontal only)
       fish.mesh.position.x += fish.direction.x * fish.speed * deltaTime;
       fish.mesh.position.z += fish.direction.z * fish.speed * deltaTime;
-      fish.mesh.position.y = fish.initialDepth;
+      fish.mesh.position.y = fish.height;
 
       // Smoothly rotate to face movement direction
       _lookMatrix.lookAt(
@@ -223,6 +228,11 @@ export class FishManager {
 
   setVisible(visible: boolean): void {
     this.group.visible = visible;
+  }
+
+  /** Places the school's floor reference at `depth` metres below the surface. */
+  setFloorDepth(depth: number): void {
+    this.group.position.y = -depth;
   }
 
   dispose(): void {

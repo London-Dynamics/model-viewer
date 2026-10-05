@@ -1,111 +1,106 @@
 /**
- * Persistent wave-crest foam accumulation system.
+ * World-fixed wave-crest foam accumulation.
  *
- * Maintains per-cascade ping-pong storage buffers of turbulent-energy
- * values. Each frame runs two compute passes per cascade:
- *
- *   1. **Decay** — `E_next = E_prev * exp(-dt / τ)`
- *   2. **Inject** — `E_next += injectionRate * max(0, threshold - eigen) * dt`
- *
- * The surface material shader samples the current read buffers via
- * {@link CascadeSampler.sampleFoamAccumulation}. This is the War Thunder /
- * Sea of Thieves persistent-foam pattern: foam lingers for seconds after a
- * breaking event, producing visible streaks and decay tails instead of a
- * flat stateless mask.
+ * One camera-anchored half-float render-target ping-pong advanced by a single
+ * fragment pass, on both backends (foam has no spatial coupling, so a fragment
+ * pass is equivalent to a compute pass and lets the GPU's texture units do the
+ * cascade-normal bilinear for free). Each texel maps to a world position; the
+ * inject samples the FFT cascade normal textures there, sums the foldings
+ * before the breaking threshold, and accumulates with decay against the
+ * previous energy read at the camera-shifted UV. The sampler reads the
+ * freshly written target.
  */
 import * as THREE from "three/webgpu";
-import { WebGPUWaveSimulation } from "../waves/webgpu/WebGPUWaveSimulation";
 import type { IWaveSimulation } from "../waves";
-import type { StorageBufferNode } from "../../shaders/types";
+import type { UniformFloatNode } from "../../types/tsl";
 import type { WaveUniforms } from "../../uniforms";
-/** Preset-facing parameters for {@link FoamAccumulation}. */
-export interface FoamAccumulationParams {
+import type { FoamPersistence } from "../../shaders/foamPersistence";
+import type { WaterSubsystem } from "../../systems/types";
+import type { QualityLevel, QualityLevelConfig } from "../../config/QualityLevels";
+import type { IFoamFieldSampler } from "./IFoamFieldSampler";
+/** Construction parameters for the world-fixed foam field. */
+export interface FoamAccumulationConfig {
     /**
-     * Crest-driven foam strength. Equilibrium energy at a sustained sharp
-     * fold; gentle folding is suppressed by the built-in smoothstep gate.
+     * Shared persistence uniforms (owned by `WaveFoam`). The inject pass binds
+     * these nodes by reference, so `water.foam.waves.persistence` drives the field.
      */
-    crestStrength: number;
-    /** Exponential decay e-folding time (seconds). */
-    decayTime: number;
+    persistence: FoamPersistence;
     /**
-     * Windward-face foam strength. Equilibrium energy on a fully wind-facing
-     * pixel, regardless of folding. Drives foam onto the rising face of
-     * waves; the persistent buffer carries it through the crest and beyond.
+     * Wave-foam enable node (owned by `WaveFoam`). Read CPU-side each step: while
+     * it reads 0 the field skips its update; the same node gates the shading, so
+     * stale energy is never drawn. Re-enabling clears the field before injecting.
      */
-    windwardStrength: number;
+    enabledNode: UniformFloatNode;
+    /** Field resolution in texels per side. */
+    resolution: number;
+    /** Field extent in world units per side (the camera-anchored window). */
+    worldSize: number;
 }
-/**
- * Per-cascade persistent foam energy buffers.
- *
- * Owns its storage buffers and uniform nodes. External code reads/writes
- * parameters through getters/setters; the compute passes bind to the
- * private uniform nodes at construction time.
- */
-export declare class FoamAccumulation {
-    private _renderer;
+export declare class FoamAccumulation implements WaterSubsystem {
+    private readonly _renderer;
     private _oceanSim;
-    private _waveUniforms;
+    private readonly _waveUniforms;
     private _uniforms;
-    private _cascades;
-    constructor(renderer: THREE.WebGPURenderer, oceanSim: WebGPUWaveSimulation, waveUniforms: WaveUniforms);
+    private _resolution;
+    private readonly _enabledNode;
+    private _wasEnabled;
+    private _camera;
+    private readonly _forwardScratch;
+    private _originX;
+    private _originZ;
+    private _worldSizeNode;
+    private _shiftX;
+    private _shiftZ;
+    /** Ping-pong energy targets; `.r` holds the foam energy. */
+    private _targets;
+    /** Index of the target holding the latest energy. */
+    private _current;
+    private _material;
+    private _clearMaterial;
+    private readonly _quad;
+    private _sampler;
+    private _onSamplerRebuilt;
+    private _prevOriginX;
+    private _prevOriginZ;
+    private _firstFrame;
+    private _pendingReset;
+    constructor(renderer: THREE.WebGPURenderer, oceanSim: IWaveSimulation, waveUniforms: WaveUniforms, config: FoamAccumulationConfig);
+    private _buildField;
     /**
-     * Construct only when the backend supports persistent storage buffers
-     * AND the active quality level opts in. Returns `null` on WebGL or on
-     * quality tiers where the buffer is disabled. Centralises the
-     * three-fold guard so callers do not duplicate the instanceof /
-     * capability / quality-feature triplet.
+     * Build the inject material against the current wave sim's cascade normal
+     * textures. Separated from {@link _buildField} so a wave sim swap
+     * ({@link setOceanSim}) rebinds the injection without disturbing the
+     * targets, sampler, or anchor state.
      */
-    static tryCreate(renderer: THREE.WebGPURenderer, oceanSim: IWaveSimulation, waveUniforms: WaveUniforms, persistentFoamFeatureEnabled: boolean): FoamAccumulation | null;
-    private _buildCascade;
+    private _buildMaterial;
+    getSampler(): IFoamFieldSampler;
+    onSamplerRebuild(callback: (sampler: IFoamFieldSampler) => void): void;
+    /** Set the camera the field anchors on (mirrors the wake). */
+    setCamera(camera: THREE.Camera): void;
     /**
-     * Get the storage node of the cascade's current read buffer — the buffer
-     * holding the latest (post-update) foam energy. Returns null if the
-     * cascade index is out of range.
+     * Rebind the injection to a new wave simulation. Only the inject material
+     * depends on the sim (its cascade normal textures); the targets and
+     * sampler read the field's own targets, so a quality switch rebinds here
+     * without rebuilding the field or re-handing the sampler.
      */
-    getFoamBuffer(cascadeIndex: number): StorageBufferNode | null;
+    setOceanSim(oceanSim: IWaveSimulation): void;
+    get resolution(): number;
+    set resolution(value: number);
+    get worldSize(): number;
+    set worldSize(value: number);
     /**
-     * Whether persistent foam is enabled. Disabling zeros the accumulation
-     * buffers so previously-deposited energy does not reappear on re-enable,
-     * and skips all compute dispatches while off.
+     * Apply the quality level's foam-field config
+     * ({@link WaterSubsystem.onQualityChanged}): world extent and resolution. Each
+     * is guarded so a switch within the same tier is a no-op; a resolution change
+     * rebuilds the field and re-binds the sampler into the surface material.
+     * Enablement is quality-defaulted alongside the foam shading, not here.
      */
-    get enabled(): boolean;
-    set enabled(value: boolean);
-    /** Exponential decay e-folding time (seconds). */
-    get decayTime(): number;
-    set decayTime(value: number);
-    /**
-     * Crest-driven foam strength. Equilibrium energy at a sustained sharp
-     * fold equals this value; gentle surface folding is suppressed by the
-     * breaking-rate curve baked into the inject pass.
-     */
-    get crestStrength(): number;
-    set crestStrength(value: number);
-    /**
-     * Windward-face foam strength. Equilibrium energy on a fully wind-facing
-     * pixel, regardless of folding.
-     */
-    get windwardStrength(): number;
-    set windwardStrength(value: number);
-    /**
-     * @internal Bulk-set parameters from a preset or params object.
-     * `enabled` is owned by {@link WaterSystem} (driven by the quality-level
-     * `persistentFoamBuffer` flag) — it's intentionally not in the params.
-     */
-    update(params: FoamAccumulationParams): void;
-    /**
-     * Dispatch decay + inject for every cascade. No-op when disabled.
-     *
-     * @param deltaTime - Seconds since the previous frame.
-     */
-    tick(deltaTime: number): Promise<void>;
-    /**
-     * Zero both ping-pong buffers for every cascade and mark them dirty so
-     * the GPU picks up the cleared data on the next compute or sample.
-     * Called when persistence is toggled off to avoid leaving frozen energy
-     * in the accumulation buffers.
-     */
-    private _clearBuffers;
-    /** Dispose GPU resources. */
+    onQualityChanged(_quality: QualityLevel, config: QualityLevelConfig): void;
+    step(deltaTime: number, _gpuTime: number): Promise<void>;
     dispose(): void;
+    private _createTarget;
+    private _buildClearMaterial;
+    private _renderToTarget;
+    private _clearTargets;
 }
 //# sourceMappingURL=FoamAccumulation.d.ts.map

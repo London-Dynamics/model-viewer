@@ -1,0 +1,1 @@
+{"version":3,"file":"IFoamFieldSampler.d.ts","sourceRoot":"","sources":["../../../src/simulation/foam/IFoamFieldSampler.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EAAE,IAAI,EAAE,MAAM,cAAc,CAAC;AAEzC;;;;;;;;GAQG;AACH,MAAM,WAAW,iBAAiB;IAChC;;;OAGG;IACH,YAAY,CAAC,MAAM,EAAE,IAAI,EAAE,MAAM,EAAE,IAAI,GAAG,IAAI,CAAC;CAChD"}

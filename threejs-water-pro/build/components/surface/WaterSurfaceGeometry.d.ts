@@ -36,7 +36,6 @@ export interface ClipmapConfig {
 export type SnappedPositionListener = (x: number, z: number) => void;
 export declare class WaterSurfaceGeometry {
     private static readonly UNDERWATER_DEPTH;
-    private elevation;
     private config;
     private container;
     private snappedPosition;
@@ -116,8 +115,6 @@ export declare class WaterSurfaceGeometry {
      * Get the current snapped position of the clipmap.
      */
     getSnappedPosition(): THREE.Vector2;
-    /** Set the world-space Y elevation for the ocean surface. */
-    setElevation(elevation: number): void;
     /**
      * Register a callback that fires after every {@link update} with the
      * latest grid-snapped centre. Use this to keep follower objects (water

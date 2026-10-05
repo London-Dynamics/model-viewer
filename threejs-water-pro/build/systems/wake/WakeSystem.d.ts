@@ -4,16 +4,14 @@
  * Owns the generator registry, camera-anchored world-origin bookkeeping, and
  * the dispersive wake field simulator (Tessendorf's iWave: a `√(−∇²)`
  * convolution + leapfrog on a height grid, giving deep-water dispersion). The
- * backend (WebGPU compute or WebGL stub) is chosen by the factory at
- * construction; both satisfy {@link IWakeSimulation}.
+ * backend (WebGPU compute or WebGL render-to-texture) is chosen by the factory
+ * at construction; both satisfy {@link IWakeSimulation}.
  *
  * Per frame: every active generator adds a moving source along the path its
  * parent `Object3D` swept since the previous frame. The field then radiates and
  * fades that disturbance — long waves outrunning short (a Kelvin-shaped wake) —
- * and the water vertex shader reads the result as an additive term next to FFT
- * and Gerstner.
- *
- * See `wiki/wake/iwave.md` for the model and integration.
+ * and the water vertex shader reads the result as an additive term next to the
+ * FFT displacement.
  */
 import * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
@@ -21,7 +19,7 @@ import type { IWakeFieldSampler } from "../../simulation/waves/wake";
 import { type WakeDebugData, type WakeGenerator, type WakeGeneratorOptions } from "./index";
 import type { WaterSubsystem } from "../types";
 import type { QualityLevel, QualityLevelConfig } from "../../config/QualityLevels";
-import type { WaterSceneParams } from "../../config/presets/types";
+import type { WaterSceneConfig } from "../../config/presets/types";
 export declare class WakeSystem implements WaterSubsystem {
     /** Registered generators. */
     private generators;
@@ -41,7 +39,7 @@ export declare class WakeSystem implements WaterSubsystem {
     private _foamPersistence;
     private _foamStrength;
     private _foamBreakThreshold;
-    /** Wake field simulator (WebGPU iWave compute or WebGL stub). */
+    /** Wake field simulator (WebGPU compute or WebGL render-to-texture iWave). */
     private _simulation;
     private _enabled;
     /** Notified with the new sampler when the field is rebuilt (resolution change). */
@@ -152,7 +150,7 @@ export declare class WakeSystem implements WaterSubsystem {
      * Reads only the foam and friction slice — enablement, resolution, and extent
      * are quality-tier-owned (see {@link onQualityChanged}), not preset-driven.
      */
-    applyParams(params: WaterSceneParams): void;
+    applyParams(params: WaterSceneConfig): void;
     /**
      * Apply the quality level's wake field config ({@link WaterSubsystem.onQualityChanged}).
      * Enablement, resolution, and extent are all quality-scaled (low disables the
@@ -163,12 +161,6 @@ export declare class WakeSystem implements WaterSubsystem {
     onQualityChanged(_quality: QualityLevel, config: QualityLevelConfig): void;
     /** Dispose of all resources owned by the wake system. */
     dispose(): void;
-    /**
-     * Find where the camera's centre view ray hits the water surface (y = 0).
-     * Falls back to camera XZ if looking up or nearly horizontal. Result is
-     * clamped so the origin can't run away from the camera across the horizon.
-     */
-    private getViewCenterOnWater;
     /**
      * Resolve a generator's world-space injection point: the object's world
      * position shifted to the local-frame `offset` (bow/stern). The offset basis

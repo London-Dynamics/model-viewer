@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import {
   instanceIndex,
   vec2,
@@ -7,10 +10,7 @@ import {
   sin,
   cos,
   sqrt,
-  exp,
   log2,
-  step,
-  pow,
   mix,
   round,
   smoothstep,
@@ -19,6 +19,12 @@ import { hash, createBitReverseFn } from "../../../../shaders/common";
 import type { TSLBuffer } from "../../../../types/tsl";
 import type { WaveUniforms } from "../../../../uniforms";
 import type { CascadeSimulationUniforms } from "../../../../uniforms";
+import {
+  peakAngularFrequency,
+  jonswapAlpha,
+  jonswapRadialSpectrum,
+  hasselmannDirectionalSpread,
+} from "../../jonswapSpectrum";
 import { WAVE_TIME_OMEGA_STEP } from "../../timing";
 
 /** Group of component buffers (Dx, Dy, Dz) */
@@ -45,10 +51,13 @@ export interface TimeEvolutionShaderParams {
 }
 
 /**
- * Creates the initial spectrum generation shader (Phillips spectrum)
+ * Creates the initial spectrum generation shader.
  *
- * Generates the initial Fourier coefficients h̃₀(k) for ocean waves using the Phillips spectrum.
- * This shader runs once at initialization to set up the frequency domain representation.
+ * Generates the initial Fourier coefficients h̃₀(k) for ocean waves using a
+ * JONSWAP spectrum (see `../../jonswapSpectrum.ts`) with Hasselmann
+ * directional spreading. This shader runs once at initialization
+ * (and whenever wave parameters change) to set up the frequency domain
+ * representation.
  */
 export const createInitSpectrumShader = ({
   wave,
@@ -62,30 +71,24 @@ export const createInitSpectrumShader = ({
     const windSpeed = wave.windSpeed;
     const windDirection = wave.windDirection;
     const gravity = wave.gravity;
+    const peakWavelength = wave.peakWavelength;
     const scale = cascade.scale;
 
     // Convert linear index to 2D coordinates
     const x = idx.mod(res);
     const y = idx.div(res); // Integer division already truncates
 
-    // Calculate wave vector k (convert to float for math operations)
-    // The effective domain size is normalized by resolution so that 'scale' represents
-    // world-space wavelength independent of FFT resolution. A base resolution of 256 is
-    // used as reference - this ensures scale=100 produces the same wavelengths regardless
-    // of which cascade resolution is used.
-    //
-    // effectiveScale = scale * (resolution / 256)
-    // This means: 256-res with scale=100 → effectiveScale=100
-    //             64-res with scale=100 → effectiveScale=25
-    //
-    // The FFT produces wavelengths λ = effectiveScale / n, so normalizing by resolution
-    // ensures the same scale value produces the same world-space wavelengths.
-    const baseRes = float(256.0);
-    const effectiveScale = scale.mul(res.toFloat()).div(baseRes);
+    // Calculate wave vector k (convert to float for math operations).
+    // The cascade's tile size is its world-space `scale`, independent of FFT
+    // resolution. This fixes the fundamental wavenumber kFund = 2π/scale — the
+    // longest representable wave, which carries most of the height energy — so
+    // total wave height does not change with resolution. Raising resolution
+    // raises the Nyquist limit kNyq = π·res/scale, adding smaller waves (finer
+    // detail) on top of the same large-wave band.
     const nx = x.toFloat().sub(res.toFloat().div(2.0));
     const ny = y.toFloat().sub(res.toFloat().div(2.0));
-    const kx = nx.mul(2.0).mul(Math.PI).div(effectiveScale);
-    const ky = ny.mul(2.0).mul(Math.PI).div(effectiveScale);
+    const kx = nx.mul(2.0).mul(Math.PI).div(scale);
+    const ky = ny.mul(2.0).mul(Math.PI).div(scale);
     const kLength = sqrt(kx.mul(kx).add(ky.mul(ky)));
 
     // Suppress DC component only (k=0 causes division by zero)
@@ -101,30 +104,30 @@ export const createInitSpectrumShader = ({
     const kNormY = ky.div(kSafe);
     const kDotW = kNormX.mul(windDirX).add(kNormY.mul(windDirY));
 
-    // Pierson-Moskowitz peak frequency: ωp = 0.877·g/U for fully developed seas.
-    const omegaPeak = float(0.877).mul(gravity).div(windSpeed.max(0.1));
-    // Deep-water dispersion: ω = √(g·k).
+    // Deep-water dispersion. omegaPeak comes directly from peakWavelength
+    // (the artist-facing size control); alpha (energy) still depends on
+    // wind speed at that fixed peak (see jonswapSpectrum.ts).
     const omega = sqrt(gravity.mul(kSafe));
+    const omegaPeak = peakAngularFrequency(peakWavelength, gravity);
+    const alpha = jonswapAlpha(windSpeed, omegaPeak, gravity);
 
-    // Hasselmann 1980 frequency-dependent directional spread exponent.
-    // s_p = 9.77; s(ω/ωp) ≈ s_p·(ω/ωp)^+5 below peak (narrow), (ω/ωp)^-2.5 above
-    // peak (broad). The piecewise μ exponents come from Hasselmann's JPO 10 fits.
-    // Energy is narrowly concentrated near the wind direction at the peak
-    // frequency and broadens at higher k — which is why ripples should look
-    // near-omnidirectional rather than carrying the same narrow cone as the swell.
-    const omegaRatio = omega.div(omegaPeak.max(0.0001));
-    const sBelow = float(9.77).mul(pow(omegaRatio, float(5.0)));
-    const sAbove = float(9.77).mul(pow(omegaRatio, float(-2.5)));
-    const sRaw = mix(sBelow, sAbove, step(float(1.0), omegaRatio));
-    // spectralSharpness multiplies s uniformly: >1 narrows, <1 broadens.
-    // Clamp ≥ 0.5 caps the narrow-cone regime — sBelow blows up like
-    // ratio^5 near and just below the peak — so cos^(2s) underneath stays
-    // numerically well-behaved.
-    const s = sRaw.mul(wave.spectralSharpness).max(float(0.5));
+    const radialSpectrum = jonswapRadialSpectrum({
+      k: kSafe,
+      omega,
+      omegaPeak,
+      alpha,
+      gravity,
+      jonswapGamma: wave.jonswapGamma,
+    });
 
-    // D(θ) = cos^(2s)(θ/2); cos(half) = √((1 + kDotW)/2).
-    const halfAngleCos = sqrt(kDotW.add(1.0).mul(0.5).max(0.0001));
-    const directionalSpread = pow(halfAngleCos, s.mul(2.0));
+    // Hasselmann directional spread, normalized so ∫D dθ = 1 — the spread
+    // redistributes energy by direction without changing the total.
+    const directionalSpread = hasselmannDirectionalSpread({
+      omega,
+      omegaPeak,
+      kDotWind: kDotW,
+      spectralSharpness: wave.spectralSharpness,
+    });
 
     // Smooth upwind attenuation. Maps kDotW ∈ [-1,+1] → factor ∈ [backwardWaveScale, 1].
     // Replaces the discontinuous step() at θ = ±90° which produced faint banding at
@@ -136,54 +139,28 @@ export const createInitSpectrumShader = ({
       mix(backwardWaveScale, float(1.0), alignment),
     );
 
-    // Phillips spectrum
-    const L = windSpeed.mul(windSpeed).div(gravity);
-    const kLength2 = kSafe.mul(kSafe);
-    const kLength4 = kLength2.mul(kLength2);
+    // Per-mode variance is Ψ(k,θ)·Δk²/2, Δk = 2π/scale. The radial JONSWAP
+    // density carries no free gain constant beyond its own alpha, so Δk² is
+    // applied explicitly here; the 1/2 one-sided realization factor is
+    // folded into the 0.707107 amplitude multiplier below.
+    const deltaK = float(2.0 * Math.PI).div(scale);
+    const deltaK2 = deltaK.mul(deltaK);
+    const jonswap = radialSpectrum.mul(directionalFactor).mul(deltaK2);
 
-    // Phillips spectrum formula with scale normalization
-    // The 1/k^4 term causes amplitude to scale with domain size^4
-    // Dividing by effectiveScale^2 keeps wave amplitude consistent when changing scale
-    // We use effectiveScale (not scale) since that's the actual FFT domain size
-    const effectiveScale2 = effectiveScale.mul(effectiveScale);
-    const phillips = exp(float(-1.0).div(kLength2.mul(L).mul(L)))
-      .div(kLength4)
-      .mul(directionalFactor)
-      .div(effectiveScale2);
-
-    // JONSWAP peak enhancement - concentrates energy around peak frequency
-    // This creates wave grouping through interference of nearby frequencies
-    // gamma = 1.0 reduces to Phillips, gamma = 3.3 is typical JONSWAP, higher = more peaked
-    const jonswapGamma = wave.jonswapGamma;
-
-    // Sigma parameter: 0.07 below peak, 0.09 above peak
-    // Use smooth transition with mix + step
-    const sigmaLow = float(0.07);
-    const sigmaHigh = float(0.09);
-    const sigma = mix(sigmaLow, sigmaHigh, step(omegaPeak, omega));
-
-    // Peak enhancement exponent: r = exp(-(omega - omega_p)^2 / (2 * sigma^2 * omega_p^2))
-    const omegaDiff = omega.sub(omegaPeak);
-    const sigmaOmegaPeak = sigma.mul(omegaPeak);
-    const r = exp(
-      omegaDiff
-        .mul(omegaDiff)
-        .negate()
-        .div(float(2.0).mul(sigmaOmegaPeak).mul(sigmaOmegaPeak).add(0.0001)),
-    );
-
-    // Apply JONSWAP: S_JONSWAP = S_Phillips * gamma^r
-    const peakEnhancement = pow(jonswapGamma, r);
-    const jonswap = phillips.mul(peakEnhancement);
-
-    // Per-cascade k-band window. Each cascade owns a non-overlapping range
-    // [kBandLow, kBandHigh] (set by assignCascadeBands). The smooth crossover
-    // at ×1.5 either side prevents abrupt energy steps and also serves as the
-    // anti-alias roll-off near the smallest cascade's Nyquist limit.
+    // Per-cascade k-band window. Adjacent cascades share each seam's
+    // cross-fade interval [kEdge/1.5, kEdge·1.5]: this cascade's high-edge
+    // weight (1 − t) and the next cascade's low-edge weight (t) sum to one,
+    // so the banded cascades together carry exactly the continuum spectrum —
+    // no notch or double-counting at the seam (see cascadeBands.ts). The
+    // first cascade's kBandLow sentinel (≈0) disables its low edge; the last
+    // cascade's kBandHigh sits at kNyquist/1.5 so the fade reaches zero at
+    // the Nyquist limit (anti-alias roll-off).
     const kLo = cascade.kBandLow;
     const kHi = cascade.kBandHigh;
-    const lowEdge = smoothstep(kLo, kLo.mul(1.5), kSafe);
-    const highEdge = float(1.0).sub(smoothstep(kHi.div(1.5), kHi, kSafe));
+    const lowEdge = smoothstep(kLo.div(1.5), kLo.mul(1.5), kSafe);
+    const highEdge = float(1.0).sub(
+      smoothstep(kHi.div(1.5), kHi.mul(1.5), kSafe),
+    );
     const bandWindow = lowEdge.mul(highEdge);
     const bandedJonswap = jonswap.mul(bandWindow);
 
@@ -191,9 +168,7 @@ export const createInitSpectrumShader = ({
     // Combine pixel index with random seed for unique pattern each session
     const randomSeed = cascade.randomSeed;
     const seed = idx.toFloat().add(randomSeed.mul(100000.0));
-    // @ts-expect-error - TSL Fn parameter type inference issue
     const xi1 = hash(seed);
-    // @ts-expect-error - TSL Fn parameter type inference issue
     const xi2 = hash(seed.add(1000.0));
 
     const gaussianR = sqrt(
@@ -203,12 +178,7 @@ export const createInitSpectrumShader = ({
 
     // Initial spectrum amplitude: h̃₀(k) = ξ · √(S(k)/2)
     // Factor of 1/√2 ≈ 0.707107 normalizes the Gaussian random variable.
-    // bandAmplitudeCompensation = √(E_full / E_band) preserves each cascade's
-    // total energy after the band window removes off-band frequencies.
-    const h0Magnitude = gaussianR
-      .mul(sqrt(bandedJonswap))
-      .mul(float(0.707107))
-      .mul(cascade.bandAmplitudeCompensation);
+    const h0Magnitude = gaussianR.mul(sqrt(bandedJonswap)).mul(float(0.707107));
 
     const h0Real = h0Magnitude.mul(cos(theta));
     const h0Imag = h0Magnitude.mul(sin(theta));
@@ -281,8 +251,8 @@ export const createTimeEvolutionShader = ({
     // H(k,t) = H₀(k)·e^{-iωt} + H₀*(-k)·e^{+iωt}
     //
     // Using e^{-iωt} for the first term (not e^{+iωt}) ensures waves travel
-    // in the +k direction. Combined with Phillips spectrum favoring k aligned
-    // with wind, this makes waves propagate WITH the wind direction.
+    // in the +k direction. Combined with the JONSWAP spectrum favoring k
+    // aligned with wind, this makes waves propagate WITH the wind direction.
     //
     // e^{-iωt} = cos(ωt) - i·sin(ωt)
     // e^{+iωt} = cos(ωt) + i·sin(ωt)

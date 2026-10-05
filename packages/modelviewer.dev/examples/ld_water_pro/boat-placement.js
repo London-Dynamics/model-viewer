@@ -1,10 +1,10 @@
 /**
- * Place a meter-authored hull in the threejs-water-pro demo world.
+ * Place a meter-authored hull in the threejs-water-pro 3.5.1 world.
  *
- * The vendored demo scales dutch_ship_medium_2k.glb by 15 and treats +Z as
- * forward. Water wavelengths, the clipmap, and the camera far plane are
- * authored in that scaled world. Dividing those distances by 15 does not
- * reproduce the demo.
+ * v3.5.1 is calibrated in real metres. The vendored dutch ship is about
+ * 24 m and is not scaled, and peak wavelength is metres on
+ * `waves.fft.peakWavelength`. Hulls stay at scale 1 so a 22 m wave is a
+ * 22 m wave. +Z is still forward.
  *
  * Ri230 is the regression fixture (7.56 m on +X). The default demo boat is
  * Ri245 MY 2027 (sku ri245-my-2027, product
@@ -24,10 +24,10 @@
  * already +Z. It has no windshield, so the glass framing does not apply.
  *
  * Select a boat with ?boat=ri245 (default), ?boat=aquila, ?boat=45-sport,
- * or ?boat=demo. Scale stays 15. Hero and glass cameras share one recipe.
+ * or ?boat=demo. Scale stays 1. Hero and glass cameras share one recipe.
  */
 
-export const DEMO_BOAT_SCALE = 15;
+export const DEMO_BOAT_SCALE = 1;
 
 export const CENTURION_RI230_GLB =
   'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/8561d8b0-f8a3-6ef4-241a-3f90abe64dc5.glb';
@@ -340,20 +340,19 @@ const assignPath = (root, path, value) => {
 };
 
 /**
- * Reference shot from the threejs water-pro demo UI. This vendored
- * 3.0.0 build has no Three.js Sky Pro preset, no cloud-coverage slider,
- * and no `waves.peakWavelength` (that landed in 3.3). The fields below
- * are the same numbers, written to the controls this API does have.
+ * Reference shot from the threejs water-pro demo UI, written onto
+ * v3.5.1. Quality is `high` on `WaterSystem.create` (swell, waves, and
+ * ripples). Wind is `waves.fft.windSpeed`. Peak wavelength is
+ * `waves.fft.peakWavelength` in metres. FFT amplitude stays 1, the
+ * physical default. The dusk preset supplies colour, IOR, and floor
+ * depth; those are real-metre values and are not overridden.
  *
- * Sky Pro's clock is 0 at midnight and 0.75 at sunset, latitude default
- * 45°, azimuth 0. 16:45 is that clock with the sun above the western
- * horizon. `shape.coverage` 0.05 has nowhere to go: the HDRI sky cannot
- * draw a 5% volumetric deck. Buoyancy and wake debug probes are not
- * created. Quality is `high` on `WaterSystem.create`.
- *
- * Absorption stays strong enough that a view through the windshield dies
- * out before the sand floor (depth 420). IOR stays low so the near water
- * does not mirror the white deck.
+ * This package documents Three.js Sky Pro and accepts a SkyProvider, but
+ * it does not ship Sky Pro. The afternoon sky is the clear
+ * kloofendal HDRI. Sky Pro's clock is still used for the sun: 0 at
+ * midnight, 0.75 at sunset, latitude 45°, azimuth 0 = +Z. 16:45 puts
+ * the sun above the western horizon. `shape.coverage` 0.05 has nowhere
+ * to go on an HDRI. Buoyancy and wake debug probes are not created.
  */
 export const REFERENCE_QUALITY = 'high';
 export const REFERENCE_WIND_SPEED = 6.7;
@@ -398,18 +397,14 @@ export function lakeLook(preset, {time, sea}) {
   const next = structuredClone(preset);
   if (sea === 'light') {
     next.waves.fft.amplitude = REFERENCE_FFT_AMPLITUDE;
-    next.waves.gerstner.wavelength = REFERENCE_PEAK_WAVELENGTH;
+    next.waves.fft.peakWavelength = REFERENCE_PEAK_WAVELENGTH;
     next.waves.fft.windSpeed = REFERENCE_WIND_SPEED;
   } else if (sea === 'calm') {
     next.waves.fft.amplitude *= CALM_WAVE_GAIN;
-    next.waves.gerstner.amplitude *= CALM_WAVE_GAIN;
     next.waves.fft.windSpeed = CALM_WIND_SPEED;
   } else {
     throw new Error(`Unknown sea state: ${sea}`);
   }
-  assignPath(next, ['color', 'absorptionColor'], '#3a140c');
-  assignPath(next, ['fresnel', 'surface', 'iorRatio'], 1.08);
-  assignPath(next, ['oceanFloor', 'depth'], 420);
   if (time === 'sunset') {
     assignPath(next, ['color', 'waterColor'], '#14557a');
     assignPath(next, ['color', 'transmissionColor'], '#f0c09a');
@@ -425,9 +420,6 @@ export function lakeLook(preset, {time, sea}) {
     assignPath(next, ['foam', 'surface', 'opacity'], 0.08);
     assignPath(next, ['foam', 'surface', 'coverage'], 0.05);
     assignPath(next, ['foam', 'waves', 'opacity'], 0.05);
-    assignPath(next, ['lighting', 'ambient', 'skyColor'], '#e0a080');
-    assignPath(next, ['lighting', 'ambient', 'groundColor'], '#6a4030');
-    assignPath(next, ['lighting', 'ambient', 'intensity'], 0.55);
   } else if (time === 'afternoon') {
     const sun = sunFromSkyProClock(
         REFERENCE_CLOCK_HOURS,
@@ -451,9 +443,6 @@ export function lakeLook(preset, {time, sea}) {
     assignPath(next, ['foam', 'surface', 'opacity'], sea === 'calm' ? 0.02 : 0.08);
     assignPath(next, ['foam', 'surface', 'coverage'], sea === 'calm' ? 0.02 : 0.05);
     assignPath(next, ['foam', 'waves', 'opacity'], sea === 'calm' ? 0.02 : 0.05);
-    assignPath(next, ['lighting', 'ambient', 'skyColor'], '#e8f4ff');
-    assignPath(next, ['lighting', 'ambient', 'groundColor'], '#8fb8c8');
-    assignPath(next, ['lighting', 'ambient', 'intensity'], 1.05);
   } else {
     throw new Error(`Unknown time of day: ${time}`);
   }

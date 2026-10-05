@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu";
-import type { UniformNode } from "three/webgpu";
+import type { Node, UniformNode } from "three/webgpu";
+import type { SkyProvider } from "./SkyProvider";
 export interface SkySunOverlayParams {
     /** Whether the disk renders. Default `false`. */
     enabled?: boolean;
@@ -28,24 +29,9 @@ export interface SkyParams {
      * Base microfacet roughness used when sampling the prefiltered environment
      * for reflections, in `[0, 1]`. `0` is a sharp mirror; small values pull
      * the reflection to a slightly lower mip, taming a razor-sharp baked sun
-     * disc. Defaults to `0.02`.
+     * disc. Defaults to `0.15`.
      */
     reflectionRoughness?: number;
-    /**
-     * How much the reflection roughness widens with distance from the camera,
-     * in `[0, 1]`. Distant water covers many wavelets per pixel, so a mirror
-     * sample there aliases bright sky features into a firefly field; this
-     * ramps toward a blurrier mip with distance to integrate that energy.
-     * `0` disables distance widening. Defaults to `0.5`.
-     */
-    reflectionDistanceBlur?: number;
-    /**
-     * World-space distance at which the distance-driven blur reaches its
-     * configured maximum (`reflectionDistanceBlur`). Scale this to match your
-     * scene — a scene spanning 50 units needs a much smaller value than one
-     * spanning 50 000. Defaults to `1500`.
-     */
-    reflectionBlurDistance?: number;
     /**
      * Sun-direction uniform owned by `Lighting` — used by the optional sun
      * disk overlay. Required regardless of whether the disk is enabled so the
@@ -68,7 +54,7 @@ export interface SkyParams {
  * For HDR sources no colour-space tagging is needed; for LDR JPGs tag
  * `colorSpace = SRGBColorSpace` so Three.js linearises on sample.
  */
-export declare class Sky {
+export declare class Sky implements SkyProvider {
     private readonly _mesh;
     private readonly _isCubemap;
     /**
@@ -88,19 +74,23 @@ export declare class Sky {
      * derive it lazily from the source — keeps the prefilter out of
      * `compileAsync`, where the source is not yet GPU-resident and the lazy
      * generation bakes (and caches) a black environment.
+     *
+     * A fresh target is allocated on every {@link uploadSource}, so the texture
+     * reference changes with each swap. The `Environment` subsystem compares it
+     * by reference each frame and, on a change, rebuilds `scene.environmentNode`
+     * and rebinds the water material's reflection sampler; reusing one target
+     * would leave both keyed to the previous bake.
      */
     private _pmremGenerator;
     private _pmrem;
     readonly brightnessUniform: THREE.UniformNode<number>;
-    readonly reflectionBlurDistanceUniform: THREE.UniformNode<number>;
-    readonly reflectionDistanceBlurUniform: THREE.UniformNode<number>;
     readonly reflectionRoughnessUniform: THREE.UniformNode<number>;
     readonly sunEnabledUniform: THREE.UniformNode<number>;
     readonly sunRadiusUniform: THREE.UniformNode<number>;
     readonly sunColorUniform: THREE.UniformNode<THREE.Color>;
     readonly sunEmissiveColorUniform: THREE.UniformNode<THREE.Color>;
     readonly sunEmissiveIntensityUniform: THREE.UniformNode<number>;
-    constructor(params: SkyParams);
+    constructor(renderer: THREE.WebGPURenderer, params: SkyParams);
     private _buildDomeShader;
     /**
      * Sample the underlying sky texture in `dir` and apply brightness. Branches
@@ -131,16 +121,34 @@ export declare class Sky {
     private _sampleReflection;
     /**
      * Sampler used by the water surface material for reflections off the sky.
-     * Returns prefiltered linear HDR colour at `reflectDir` (no sun overlay —
-     * the overlay is a dome-only visual; reflections see the underlying image
-     * only).
+     * Returns prefiltered linear HDR colour at `reflectDir`, blurred by
+     * `extraRoughness` (the surface's sub-footprint slope variance). No sun
+     * overlay — that is a dome-only visual; reflections see the underlying
+     * image only.
      */
-    createReflectionSampler(): THREE.TSL.ShaderNodeFn<[number | THREE.Node]>;
+    createReflectionSampler(): THREE.TSL.ShaderNodeFn<[number | THREE.Node, number | THREE.Node]>;
+    /**
+     * The prefiltered reflection environment ({@link _pmrem}) — the
+     * `SkyProvider` accessor other water-pro consumers (scene.environment,
+     * rough reflections) read as their single source. Falls back to the raw
+     * source before the first {@link uploadSource}, matching
+     * {@link _sampleReflection}.
+     */
+    getEnvironmentTexture(): THREE.Texture;
     /**
      * Sampler used by atmospheric fog to tint distant pixels by sky colour
      * along the view direction.
      */
     createFogSampler(): THREE.TSL.ShaderNodeFn<[number | THREE.Node]>;
+    /**
+     * Brightness multiplier on the sampled sky radiance. Backs
+     * {@link brightnessUniform}, which the dome, fog, reflections, and scene
+     * environment lighting all track live, so a change reaches every surface the
+     * same frame.
+     */
+    get brightness(): number;
+    set brightness(value: number);
+    getBrightnessNode(): Node;
     getMeshes(): THREE.Object3D[];
     followCamera(camera: THREE.Camera): void;
     /**
@@ -149,10 +157,11 @@ export declare class Sky {
      * texture must match the kind this `Sky` was constructed with (equirect vs
      * cubemap); to switch kinds, construct a new `Sky`. The image and sampler
      * settings are copied onto the existing source object rather than swapping
-     * it, so every downstream shader that captured it (the dome colour node and
-     * the water material's reflection / fog samplers) sees the new texture
-     * without recompilation. The source is then re-uploaded and the reflection
-     * PMREM re-prefiltered via {@link uploadSource}.
+     * it, so the shaders that sample the source directly (the dome colour node
+     * and the fog sampler) see the new image without recompilation. The source
+     * is then re-uploaded and the reflection PMREM re-prefiltered into a fresh
+     * target via {@link uploadSource}, whose changed reference drives the
+     * reflection and scene-environment rebind.
      */
     setTexture(tex: THREE.Texture | THREE.CubeTexture, renderer: THREE.WebGPURenderer): void;
     /**
@@ -164,10 +173,12 @@ export declare class Sky {
      * that is then cached. Running the prefilter here, in normal app context
      * after an explicit GPU upload, guarantees it reads real pixels.
      *
-     * `WaterSystem.setSky` and {@link setTexture} call this for you; you only
-     * need it directly if you mutate the source texture by some other route. The
-     * target is reused across calls so the reflection sampler that captured its
-     * texture picks up a swap without a shader rebuild.
+     * The constructor and {@link setTexture} call this for you; you only need
+     * it directly if you mutate the source texture by some other route. A fresh
+     * target is allocated each call and the previous one disposed, so the
+     * texture reference changes. The `Environment` subsystem detects that change
+     * and reruns the `setSky` rebind, which rebuilds `scene.environmentNode` off
+     * the new bake and rebinds the water material's reflection sampler.
      */
     uploadSource(renderer: THREE.WebGPURenderer): void;
     applySunOverlay(overlay: SkySunOverlayParams): void;

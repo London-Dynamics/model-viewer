@@ -17,7 +17,6 @@ export interface WaterReflectionGBufferPassOptions {
     cascadeSampler: CascadeSampler | null;
     clipmapOffset: UniformNode<THREE.Vector2>;
     fresnel: Fresnel;
-    gerstnerMaxWaves: number;
     oceanSim: IWaveSimulation;
     rainRipples: RainRipples | null;
 }
@@ -44,7 +43,7 @@ export declare class WaterReflectionGBufferPass {
     setSize(width: number, height: number): void;
     /**
      * Rebuild the shader graph after a quality-level change swapped any of the
-     * inputs (cascade sampler, gerstnerMaxWaves, rainRipples, etc.).
+     * inputs (cascade sampler, rainRipples, etc.).
      */
     rebuild(options: WaterReflectionGBufferPassOptions): void;
     /** Render the water mesh into the G-buffer. */

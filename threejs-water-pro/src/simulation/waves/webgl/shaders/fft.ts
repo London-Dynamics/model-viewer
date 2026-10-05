@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * TSL-based FFT butterfly shaders for WebGL.
  * Uses MeshBasicNodeMaterial with outputNode for render-to-texture passes.
@@ -210,10 +213,10 @@ export function createFFTNormalizeMaterial(params: FFTNormalizeMaterialParams): 
     const correctedDy = dyVal.mul(sign);
     const correctedDz = dzVal.mul(sign);
 
-    // Apply amplitude scaling
-    const scaledDx = correctedDx.mul(cascade.amplitudeScale);
-    const scaledDy = correctedDy.mul(cascade.amplitudeScale);
-    const scaledDz = correctedDz.mul(cascade.amplitudeScale);
+    // Apply global amplitude scaling
+    const scaledDx = correctedDx.mul(wave.amplitude);
+    const scaledDy = correctedDy.mul(wave.amplitude);
+    const scaledDz = correctedDz.mul(wave.amplitude);
 
     // Apply choppiness to horizontal components
     const finalDx = scaledDx.mul(wave.choppiness);

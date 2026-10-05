@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -26,9 +29,9 @@ export function createCausticsFolder(
     onChange: syncCaustics,
   });
 
-  folder.addSlider("Scale", {
-    min: 10.0,
-    max: 200.0,
+  folder.addSlider("Scale (m)", {
+    min: 2.0,
+    max: 50.0,
     step: 1.0,
     object: ui.params.oceanFloor.caustics,
     key: "scale",

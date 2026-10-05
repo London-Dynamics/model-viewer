@@ -14,7 +14,7 @@ export interface WakeDisplacementOutput {
 }
 /**
  * Owns the iWave uniform nodes and builds the explicit leapfrog update
- * (Tessendorf 2004, Eq. 3; see `wiki/wake/iwave.md`).
+ * (Tessendorf 2004, Eq. 3).
  *
  * The `√(−∇²)` operator is a non-local convolution; rather than the naive
  * `(2P+1)²` 2D stencil (441 taps at P=10), the kernel is factored into a rank-2

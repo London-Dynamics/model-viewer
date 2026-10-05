@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * SunShaftPass renders sun shaft intensity to a scaled render target.
  *
@@ -28,11 +31,13 @@ export class SunShaftPass {
    * Build the QuadMesh material from a sun shaft intensity node.
    * Must be called before render(). Call again after wave data changes (quality level switch).
    *
-   * @param intensityNode - vec4 node outputting shaft color in RGB.
+   * @param intensityNode - vec4 node outputting scalar shaft intensity in R.
    */
   build(intensityNode: Node): void {
     const material = new THREE.NodeMaterial();
     material.fragmentNode = intensityNode;
+    material.depthTest = false;
+    material.depthWrite = false;
     this.quadMesh.material = material;
   }
 
@@ -99,7 +104,8 @@ export class SunShaftPass {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       type: THREE.HalfFloatType,
-      format: THREE.RGBAFormat,
+      format: THREE.RedFormat,
+      depthBuffer: false,
     });
   }
 }

@@ -1,11 +1,14 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
- * RenderPassManager handles depth and color pass lifecycle for the water system.
+ * RenderPassManager handles capture-pass lifecycle for the water system.
  * Manages texture creation, resize handling, and material texture binding.
  */
 
 import * as THREE from "three/webgpu";
-import { SceneDepthPass } from "./passes/SceneDepthPass";
-import { SceneColorPass } from "./passes/SceneColorPass";
+import { SceneCapturePass } from "./passes/SceneCapturePass";
+import type { SceneDepthSampler } from "./passes/SceneDepthSampler";
 import { MaskPass } from "./passes/MaskPass";
 import type { IWaterDepthPass } from "./passes/IWaterDepthPass";
 import { WebGPUWaterDepthPass } from "./passes/WebGPUWaterDepthPass";
@@ -15,18 +18,16 @@ import { SSRPass } from "./passes/SSRPass";
 import type { WaterSurfaceMaterial } from "../components/surface/WaterSurfaceMaterial";
 import type { Underwater, AtmosphericFog } from "./postprocessing";
 import type { WaterSurfaceGeometry } from "../components/surface/WaterSurfaceGeometry";
-import type { Sky } from "../components/sky/Sky";
+import type { SkyProvider } from "../components/sky/SkyProvider";
 import type { SpraySystem } from "../systems/spray";
 
 export interface RenderPassManagerOptions {
   clipmap: WaterSurfaceGeometry;
   waterMaterial: WaterSurfaceMaterial;
   spray?: SpraySystem | null;
-  sky?: Sky | null;
   underwater?: Underwater | null;
   atmosphericFog?: AtmosphericFog | null;
   excludedObjects?: THREE.Object3D[];
-  sceneColorResolutionScale?: number;
   isWebGL: boolean;
 }
 
@@ -38,13 +39,11 @@ export interface RenderPassManagerOptions {
 export interface RenderPassManagerRebindOptions {
   clipmap: WaterSurfaceGeometry;
   waterMaterial: WaterSurfaceMaterial;
-  sceneColorResolutionScale?: number;
 }
 
 export class RenderPassManager {
   private renderer: THREE.WebGPURenderer;
-  private depthPass: SceneDepthPass;
-  private sceneColorPass: SceneColorPass;
+  private capturePass: SceneCapturePass;
   private maskPass: MaskPass;
   private waterDepthPass: IWaterDepthPass;
   private gBufferPass: WaterReflectionGBufferPass;
@@ -54,10 +53,8 @@ export class RenderPassManager {
   private spray: SpraySystem | null;
   private underwater: Underwater | null;
   private atmosphericFogPass: AtmosphericFog | null;
-  private currentSky: Sky | null = null;
-  // Meshes excluded on behalf of the active sky provider — tracked so
-  // removal is exact even when getMeshes() returns different arrays over time.
-  private skyExcludedMeshes: Set<THREE.Object3D> = new Set();
+  private currentSky: SkyProvider | null = null;
+  private maskActive = false;
 
   constructor(
     renderer: THREE.WebGPURenderer,
@@ -69,11 +66,9 @@ export class RenderPassManager {
       clipmap,
       waterMaterial,
       spray = null,
-      sky = null,
       underwater = null,
       atmosphericFog = null,
       excludedObjects = [],
-      sceneColorResolutionScale = 1,
       isWebGL,
     } = options;
 
@@ -89,39 +84,19 @@ export class RenderPassManager {
     const width = size.x;
     const height = size.y;
 
-    this.depthPass = new SceneDepthPass(scene, camera, width, height);
-    // Exclude water from depth pass so shoreline effects compare against scene depth
-    this.depthPass.excludeObject(clipmap.getObject());
-
+    // One capture render provides both the refraction colour and the opaque
+    // scene depth. The water surface and user-excluded objects are hidden here;
+    // a provider's sky meshes are hidden too, added by `setSky` below.
+    this.capturePass = new SceneCapturePass(scene, camera, width, height);
+    this.capturePass.excludeObject(clipmap.getObject());
     for (const obj of excludedObjects) {
-      this.depthPass.excludeObject(obj);
+      this.capturePass.excludeObject(obj);
     }
 
-    waterMaterial.setDepthTexture(
-      this.depthPass.getDepthTexture(),
-      this.depthPass.getCameraNear(),
-      this.depthPass.getCameraFar(),
-    );
-
-    this.sceneColorPass = new SceneColorPass(
-      scene,
-      camera,
-      width,
-      height,
-      sceneColorResolutionScale,
-    );
-    this.sceneColorPass.excludeObject(clipmap.getObject());
-    for (const obj of excludedObjects) {
-      this.sceneColorPass.excludeObject(obj);
-    }
-    waterMaterial.setSceneColorTexture(this.sceneColorPass.getColorTexture());
-
-    if (sky) {
-      this.applySkyExclusions(sky);
-    }
+    waterMaterial.setSceneDepth(this.capturePass.sceneDepth);
+    waterMaterial.setSceneColorTexture(this.capturePass.getColorTexture());
 
     this.maskPass = new MaskPass(scene, camera, width, height);
-    waterMaterial.setMaskTexture(this.maskPass.getMaskTexture());
     this.spray?.setMaskTexture(this.maskPass.getMaskTexture());
 
     // Depth sampling for underwater detection and column-thickness
@@ -141,6 +116,7 @@ export class RenderPassManager {
         );
     this.waterDepthPass.setWaterObject(clipmap.getObject());
     this.waterDepthPass.setPositionNode(waterMaterial.waterPositionNode);
+    waterMaterial.setWaterDepth(this.waterDepthPass);
 
     // SSR water-reflection G-buffer (full-res) and SSR ray-march (scaled).
     // The G-buffer pass renders the water mesh with the same vertex
@@ -150,7 +126,6 @@ export class RenderPassManager {
       cascadeSampler: waterMaterial.cascadeSampler,
       clipmapOffset: waterMaterial.clipmapOffsetUniform,
       fresnel: waterMaterial.fresnel,
-      gerstnerMaxWaves: waterMaterial.gerstnerWaveCount,
       oceanSim: waterMaterial.waveSimulation,
       rainRipples: waterMaterial.rainRipples,
     });
@@ -161,91 +136,67 @@ export class RenderPassManager {
       height,
       waterMaterial.ssr,
       camera,
-      this.depthPass.getDepthTexture(),
-      this.sceneColorPass.getColorTexture(),
+      this.capturePass.sceneDepth,
+      this.capturePass.getColorTexture(),
       this.gBufferPass.getTexture(),
     );
     waterMaterial.setSSRResultTexture(this.ssrPass.getTexture());
 
     if (underwater) {
       underwater.setWaterDepthPass(this.waterDepthPass);
-      underwater.setSceneDepthTexture(this.depthPass.getDepthTexture());
+      underwater.setSceneDepth(this.capturePass.sceneDepth);
       underwater.setTransparentColorTexture(
-        this.depthPass.getTransparentColorTexture(),
+        this.capturePass.getTransparentColorTexture(),
       );
       underwater.setTransparentDepthTexture(
-        this.depthPass.getTransparentDepthTexture(),
+        this.capturePass.getTransparentDepthTexture(),
       );
       underwater.setDepthUniforms(
-        this.depthPass.getCameraNear(),
-        this.depthPass.getCameraFar(),
+        this.capturePass.getCameraNear(),
+        this.capturePass.getCameraFar(),
       );
-    }
-
-    if (atmosphericFog) {
-      atmosphericFog.setTransparentDepthTexture(
-        this.depthPass.getTransparentDepthTexture(),
-      );
-      atmosphericFog.setTransparentColorTexture(
-        this.depthPass.getTransparentColorTexture(),
-      );
-    }
-    if (atmosphericFog && sky) {
-      atmosphericFog.setSky(sky);
     }
   }
 
   /**
-   * Get the current sky provider.
+   * Get the current sky provider. The single query point for "what sky is
+   * active" — other subsystems that need it (e.g. `WaterSystem._step`'s
+   * `followCamera` call) read through here rather than tracking their own
+   * reference.
    */
-  getCurrentSky(): Sky | null {
+  getCurrentSky(): SkyProvider | null {
     return this.currentSky;
   }
 
   /**
-   * Update the sky provider used for aux-pass exclusion and atmospheric fog.
-   * All backdrop meshes (and their Mesh descendants) returned by
-   * {@link Sky.getMeshes} are excluded from both the depth pass and
-   * the scene-color pass, so sky geometry can never contaminate refraction
-   * sampling or transparent-depth decomposition.
+   * Rebind every consumer this manager owns a reference to when the active
+   * sky provider changes: the water material (reflection/fog/sun-disk
+   * samplers baked into its shader graph), atmospheric fog, and the
+   * capture pass's exclusion set. Called from {@link WaterSystem.setSky} —
+   * the manager is the single owner of these references, so it is the
+   * natural fan-out point instead of `WaterSystem` calling each consumer
+   * by name.
    */
-  setSky(sky: Sky | null): void {
-    this.clearSkyExclusions();
+  setSky(sky: SkyProvider | null): void {
+    // Provider backdrops (sky dome, cloud layers) are background at
+    // infinity, not scene content: the captures leave them out so their
+    // pixels stay alpha 0, and consumers composite the direction-sampled
+    // sky underneath.
+    if (this.currentSky) {
+      for (const mesh of this.currentSky.getMeshes()) {
+        this.capturePass.includeObject(mesh);
+      }
+    }
+    this.currentSky = sky;
     if (sky) {
-      this.applySkyExclusions(sky);
-    } else {
-      this.currentSky = null;
+      this.waterMaterial.setSky(sky);
+      for (const mesh of sky.getMeshes()) {
+        this.capturePass.excludeObject(mesh);
+      }
     }
     if (this.atmosphericFogPass) {
       this.atmosphericFogPass.setSky(sky);
     }
-  }
-
-  /**
-   * Register every mesh descendant of each object returned by
-   * {@link Sky.getMeshes} with the depth and scene-color passes so
-   * the sky disappears from both.
-   */
-  private applySkyExclusions(sky: Sky): void {
-    this.currentSky = sky;
-    for (const root of sky.getMeshes()) {
-      root.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          this.skyExcludedMeshes.add(obj);
-          this.depthPass.excludeObject(obj);
-          this.sceneColorPass.excludeObject(obj);
-        }
-      });
-    }
-  }
-
-  /** Undo every exclusion added by {@link applySkyExclusions}. */
-  private clearSkyExclusions(): void {
-    for (const obj of this.skyExcludedMeshes) {
-      this.depthPass.includeObject(obj);
-      this.sceneColorPass.includeObject(obj);
-    }
-    this.skyExcludedMeshes.clear();
   }
 
   /**
@@ -258,19 +209,17 @@ export class RenderPassManager {
    * still flow through {@link resize}.
    */
   rebind(options: RenderPassManagerRebindOptions): void {
-    const { clipmap, waterMaterial, sceneColorResolutionScale } = options;
+    const { clipmap, waterMaterial } = options;
 
     // Swap the clipmap exclusion so the old (disposed) mesh is not retained.
     const prevClipmapObject = this.clipmap.getObject();
-    this.depthPass.includeObject(prevClipmapObject);
-    this.sceneColorPass.includeObject(prevClipmapObject);
+    this.capturePass.includeObject(prevClipmapObject);
 
     this.clipmap = clipmap;
     this.waterMaterial = waterMaterial;
 
     const newClipmapObject = clipmap.getObject();
-    this.depthPass.excludeObject(newClipmapObject);
-    this.sceneColorPass.excludeObject(newClipmapObject);
+    this.capturePass.excludeObject(newClipmapObject);
 
     // Point WaterDepthPass at the new water geometry and uniforms. The
     // clip-plane uniform is recreated with each material, so the colorNode
@@ -282,39 +231,32 @@ export class RenderPassManager {
     );
 
     // Rebuild the SSR G-buffer pass shader graph with the new material's
-    // cascade sampler, gerstner config, fresnel, etc. The result texture is
-    // then re-bound on the new material's SSR class.
+    // cascade sampler, fresnel, etc. The result texture is then re-bound on
+    // the new material's SSR class.
     this.gBufferPass.setWaterObject(newClipmapObject);
     this.gBufferPass.rebuild({
       cascadeSampler: waterMaterial.cascadeSampler,
       clipmapOffset: waterMaterial.clipmapOffsetUniform,
       fresnel: waterMaterial.fresnel,
-      gerstnerMaxWaves: waterMaterial.gerstnerWaveCount,
       oceanSim: waterMaterial.waveSimulation,
       rainRipples: waterMaterial.rainRipples,
     });
     this.ssrPass.setInputTextures(
-      this.depthPass.getDepthTexture(),
-      this.sceneColorPass.getColorTexture(),
+      this.capturePass.getColorTexture(),
       this.gBufferPass.getTexture(),
     );
     waterMaterial.setSSRResultTexture(this.ssrPass.getTexture());
 
     // Rebind existing pass textures onto the new material.
-    waterMaterial.setDepthTexture(
-      this.depthPass.getDepthTexture(),
-      this.depthPass.getCameraNear(),
-      this.depthPass.getCameraFar(),
+    waterMaterial.setSceneDepth(this.capturePass.sceneDepth);
+    waterMaterial.setSceneColorTexture(this.capturePass.getColorTexture());
+    waterMaterial.setMaskTexture(
+      this.maskActive ? this.maskPass.getMaskTexture() : null,
     );
-    waterMaterial.setSceneColorTexture(this.sceneColorPass.getColorTexture());
-    waterMaterial.setMaskTexture(this.maskPass.getMaskTexture());
+    waterMaterial.setWaterDepth(this.waterDepthPass);
 
     if (this.currentSky) {
       waterMaterial.setSky(this.currentSky);
-    }
-
-    if (sceneColorResolutionScale !== undefined) {
-      this.setSceneColorResolutionScale(sceneColorResolutionScale);
     }
   }
 
@@ -322,8 +264,7 @@ export class RenderPassManager {
    * Update the camera used by all render passes.
    */
   setCamera(camera: THREE.PerspectiveCamera): void {
-    this.depthPass.setCamera(camera);
-    this.sceneColorPass.setCamera(camera);
+    this.capturePass.setCamera(camera);
     this.maskPass.setCamera(camera);
     this.waterDepthPass.setCamera(camera);
     this.gBufferPass.setCamera(camera);
@@ -332,8 +273,8 @@ export class RenderPassManager {
     // Sync underwater depth uniforms with new camera's near/far
     if (this.underwater) {
       this.underwater.setDepthUniforms(
-        this.depthPass.getCameraNear(),
-        this.depthPass.getCameraFar(),
+        this.capturePass.getCameraNear(),
+        this.capturePass.getCameraFar(),
       );
     }
   }
@@ -346,8 +287,7 @@ export class RenderPassManager {
     const size = new THREE.Vector2();
     this.renderer.getDrawingBufferSize(size);
 
-    this.depthPass.setSize(size.x, size.y);
-    this.sceneColorPass.setSize(size.x, size.y);
+    this.capturePass.setSize(size.x, size.y);
     this.maskPass.setSize(size.x, size.y);
     this.waterDepthPass.setSize(size.x, size.y);
     this.gBufferPass.setSize(size.x, size.y);
@@ -355,69 +295,62 @@ export class RenderPassManager {
     // Re-bind input textures (depth/sceneColor/gBuffer all rebuilt above) and
     // the SSR result texture used by the water material.
     this.ssrPass.setInputTextures(
-      this.depthPass.getDepthTexture(),
-      this.sceneColorPass.getColorTexture(),
+      this.capturePass.getColorTexture(),
       this.gBufferPass.getTexture(),
     );
     this.waterMaterial.setSSRResultTexture(this.ssrPass.getTexture());
 
-    this.waterMaterial.setDepthTexture(
-      this.depthPass.getDepthTexture(),
-      this.depthPass.getCameraNear(),
-      this.depthPass.getCameraFar(),
-    );
     this.waterMaterial.setSceneColorTexture(
-      this.sceneColorPass.getColorTexture(),
+      this.capturePass.getColorTexture(),
     );
-    this.waterMaterial.setMaskTexture(this.maskPass.getMaskTexture());
+    if (this.maskActive) {
+      this.waterMaterial.setMaskTexture(this.maskPass.getMaskTexture());
+    }
     this.spray?.setMaskTexture(this.maskPass.getMaskTexture());
 
     if (this.underwater) {
-      // `setWaterDepthPass` was wired at construction; resize swaps
-      // textures inside WaterDepthPass and Underwater's sample nodes
-      // pick up the new `.value` automatically. Only the non-depth-pass
-      // textures need re-binding here.
-      this.underwater.setSceneDepthTexture(this.depthPass.getDepthTexture());
+      // The water-depth pass and the scene-depth sampler track their own
+      // target rebuilds; only the transparent-capture textures re-bind.
       this.underwater.setTransparentColorTexture(
-        this.depthPass.getTransparentColorTexture(),
+        this.capturePass.getTransparentColorTexture(),
       );
       this.underwater.setTransparentDepthTexture(
-        this.depthPass.getTransparentDepthTexture(),
-      );
-      this.underwater.setDepthUniforms(
-        this.depthPass.getCameraNear(),
-        this.depthPass.getCameraFar(),
-      );
-    }
-    if (this.atmosphericFogPass) {
-      this.atmosphericFogPass.setTransparentDepthTexture(
-        this.depthPass.getTransparentDepthTexture(),
-      );
-      this.atmosphericFogPass.setTransparentColorTexture(
-        this.depthPass.getTransparentColorTexture(),
+        this.capturePass.getTransparentDepthTexture(),
       );
     }
   }
 
   /**
-   * Render the depth pass
+   * Run the scene capture: refraction colour + opaque scene depth always,
+   * plus the transparent captures (depth + premultiplied colour) when
+   * `includeTransparents` is true.
+   *
+   * @param includeTransparents - Run the transparent capture sub-passes.
+   *   Only the underwater fog decomposition consumes them, so callers skip
+   *   them when underwater is disabled.
    */
-  renderDepthPass(renderer: THREE.WebGPURenderer): void {
-    this.depthPass.render(renderer);
-  }
-
-  /**
-   * Render the scene color pass (for underwater refraction)
-   */
-  renderSceneColorPass(renderer: THREE.WebGPURenderer): void {
-    this.sceneColorPass.render(renderer);
+  renderCapturePass(
+    renderer: THREE.WebGPURenderer,
+    includeTransparents = true,
+  ): void {
+    this.capturePass.render(renderer, includeTransparents);
   }
 
   /**
    * Render the mask pass (for water masking)
    */
   renderMaskPass(renderer: THREE.WebGPURenderer): void {
+    if (!this.maskActive) return;
     this.maskPass.render(renderer);
+  }
+
+  /** Include or omit mask sampling in the water material's shader graph. */
+  setMaskActive(active: boolean): void {
+    if (this.maskActive === active) return;
+    this.maskActive = active;
+    this.waterMaterial.setMaskTexture(
+      active ? this.maskPass.getMaskTexture() : null,
+    );
   }
 
   /**
@@ -435,6 +368,14 @@ export class RenderPassManager {
   /** Render the SSR ray-march pass at the configured resolution scale. */
   renderSSRPass(renderer: THREE.WebGPURenderer): void {
     this.ssrPass.render(renderer);
+  }
+
+  /**
+   * Clear a stale SSR result once after SSR is disabled or its target is
+   * recreated. Repeated calls are CPU-only no-ops until the pass renders again.
+   */
+  clearSSRPassIfNeeded(renderer: THREE.WebGPURenderer): void {
+    this.ssrPass.clearResultIfNeeded(renderer);
   }
 
   /**
@@ -473,9 +414,13 @@ export class RenderPassManager {
     return this.maskPass.getMaskObjects();
   }
 
-  /** Get the scene depth texture. */
-  get sceneDepthTexture(): THREE.Texture {
-    return this.depthPass.getDepthTexture();
+  /**
+   * The normalized-linear scene-depth sampler over the capture pass's
+   * hardware depth. Subsystems embed `sample(uv)` in their node graphs
+   * once; target rebuilds and camera changes propagate automatically.
+   */
+  get sceneDepth(): SceneDepthSampler {
+    return this.capturePass.sceneDepth;
   }
 
   /**
@@ -489,40 +434,19 @@ export class RenderPassManager {
 
   /** Get camera near plane distance. */
   get cameraNear(): number {
-    return this.depthPass.getCameraNear();
+    return this.capturePass.getCameraNear();
   }
 
   /** Get camera far plane distance. */
   get cameraFar(): number {
-    return this.depthPass.getCameraFar();
-  }
-
-  /**
-   * Update the scene color pass resolution scale and rebuild its render target.
-   */
-  setSceneColorResolutionScale(scale: number): void {
-    this.sceneColorPass.setResolutionScale(scale);
-    this.waterMaterial.setSceneColorTexture(
-      this.sceneColorPass.getColorTexture(),
-    );
-    // SSR samples sceneColor for hit lookup, so rebind on the SSR pass too.
-    this.ssrPass.setInputTextures(
-      this.depthPass.getDepthTexture(),
-      this.sceneColorPass.getColorTexture(),
-      this.gBufferPass.getTexture(),
-    );
-  }
-
-  getSceneColorResolutionScale(): number {
-    return this.sceneColorPass.getResolutionScale();
+    return this.capturePass.getCameraFar();
   }
 
   /**
    * Dispose of resources
    */
   dispose(): void {
-    this.depthPass.dispose();
-    this.sceneColorPass.dispose();
+    this.capturePass.dispose();
     this.maskPass.dispose();
     this.waterDepthPass.dispose();
     this.gBufferPass.dispose();

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -18,43 +21,13 @@ export function createPerformanceFolder(
     },
   });
 
-  folder.addCheckbox("Dynamic Resolution", {
-    value: ui.performanceParams.dynamicResolution,
-    onChange: (v) => {
-      ui.performanceParams.dynamicResolution = v;
-      if (!v) {
-        ui.app.setPixelRatio(1);
-      }
-    },
-  });
-
-  folder.addSlider("Target FPS", {
-    value: ui.performanceParams.targetFps,
-    min: 30,
-    max: 120,
-    step: 5,
-    onChange: (v) => {
-      ui.performanceParams.targetFps = v;
-    },
-  });
-
-  folder.addSlider("Min Pixel Ratio", {
-    value: ui.performanceParams.minPixelRatio,
+  folder.addSlider("DPR", {
+    value: ui.performanceParams.pixelRatio,
     min: 0.25,
     max: 4,
     step: 0.25,
     onChange: (v) => {
-      ui.performanceParams.minPixelRatio = v;
-    },
-  });
-
-  folder.addSlider("Max Pixel Ratio", {
-    value: ui.performanceParams.maxPixelRatio,
-    min: 0.5,
-    max: 4,
-    step: 0.25,
-    onChange: (v) => {
-      ui.performanceParams.maxPixelRatio = v;
+      ui.app.setPixelRatio(v);
     },
   });
 

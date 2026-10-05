@@ -18,7 +18,7 @@ export declare class SunShaftPass {
      * Build the QuadMesh material from a sun shaft intensity node.
      * Must be called before render(). Call again after wave data changes (quality level switch).
      *
-     * @param intensityNode - vec4 node outputting shaft color in RGB.
+     * @param intensityNode - vec4 node outputting scalar shaft intensity in R.
      */
     build(intensityNode: Node): void;
     /** Render sun shaft intensity to the scaled render target. */

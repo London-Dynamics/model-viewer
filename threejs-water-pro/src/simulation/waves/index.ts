@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Wave simulation module.
  * Provides FFT-based implementations for both WebGPU (compute shaders) and WebGL (render-to-texture).
@@ -6,7 +9,6 @@
 // Interfaces
 export type {
   IWaveSimulation,
-  InternalGerstnerParams,
   WaveCapabilities,
   WaveDisplacementNodes,
   WaveNormalNodes,
@@ -17,12 +19,11 @@ export { MAX_SAMPLE_POINTS } from "./IWaveSampler";
 
 // Types
 export type {
-  CascadeConfig,
   CascadesConfig,
   CascadeSimulationParams,
   WavesConfig,
 } from "./types";
-export { getCascadeConfigsArray } from "./types";
+export { deriveCascadeScale } from "./types";
 
 // Timing / loop-period constants shared between WaterSystem and wave shaders.
 export { WAVE_TIME_PERIOD_SECONDS, WAVE_TIME_OMEGA_STEP } from "./timing";

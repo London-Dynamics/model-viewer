@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 export {
   createAudioFolder,
   createBoatFolder,
@@ -9,11 +12,7 @@ export {
   createRainFolder,
   syncPostProcessingUniforms,
 } from "./Demo";
-export {
-  createSkyFolder,
-  syncAmbient,
-  syncSunPosition,
-} from "./Sky";
+export { createSkyFolder, syncSunPosition } from "./Sky";
 export {
   createBuoyancyFolder,
   createColorsFolder,

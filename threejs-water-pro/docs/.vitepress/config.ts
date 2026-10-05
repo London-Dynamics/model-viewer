@@ -38,6 +38,7 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/installation" },
       { text: "API", link: "/api/water-system" },
+      { text: "License", link: "/license" },
       { text: `v${version}`, link: "/changelog" },
     ],
 
@@ -48,6 +49,7 @@ export default defineConfig({
           items: [
             { text: "Installation", link: "/guide/installation" },
             { text: "Basic Example", link: "/guide/basic-example" },
+            { text: "Sky Pro Integration", link: "/guide/sky-pro-integration" },
             { text: "Presets", link: "/guide/presets" },
             { text: "Quality Levels", link: "/guide/quality-levels" },
           ],
@@ -70,6 +72,15 @@ export default defineConfig({
           text: "Migration",
           items: [
             { text: "v2 → v3", link: "/guide/migrating-from-v2" },
+            { text: "v3.2 → v3.3", link: "/guide/migrating-from-v3-2" },
+            {
+              text: "v3.3 → v3.4",
+              link: "/guide/migrating-from-v3-3-to-v3-4",
+            },
+            {
+              text: "v3.4 → v3.5",
+              link: "/guide/migrating-from-v3-4-to-v3-5",
+            },
           ],
         },
       ],
@@ -87,7 +98,6 @@ export default defineConfig({
           items: [
             { text: "Color & Transparency", link: "/api/color" },
             { text: "Foam", link: "/api/foam" },
-            { text: "Gerstner Waves", link: "/api/gerstner" },
             { text: "Reflections (SSR)", link: "/api/ssr" },
             { text: "Sparkle", link: "/api/sparkle" },
             { text: "Subsurface Scattering", link: "/api/sss" },
@@ -135,7 +145,7 @@ export default defineConfig({
 
     footer: {
       message: "Commercial License - All Rights Reserved.",
-      copyright: "Copyright © 2025 DRG Software Solutions LLC",
+      copyright: "Copyright © 2025–2026 DRG Software Solutions LLC",
     },
 
     search: {

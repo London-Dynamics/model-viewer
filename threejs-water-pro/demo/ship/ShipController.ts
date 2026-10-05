@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import type { WaterSystem } from "threejs-water-pro";
 
@@ -19,10 +22,10 @@ export class ShipController {
   private waterSystem: WaterSystem;
 
   // Physics tuning (adjustable via UI)
-  public thrust = 15;
+  public thrust = 2;
   public drag = 0.5;
-  public maxSpeed = 50;
-  public reverseMaxSpeed = 15;
+  public maxSpeed = 6;
+  public reverseMaxSpeed = 2;
   public maxRudderAngle = Math.PI / 6; // 30°
   public rudderRate = 1.5; // rad/s
   public rudderReturn = 2.0; // rad/s

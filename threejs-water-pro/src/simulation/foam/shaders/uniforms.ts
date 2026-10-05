@@ -1,48 +1,35 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
- * Uniform nodes for the persistent foam accumulation system.
+ * Uniform nodes for the persistent foam accumulation inject pass.
  *
- * Owned by {@link FoamAccumulation} — a single source of truth shared
- * between the decay and inject compute passes. The surface material shader
- * binds to the same nodes when sampling the foam energy buffer.
+ * The energy-shaping parameters (crest / decay / windward) are not owned here —
+ * they live in the {@link FoamPersistence} holder on `WaveFoam` and are bound by
+ * reference, so `water.foam.waves.persistence` and the GPU accumulation read the
+ * same nodes. Only `deltaTime` is private to the inject pass (CPU-updated each
+ * step). The wave-foam enable is read straight off `WaveFoam`'s node on the CPU,
+ * so it is not part of this bundle either.
  */
 
 import { uniform } from "three/tsl";
+import type { FoamPersistence } from "../../../shaders/foamPersistence";
 
-/** Shared uniform nodes for the persistent foam accumulation passes. */
-export function createFoamAccumulationUniforms() {
+/** Shared uniform nodes for the persistent foam accumulation inject pass. */
+export function createFoamAccumulationUniforms(persistence: FoamPersistence) {
   return {
-    /**
-     * Runtime enable flag. When 0, the accumulation buffers are frozen
-     * (and zeroed), so the surface shader reads zero energy and no wave
-     * foam is drawn on the WebGPU path.
-     */
-    enabled: uniform(1.0),
-    /**
-     * Exponential decay e-folding time (seconds). CPU setter clamps to a
-     * minimum of 0.05 to avoid per-frame spike/collapse flicker; the
-     * `.max(0.0001)` guards in the shaders are pure divide-by-zero
-     * backstops and can never be reached through the setter.
-     */
-    decayTime: uniform(0.5),
-    /** Per-frame delta-time (seconds). CPU-updated each tick. */
+    /** Per-frame delta-time (seconds). CPU-updated each step. */
     deltaTime: uniform(0.016),
-    /**
-     * Crest-driven foam strength. Equilibrium energy at a sustained sharp
-     * fold equals this value; gentle folding is suppressed by the
-     * smoothstep gate baked into the inject pass.
-     */
-    crestStrength: uniform(2.5),
-    /**
-     * Windward-face foam strength. Equilibrium energy on a pixel whose
-     * surface normal points fully into the wind, regardless of folding.
-     * Lets foam fill in on the rising face before breaking; the persistent
-     * buffer carries it past the crest into the leeward trail.
-     */
-    windwardStrength: uniform(1.5),
+    /** Shared from {@link FoamPersistence} — crest-driven foam strength. */
+    crestStrength: persistence.crestStrengthNode,
+    /** Shared from {@link FoamPersistence} — decay e-folding time (seconds). */
+    decayTime: persistence.decayTimeNode,
+    /** Shared from {@link FoamPersistence} — windward-face foam strength. */
+    windwardStrength: persistence.windwardStrengthNode,
   };
 }
 
-/** Concrete uniform-node type for the foam accumulation system. */
+/** Concrete uniform-node type for the foam accumulation inject pass. */
 export type FoamAccumulationUniforms = ReturnType<
   typeof createFoamAccumulationUniforms
 >;

@@ -18,8 +18,6 @@ export interface SunShaftsParams {
 export interface SunShaftsWaveTextureOptions {
     /** Normal texture from wave simulation (WebGL render target). */
     normalTexture: THREE.Texture;
-    /** Texture resolution in texels. */
-    resolution: number;
     /** World-space scale of the cascade. */
     scale: number;
 }
@@ -30,8 +28,8 @@ export interface SunShaftsWaveTextureOptions {
  * pattern from the sun's screen position, modulated by depth.
  *
  * The shader is split into two stages:
- * - {@link buildIntensityNode} computes shaft color at reduced resolution
- * - {@link buildComposite} samples the result and adds to scene color
+ * - {@link buildIntensityNode} computes scalar intensity at reduced resolution
+ * - {@link buildComposite} reconstructs shaft color and adds it to scene color
  */
 export declare class SunShafts implements WaterSubsystem {
     private _enabled;
@@ -44,10 +42,9 @@ export declare class SunShafts implements WaterSubsystem {
     private _sunVisible;
     private _cameraWorldX;
     private _cameraWorldZ;
-    private _sceneDepthTexture;
+    private _sceneDepth;
     private _waterDepthPass;
     private _outputTextureNode;
-    private _waveResolution;
     private _waveScale;
     private _hasNormalSampler;
     private _normalTexture;
@@ -151,21 +148,15 @@ export declare class SunShafts implements WaterSubsystem {
      */
     setWaveTexture(options: SunShaftsWaveTextureOptions): void;
     /**
-     * Update wave buffer parameters (resolution and scale).
-     * Call when cascade config changes.
-     */
-    updateBufferParams(resolution: number, scale: number): void;
-    /**
-     * Rebind to the wave simulation. Reads cascade-0's normal texture,
-     * resolution, and scale — the inputs the surface-transmission shader
-     * consumes. Called whenever cascade configuration changes or the
-     * wave sim is recreated.
+     * Rebind to the wave simulation. Reads cascade-0's normal texture and
+     * scale — the inputs the surface-transmission shader consumes. Called
+     * whenever cascade configuration changes or the wave sim is recreated.
      */
     onCascadeChanged(sim: IWaveSimulation): void;
     /**
      * Builds the sun shaft intensity node for rendering at reduced resolution.
      *
-     * Returns a vec4 where RGB is the shaft color contribution and A is 1.0.
+     * Returns a vec4 where R is the scalar shaft intensity.
      * When disabled, outputs vec4(0, 0, 0, 1). Called from {@link attachPass}
      * and {@link onQualityChanged} when the underlying wave data changes.
      *

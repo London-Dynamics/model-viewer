@@ -5,14 +5,15 @@ Ocean simulation and rendering terminology used in Three.js Water Pro.
 ## Wave Physics
 
 ### Amplitude
-The height of a wave from its rest position to its peak (or trough). In Three.js Water Pro, controlled by `water.waves.amplitude` (a global multiplier affecting both FFT cascades and Gerstner waves).
+The height of a wave from its rest position to its peak (or trough). In Three.js Water Pro, controlled by `water.waves.amplitude` (a global multiplier on wave height).
 
 ### Cascade
-A frequency band of the FFT simulation. Three.js Water Pro uses two cascades:
-- **Waves**: Medium-frequency, wind-driven waves
-- **Ripples**: High-frequency, small-scale surface detail
+A frequency band of the FFT simulation. Three.js Water Pro uses three cascades, largest to smallest scale:
+- **Swell**: The longest-wavelength, longest-period waves
+- **Waves**: Medium-frequency, wind-driven waves, including the dominant sea
+- **Ripples**: High-frequency, small-scale capillary detail
 
-Large-scale swells are handled analytically by [Gerstner waves](/api/gerstner).
+Each cascade's resolution is independently adjustable; see [Cascade tile size](/api/waves#cascade-tile-size).
 
 ### Choppiness
 Horizontal displacement of wave peaks that creates the characteristic "chopping" motion of ocean waves. Higher choppiness creates steeper, more peaked waves.
@@ -27,7 +28,7 @@ Algorithm for efficiently computing the discrete Fourier transform. Used to conv
 How often a wave oscillates per unit time (or distance). Higher frequency = more waves per second (or meter).
 
 ### JONSWAP
-Joint North Sea Wave Project - a spectral model for ocean waves based on measurements from the North Sea. Produces realistic wave patterns based on wind speed and fetch length.
+Joint North Sea Wave Project - a spectral model for ocean waves based on measurements from the North Sea. Produces realistic wave patterns from a dominant wavelength and wind speed.
 
 ### Spectrum
 Distribution of wave energy across frequencies. The JONSWAP spectrum defines how much energy exists at each wavelength based on wind conditions.

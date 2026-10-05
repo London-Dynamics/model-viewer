@@ -5,15 +5,16 @@
  * a registry of subsystems, and iteration. Everything that is specific to
  * a single piece of behaviour — rain, spray, sun shafts, lighting,
  * underwater state, post-processing composition — lives behind this
- * interface. See the "Subsystem Isolation" section of `CLAUDE.md` for the
+ * interface. See the "Subsystem Boundaries" section of `AGENTS.md` for the
  * rule and rationale.
  *
  * All hooks are optional. A subsystem only implements the ones it cares
  * about. `WaterSystem` iterates the registry and `?.`-skips the rest.
  */
 import type * as THREE from "three/webgpu";
+import type { SkyProvider } from "../components/sky/SkyProvider";
 import type { QualityLevel, QualityLevelConfig } from "../config/QualityLevels";
-import type { WaterSceneParams } from "../config/presets/types";
+import type { WaterSceneConfig } from "../config/presets/types";
 import type { RenderPassManager } from "../rendering/RenderPassManager";
 import type { IWaveSimulation } from "../simulation/waves";
 /**
@@ -41,8 +42,7 @@ export interface WaterSubsystem {
      * preset load, quality switch, manual cascade-config update, or a full
      * sim rebuild. The event carries no payload: subscribers pull whichever
      * cascade index, normal texture, resolution, or scale they need from
-     * the sim, which remains the source of truth. Replaces ad-hoc
-     * `setWaveTexture` / `updateBufferParams` plumbing.
+     * the simulation, which remains the source of truth.
      */
     onCascadeChanged?(sim: IWaveSimulation): void;
     /**
@@ -51,6 +51,14 @@ export interface WaterSubsystem {
      * textures rebind here.
      */
     onRenderTargetsRebuilt?(rp: RenderPassManager): void;
+    /**
+     * Fired whenever `WaterSystem.setSky` installs a new sky provider (or
+     * `null`). The event carries the provider itself — subscribers that need
+     * to react (rebinding a material, fanning out to render passes, wiring a
+     * provider's animated sun) pull whatever they need from it. Mirrors
+     * {@link onCascadeChanged}'s "notify, don't push values" pattern.
+     */
+    onSkyChanged?(sky: SkyProvider | null): void;
     /**
      * Resize hook fired from `WaterSystem.resize`. Subsystems that own
      * render targets with their own dimensions (e.g. `SunShaftPass`)
@@ -67,7 +75,7 @@ export interface WaterSubsystem {
      * Apply a full scene preset. The subsystem reads only the slice it
      * cares about; `WaterSystem` does not destructure or route per-subsystem.
      */
-    applyParams?(params: WaterSceneParams): void;
+    applyParams?(params: WaterSceneConfig): void;
     /**
      * Per-substep simulation work. Called once per fixed-step substep in
      * deterministic mode, once per host frame otherwise. `gpuTime` is the
@@ -77,6 +85,12 @@ export interface WaterSubsystem {
     /**
      * Per-displayed-frame render-pass work. Called exactly once per frame
      * after the substep loop drains, in registry order.
+     *
+     * Implementations must not await real GPU work (readbacks, fences).
+     * These passes must stay in the same task as the host's subsequent
+     * render: a genuine event-loop yield here would let camera-mutating
+     * input events (e.g. OrbitControls drag handlers) run between a capture
+     * pass and the final render, misaligning every screen-space sample.
      */
     renderPass?(renderer: THREE.WebGPURenderer): Promise<void> | void;
     /**

@@ -29,12 +29,12 @@ Update particle parameters at runtime. Omitted fields keep their current values.
 | Option         | Type      | Default     | Description                                           |
 | -------------- | --------- | ----------- | ----------------------------------------------------- |
 | `color`        | `string`  | `"#ffffff"` | Particle tint (hex string)                            |
-| `count`        | `number`  | `1000`      | Number of active particles                            |
+| `count`        | `number`  | `1000`      | Number of active particles. Can be lowered and restored at runtime, but cannot exceed the allocation set by the preset at creation |
 | `enabled`      | `boolean` | `true`      | Enable/disable ambient particles                      |
 | `farDistance`  | `number`  | `209`       | Distance from camera where particles fully fade out   |
 | `maxSize`      | `number`  | `0.5`       | Maximum world-space particle size                     |
 | `minSize`      | `number`  | `0.1`       | Minimum world-space particle size                     |
-| `nearDistance` | `number`  | `9`         | Distance from camera where particles begin fading in  |
+| `nearDistance` | `number`  | `9`         | Inner radius where particles start to appear; particles are fully opaque here and fade out toward `farDistance` |
 | `opacity`      | `number`  | `0.5`       | Master opacity (0–1)                                  |
 
 ## Example

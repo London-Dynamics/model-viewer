@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Spray emission compute shader (probe-driven, edge-triggered).
  *
@@ -80,10 +83,7 @@ import {
   PROBE_PARAMS_VEC4_OFFSET,
   PROBE_VEC4_PER_POINT,
 } from "../EmitterRegistry";
-import {
-  createSurfaceHeightSampler,
-  type SprayGerstnerBindings,
-} from "./surfaceSample";
+import { createSurfaceHeightSampler } from "./surfaceSample";
 import type { CascadeSampler } from "../../../shaders/cascadeSampler";
 import type {
   FloatNode,
@@ -119,12 +119,8 @@ export interface EmissionComputeBindings {
 
   /** Shared cascade sampler (single source of truth for scale/resolution uniforms). */
   cascadeSampler: CascadeSampler;
-  /** Cascade-0 displacement buffer. */
-  displacementBuffer0: StorageBufferNode;
-  /** Cascade-1 displacement buffer (optional). */
-  displacementBuffer1?: StorageBufferNode;
-  /** Gerstner wave bindings, or null if Gerstner is disabled. */
-  gerstner: SprayGerstnerBindings | null;
+  /** Displacement buffers, one per cascade, coarsest first. */
+  displacementBuffers: StorageBufferNode[];
 
   /** Mean water surface Y (world). */
   meanY: UniformFloatNode;

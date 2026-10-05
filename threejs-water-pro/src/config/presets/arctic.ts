@@ -1,37 +1,40 @@
-import type { PresetConfig } from "./types";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
 
-/**
- * ARCTIC - Cold Polar Waters
- * Gray-blue seas under overcast skies with icy foam and moderate swells
- */
-export const ARCTIC_PRESET: PresetConfig = {
+import type { WaterSceneConfig } from "./types";
+
+export const ARCTIC_PRESET: WaterSceneConfig = {
   caustics: {
     enabled: true,
     surface: { strength: 0.1, scale: 0.02, speed: 0.25 },
   },
   clipmap: {
-    baseSize: 800,
+    baseSize: 200,
     levels: 5,
+  },
+  environment: {
+    intensity: 1,
   },
   fog: {
     color: "#4c5357",
     enabled: true,
-    fadeEnd: 5000,
+    fadeEnd: 500,
     fadePower: 1,
     fadeStart: 0,
-    skyBlendDistance: 10000,
+    skyBlendDistance: 1000,
   },
   color: {
-    absorptionColor: "#44302c",
+    mode: "custom",
+    absorptionColor: "#fffef7",
     transmissionColor: "#719cb8",
-    waterColor: "#0f242f",
+    waterColor: "#162731",
   },
   foam: {
     surface: {
       enabled: true,
-      opacity: 0.1,
+      opacity: 0.05,
       color: "#ffffff",
-      size: 134,
+      size: 30,
       coverage: 0.19,
       texture: "foam2",
     },
@@ -39,13 +42,8 @@ export const ARCTIC_PRESET: PresetConfig = {
       enabled: false,
       opacity: 0.35,
       color: "#ffffff",
-      size: 172,
-      coverage: 0.25,
-      peakIntensity: 0.35,
+      size: 22,
       windStretch: 0.48,
-      crestCoverage: 0.35,
-      waveWeight: 1,
-      rippleWeight: 0.7,
       texture: "foam2",
       persistence: {
         decayTime: 0.5,
@@ -56,9 +54,9 @@ export const ARCTIC_PRESET: PresetConfig = {
     shoreline: {
       enabled: true,
       opacity: 0.1,
-      size: 33,
+      size: 4,
       coverage: 0.84,
-      range: 35,
+      range: 1.8,
       color: "#edf9fd",
       texture: "foam2",
     },
@@ -66,10 +64,7 @@ export const ARCTIC_PRESET: PresetConfig = {
   fresnel: {
     surface: {
       iorRatio: 1.3,
-      normalStrength: 0.45,
-      fadeStart: 0,
-      fadePower: 0.5,
-      refractionStrength: 0.15,
+      refractionStrength: 0.3,
     },
     underwater: {
       waterAbsorption: 0.72,
@@ -82,21 +77,21 @@ export const ARCTIC_PRESET: PresetConfig = {
   oceanFloor: {
     blendSoftness: 0.3,
     blendThreshold: 0.5,
-    depth: 100,
-    displacementScale: 140,
-    displacementStrength: 8,
+    depth: 8,
+    displacementScale: 7,
+    displacementStrength: 0.4,
     enabled: true,
     lacunarity: 1.8,
     meshResolution: 64,
     normalScale: 0.2,
     persistence: 0.75,
     textureDisplacementStrength: 0.5,
-    tileSize: 400,
+    tileSize: 20,
     caustics: {
       depthAttenuation: 0,
       enabled: true,
       intensity: 0.9,
-      scale: 150,
+      scale: 7.5,
       waveDistortion: 0.26,
     },
     sunShafts: {
@@ -136,8 +131,8 @@ export const ARCTIC_PRESET: PresetConfig = {
       intensity: 0.33,
       rippleDecay: 1.0,
       rippleDensity: 0.25,
-      rippleFadeEnd: 500,
-      rippleSize: 2.5,
+      rippleFadeEnd: 60,
+      rippleSize: 0.3,
       rippleStrength: 0.5,
       streakLength: 1.0,
       streakWidth: 0.01,
@@ -148,10 +143,10 @@ export const ARCTIC_PRESET: PresetConfig = {
       color: "#ffffff",
       count: 1140,
       enabled: true,
-      farDistance: 209,
-      maxSize: 0.5,
-      minSize: 0.1,
-      nearDistance: 9,
+      farDistance: 40,
+      maxSize: 0.15,
+      minSize: 0.03,
+      nearDistance: 2,
       opacity: 0.5,
     },
   },
@@ -163,14 +158,14 @@ export const ARCTIC_PRESET: PresetConfig = {
     fadeOutTime: 0.5,
     opacity: 0.4,
     respawnTime: 1.0,
-    size: 27.5,
+    size: 3,
     spawnJitterTime: 0.0,
     stretchX: 1.88,
     stretchY: 1.0,
-    submersionDepth: 0.5,
+    submersionDepth: 0.15,
     velocityHeightFactor: 0.0,
     velocityScaleFactor: 0.0,
-    velocityThreshold: 3.9,
+    velocityThreshold: 0.8,
   },
   ssr: {
     enabled: true,
@@ -181,22 +176,13 @@ export const ARCTIC_PRESET: PresetConfig = {
     intensity: 0.5,
     power: 2.8,
   },
-  lighting: {
-    ambient: {
-      skyColor: "#adb3b8",
-      groundColor: "#7b8b93",
-      intensity: 0.98,
-    },
-  },
   sky: {
     source: {
       type: "hdri",
       url: "hdris/overcast_soil_puresky_4k.jpg",
     },
     brightness: 0.3,
-    reflectionBlurDistance: 1500,
-    reflectionDistanceBlur: 0.5,
-    reflectionRoughness: 0.02,
+    reflectionRoughness: 0.15,
     sun: {
       azimuth: 311,
       diskColor: "#fffef5",
@@ -205,12 +191,12 @@ export const ARCTIC_PRESET: PresetConfig = {
       diskEmissiveIntensity: 2,
       diskRadius: 0.015,
       elevation: 65,
-      intensity: 0.7,
+      intensity: 0.0,
     },
   },
   sparkle: {
     enabled: true,
-    fadeDistance: 1650,
+    fadeDistance: 170,
     intensity: 1.0,
     minDistance: 0,
     power: 960,
@@ -224,23 +210,16 @@ export const ARCTIC_PRESET: PresetConfig = {
   waves: {
     fft: {
       amplitude: 1,
-      frequency: 0.67,
-      animationSpeed: 3.1,
-      windSpeed: 10.2,
+      animationSpeed: 1,
+      windSpeed: 3,
       windDirection: 1,
       choppiness: 0.9,
-      spectralSharpness: 0.3,
-      standingWaveRatio: 0.51,
+      peakWavelength: 11,
+      spectralSharpness: 1.38,
+      standingWaveRatio: 0.49,
       cascades: {
-        ripples: { scale: 360, amplitudeScale: 0.16 },
-        waves: { scale: 2633, amplitudeScale: 0.44 },
+        maxScale: 1024,
       },
-    },
-    gerstner: {
-      wavelength: 779,
-      amplitude: 0.88,
-      wavelengthSpread: 2.2,
-      directionalSpread: 1.16,
     },
   },
 };

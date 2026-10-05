@@ -13,7 +13,9 @@ export interface InitSpectrumMaterialParams {
     cascade: CascadeSimulationUniforms;
 }
 /**
- * Creates a material for initial spectrum generation (Phillips/JONSWAP).
+ * Creates a material for initial spectrum generation using a JONSWAP
+ * spectrum with Hasselmann directional spreading (see
+ * `../../jonswapSpectrum.ts`).
  * Output: vec4(h0Real, h0Imag, kx, ky)
  */
 export declare function createInitSpectrumMaterial(params: InitSpectrumMaterialParams): THREE.MeshBasicNodeMaterial;

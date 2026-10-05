@@ -20,7 +20,7 @@ equirect.generateMipmaps = false;
 equirect.minFilter = THREE.LinearFilter;
 equirect.magFilter = THREE.LinearFilter;
 
-const sky = new Sky({
+const sky = new Sky(renderer, {
   equirect,
   brightness: 1.0,
   sunDirection: water.lighting.sun.direction,
@@ -50,7 +50,7 @@ In every case set `texture.mapping = THREE.EquirectangularReflectionMapping`. To
 Off by default. Most HDRIs already contain a baked sun; the overlay is for cases where you want to move the sun or pin it to a particular direction.
 
 ```typescript
-const sky = new Sky({
+const sky = new Sky(renderer, {
   equirect,
   sunDirection: water.lighting.sun.direction,
   sunOverlay: {
@@ -63,45 +63,41 @@ const sky = new Sky({
 });
 ```
 
-The overlay reads its direction from the same uniform that drives the directional light and sparkle — moving the sun via `lighting.sun.update({ azimuth, elevation, ... })` updates everything in lockstep. The disk shader is gated by a TSL `If()` block, so toggling `enabled` off skips the dot/smoothstep work at the fragment level.
+The overlay reads its direction from the same uniform that drives the directional light and sparkle, so moving the sun via `lighting.sun.update({ azimuth, elevation, ... })` updates everything together. Disabling the overlay removes its shading cost.
 
 ## Reflections
 
-Three `Sky` options tune the reflection blur:
+The reflection blur is driven by the surface itself: the water material measures how much wave detail each pixel folds away and reads a correspondingly rougher prefiltered environment mip, so distant and wind-roughened water blurs the sky reflection automatically. One `Sky` option sets the floor:
 
-| Option                   | Default  | Range       | Controls                                                                                                        |
-|--------------------------|----------|-------------|-----------------------------------------------------------------------------------------------------------------|
-| `reflectionRoughness`    | `0.02`   | `0`–`1`     | Base blur applied everywhere. `0` is a sharp mirror; small values soften a razor-sharp baked sun disc.          |
-| `reflectionDistanceBlur` | `0.5`    | `0`–`1`     | How much the blur grows with distance from the camera. `0` keeps far water as sharp as the near field.          |
-| `reflectionBlurDistance` | `1500`   | world units | Distance at which `reflectionDistanceBlur` reaches its maximum. Scale to match your scene's water extent.       |
+| Option                | Default | Range   | Controls                                                                                               |
+|-----------------------|---------|---------|--------------------------------------------------------------------------------------------------------|
+| `reflectionRoughness` | `0.15`  | `0`–`1` | Base blur applied everywhere. `0` is a sharp mirror; small values soften a razor-sharp baked sun disc. |
 
 ```typescript
-const sky = new Sky({
+const sky = new Sky(renderer, {
   equirect,
   sunDirection: water.lighting.sun.direction,
-  reflectionRoughness: 0.02,
-  reflectionDistanceBlur: 0.5,
-  reflectionBlurDistance: 1500,
+  reflectionRoughness: 0.15,
 });
 ```
 
-All three are also live uniforms — `sky.reflectionRoughnessUniform.value`, `sky.reflectionDistanceBlurUniform.value`, and `sky.reflectionBlurDistanceUniform.value` — so you can adjust them at runtime without rebuilding the material.
+It is also exposed as a live uniform (`sky.reflectionRoughnessUniform.value`), so you can adjust it at runtime without rebuilding the material.
 
 ## Swapping Textures at Runtime
 
 ```typescript
 const next = await loader.loadAsync("other-sky.jpg");
 next.mapping = THREE.EquirectangularReflectionMapping;
-// (apply the seam-fix settings as above)
+// Apply the same seam-fix settings as in Quick Start.
 sky.setTexture(next, renderer);
 ```
 
-`setTexture` copies the new image onto the existing source in place and re-prefilters the reflection environment from it — a one-time cost per swap — so the dome, fog, and reflections all pick up the new texture without a shader rebuild. (`water.setSky(sky)` handles this prefilter for you when you first attach a sky.)
+`setTexture` copies the new image onto the existing source in place and re-prefilters the reflection environment from it, which is a one-time cost per swap. The dome, fog, and reflections all pick up the new texture without a shader rebuild. `water.setSky(sky)` performs the same prefilter when you first attach a sky.
 
 ## Ambient Lighting
 
-Ambient (the `HemisphereLight` fill on shaded sides) is **not** derived from the sky image. Set the colours and intensity directly on preset params — `lighting.ambient.skyColor`, `lighting.ambient.groundColor`, `lighting.ambient.intensity` — or write to `water.lighting.ambient` at runtime. See [Sun & Lighting](/api/sun).
+Ambient lighting is derived from the sky image: the water system assigns the sky's prefiltered environment to `scene.environment`, and `water.environment.intensity` scales it. See [Sun & Lighting](/api/sun).
 
 ## Migration
 
-`RayleighSky`, `GradientSky`, `CubeMapSky`, and the `SkyProvider` interface were removed in v3. Bake whatever you need into an equirect image and use `Sky`. See the [v2 migration guide](/guide/migrating-from-v2#sky-providers).
+`RayleighSky`, `GradientSky`, and `CubeMapSky` were removed in v3. Bake whatever you need into an equirect image and use `Sky`. See the [v2 migration guide](/guide/migrating-from-v2#sky-providers). For a procedural sky, use [Sky Pro](/guide/sky-pro-integration), which plugs in through the `SkyProvider` interface.

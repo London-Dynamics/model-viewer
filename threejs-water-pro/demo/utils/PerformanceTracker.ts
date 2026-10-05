@@ -1,12 +1,7 @@
-import * as THREE from "three/webgpu";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
 
-export interface PerformanceParams {
-  showMonitor: boolean;
-  dynamicResolution: boolean;
-  targetFps: number;
-  minPixelRatio: number;
-  maxPixelRatio: number;
-}
+import * as THREE from "three/webgpu";
 
 export class PerformanceTracker {
   private frameTimeHistory: number[] = [];
@@ -57,7 +52,7 @@ export class PerformanceTracker {
   /**
    * Update performance panel with current frame data
    */
-  update(deltaTime: number, renderer: THREE.WebGPURenderer): number {
+  update(deltaTime: number, renderer: THREE.WebGPURenderer): void {
     // Track frame times for averaging (keep last 60 frames)
     this.frameTimeHistory.push(deltaTime * 1000);
     if (this.frameTimeHistory.length > 60) {
@@ -102,65 +97,6 @@ export class PerformanceTracker {
             : triangles >= 1000
               ? (triangles / 1000).toFixed(1) + "K"
               : triangles.toString();
-      }
-    }
-
-    return avgFrameTime;
-  }
-}
-
-/**
- * Dynamic resolution scaling manager
- */
-export class DynamicResolutionManager {
-  private currentPixelRatio: number;
-  private pixelRatioAdjustCooldown = 0;
-
-  constructor(initialPixelRatio: number) {
-    this.currentPixelRatio = initialPixelRatio;
-  }
-
-  setPixelRatio(ratio: number, renderer: THREE.WebGPURenderer): void {
-    this.currentPixelRatio = ratio;
-    renderer.setPixelRatio(ratio);
-  }
-
-  /**
-   * Update pixel ratio dynamically to maintain target FPS
-   */
-  update(
-    avgFrameTime: number,
-    renderer: THREE.WebGPURenderer,
-    performanceParams: PerformanceParams
-  ): void {
-    if (!performanceParams.dynamicResolution) return;
-
-    // Decrease cooldown
-    if (this.pixelRatioAdjustCooldown > 0) {
-      this.pixelRatioAdjustCooldown--;
-      return;
-    }
-
-    const targetFrameTime = 1000 / performanceParams.targetFps;
-    const minRatio = performanceParams.minPixelRatio;
-    const maxRatio = performanceParams.maxPixelRatio;
-
-    // If frame time is too high (low FPS), decrease pixel ratio
-    if (avgFrameTime > targetFrameTime * 1.1) {
-      const newRatio = Math.max(minRatio, this.currentPixelRatio - 0.1);
-      if (newRatio !== this.currentPixelRatio) {
-        this.currentPixelRatio = newRatio;
-        renderer.setPixelRatio(this.currentPixelRatio);
-        this.pixelRatioAdjustCooldown = 30;
-      }
-    }
-    // If frame time is low enough (good FPS), try increasing pixel ratio
-    else if (avgFrameTime < targetFrameTime * 0.85) {
-      const newRatio = Math.min(maxRatio, this.currentPixelRatio + 0.05);
-      if (newRatio !== this.currentPixelRatio) {
-        this.currentPixelRatio = newRatio;
-        renderer.setPixelRatio(this.currentPixelRatio);
-        this.pixelRatioAdjustCooldown = 60;
       }
     }
   }

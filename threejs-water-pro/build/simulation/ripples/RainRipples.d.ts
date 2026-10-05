@@ -9,7 +9,7 @@ export interface RainRippleParams {
     enabled: boolean;
     /** Distance where ripples fully fade out from camera. */
     fadeEnd: number;
-    /** Ripple cell size in world units (1–10). Controls individual ripple diameter. */
+    /** Ripple cell size in meters (0.1–1). Controls individual ripple diameter. */
     size: number;
     /** Ripple normal perturbation strength (0–1). */
     strength: number;
@@ -45,7 +45,7 @@ export declare class RainRipples {
     /** Ripple spawn density (0–1). */
     get density(): number;
     set density(value: number);
-    /** Ripple cell size in world units (1–10). */
+    /** Ripple cell size in meters (0.1–1). */
     get size(): number;
     set size(value: number);
     /** Ripple normal perturbation strength. */

@@ -1,18 +1,20 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Configuration interfaces for reactive params API.
  */
 
+/** Artist-authored water color configuration. */
 export interface ColorConfig {
   absorptionColor: string;
+  mode?: "custom";
   transmissionColor: string;
   waterColor: string;
 }
 
 export interface FresnelConfig {
-  fadePower: number;
-  fadeStart: number;
   iorRatio: number;
-  normalStrength: number;
   refractionStrength: number;
 }
 
@@ -27,4 +29,3 @@ export interface HorizonConfig {
   fadeStart: number;
   fadeEnd: number;
 }
-

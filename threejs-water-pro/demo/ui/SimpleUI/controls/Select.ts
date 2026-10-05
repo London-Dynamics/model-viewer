@@ -1,4 +1,8 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 export interface SelectOption {
+  disabled?: boolean;
   label: string;
   value: string | number;
 }
@@ -53,6 +57,7 @@ export class Select {
       const optEl = document.createElement("option");
       optEl.value = String(opt.value);
       optEl.textContent = opt.label;
+      optEl.disabled = opt.disabled ?? false;
       if (opt.value === this._value) {
         optEl.selected = true;
       }

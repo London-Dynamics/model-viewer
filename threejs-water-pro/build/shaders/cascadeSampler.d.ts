@@ -1,31 +1,34 @@
 import type * as THREE from "three/webgpu";
-import type { Node, StorageBufferNode, UniformFloatNode } from "./types";
+import type { Node, StorageBufferNode } from "./types";
+/** World XZ used to sample one cascade, hierarchically displaced by every coarser cascade. */
+export interface HierarchicalCoords {
+    x: Node;
+    z: Node;
+}
 /** Result from {@link CascadeSampler.sampleDisplacement}. */
 export interface CascadeDisplacementResult {
     /** Combined displacement from all cascades (vec3). */
     displacement: Node;
-    /** X coordinate for sampling cascade 1 (displaced by cascade 0). */
-    hierarchicalCoordsX: Node;
-    /** Z coordinate for sampling cascade 1 (displaced by cascade 0). */
-    hierarchicalCoordsZ: Node;
+    /**
+     * Sample coordinates for cascades 1..cascadeCount-1, in order (empty when
+     * cascadeCount is 1). Pass to {@link CascadeSampler.sampleNormals} so the
+     * fragment stage samples each cascade's normal at the same hierarchically
+     * displaced position used here.
+     */
+    hierarchicalCoords: HierarchicalCoords[];
 }
 /** Result from {@link CascadeSampler.sampleNormals}. */
 export interface CascadeNormalsResult {
     /** Blended normal from all cascades (vec3). */
     normal: Node;
-    /** Eigenvalue from cascade 0 (waves). Smaller = more folding. */
-    eigen0: Node;
-    /** Eigenvalue from cascade 1 (ripples). Smaller = more folding. */
-    eigen1: Node;
-}
-/** Parameters for {@link CascadeSampler.sampleFoamAccumulation}. */
-export interface FoamAccumulationSampleParams {
-    /** Cascade 0 foam energy buffer. */
-    foamBuffer0: StorageBufferNode;
-    /** World X coordinate (cascade 0 sampling site). */
-    worldX: Node;
-    /** World Z coordinate (cascade 0 sampling site). */
-    worldZ: Node;
+    /**
+     * Sub-footprint slope variance (0-1), the roughness the mip-averaged
+     * normals discard. Mip filtering shortens the averaged normal when
+     * sub-texel normals disagree, so `1 - |n|` per cascade (summed) measures
+     * how much wave detail the pixel footprint folded away — the input to a
+     * filtered-BRDF reflection roughness (Toksvig 2005).
+     */
+    slopeVariance: Node;
 }
 /**
  * WebGPU-only sampler for FFT ocean simulation cascade buffers.
@@ -34,47 +37,25 @@ export interface FoamAccumulationSampleParams {
  * displacement (vertex stage) and normals (fragment stage) with proper
  * hierarchical cascade blending.
  *
- * Hierarchical sampling ensures smaller-scale cascades (ripples) are sampled
- * at positions displaced by larger-scale cascades (waves), so ripples correctly
- * "ride" on the wave structures.
+ * Hierarchical sampling ensures finer cascades are sampled at positions
+ * displaced by every coarser cascade before them, so ripples correctly
+ * "ride" on swell and waves.
  */
 export declare class CascadeSampler {
-    private _resolution0;
-    private _scale0;
-    private _resolution1;
-    private _scale1;
-    /** Number of active cascades (affects shader compilation). */
-    readonly cascadeCount: 1 | 2;
+    private _resolutions;
+    private _scales;
+    /** Number of active cascades (affects shader compilation). Fixed for the sampler's lifetime. */
+    readonly cascadeCount: number;
     /**
      * Creates a CascadeSampler for the specified cascade count.
      *
-     * @param cascadeCount - Number of cascades (1 or 2).
+     * @param cascadeCount - Number of cascades (1-3).
      */
-    constructor(cascadeCount: 1 | 2);
-    /** Resolution of cascade 0 (waves) in texels. */
-    get resolution0(): number;
-    set resolution0(value: number);
-    /** World-space scale of cascade 0 (waves) in units. */
-    get scale0(): number;
-    set scale0(value: number);
-    /** Resolution of cascade 1 (ripples) in texels. */
-    get resolution1(): number;
-    set resolution1(value: number);
-    /** World-space scale of cascade 1 (ripples) in units. */
-    get scale1(): number;
-    set scale1(value: number);
-    /** @internal Resolution0 uniform node for shader binding. */
-    get _resolution0Node(): UniformFloatNode;
-    /** @internal Scale0 uniform node for shader binding. */
-    get _scale0Node(): UniformFloatNode;
-    /** @internal Resolution1 uniform node for shader binding. */
-    get _resolution1Node(): UniformFloatNode;
-    /** @internal Scale1 uniform node for shader binding. */
-    get _scale1Node(): UniformFloatNode;
+    constructor(cascadeCount: number);
     /**
      * Updates a cascade's resolution and scale.
      *
-     * @param index - Cascade index (0 or 1).
+     * @param index - Cascade index (0..cascadeCount-1).
      * @param resolution - Resolution in texels.
      * @param scale - World-space scale in units.
      */
@@ -82,15 +63,15 @@ export declare class CascadeSampler {
     /**
      * Samples displacement from cascade buffers with hierarchical blending.
      *
-     * For 2 cascades: cascade 1 is sampled at positions displaced by cascade 0,
-     * so ripples "ride" on waves.
+     * Each cascade after the first is sampled at coordinates displaced by the
+     * running sum of every coarser cascade's displacement, so finer cascades
+     * "ride" on the ones before them.
      *
      * @param worldX - World X coordinate.
      * @param worldZ - World Z coordinate.
-     * @param buffer0 - Cascade 0 displacement buffer.
-     * @param buffer1 - Cascade 1 displacement buffer (required if cascadeCount is 2).
+     * @param buffers - Displacement buffers, one per cascade, coarsest first.
      */
-    sampleDisplacement(worldX: Node, worldZ: Node, buffer0: StorageBufferNode, buffer1?: StorageBufferNode): CascadeDisplacementResult;
+    sampleDisplacement(worldX: Node, worldZ: Node, buffers: StorageBufferNode[]): CascadeDisplacementResult;
     /**
      * Samples normals from cascade textures with hierarchical blending.
      *
@@ -101,21 +82,11 @@ export declare class CascadeSampler {
      *
      * @param worldX - World X coordinate (for cascade 0).
      * @param worldZ - World Z coordinate (for cascade 0).
-     * @param hierarchicalCoordsX - Hierarchical X coordinate (for cascade 1).
-     * @param hierarchicalCoordsZ - Hierarchical Z coordinate (for cascade 1).
-     * @param normalTexture0 - Cascade 0 normal storage texture.
-     * @param normalTexture1 - Cascade 1 normal storage texture (required if cascadeCount is 2).
+     * @param hierarchicalCoords - Sample coordinates for cascades 1..cascadeCount-1
+     *   from {@link sampleDisplacement}.
+     * @param normalTextures - Cascade normal storage textures, one per cascade, coarsest first.
      */
-    sampleNormals(worldX: Node, worldZ: Node, hierarchicalCoordsX: Node, hierarchicalCoordsZ: Node, normalTexture0: THREE.Texture, normalTexture1: THREE.Texture | undefined): CascadeNormalsResult;
-    /**
-     * Samples the persistent foam accumulation buffer at a world-space
-     * coordinate. Only cascade 0 is stored; ripple-scale injection would
-     * smear into a uniform haze.
-     *
-     * @param params - World coordinates and foam buffer bindings.
-     * @returns Foam energy at the sampled location (FloatNode, `≥ 0`).
-     */
-    sampleFoamAccumulation(params: FoamAccumulationSampleParams): Node;
+    sampleNormals(worldX: Node, worldZ: Node, hierarchicalCoords: HierarchicalCoords[], normalTextures: THREE.Texture[]): CascadeNormalsResult;
     /**
      * Samples displacement buffer at world coordinates.
      *
@@ -133,20 +104,9 @@ export declare class CascadeSampler {
      *
      * @param worldX - World X coordinate.
      * @param worldZ - World Z coordinate.
-     * @param tex - Normal storage texture (RGBA32F, RepeatWrapping, LinearFilter).
-     * @param resolution - Cascade resolution uniform (texels per side).
+     * @param tex - Normal storage texture (RGBA16F, RepeatWrapping, mipmapped trilinear/anisotropic).
      * @param scale - Cascade world-space scale uniform.
      */
     private sampleNormalTexture;
-    /**
-     * Samples a cascade's foam accumulation buffer (vec2 `.x` = energy).
-     *
-     * @param worldX - World X coordinate.
-     * @param worldZ - World Z coordinate.
-     * @param buffer - Foam energy storage buffer (vec2 per texel).
-     * @param resolution - Buffer resolution uniform.
-     * @param scale - World-space scale uniform.
-     */
-    private sampleFoamBuffer;
 }
 //# sourceMappingURL=cascadeSampler.d.ts.map

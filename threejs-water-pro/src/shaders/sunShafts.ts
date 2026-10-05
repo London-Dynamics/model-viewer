@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Underwater sun shafts (god rays) effect.
  *
@@ -10,7 +13,7 @@
  *
  * Surface transmission is modulated by sampling the cascade-0 normal
  * texture (exposed by both backends — WebGPU writes a StorageTexture
- * mirror of its normal buffer; WebGL writes a render-target).
+ * RGBA16F storage texture; WebGL writes a render target).
  */
 import {
   dot,
@@ -27,6 +30,7 @@ import {
   screenUV,
   smoothstep,
   texture,
+  textureLevel,
   uniform,
   vec2,
   vec3,
@@ -37,6 +41,7 @@ import type { TextureNode } from "three/webgpu";
 import type { Node } from "./types";
 import type { RenderPassManager } from "../rendering/RenderPassManager";
 import type { IWaterDepthPass } from "../rendering/passes/IWaterDepthPass";
+import type { SceneDepthSampler } from "../rendering/passes/SceneDepthSampler";
 import type { WaterSubsystem } from "../systems/types";
 import type { IWaveSimulation } from "../simulation/waves";
 import type { Lighting } from "../systems/Lighting";
@@ -57,8 +62,6 @@ export interface SunShaftsParams {
 export interface SunShaftsWaveTextureOptions {
   /** Normal texture from wave simulation (WebGL render target). */
   normalTexture: THREE.Texture;
-  /** Texture resolution in texels. */
-  resolution: number;
   /** World-space scale of the cascade. */
   scale: number;
 }
@@ -70,8 +73,8 @@ export interface SunShaftsWaveTextureOptions {
  * pattern from the sun's screen position, modulated by depth.
  *
  * The shader is split into two stages:
- * - {@link buildIntensityNode} computes shaft color at reduced resolution
- * - {@link buildComposite} samples the result and adds to scene color
+ * - {@link buildIntensityNode} computes scalar intensity at reduced resolution
+ * - {@link buildComposite} reconstructs shaft color and adds it to scene color
  */
 export class SunShafts implements WaterSubsystem {
   // ============= Private Uniforms =============
@@ -91,8 +94,9 @@ export class SunShafts implements WaterSubsystem {
   private _cameraWorldX = uniform(0.0);
   private _cameraWorldZ = uniform(0.0);
 
-  // Depth texture nodes (updateable via setter methods)
-  private _sceneDepthTexture: TextureNode;
+  // Scene-depth sampler — owned by the capture pass; target rebuilds and
+  // camera changes propagate through its internal nodes.
+  private _sceneDepth: SceneDepthSampler | null = null;
   // Depth-sample source — owned by `RenderPassManager`. Sample builders
   // route through `IWaterDepthPass.sampleX(uv)` so the backend split
   // (WebGPU single-pass MIN vs. WebGL three-pass) is hidden here.
@@ -102,7 +106,6 @@ export class SunShafts implements WaterSubsystem {
   private _outputTextureNode: TextureNode;
 
   // Wave normal sampling
-  private _waveResolution = uniform(256);
   private _waveScale = uniform(100.0);
   private _hasNormalSampler = uniform(0.0);
   private _normalTexture: TextureNode;
@@ -135,7 +138,6 @@ export class SunShafts implements WaterSubsystem {
       return tex;
     };
 
-    this._sceneDepthTexture = texture(createPlaceholder());
     this._outputTextureNode = texture(createPlaceholder());
     this._normalTexture = texture(createPlaceholder());
   }
@@ -198,7 +200,7 @@ export class SunShafts implements WaterSubsystem {
    * sample builders track those swaps automatically.
    */
   bindDepthTextures(rp: RenderPassManager): void {
-    this._sceneDepthTexture.value = rp.sceneDepthTexture;
+    this._sceneDepth = rp.sceneDepth;
     this._waterDepthPass = rp.waterDepth;
   }
 
@@ -373,50 +375,45 @@ export class SunShafts implements WaterSubsystem {
    * normal texture is rebuilt.
    */
   setWaveTexture(options: SunShaftsWaveTextureOptions): void {
-    this._waveResolution.value = options.resolution;
     this._waveScale.value = options.scale;
     this._normalTexture = texture(options.normalTexture);
     this._hasNormalSampler.value = 1.0;
   }
 
   /**
-   * Update wave buffer parameters (resolution and scale).
-   * Call when cascade config changes.
-   */
-  updateBufferParams(resolution: number, scale: number): void {
-    this._waveResolution.value = resolution;
-    this._waveScale.value = scale;
-  }
-
-  /**
-   * Rebind to the wave simulation. Reads cascade-0's normal texture,
-   * resolution, and scale — the inputs the surface-transmission shader
-   * consumes. Called whenever cascade configuration changes or the
-   * wave sim is recreated.
+   * Rebind to the wave simulation. Reads cascade-0's normal texture and
+   * scale — the inputs the surface-transmission shader consumes. Called
+   * whenever cascade configuration changes or the wave sim is recreated.
    */
   onCascadeChanged(sim: IWaveSimulation): void {
-    const resolution = sim.getResolution(0);
     const scale = sim.getScale(0);
     const normalTexture = sim.getNormalTexture(0);
 
     if (normalTexture) {
-      this.setWaveTexture({ normalTexture, resolution, scale });
+      this.setWaveTexture({ normalTexture, scale });
+    } else {
+      this._waveScale.value = scale;
     }
-    this.updateBufferParams(resolution, scale);
   }
 
   /**
    * Builds the sun shaft intensity node for rendering at reduced resolution.
    *
-   * Returns a vec4 where RGB is the shaft color contribution and A is 1.0.
+   * Returns a vec4 where R is the scalar shaft intensity.
    * When disabled, outputs vec4(0, 0, 0, 1). Called from {@link attachPass}
    * and {@link onQualityChanged} when the underlying wave data changes.
    *
    * @param sunDir - Sun direction node (normalized, pointing toward sun).
    */
   private buildIntensityNode(sunDir: Node): Node {
+    const sceneDepth = this._sceneDepth;
+    if (!sceneDepth) {
+      throw new Error(
+        "SunShafts.buildIntensityNode: bindDepthTextures() must be called before building the node graph.",
+      );
+    }
     return Fn(() => {
-      const shaftColor = vec3(0.0, 0.0, 0.0).toVar("shaftColor");
+      const shaftIntensityOutput = float(0.0).toVar("shaftIntensityOutput");
 
       If(this._enabled.greaterThan(0.5), () => {
         const uv = screenUV;
@@ -484,7 +481,7 @@ export class SunShafts implements WaterSubsystem {
           const sampleUV = mix(uv, sunUV, t);
 
           // Sample scene depth at this point
-          const sampleDepth = this._sceneDepthTexture.sample(sampleUV).x;
+          const sampleDepth = sceneDepth.sample(sampleUV);
 
           // Far depth = 1 (no occlusion), geometry = 0 (occluded)
           // smoothstep creates soft edges at geometry boundaries
@@ -523,7 +520,10 @@ export class SunShafts implements WaterSubsystem {
         // Only the sun-above-horizon gate here; the underwater confinement is
         // done at full resolution in the composite (see note above).
         const sunAboveHorizon = sunDir.y.greaterThan(0.05);
-        const shouldProcessFloat = sunAboveHorizon.select(float(1.0), float(0.0));
+        const shouldProcessFloat = sunAboveHorizon.select(
+          float(1.0),
+          float(0.0),
+        );
 
         // Compute final shaft intensity
         const shaftIntensityRaw = surfaceTransmission
@@ -541,11 +541,10 @@ export class SunShafts implements WaterSubsystem {
           shaftIntensityRaw,
         );
 
-        const sunColor = vec3(1.0, 0.95, 0.85);
-        shaftColor.assign(sunColor.mul(shaftIntensity).mul(shouldProcessFloat));
+        shaftIntensityOutput.assign(shaftIntensity.mul(shouldProcessFloat));
       });
 
-      return vec4(shaftColor, 1.0);
+      return vec4(shaftIntensityOutput, 0.0, 0.0, 1.0);
     })();
   }
 
@@ -588,8 +587,9 @@ export class SunShafts implements WaterSubsystem {
       const color = vec4(inputColor).toVar("sunShaftsComposite");
 
       If(this._enabled.greaterThan(0.5), () => {
-        const shaft = this._outputTextureNode.sample(screenUV).xyz;
-        color.assign(vec4(color.xyz.add(shaft.mul(gate)), color.w));
+        const shaftIntensity = this._outputTextureNode.sample(screenUV).r;
+        const shaftColor = vec3(1.0, 0.95, 0.85).mul(shaftIntensity);
+        color.assign(vec4(color.xyz.add(shaftColor.mul(gate)), color.w));
       });
 
       return color;
@@ -644,15 +644,17 @@ export class SunShafts implements WaterSubsystem {
    * @param worldZ - World Z coordinate.
    */
   private sampleNormal(worldX: Node, worldZ: Node): Node {
-    const resFloat = float(this._waveResolution);
-    const baseRes = float(256.0);
-    const effectiveScale = this._waveScale.mul(resFloat).div(baseRes);
-
-    return this._normalTexture.sample(
+    // The cascade tile spans exactly `scale` meters (see worldToPixelCoords).
+    // The cascade normal texture is mipmapped for the water surface, and the
+    // `fract()` wrap makes UV derivatives jump at every tile boundary, which
+    // sends hardware LOD selection to the coarsest mip along those seams.
+    return textureLevel(
+      this._normalTexture,
       vec2(
-        fract(worldX.div(effectiveScale).add(0.5)),
-        fract(worldZ.div(effectiveScale).add(0.5)),
+        fract(worldX.div(this._waveScale).add(0.5)),
+        fract(worldZ.div(this._waveScale).add(0.5)),
       ),
+      int(0),
     );
   }
 }

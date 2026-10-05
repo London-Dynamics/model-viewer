@@ -9,6 +9,22 @@ import type * as THREE from "three/webgpu";
  */
 export declare const MAX_SAMPLE_POINTS = 128;
 /**
+ * Number of fixed-point correction steps used to invert the horizontal
+ * (choppy) displacement when mapping a query world position back to its
+ * surface parameter coordinate.
+ *
+ * A surface vertex with parameter `u` is rendered at `u + D_xz(u)`, where
+ * `D_xz` is the choppiness-scaled horizontal displacement. Recovering the
+ * height at world position `x` means solving `u + D_xz(u) = x`, which both
+ * samplers do via the fixed-point iteration `u <- x - D_xz(u)`. The iteration
+ * contracts only while `‖∂D/∂u‖ < 1`; at high choppiness the gradient near
+ * steep crests approaches that bound, so a single step leaves a visible
+ * residual (a buoy detaching from crests/troughs). Three steps converge across
+ * the bulk of the surface; cost is negligible since samplers run over at most
+ * {@link MAX_SAMPLE_POINTS} points, not per pixel.
+ */
+export declare const WAVE_INVERSE_SOLVE_ITERATIONS = 3;
+/**
  * Result of sampling the water surface at a given position.
  */
 export interface WaveSample {

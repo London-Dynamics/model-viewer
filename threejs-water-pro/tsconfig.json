@@ -17,5 +17,5 @@
       "threejs-water-pro": ["./src/index.ts"]
     }
   },
-  "include": ["src", "demo", "demo-public", "scripts/wasm"]
+  "include": ["src", "demo"]
 }

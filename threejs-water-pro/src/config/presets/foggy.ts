@@ -1,28 +1,31 @@
-import type { PresetConfig } from "./types";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
 
-/**
- * FOGGY - Thick Morning Mist
- * Muted waters in dense fog with reduced visibility and no sparkle
- */
-export const FOGGY_PRESET: PresetConfig = {
+import type { WaterSceneConfig } from "./types";
+
+export const FOGGY_PRESET: WaterSceneConfig = {
   caustics: {
     enabled: true,
     surface: { strength: 0.2, scale: 0.02, speed: 0.2 },
   },
   clipmap: {
-    baseSize: 800,
+    baseSize: 200,
     levels: 5,
+  },
+  environment: {
+    intensity: 1.0,
   },
   fog: {
     color: "#6b6861",
     enabled: true,
-    fadeEnd: 2950,
+    fadeEnd: 300,
     fadePower: 0.3,
-    fadeStart: 250,
-    skyBlendDistance: 6600,
+    fadeStart: 25,
+    skyBlendDistance: 660,
   },
   color: {
-    absorptionColor: "#2a221e",
+    mode: "custom",
+    absorptionColor: "#ffecd4",
     transmissionColor: "#506570",
     waterColor: "#292929",
   },
@@ -31,44 +34,36 @@ export const FOGGY_PRESET: PresetConfig = {
       enabled: true,
       opacity: 0.45,
       color: "#e0e0e0",
-      size: 189,
+      size: 24,
       coverage: 0.13,
       texture: "foam1",
     },
     waves: {
       enabled: true,
-      opacity: 0.65,
+      opacity: 0.4,
       color: "#ffffff",
-      size: 149,
-      coverage: 0.35,
-      peakIntensity: 0.3,
-      windStretch: 0.5,
-      crestCoverage: 0.35,
-      waveWeight: 1,
-      rippleWeight: 0.7,
-      texture: "foam3",
+      size: 8,
+      windStretch: 0.06,
+      texture: "foam2",
       persistence: {
-        decayTime: 0.5,
-        windwardStrength: 0.1,
-        crestStrength: 0.25,
+        decayTime: 0.93,
+        windwardStrength: 0.81,
+        crestStrength: 0.45,
       },
     },
     shoreline: {
       enabled: true,
       opacity: 0.1,
-      size: 33,
+      size: 4,
       coverage: 0.84,
-      range: 35,
+      range: 1.8,
       color: "#edf9fd",
       texture: "foam2",
     },
   },
   fresnel: {
     surface: {
-      iorRatio: 1.32,
-      normalStrength: 0.79,
-      fadeStart: 80,
-      fadePower: 0.6,
+      iorRatio: 1.59,
       refractionStrength: 0.1,
     },
     underwater: {
@@ -82,21 +77,21 @@ export const FOGGY_PRESET: PresetConfig = {
   oceanFloor: {
     blendSoftness: 0.3,
     blendThreshold: 0.5,
-    depth: 100,
-    displacementScale: 140,
-    displacementStrength: 8,
+    depth: 8,
+    displacementScale: 7,
+    displacementStrength: 0.4,
     enabled: true,
     lacunarity: 1.8,
     meshResolution: 64,
     normalScale: 0.2,
     persistence: 0.75,
     textureDisplacementStrength: 0.5,
-    tileSize: 400,
+    tileSize: 20,
     caustics: {
       depthAttenuation: 0,
       enabled: true,
       intensity: 0.9,
-      scale: 150,
+      scale: 7.5,
       waveDistortion: 0.26,
     },
     sunShafts: {
@@ -136,8 +131,8 @@ export const FOGGY_PRESET: PresetConfig = {
       intensity: 0.8,
       rippleDecay: 1.6,
       rippleDensity: 0.75,
-      rippleFadeEnd: 1000,
-      rippleSize: 8.5,
+      rippleFadeEnd: 100,
+      rippleSize: 0.3,
       rippleStrength: 1,
       streakLength: 1,
       streakWidth: 0.01,
@@ -148,10 +143,10 @@ export const FOGGY_PRESET: PresetConfig = {
       color: "#ffffff",
       count: 1000,
       enabled: true,
-      farDistance: 209,
-      maxSize: 0.5,
-      minSize: 0.1,
-      nearDistance: 9,
+      farDistance: 40,
+      maxSize: 0.15,
+      minSize: 0.03,
+      nearDistance: 2,
       opacity: 0.5,
     },
   },
@@ -163,14 +158,14 @@ export const FOGGY_PRESET: PresetConfig = {
     fadeOutTime: 0.5,
     opacity: 0.4,
     respawnTime: 1,
-    size: 27.5,
+    size: 3,
     spawnJitterTime: 0,
     stretchX: 1.88,
     stretchY: 1,
-    submersionDepth: 0.5,
+    submersionDepth: 0.15,
     velocityHeightFactor: 0,
     velocityScaleFactor: 0,
-    velocityThreshold: 3.9,
+    velocityThreshold: 0.8,
   },
   ssr: {
     enabled: true,
@@ -181,22 +176,13 @@ export const FOGGY_PRESET: PresetConfig = {
     intensity: 0.3,
     power: 3.5,
   },
-  lighting: {
-    ambient: {
-      skyColor: "#cac2ba",
-      groundColor: "#3c3f48",
-      intensity: 1.64,
-    },
-  },
   sky: {
     source: {
       type: "hdri",
       url: "hdris/overcast_soil_puresky_4k.jpg",
     },
     brightness: 0.2,
-    reflectionBlurDistance: 2000,
-    reflectionDistanceBlur: 0.51,
-    reflectionRoughness: 0.02,
+    reflectionRoughness: 0.15,
     sun: {
       azimuth: 265,
       diskColor: "#fffef5",
@@ -210,7 +196,7 @@ export const FOGGY_PRESET: PresetConfig = {
   },
   sparkle: {
     enabled: false,
-    fadeDistance: 1650,
+    fadeDistance: 170,
     intensity: 1,
     minDistance: 0,
     power: 960,
@@ -224,23 +210,16 @@ export const FOGGY_PRESET: PresetConfig = {
   waves: {
     fft: {
       amplitude: 1,
-      frequency: 1,
-      animationSpeed: 2.9,
-      windSpeed: 22.6,
-      windDirection: 1.4486232791552935,
-      choppiness: 1.5,
+      animationSpeed: 1,
+      windSpeed: 5,
+      windDirection: 0,
+      choppiness: 1.67,
+      peakWavelength: 110,
       spectralSharpness: 1,
-      standingWaveRatio: 0.89,
+      standingWaveRatio: 0.49,
       cascades: {
-        ripples: { scale: 261, amplitudeScale: 0.05 },
-        waves: { scale: 1430, amplitudeScale: 0.15 },
+        maxScale: 1024,
       },
-    },
-    gerstner: {
-      wavelength: 785,
-      amplitude: 2.88,
-      wavelengthSpread: 2.48,
-      directionalSpread: 0.9,
     },
   },
 };

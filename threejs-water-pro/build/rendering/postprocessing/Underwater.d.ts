@@ -3,14 +3,13 @@ import { PassNode } from "three/webgpu";
 import type { Node } from "../../shaders/types";
 import type { TextureNode } from "three/webgpu";
 import type { IWaterDepthPass } from "../passes/IWaterDepthPass";
+import type { SceneDepthSampler } from "../passes/SceneDepthSampler";
+import type { WaterColor } from "../../shaders/waterColor";
 /**
  * Underwater applies screen-space post-processing effects for pixels
- * below the water surface: per-channel Beer-Lambert attenuation matching
- * the above-water surface composite (`WaterColor`). Absorption coefficient
- * and intrinsic water color are bound from the same `WaterColor` uniform
- * nodes that drive the surface shader, so a pixel just above the waterline
- * and a pixel just below it converge to the same color as column
- * thickness → 0.
+ * below the water surface. It reads the same physical or custom `WaterColor`
+ * model as the surface shader, so attenuation remains continuous across the
+ * waterline.
  *
  * UV distortion (refraction warp) is handled separately by
  * {@link UnderwaterDistortion}, which produces a shared distorted UV node
@@ -53,10 +52,9 @@ export declare class Underwater {
     private _enabled;
     private _enabledUniform;
     private _tintColor;
-    private _absorptionColorNode;
-    private _waterColorNode;
+    private _waterColor;
     private _waterDepthPass;
-    private sceneDepthTextureNode;
+    private _sceneDepth;
     private transparentColorTextureNode;
     private transparentDepthTextureNode;
     private cameraNearUniform;
@@ -69,24 +67,17 @@ export declare class Underwater {
      * propagate automatically via the source's internal TSL nodes.
      */
     setWaterDepthPass(waterDepthPass: IWaterDepthPass): void;
-    /** Set the scene depth texture from DepthPass. */
-    setSceneDepthTexture(tex: THREE.Texture): void;
+    /** Bind the scene-depth sampler from the capture pass. Called once —
+     * target rebuilds and camera changes propagate through the sampler. */
+    setSceneDepth(sceneDepth: SceneDepthSampler): void;
     /** Set the transparent object color texture from DepthPass. */
     setTransparentColorTexture(tex: THREE.Texture): void;
     /** Set the transparent object depth/alpha texture from DepthPass. */
     setTransparentDepthTexture(tex: THREE.Texture): void;
     /** Bind depth reconstruction uniforms. */
     setDepthUniforms(near: number, far: number): void;
-    /**
-     * Bind the surface Beer-Lambert uniform nodes. Called from
-     * `WaterSystem.create` after both `Underwater` and the `WaterColor`
-     * instance exist. Underwater fog reads these directly — no per-frame
-     * sync, no duplicated uniforms.
-     *
-     * @param absorptionColor `WaterColor._absorptionColorNode` (vec3).
-     * @param waterColor      `WaterColor._waterColorNode` (vec3).
-     */
-    bindColorNodes(absorptionColor: Node, waterColor: Node): void;
+    /** Bind the same water-color model used by the surface shader. */
+    bindWaterColor(waterColor: WaterColor): void;
     /** Whether underwater effects are enabled. */
     get enabled(): boolean;
     set enabled(value: boolean);

@@ -1,23 +1,22 @@
 /**
- * RenderPassManager handles depth and color pass lifecycle for the water system.
+ * RenderPassManager handles capture-pass lifecycle for the water system.
  * Manages texture creation, resize handling, and material texture binding.
  */
 import * as THREE from "three/webgpu";
+import type { SceneDepthSampler } from "./passes/SceneDepthSampler";
 import type { IWaterDepthPass } from "./passes/IWaterDepthPass";
 import type { WaterSurfaceMaterial } from "../components/surface/WaterSurfaceMaterial";
 import type { Underwater, AtmosphericFog } from "./postprocessing";
 import type { WaterSurfaceGeometry } from "../components/surface/WaterSurfaceGeometry";
-import type { Sky } from "../components/sky/Sky";
+import type { SkyProvider } from "../components/sky/SkyProvider";
 import type { SpraySystem } from "../systems/spray";
 export interface RenderPassManagerOptions {
     clipmap: WaterSurfaceGeometry;
     waterMaterial: WaterSurfaceMaterial;
     spray?: SpraySystem | null;
-    sky?: Sky | null;
     underwater?: Underwater | null;
     atmosphericFog?: AtmosphericFog | null;
     excludedObjects?: THREE.Object3D[];
-    sceneColorResolutionScale?: number;
     isWebGL: boolean;
 }
 /**
@@ -28,12 +27,10 @@ export interface RenderPassManagerOptions {
 export interface RenderPassManagerRebindOptions {
     clipmap: WaterSurfaceGeometry;
     waterMaterial: WaterSurfaceMaterial;
-    sceneColorResolutionScale?: number;
 }
 export declare class RenderPassManager {
     private renderer;
-    private depthPass;
-    private sceneColorPass;
+    private capturePass;
     private maskPass;
     private waterDepthPass;
     private gBufferPass;
@@ -44,28 +41,25 @@ export declare class RenderPassManager {
     private underwater;
     private atmosphericFogPass;
     private currentSky;
-    private skyExcludedMeshes;
+    private maskActive;
     constructor(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, options: RenderPassManagerOptions);
     /**
-     * Get the current sky provider.
+     * Get the current sky provider. The single query point for "what sky is
+     * active" — other subsystems that need it (e.g. `WaterSystem._step`'s
+     * `followCamera` call) read through here rather than tracking their own
+     * reference.
      */
-    getCurrentSky(): Sky | null;
+    getCurrentSky(): SkyProvider | null;
     /**
-     * Update the sky provider used for aux-pass exclusion and atmospheric fog.
-     * All backdrop meshes (and their Mesh descendants) returned by
-     * {@link Sky.getMeshes} are excluded from both the depth pass and
-     * the scene-color pass, so sky geometry can never contaminate refraction
-     * sampling or transparent-depth decomposition.
+     * Rebind every consumer this manager owns a reference to when the active
+     * sky provider changes: the water material (reflection/fog/sun-disk
+     * samplers baked into its shader graph), atmospheric fog, and the
+     * capture pass's exclusion set. Called from {@link WaterSystem.setSky} —
+     * the manager is the single owner of these references, so it is the
+     * natural fan-out point instead of `WaterSystem` calling each consumer
+     * by name.
      */
-    setSky(sky: Sky | null): void;
-    /**
-     * Register every mesh descendant of each object returned by
-     * {@link Sky.getMeshes} with the depth and scene-color passes so
-     * the sky disappears from both.
-     */
-    private applySkyExclusions;
-    /** Undo every exclusion added by {@link applySkyExclusions}. */
-    private clearSkyExclusions;
+    setSky(sky: SkyProvider | null): void;
     /**
      * Swap the water material and clipmap in place without recreating any
      * passes or render targets. Used by {@link WaterSystem.setQualityLevel}
@@ -86,17 +80,21 @@ export declare class RenderPassManager {
      */
     resize(): void;
     /**
-     * Render the depth pass
+     * Run the scene capture: refraction colour + opaque scene depth always,
+     * plus the transparent captures (depth + premultiplied colour) when
+     * `includeTransparents` is true.
+     *
+     * @param includeTransparents - Run the transparent capture sub-passes.
+     *   Only the underwater fog decomposition consumes them, so callers skip
+     *   them when underwater is disabled.
      */
-    renderDepthPass(renderer: THREE.WebGPURenderer): void;
-    /**
-     * Render the scene color pass (for underwater refraction)
-     */
-    renderSceneColorPass(renderer: THREE.WebGPURenderer): void;
+    renderCapturePass(renderer: THREE.WebGPURenderer, includeTransparents?: boolean): void;
     /**
      * Render the mask pass (for water masking)
      */
     renderMaskPass(renderer: THREE.WebGPURenderer): void;
+    /** Include or omit mask sampling in the water material's shader graph. */
+    setMaskActive(active: boolean): void;
     /**
      * Render the water depth pass.
      */
@@ -105,6 +103,11 @@ export declare class RenderPassManager {
     renderSSRGBufferPass(renderer: THREE.WebGPURenderer): void;
     /** Render the SSR ray-march pass at the configured resolution scale. */
     renderSSRPass(renderer: THREE.WebGPURenderer): void;
+    /**
+     * Clear a stale SSR result once after SSR is disabled or its target is
+     * recreated. Repeated calls are CPU-only no-ops until the pass renders again.
+     */
+    clearSSRPassIfNeeded(renderer: THREE.WebGPURenderer): void;
     /**
      * Add an object to render as a water mask.
      * Water will be hidden where this object is visible.
@@ -126,8 +129,12 @@ export declare class RenderPassManager {
      * Get all registered mask objects.
      */
     getMaskObjects(): ReadonlySet<THREE.Object3D>;
-    /** Get the scene depth texture. */
-    get sceneDepthTexture(): THREE.Texture;
+    /**
+     * The normalized-linear scene-depth sampler over the capture pass's
+     * hardware depth. Subsystems embed `sample(uv)` in their node graphs
+     * once; target rebuilds and camera changes propagate automatically.
+     */
+    get sceneDepth(): SceneDepthSampler;
     /**
      * The water-depth source. Subsystems that need clipped or unclipped
      * water-mesh depth samples route through its `sampleX(uv)` builders so
@@ -138,11 +145,6 @@ export declare class RenderPassManager {
     get cameraNear(): number;
     /** Get camera far plane distance. */
     get cameraFar(): number;
-    /**
-     * Update the scene color pass resolution scale and rebuild its render target.
-     */
-    setSceneColorResolutionScale(scale: number): void;
-    getSceneColorResolutionScale(): number;
     /**
      * Dispose of resources
      */

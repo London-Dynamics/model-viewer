@@ -1,1 +1,1 @@
-{"version":3,"file":"foamDefaults.d.ts","sourceRoot":"","sources":["../../src/shaders/foamDefaults.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,KAAK,MAAM,cAAc,CAAC;AAEtC,oEAAoE;AACpE,wBAAgB,wBAAwB,IAAI,KAAK,CAAC,WAAW,CAQ5D"}
+{"version":3,"file":"foamDefaults.d.ts","sourceRoot":"","sources":["../../src/shaders/foamDefaults.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,KAAK,MAAM,cAAc,CAAC;AAEtC,oEAAoE;AACpE,wBAAgB,wBAAwB,IAAI,KAAK,CAAC,WAAW,CAQ5D"}

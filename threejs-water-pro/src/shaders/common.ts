@@ -1,17 +1,20 @@
-import { float, floor, Fn, fract, mix, uint } from "three/tsl";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
+import { float, floor, Fn, hash as pcgHash, mix, uint } from "three/tsl";
 import type { FloatNode, Node, StorageBufferNode } from "./types";
 
 /**
- * Hash function for pseudo-random number generation
- * Uses a simple hash function to generate deterministic pseudo-random values
- * @returns A TSL function node that takes a seed and returns a pseudo-random value [0, 1]
+ * Integer-avalanche PCG hash used for deterministic spectrum randomization.
+ *
+ * The previous float hash began with `fract(seed * 0.1031)`. Spectrum seeds
+ * are separated by 100000, and `100000 * 0.1031` is the integer 10310, so the
+ * fractional part discarded the entire cascade/session seed. Every cascade
+ * therefore received the same random sequence and began phase-correlated.
+ * Three.js's PCG hash converts the input to `u32` and avalanches every bit, so
+ * adjacent cells and seed streams remain decorrelated on WebGPU and WebGL.
  */
-// @ts-expect-error - TSL Fn with array destructuring has type issues
-export const hash = Fn(([seed]) => {
-  const p = fract(seed.mul(0.1031));
-  const h = p.add(19.19);
-  return fract(h.mul(h.add(47.43)).mul(p));
-});
+export const hash = pcgHash;
 
 /**
  * Bit-reverse a number using arithmetic operations
@@ -107,13 +110,14 @@ export function sampleBufferBilinear(
 
 /**
  * Converts world coordinates to pixel coordinates for cascade buffer sampling.
- * Applies scale normalization so 'scale' represents world-space wavelength
- * independent of FFT resolution (base resolution = 256).
+ * The cascade tile spans exactly `scale` meters in world space — the same
+ * convention the spectrum shader uses to generate it (kx = 2πn/scale) — so
+ * the mapping must not depend on FFT resolution.
  *
  * @param worldX - World X coordinate.
  * @param worldZ - World Z coordinate.
  * @param resolution - Buffer resolution (texels per side).
- * @param scale - World-space scale of the cascade.
+ * @param scale - World-space tile size of the cascade, in meters.
  */
 export function worldToPixelCoords(
   worldX: FloatNode,
@@ -122,10 +126,7 @@ export function worldToPixelCoords(
   scale: Node,
 ): { px: Node; py: Node } {
   const resFloat = float(resolution);
-  const baseRes = float(256.0);
-  const effectiveScale = (scale as FloatNode).mul(resFloat).div(baseRes);
-
-  const px = worldX.div(effectiveScale).add(0.5).mul(resFloat);
-  const py = worldZ.div(effectiveScale).add(0.5).mul(resFloat);
+  const px = worldX.div(scale).add(0.5).mul(resFloat);
+  const py = worldZ.div(scale).add(0.5).mul(resFloat);
   return { px, py };
 }

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import {
   pass,
@@ -14,7 +17,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { film } from "three/addons/tsl/display/FilmNode.js";
 import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
-import type { WaterSystem, WaterPreset } from "threejs-water-pro";
+import type { WaterSystem, WaterPresetConfig } from "threejs-water-pro";
 import type { AntialiasingMode } from "../WaterApp";
 
 export interface PostProcessingUniforms {
@@ -46,7 +49,7 @@ export interface PostProcessingContext {
 export function setupPostProcessing(
   renderer: THREE.WebGPURenderer,
   waterSystem: WaterSystem,
-  params: WaterPreset,
+  params: WaterPresetConfig,
   antialiasing: AntialiasingMode = "smaa",
 ): PostProcessingContext {
   const postProcessing = new THREE.PostProcessing(renderer);
@@ -77,7 +80,8 @@ export function setupPostProcessing(
     },
   };
 
-  // Apply water post-processing effects (atmospheric fog, underwater haze, distortion)
+  // Apply water post-processing effects (underwater haze, distortion, rain).
+  // Atmospheric fog is per-material (scene.fogNode), already in the scene pass.
   outputNode = waterSystem.postProcessing.buildNode(scenePass, outputNode);
 
   // Anti-aliasing pass - applied AFTER fog to avoid depth blending artifacts at edges

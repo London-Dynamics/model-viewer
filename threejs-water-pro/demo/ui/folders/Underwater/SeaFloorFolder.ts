@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -72,25 +75,25 @@ export function createSeaFloorFolder(
     onChange: syncFloorParams,
   });
 
-  folder.addSlider("Terrain Height", {
+  folder.addSlider("Terrain Height (m)", {
     min: 0.0,
-    max: 20.0,
+    max: 5.0,
     step: 0.5,
     object: ui.params.oceanFloor,
     key: "displacementStrength",
     onChange: syncFloorParams,
   });
 
-  folder.addSlider("Terrain Scale", {
-    min: 50,
-    max: 500,
+  folder.addSlider("Terrain Scale (m)", {
+    min: 5,
+    max: 100,
     step: 10,
     object: ui.params.oceanFloor,
     key: "displacementScale",
     onChange: syncFloorParams,
   });
 
-  folder.addSlider("Texture Displacement", {
+  folder.addSlider("Texture Displacement (m)", {
     min: 0.0,
     max: 2.0,
     step: 0.05,

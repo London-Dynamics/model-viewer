@@ -1,8 +1,8 @@
 import * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
 import type { IWaveSimulation } from "../simulation/waves";
-import type { FoamAccumulation } from "../simulation/foam/FoamAccumulation";
-import type { Sky } from "../components/sky/Sky";
+import type { IFoamFieldSampler } from "../simulation/foam";
+import type { SkyProvider } from "../components/sky/SkyProvider";
 import type { SurfaceUniforms } from "../uniforms";
 import type { WaterVertexResult } from "./waterVertex";
 import type { CascadeSampler } from "./cascadeSampler";
@@ -16,10 +16,14 @@ import { type SSR } from "./ssr";
 import type { SSS } from "./sss";
 import type { RainRipples } from "../simulation/ripples";
 import type { IWakeFieldSampler } from "../simulation/waves/wake";
+import type { SceneDepthSampler } from "../rendering/passes/SceneDepthSampler";
+import type { IWaterDepthPass } from "../rendering/passes/IWaterDepthPass";
 export interface WaterTextures {
-    depth: THREE.Texture;
-    mask: THREE.Texture;
+    /** Screen-space water mask. Omitted while masking is inactive. */
+    mask?: THREE.Texture;
     sceneColor: THREE.Texture;
+    /** Normalized-linear scene depth sampler from the scene capture pass. */
+    sceneDepth: SceneDepthSampler;
 }
 export interface WaterFragmentParams {
     uniforms: SurfaceUniforms;
@@ -34,22 +38,25 @@ export interface WaterFragmentParams {
     sparkle: Sparkle;
     ssr: SSR;
     sss: SSS;
-    sky: Sky | null;
-    /** Whether Jacobian foam is enabled (capability flag, not a runtime toggle). */
-    jacobianFoam: boolean;
+    sky: SkyProvider | null;
     /** CascadeSampler instance for WebGPU path. Null for WebGL. */
     cascadeSampler: CascadeSampler | null;
     /**
-     * Persistent foam accumulation system. When provided (WebGPU + quality
-     * feature enabled), wave-crest foam uses its energy buffer for streaks
-     * and decay tails. Null on WebGL or when disabled.
+     * Persistent foam-energy field sampler. When provided (on quality tiers with
+     * wave foam enabled), wave-crest foam reads its energy for streaks and decay
+     * tails. Null on tiers where wave foam is off.
      */
-    foamAccumulation: FoamAccumulation | null;
-    gerstnerMaxWaves: number;
+    foamFieldSampler: IFoamFieldSampler | null;
     /** Rain ripple simulation for normal blending. Null if not initialized. */
     rainRipples: RainRipples | null;
     /** Wake field sampler for wake normal blending. Null on WebGL or disabled. */
     wakeFieldSampler: IWakeFieldSampler | null;
+    /**
+     * Water-surface depth source for the refracted-column measurement. Null
+     * until `RenderPassManager` binds it; the refraction path then falls back
+     * to the fragment's own surface depth.
+     */
+    waterDepth: IWaterDepthPass | null;
     /** Whether running on WebGL backend (disables clip plane for split view). */
     isWebGL?: boolean;
 }

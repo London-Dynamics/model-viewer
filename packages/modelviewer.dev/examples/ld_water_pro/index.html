@@ -80,7 +80,7 @@
                 <div class="ld-card-body">
                   <h3 class="ld-panel-title">LD Water Pro</h3>
                   <p id="water-pro-detail" class="ld-helper-text">
-                    Demo scale 15, bow on +Z. boat=ri245, aquila, or demo.
+                    Real metres, bow on +Z. boat=ri245, aquila, or demo.
                   </p>
                   <div class="ld-sections">
                     <section>
@@ -144,21 +144,22 @@
               <div class="heading">
                 <h2 class="demo-title">Boats in the water-pro demo</h2>
                 <h4>
-                  This page runs threejs-water-pro the way its own demo does:
-                  one WebGPU renderer, sunset water units left intact, and the
-                  boat scaled by 15. Pick a hull with boat=ri245 (default),
+                  This page runs vendored threejs-water-pro v3.5.1: one
+                  WebGPU renderer, hulls at real-metre scale, dusk water
+                  colour left intact. Pick a hull with boat=ri245 (default),
                   boat=aquila (alias 45-sport), or boat=demo (the vendored
                   dutch ship). All three share one high starboard-bow hero
                   angle. Distance follows the larger of length and height
                   so the ship's masts stay in frame, with the bow on +Z.
                   Ri245 and Aquila sink so the rub rail meets the lake; the
                   demo ship's origin is already its waterline. Afternoon is
-                  the reference clock at 16:45 (Sky Pro latitude 45) with wind
-                  6.7 m/s and a 22 m swell wavelength. This build has no Sky
-                  Pro preset and no cloud-coverage control. Sunset is a warm
-                  low sun and a deeper sea.
+                  quality high, wind 6.7 m/s, peak wavelength 22 m, and the
+                  16:45 sun from the Sky Pro clock at latitude 45. This build
+                  ships the SkyProvider hook and not the Sky Pro package, so
+                  the sky is the clear kloofendal HDRI and cloud coverage
+                  stays unset. Sunset is a warm low sun and a deeper sea.
                   Midday is a high sun and a bright lake. Calm lowers wave
-                  height only. It does not divide the clipmap by 15.
+                  height only.
                 </h4>
                 <h4>
                   Aquila windshield glass is KHR_materials_transmission. The

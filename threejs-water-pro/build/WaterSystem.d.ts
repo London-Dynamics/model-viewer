@@ -2,7 +2,7 @@
  * WaterSystem - High-level API for the WebGPU water rendering system.
  */
 import * as THREE from "three/webgpu";
-import { type IWaveSimulation, type IWaveSampler, type CascadeConfig } from "./simulation/waves";
+import { type IWaveSimulation, type IWaveSampler } from "./simulation/waves";
 import { type ClipmapConfig } from "./components/surface/WaterSurfaceGeometry";
 import { BuoyancySystem } from "./systems/buoyancy";
 import { WakeSystem } from "./systems/wake";
@@ -11,19 +11,18 @@ import { Underwater, AtmosphericFog } from "./rendering/postprocessing";
 import { UnderwaterParticles } from "./systems/underwater";
 import { RainSystem } from "./systems/rain";
 import { SpraySystem } from "./systems/spray";
-import { FoamAccumulation } from "./simulation/foam/FoamAccumulation";
-import type { Sky } from "./components/sky/Sky";
+import type { SkyProvider } from "./components/sky/SkyProvider";
 import { OceanFloor, type OceanFloorOptions } from "./components/floor/OceanFloor";
 import { type PresetName } from "./config/presets";
 import { type QualityLevel } from "./config/QualityLevels";
 import { RenderPassManager } from "./rendering/RenderPassManager";
-import type { WaterSceneParams } from "./config/presets/types";
+import type { WaterSceneConfig } from "./config/presets/types";
 import { WaveUniforms } from "./uniforms";
 import { Lighting } from "./systems/Lighting";
+import { Environment } from "./systems/environment";
 import { PostProcessingPipeline } from "./systems/PostProcessingPipeline";
 import type { WaterSystemConfig } from "./types";
 import type { WaterSystemOptions } from "./types/params";
-import { Gerstner } from "./shaders/gerstner";
 import { WaterColor } from "./shaders/waterColor";
 import { Fresnel } from "./shaders/fresnel";
 import { Sparkle } from "./shaders/sparkle";
@@ -35,11 +34,10 @@ import { WaveFoam } from "./shaders/foamWaves";
 import { UnderwaterDistortion } from "./shaders/underwaterDistortion";
 import { SunShafts } from "./shaders/sunShafts";
 import { Waterline } from "./shaders/waterline";
-/**
- * A complete water preset. Defines every parameter of the water system.
- * Implement this interface to create custom presets.
- */
-export type WaterPreset = WaterSceneParams;
+/** A complete water preset accepted by runtime APIs. */
+export type WaterPreset = WaterSceneConfig;
+/** Explicit configuration name retained for API clarity. */
+export type WaterPresetConfig = WaterSceneConfig;
 export declare class WaterSystem {
     private renderer;
     private _scene;
@@ -48,16 +46,15 @@ export declare class WaterSystem {
     private waterMaterial;
     private clipmap;
     private oceanFloor;
-    private oceanFloorDepth;
     private _underwater;
     private atmosphericFogPass;
     private renderPassManager;
     private _lighting;
+    private _environment;
     private _underwaterController;
     private _postProcessing;
     private _heightQueryPos;
     private _waveUniforms;
-    private _gerstner;
     private _underwaterDistortion;
     private _sunShafts;
     private _fresnel;
@@ -107,7 +104,7 @@ export declare class WaterSystem {
      * registration order is iteration order, and there is no removal hook
      * outside `dispose`.
      *
-     * See the "Subsystem Isolation" section of `CLAUDE.md` for the rule.
+     * See the "Subsystem Boundaries" section of `AGENTS.md` for the rule.
      */
     private _subsystems;
     readonly buoyancy: BuoyancySystem;
@@ -243,8 +240,13 @@ export declare class WaterSystem {
     get waterline(): Waterline;
     /** Wave simulation uniforms (amplitude, windSpeed, choppiness, etc.) */
     get waves(): WaveUniforms;
-    /** Gerstner swell parameters (amplitude, wavelength, spreads) */
-    get gerstner(): Gerstner;
+    /**
+     * Whether the camera is below the water surface this frame. Always `false`
+     * while underwater effects are disabled. Useful for gating app-level
+     * content that only makes sense on one side of the surface (audio, UI,
+     * post-fog FX composites).
+     */
+    get cameraSubmerged(): boolean;
     /** Water color */
     get color(): WaterColor;
     /** Surface fresnel */
@@ -265,23 +267,24 @@ export declare class WaterSystem {
     /** Subsurface scattering */
     get sss(): SSS;
     /**
-     * Lighting subsystem (sun + ambient). Access sun uniforms via
-     * `water.lighting.sun`, the directional light via
-     * `water.lighting.sunLight`, and the hemisphere fill via
-     * `water.lighting.hemisphereLight`.
+     * Lighting subsystem. Access sun uniforms via `water.lighting.sun` and
+     * the directional light via `water.lighting.sunLight`. Ambient fill
+     * comes from the sky's environment lighting, scaled by
+     * `water.environment.intensity`.
      */
     get lighting(): Lighting;
+    /**
+     * Environment subsystem. Owns `scene.environmentNode` (the active sky
+     * provider's prefiltered PMREM, scaled by intensity and brightness, lighting
+     * every scene mesh) and the `water.environment.intensity` trim.
+     */
+    get environment(): Environment;
     /** Foam shader classes (surface, wave crest, shoreline) */
     get foam(): {
         surface: SurfaceFoam;
         waves: WaveFoam;
         shoreline: ShorelineFoam;
     };
-    /**
-     * Persistent wave-crest foam accumulation buffer. Returns `null` on
-     * backends/quality tiers where the compute buffer is unavailable.
-     */
-    get foamAccumulation(): FoamAccumulation | null;
     /** Ocean floor component */
     get floor(): OceanFloor;
     /** Sun shafts (god rays) effect */
@@ -347,6 +350,14 @@ export declare class WaterSystem {
      * final render (depth, mask, scene-color, water-depth, sun-shaft). Called
      * after the substep loop drains so these passes fire exactly once per
      * displayed frame regardless of how many simulation substeps executed.
+     *
+     * The substep loop above yields to the event loop on real GPU awaits,
+     * and camera-mutating input handlers (e.g. OrbitControls drag) run
+     * inside those gaps. Everything from here through the host's render
+     * call must execute in one task, so the camera the captures render from
+     * is the camera the final render uses. The awaits below don't break
+     * that: every hook body is synchronous, and awaiting an already-resolved
+     * promise stays in the current task.
      */
     private _renderPasses;
     /**
@@ -378,7 +389,31 @@ export declare class WaterSystem {
      * @param quality - The new quality level
      * @param params - Current water scene parameters to reapply after rebuild
      */
-    setQualityLevel(quality: QualityLevel, params: WaterSceneParams): Promise<void>;
+    setQualityLevel(quality: QualityLevel, params: WaterPreset): Promise<void>;
+    /**
+     * Change a single cascade's FFT resolution at runtime, independently of
+     * the rest of the quality level. Tile sizes re-derive from `maxScale` and
+     * every cascade's resolution up to `index` (see `deriveCascadeScale`), so
+     * this only reshapes cascades after `index` — the quality level's other
+     * settings (segments, effect defaults, etc.) are unchanged. Composes with
+     * prior overrides: the base is the currently active `cascades`, not the
+     * named quality level's defaults.
+     *
+     * Uses the same rebuild path as {@link setQualityLevel}, so the same
+     * post-processing-pipeline rebuild note applies.
+     *
+     * @param index - Cascade index to override (0..cascadeCount-1).
+     * @param resolution - New FFT resolution in texels (must be a power of two).
+     * @param params - Current water scene parameters to reapply after rebuild.
+     */
+    setCascadeResolution(index: number, resolution: number, params: WaterPreset): Promise<void>;
+    /**
+     * Shared rebuild path for {@link setQualityLevel} and
+     * {@link setCascadeResolution}: disposes and recreates every
+     * quality-dependent subsystem for the given config, then updates
+     * `_config` to match.
+     */
+    private _rebuildForQuality;
     /**
      * Load a preset, replacing all current parameters.
      *
@@ -390,18 +425,16 @@ export declare class WaterSystem {
      */
     loadPreset(preset: PresetName | WaterPreset): void;
     /**
-     * Set the active sky. The caller is responsible for adding / removing
-     * the sky's meshes to / from the scene.
-     *
-     * @param sky - A `Sky` instance, or `null` to disable sky reflections
-     *   and fog.
+     * Set (or clear) the active sky provider. Mesh lifecycle,
+     * `scene.environment`, and all subsystem rebinds are handled internally;
+     * the outgoing provider is never disposed.
      */
-    setSky(sky: Sky | null): void;
+    setSky(sky: SkyProvider | null): void;
     /**
-     * Update cascade configuration at the specified index.
-     * Call this after modifying cascade params (scale, amplitude, enabled).
+     * Resize the cascade set from a single largest tile size (meters). Finer
+     * cascades and their band edges derive automatically.
      */
-    updateCascadeConfig(index: number, config: CascadeConfig): void;
+    setMaxScale(maxScale: number): void;
     /**
      * Manually set the water grid center position.
      * Only effective when {@link cameraTracking} is disabled.
@@ -410,10 +443,6 @@ export declare class WaterSystem {
      * @param z - World Z coordinate
      */
     setPosition(x: number, z: number): void;
-    /**
-     * Set the world-space Y elevation for the ocean surface and floor.
-     */
-    setElevation(y: number): void;
     /**
      * Rebuild the clipmap geometry with new LOD levels or base size.
      * Mesh resolution (segments) is owned by the active quality level — change
@@ -470,12 +499,13 @@ export declare class WaterSystem {
      */
     private applyParams;
     /**
-     * Override effect enabled states with the quality level's feature defaults.
-     * Called after applyParams so quality-level defaults take precedence over
-     * preset values when switching quality levels. Users can still override
-     * individual features at runtime via the UI.
+     * Clamp effect enabled states to the quality level's capabilities. A quality
+     * feature flag can only force an effect off — keeping heavy effects like SSR
+     * disabled on low-end tiers — and never forces one on. Called after
+     * applyParams, so a preset's or user's "off" choice survives a quality switch
+     * instead of being re-enabled by the new level's defaults.
      */
-    private applyQualityFeatureDefaults;
+    private clampFeaturesToQuality;
     /**
      * Sync distance-based fadeEnd values.
      * Fresnel fades at the outermost LOD's edge. Fog fadeEnd is preset-driven
@@ -496,7 +526,6 @@ export declare class WaterSystem {
      */
     private _wireClipmapFollowers;
     private updateAllCascadeConfigs;
-    private applyCascadeConfig;
     /**
      * Fan out a "wave-sim cascade configuration changed" notification.
      * Fired after the sim is rebuilt (create, setQualityLevel) and after

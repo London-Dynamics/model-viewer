@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Quality level definitions for the water shader.
  *
@@ -11,7 +14,7 @@
  * at runtime without triggering a shader recompile.
  */
 
-export type QualityLevel = "low" | "medium" | "high" | "ultra";
+export type QualityLevel = "low" | "medium" | "high" | "ultra" | "max";
 
 /**
  * Complete quality level configuration including features and cascades.
@@ -20,9 +23,6 @@ export interface QualityLevelConfig {
   // Water surface mesh segments (vertices per side)
   segments: number;
 
-  // Maximum number of Gerstner waves (0 disables Gerstner)
-  gerstnerMaxWaves: number;
-
   features: {
     readonly displacement: true;
     readonly normals: true;
@@ -30,8 +30,6 @@ export interface QualityLevelConfig {
     readonly reflection: true;
     readonly waterColor: true;
 
-    jacobianFoam: boolean;
-    persistentFoamBuffer: boolean;
     surfaceFoam: boolean;
     turbulentFoam: boolean;
     shorelineFoam: boolean;
@@ -42,10 +40,6 @@ export interface QualityLevelConfig {
     domainWarpedFoam: boolean;
     ssr: boolean;
   };
-
-  // Scene color pass resolution scale (1 = full, 0.5 = half, 0.25 = quarter).
-  // Controls the resolution of the render target used by SSR and underwater refraction.
-  sceneColorResolutionScale: number;
 
   // Sun shaft pass resolution scale (1 = full, 0.5 = half, 0.25 = quarter).
   // Controls the resolution of the render target used for god ray intensity computation.
@@ -62,14 +56,20 @@ export interface QualityLevelConfig {
   wakeResolution: number;
   wakeWorldSize: number;
 
-  // Wave-crest spray particle pool size. 0 = disabled at this quality level
-  // (no storage buffer allocated). Typical values: 0/0/32k/64k.
+  // World-fixed wave-crest foam field. Resolution and extent size the
+  // camera-anchored window the persistent foam accumulates in; finer/larger
+  // trades cost for sharpness/coverage. Honoured only where `turbulentFoam` is on.
+  foamFieldResolution: number;
+  foamFieldWorldSize: number;
+
+  // Wave-crest spray particle pool size. 0 disables allocation at this tier.
   sprayMaxParticles: number;
   // Whether wave-crest spray is enabled by default at this quality level.
   sprayEnabledByDefault: boolean;
 
-  // Cascade configuration (FFT resolution and enablement)
-  // [waves, ripples]
+  // Cascade configuration, ordered from largest to smallest spatial scale.
+  // Array length determines the active cascade count; resolution controls
+  // each cascade's sampling density and the scale derived for finer cascades.
   cascades: {
     enabled: boolean;
     resolution: number;
@@ -79,29 +79,35 @@ export interface QualityLevelConfig {
 /**
  * Quality level configurations.
  *
- * LOW: Essential ocean rendering - waves only, core effects
- * MEDIUM: Good quality - waves + ripples, all core effects
- * HIGH: Full quality - all cascades, underwater effects
- * ULTRA: Maximum quality - highest resolution FFT
+ * LOW: Swell only - core effects
+ * MEDIUM: Swell + wind waves - all core effects
+ * HIGH: Swell + wind waves + ripples - underwater effects
+ * ULTRA: Same three cascades as High, with a sharper ripple cascade
+ * MAX: Three 512 grids with sharper swell/waves and a smaller ripple tile
  *
- * Cascade order: [waves, ripples] - largest to smallest scale.
- * Gerstner waves provide large-scale swells analytically (no FFT cascade needed).
+ * Cascade order: [swell, waves, ripples] - largest to smallest scale (swell
+ * is the longest-wavelength, longest-period component; wind-driven waves
+ * are next; ripples are the finest capillary detail). Quality adds cascades
+ * progressively through High rather than lowering their resolution. Ultra
+ * doubles ripples to 512. Max doubles swell and waves as well, shrinking the
+ * derived wave and ripple tiles to 48 m and 2.25 m. Its 512 ripple grid
+ * therefore restores a terminal detail floor of about 1.3 cm.
  *
- * Cascade resolution by level:
- * - LOW: 128 (waves only)
- * - MEDIUM: 128/256 (waves + ripples)
- * - HIGH: 256/256 (waves + ripples, higher res)
- * - ULTRA: 256/512 (waves + ripples, highest res)
+ * Tile sizes and seams below assume the default `maxScale` of 1024 m (see
+ * `deriveCascadeScale`). `maxScale` is a runtime-adjustable wave parameter,
+ * not a fixed constant — a larger value shifts every number below
+ * proportionally and can push the dominant wavelength out of a lower tier's
+ * coverage. See the cascade section of `docs/api/waves.md`.
  */
 export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
   low: {
     segments: 16,
-    gerstnerMaxWaves: 0,
-    sceneColorResolutionScale: 0.25,
     sunShaftResolutionScale: 0.25,
     wakeEnabled: false,
     wakeResolution: 256,
-    wakeWorldSize: 700,
+    wakeWorldSize: 100,
+    foamFieldResolution: 256,
+    foamFieldWorldSize: 400,
     sprayMaxParticles: 0,
     sprayEnabledByDefault: false,
     ssrMaxDistance: 50,
@@ -114,8 +120,6 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       waterColor: true,
       fog: true,
       sparkle: true,
-      jacobianFoam: true,
-      persistentFoamBuffer: false,
       surfaceFoam: true,
       turbulentFoam: true,
       shorelineFoam: true,
@@ -124,21 +128,21 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       domainWarpedFoam: false,
       ssr: false,
     },
-    // [waves, ripples]
+    // Tile 1024 m, detail floor 12 m, ~66k FFT threads. Swell only, at the
+    // same resolution as cascade 0 in every other tier.
     cascades: [
-      { enabled: true, resolution: 128 }, // waves
-      { enabled: false, resolution: -1 }, // ripples disabled
+      { enabled: true, resolution: 256 }, // swell
     ],
   },
 
   medium: {
     segments: 32,
-    gerstnerMaxWaves: 2,
-    sceneColorResolutionScale: 0.5,
     sunShaftResolutionScale: 0.25,
     wakeEnabled: true,
     wakeResolution: 256,
-    wakeWorldSize: 700,
+    wakeWorldSize: 100,
+    foamFieldResolution: 512,
+    foamFieldWorldSize: 400,
     sprayMaxParticles: 0,
     sprayEnabledByDefault: false,
     ssrMaxDistance: 100,
@@ -150,8 +154,6 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       reflection: true,
       waterColor: true,
       fog: true,
-      jacobianFoam: true,
-      persistentFoamBuffer: false,
       surfaceFoam: true,
       turbulentFoam: true,
       shorelineFoam: true,
@@ -161,21 +163,22 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       domainWarpedFoam: false,
       ssr: false,
     },
-    // [waves, ripples]
+    // Tiles 1024 / 96 m, seam at 12 m, detail floor 1.1 m, ~131k FFT
+    // threads. Adds the wind-wave cascade on top of swell.
     cascades: [
-      { enabled: true, resolution: 128 }, // waves
-      { enabled: true, resolution: 256 }, // ripples
+      { enabled: true, resolution: 256 }, // swell
+      { enabled: true, resolution: 256 }, // waves
     ],
   },
 
   high: {
     segments: 64,
-    gerstnerMaxWaves: 4,
-    sceneColorResolutionScale: 0.5,
     sunShaftResolutionScale: 0.25,
     wakeEnabled: true,
     wakeResolution: 512,
-    wakeWorldSize: 700,
+    wakeWorldSize: 100,
+    foamFieldResolution: 1024,
+    foamFieldWorldSize: 400,
     sprayMaxParticles: 32_000,
     sprayEnabledByDefault: true,
     ssrMaxDistance: 150,
@@ -187,8 +190,6 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       reflection: true,
       waterColor: true,
       fog: true,
-      jacobianFoam: true,
-      persistentFoamBuffer: true,
       surfaceFoam: true,
       turbulentFoam: true,
       shorelineFoam: true,
@@ -198,8 +199,10 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       domainWarpedFoam: true,
       ssr: true,
     },
-    // [waves, ripples]
+    // Tiles 1024 / 96 / 9 m, seams at 12 / 1.125 m, detail floor 10.5 cm,
+    // ~197k FFT threads. Adds the ripple cascade on top of swell + waves.
     cascades: [
+      { enabled: true, resolution: 256 }, // swell
       { enabled: true, resolution: 256 }, // waves
       { enabled: true, resolution: 256 }, // ripples
     ],
@@ -207,12 +210,12 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
 
   ultra: {
     segments: 128,
-    gerstnerMaxWaves: 8,
-    sceneColorResolutionScale: 1,
     sunShaftResolutionScale: 0.25,
     wakeEnabled: true,
     wakeResolution: 1024,
-    wakeWorldSize: 700,
+    wakeWorldSize: 100,
+    foamFieldResolution: 2048,
+    foamFieldWorldSize: 400,
     sprayMaxParticles: 64_000,
     sprayEnabledByDefault: true,
     ssrMaxDistance: 250,
@@ -224,8 +227,6 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       reflection: true,
       waterColor: true,
       fog: true,
-      jacobianFoam: true,
-      persistentFoamBuffer: true,
       surfaceFoam: true,
       turbulentFoam: true,
       shorelineFoam: true,
@@ -235,9 +236,55 @@ export const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig> = {
       domainWarpedFoam: true,
       ssr: true,
     },
-    // [waves, ripples]
+    // Tiles 1024 / 96 / 9 m, seams at 12 / 1.125 m, detail floor 5.3 cm,
+    // ~393k FFT threads. Same three cascades as High; only the ripple
+    // cascade's resolution increases, sharpening fine surface detail
+    // without changing swell/wave shape.
     cascades: [
+      { enabled: true, resolution: 256 }, // swell
       { enabled: true, resolution: 256 }, // waves
+      { enabled: true, resolution: 512 }, // ripples
+    ],
+  },
+
+  // Same features as ultra, with every FFT cascade raised to 512. Denser swell
+  // and waves grids shrink the derived wave and ripple tiles, restoring the
+  // approximately 1.3 cm terminal detail floor while keeping each complete
+  // line within guaranteed WebGPU workgroup limits.
+  max: {
+    segments: 128,
+    sunShaftResolutionScale: 0.25,
+    wakeEnabled: true,
+    wakeResolution: 1024,
+    wakeWorldSize: 100,
+    foamFieldResolution: 2048,
+    foamFieldWorldSize: 400,
+    sprayMaxParticles: 64_000,
+    sprayEnabledByDefault: true,
+    ssrMaxDistance: 250,
+    ssrStepCount: 32,
+    features: {
+      displacement: true,
+      normals: true,
+      fresnel: true,
+      reflection: true,
+      waterColor: true,
+      fog: true,
+      surfaceFoam: true,
+      turbulentFoam: true,
+      shorelineFoam: true,
+      sparkle: true,
+      sss: true,
+      screenSpaceRefraction: true,
+      domainWarpedFoam: true,
+      ssr: true,
+    },
+    // Tiles 1024 / 48 / 2.25 m, seams at 6 / 0.28125 m, detail floor 1.3 cm,
+    // 786,432 FFT cells. Every row fits the WebGPU guaranteed 16 KiB shared-
+    // memory and 256-invocation workgroup limits with pair-owned butterflies.
+    cascades: [
+      { enabled: true, resolution: 512 }, // swell
+      { enabled: true, resolution: 512 }, // waves
       { enabled: true, resolution: 512 }, // ripples
     ],
   },

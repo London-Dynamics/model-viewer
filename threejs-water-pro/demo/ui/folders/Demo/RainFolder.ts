@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -46,7 +49,7 @@ export function createRainFolder(ui: UIManager, pane: Panel | Folder): Folder {
     key: "streakLength",
   });
 
-  dropsFolder.addSlider("Streak Width", {
+  dropsFolder.addSlider("Streak Width (m)", {
     min: 0.001,
     max: 0.05,
     step: 0.001,
@@ -54,7 +57,7 @@ export function createRainFolder(ui: UIManager, pane: Panel | Folder): Folder {
     key: "streakWidth",
   });
 
-  dropsFolder.addSlider("Fade Distance", {
+  dropsFolder.addSlider("Fade Distance (m)", {
     min: 0,
     max: 50,
     step: 1,
@@ -79,10 +82,10 @@ export function createRainFolder(ui: UIManager, pane: Panel | Folder): Folder {
     key: "strength",
   });
 
-  ripplesFolder.addSlider("Size", {
-    min: 1,
-    max: 10,
-    step: 0.5,
+  ripplesFolder.addSlider("Size (m)", {
+    min: 0.1,
+    max: 1,
+    step: 0.05,
     object: ui.water.rain.ripples,
     key: "size",
   });
@@ -103,10 +106,10 @@ export function createRainFolder(ui: UIManager, pane: Panel | Folder): Folder {
     key: "decay",
   });
 
-  ripplesFolder.addSlider("Fade End", {
-    min: 50,
-    max: 2000,
-    step: 50,
+  ripplesFolder.addSlider("Fade End (m)", {
+    min: 10,
+    max: 200,
+    step: 5,
     object: ui.water.rain.ripples,
     key: "fadeEnd",
   });

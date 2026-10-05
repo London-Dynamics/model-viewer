@@ -7,22 +7,16 @@ export interface BuildWaterSurfaceNormalParams {
     oceanSim: IWaveSimulation;
     /** CascadeSampler instance for WebGPU path. Null for WebGL. */
     cascadeSampler: CascadeSampler | null;
-    /** Grid-reference world X coordinate at the fragment (FFT/Gerstner are grid-anchored). */
+    /** Grid-reference world X coordinate at the fragment (FFT is grid-anchored). */
     fragWorldX: Node;
-    /** Grid-reference world Z coordinate at the fragment (FFT/Gerstner are grid-anchored). */
+    /** Grid-reference world Z coordinate at the fragment (FFT is grid-anchored). */
     fragWorldZ: Node;
     /** True (choppy-displaced) world X for sampling the world-anchored wake field. */
     wakeWorldX: Node;
     /** True (choppy-displaced) world Z for sampling the world-anchored wake field. */
     wakeWorldZ: Node;
-    /** Hierarchical cascade sample coordinates from the vertex stage. */
-    vSampleCoords0: Node;
-    /** Vertex-interpolated Gerstner normal. */
-    vGerstnerNormal: Node;
-    /** Vertex-interpolated Gerstner folding factor. */
-    vGerstnerFolding: Node;
-    /** Compile-time max number of Gerstner waves (0 disables). */
-    gerstnerMaxWaves: number;
+    /** Hierarchical cascade sample coordinates from the vertex stage, one per cascade after the first. */
+    vHierarchicalCoords: Node[];
     /** Rain ripple simulation, or null if disabled. */
     rainRipples: RainRipples | null;
     /** Wake field sampler for wake normal perturbation, or null if disabled. */
@@ -38,15 +32,16 @@ export interface BuildWaterSurfaceNormalParams {
 export interface BuildWaterSurfaceNormalResult {
     /** Final surface normal in world space. */
     interpolatedNormal: Node;
-    /** Cascade-0 eigenvalue (folding factor) for crest foam. */
-    eigen0: Node;
-    /** Cascade-1 eigenvalue (folding factor) for crest foam. */
-    eigen1: Node;
     /** Per-drop rain ripple splash factor. Null if rain ripples are disabled. */
     rippleSplash: Node | null;
+    /**
+     * Sub-footprint slope variance (0-1) from the cascade normal mips, driving
+     * the filtered-BRDF reflection roughness. Zero on the WebGL noise path.
+     */
+    slopeVariance: Node;
 }
 /**
- * Builds the wave-displaced surface normal and supporting eigenvalues.
+ * Builds the wave-displaced surface normal.
  *
  * Identical to the inline computation previously in `waterFragment.ts` so
  * the SSR G-buffer pass produces a `reflectDir` that matches the main pass.

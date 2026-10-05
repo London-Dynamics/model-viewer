@@ -1,65 +1,62 @@
-import type { PresetConfig } from "./types";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
 
-/**
- * DUSK - Twilight Calm
- * A low golden-pink sun resting near the horizon over gentle, glassy swells,
- * with warm haze blending into a dusk sky.
- */
-export const DUSK_PRESET: PresetConfig = {
+import type { WaterSceneConfig } from "./types";
+
+export const DUSK_PRESET: WaterSceneConfig = {
   caustics: {
     enabled: true,
     surface: { strength: 0.7, scale: 0.025, speed: 0.22 },
   },
   clipmap: {
-    baseSize: 800,
+    baseSize: 200,
     levels: 5,
   },
+  environment: {
+    intensity: 1.0,
+  },
   fog: {
-    color: "#f5ccd0",
+    color: "#4a4658",
     enabled: true,
-    fadeEnd: 10000,
+    fadeEnd: 1960,
     fadePower: 0.7,
-    fadeStart: 500,
-    skyBlendDistance: 5450,
+    fadeStart: 250,
+    skyBlendDistance: 1350,
   },
   color: {
-    absorptionColor: "#211a17",
+    mode: "custom",
+    absorptionColor: "#876257",
     transmissionColor: "#1e675c",
-    waterColor: "#39495b",
+    waterColor: "#112a37",
   },
   foam: {
     surface: {
       enabled: true,
       opacity: 0.25,
       color: "#ffffff",
-      size: 233,
+      size: 30,
       coverage: 0.14,
       texture: "foam2",
     },
     waves: {
-      enabled: true,
+      enabled: false,
       opacity: 0.4,
       color: "#ffffff",
-      size: 128,
-      coverage: 0.33,
-      crestCoverage: 0,
-      peakIntensity: 0.35,
+      size: 16,
       windStretch: 0.42,
-      waveWeight: 1.0,
-      rippleWeight: 0.65,
-      texture: "foam3",
+      texture: "foam2",
       persistence: {
         decayTime: 0.5,
-        windwardStrength: 0.23,
-        crestStrength: 0.39,
+        windwardStrength: 1.1,
+        crestStrength: 0.95,
       },
     },
     shoreline: {
       enabled: true,
       opacity: 0.1,
-      size: 33,
+      size: 4,
       coverage: 0.84,
-      range: 35,
+      range: 1.8,
       color: "#edf9fd",
       texture: "foam2",
     },
@@ -67,9 +64,6 @@ export const DUSK_PRESET: PresetConfig = {
   fresnel: {
     surface: {
       iorRatio: 1.33,
-      normalStrength: 1.0,
-      fadeStart: 250,
-      fadePower: 2.5,
       refractionStrength: 0.1,
     },
     underwater: {
@@ -83,21 +77,21 @@ export const DUSK_PRESET: PresetConfig = {
   oceanFloor: {
     blendSoftness: 0.3,
     blendThreshold: 0.5,
-    depth: 100,
-    displacementScale: 140,
-    displacementStrength: 8,
+    depth: 8,
+    displacementScale: 7,
+    displacementStrength: 0.4,
     enabled: true,
     lacunarity: 1.8,
     meshResolution: 64,
     normalScale: 0.2,
     persistence: 0.75,
     textureDisplacementStrength: 0.5,
-    tileSize: 400,
+    tileSize: 20,
     caustics: {
       depthAttenuation: 0,
       enabled: true,
       intensity: 0.9,
-      scale: 150,
+      scale: 7.5,
       waveDistortion: 0.26,
     },
     sunShafts: {
@@ -137,8 +131,8 @@ export const DUSK_PRESET: PresetConfig = {
       intensity: 0.5,
       rippleDecay: 1.0,
       rippleDensity: 1.0,
-      rippleFadeEnd: 500,
-      rippleSize: 2.5,
+      rippleFadeEnd: 60,
+      rippleSize: 0.3,
       rippleStrength: 0.5,
       streakLength: 1.0,
       streakWidth: 0.01,
@@ -149,10 +143,10 @@ export const DUSK_PRESET: PresetConfig = {
       color: "#ffffff",
       count: 1000,
       enabled: true,
-      farDistance: 209,
-      maxSize: 0.5,
-      minSize: 0.1,
-      nearDistance: 9,
+      farDistance: 40,
+      maxSize: 0.15,
+      minSize: 0.03,
+      nearDistance: 2,
       opacity: 0.5,
     },
   },
@@ -164,14 +158,14 @@ export const DUSK_PRESET: PresetConfig = {
     fadeOutTime: 0.5,
     opacity: 0.4,
     respawnTime: 0.5,
-    size: 30,
+    size: 3,
     spawnJitterTime: 0.5,
     stretchX: 1.5,
     stretchY: 1.0,
     submersionDepth: 0.0,
     velocityHeightFactor: 0.1,
     velocityScaleFactor: 0.0,
-    velocityThreshold: 5.1,
+    velocityThreshold: 1,
   },
   ssr: {
     enabled: true,
@@ -182,25 +176,16 @@ export const DUSK_PRESET: PresetConfig = {
     intensity: 0.6,
     power: 2.3,
   },
-  lighting: {
-    ambient: {
-      skyColor: "#f2e6d9",
-      groundColor: "#3a4858",
-      intensity: 0.34,
-    },
-  },
   sky: {
     source: {
       type: "hdri",
       url: "hdris/qwantani_dusk_2_puresky_4k.jpg",
     },
-    brightness: 0.3,
-    reflectionBlurDistance: 5000,
-    reflectionDistanceBlur: 0.5,
-    reflectionRoughness: 0.02,
+    brightness: 0.2,
+    reflectionRoughness: 0.15,
     sun: {
       azimuth: 44,
-      diskColor: "#f5ccd0",
+      diskColor: "#fdc4c9",
       diskEnabled: false,
       diskEmissiveColor: "#fff8e0",
       diskEmissiveIntensity: 2,
@@ -211,7 +196,7 @@ export const DUSK_PRESET: PresetConfig = {
   },
   sparkle: {
     enabled: true,
-    fadeDistance: 1650,
+    fadeDistance: 170,
     intensity: 1,
     minDistance: 0,
     power: 960,
@@ -225,23 +210,16 @@ export const DUSK_PRESET: PresetConfig = {
   waves: {
     fft: {
       amplitude: 1,
-      frequency: 1,
-      animationSpeed: 2.8,
+      animationSpeed: 1,
       windSpeed: 7,
       windDirection: 1.413716694115407,
-      choppiness: 0.53,
-      spectralSharpness: 1.05,
-      standingWaveRatio: 0.51,
+      choppiness: 0.73,
+      peakWavelength: 140,
+      spectralSharpness: 2.26,
+      standingWaveRatio: 0.79,
       cascades: {
-        ripples: { scale: 200, amplitudeScale: 0.1 },
-        waves: { scale: 3000, amplitudeScale: 0.5 },
+        maxScale: 1024,
       },
-    },
-    gerstner: {
-      wavelength: 579,
-      amplitude: 2.09,
-      wavelengthSpread: 3,
-      directionalSpread: 1.3,
     },
   },
 };

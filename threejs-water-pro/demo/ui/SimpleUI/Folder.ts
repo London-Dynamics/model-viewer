@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import { Slider, type SliderOptions } from "./controls/Slider";
 import { Checkbox, type CheckboxOptions } from "./controls/Checkbox";
 import { ColorPicker, type ColorPickerOptions } from "./controls/ColorPicker";
@@ -6,24 +9,33 @@ import { Button, type ButtonOptions } from "./controls/Button";
 import { Display, type DisplayOptions } from "./controls/Display";
 import { Separator } from "./controls/Separator";
 
+let nextFolderId = 0;
+
 export type Refreshable = Slider | Checkbox | ColorPicker | Select | Folder;
 
 export interface FolderOptions {
+  disabled?: () => boolean;
   expanded?: boolean;
   onControlChange?: () => void;
+  visible?: () => boolean;
 }
 
 export class Folder {
   readonly element: HTMLElement;
   private content: HTMLElement;
   private chevron: HTMLSpanElement;
+  private header: HTMLButtonElement;
   private _expanded: boolean;
   private children: Refreshable[] = [];
+  private _disabled?: () => boolean;
   private _onControlChange?: () => void;
+  private _visible?: () => boolean;
 
   constructor(title: string, options: FolderOptions = {}) {
     this._expanded = options.expanded ?? true;
+    this._disabled = options.disabled;
     this._onControlChange = options.onControlChange;
+    this._visible = options.visible;
 
     this.element = document.createElement("div");
     this.element.className = "sui-folder";
@@ -31,8 +43,12 @@ export class Folder {
       this.element.classList.add("collapsed");
     }
 
-    const header = document.createElement("div");
-    header.className = "sui-folder-header";
+    const contentId = `sui-folder-content-${++nextFolderId}`;
+    this.header = document.createElement("button");
+    this.header.type = "button";
+    this.header.className = "sui-folder-header";
+    this.header.setAttribute("aria-controls", contentId);
+    this.header.setAttribute("aria-expanded", String(this._expanded));
 
     const titleEl = document.createElement("span");
     titleEl.className = "sui-folder-title";
@@ -41,19 +57,22 @@ export class Folder {
     this.chevron = document.createElement("span");
     this.chevron.className = "sui-chevron";
     this.chevron.textContent = "▼";
+    this.chevron.setAttribute("aria-hidden", "true");
 
-    header.append(titleEl, this.chevron);
-    header.addEventListener("click", () => this.toggle());
+    this.header.append(titleEl, this.chevron);
+    this.header.addEventListener("click", () => this.toggle());
 
     this.content = document.createElement("div");
+    this.content.id = contentId;
     this.content.className = "sui-folder-content";
 
-    this.element.append(header, this.content);
+    this.element.append(this.header, this.content);
   }
 
   toggle(): void {
     this._expanded = !this._expanded;
     this.element.classList.toggle("collapsed", !this._expanded);
+    this.header.setAttribute("aria-expanded", String(this._expanded));
   }
 
   get expanded(): boolean {
@@ -63,6 +82,7 @@ export class Folder {
   set expanded(v: boolean) {
     this._expanded = v;
     this.element.classList.toggle("collapsed", !v);
+    this.header.setAttribute("aria-expanded", String(v));
   }
 
   get hidden(): boolean {
@@ -79,6 +99,9 @@ export class Folder {
 
   set disabled(v: boolean) {
     this.element.classList.toggle("disabled", v);
+    this.element.inert = v;
+    this.element.setAttribute("aria-disabled", String(v));
+    this.header.disabled = v;
   }
 
   addFolder(title: string, options?: FolderOptions): Folder {
@@ -186,6 +209,8 @@ export class Folder {
   }
 
   refresh(): void {
+    if (this._visible) this.hidden = !this._visible();
+    if (this._disabled) this.disabled = this._disabled();
     for (const child of this.children) {
       child.refresh();
     }

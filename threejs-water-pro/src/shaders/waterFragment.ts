@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
 import {
@@ -23,16 +26,15 @@ import {
   cameraFar,
   positionView,
   max,
-  exp,
   If,
   frontFacing,
 } from "three/tsl";
 import type { IWaveSimulation } from "../simulation/waves";
-import type { FoamAccumulation } from "../simulation/foam/FoamAccumulation";
-import type { Sky } from "../components/sky/Sky";
+import type { IFoamFieldSampler } from "../simulation/foam";
+import type { SkyProvider } from "../components/sky/SkyProvider";
 import type { SurfaceUniforms } from "../uniforms";
 import type { WaterVertexResult } from "./waterVertex";
-import type { FoamResult } from "./foamTypes";
+import type { FoamBuildParams, FoamResult } from "./foamTypes";
 import type { CascadeSampler } from "./cascadeSampler";
 import {
   Foam,
@@ -48,17 +50,23 @@ import type { ShorelineFoam } from "./foamShoreline";
 import type { Sparkle } from "./sparkle";
 import { type SSR, type SSRResult } from "./ssr";
 import type { SSS } from "./sss";
-import type { StorageBufferNode } from "./types";
 import type { RainRipples } from "../simulation/ripples";
 import type { IWakeFieldSampler } from "../simulation/waves/wake";
-import { buildWaterSurfaceNormal } from "./waterNormal";
+import type { SceneDepthSampler } from "../rendering/passes/SceneDepthSampler";
+import type { IWaterDepthPass } from "../rendering/passes/IWaterDepthPass";
+import {
+  buildWaterSurfaceNormal,
+  type BuildWaterSurfaceNormalParams,
+} from "./waterNormal";
 
 // ============= Exported Types =============
 
 export interface WaterTextures {
-  depth: THREE.Texture;
-  mask: THREE.Texture;
+  /** Screen-space water mask. Omitted while masking is inactive. */
+  mask?: THREE.Texture;
   sceneColor: THREE.Texture;
+  /** Normalized-linear scene depth sampler from the scene capture pass. */
+  sceneDepth: SceneDepthSampler;
 }
 
 export interface WaterFragmentParams {
@@ -75,59 +83,160 @@ export interface WaterFragmentParams {
   sparkle: Sparkle;
   ssr: SSR;
   sss: SSS;
-  sky: Sky | null;
-  /** Whether Jacobian foam is enabled (capability flag, not a runtime toggle). */
-  jacobianFoam: boolean;
+  sky: SkyProvider | null;
   /** CascadeSampler instance for WebGPU path. Null for WebGL. */
   cascadeSampler: CascadeSampler | null;
   /**
-   * Persistent foam accumulation system. When provided (WebGPU + quality
-   * feature enabled), wave-crest foam uses its energy buffer for streaks
-   * and decay tails. Null on WebGL or when disabled.
+   * Persistent foam-energy field sampler. When provided (on quality tiers with
+   * wave foam enabled), wave-crest foam reads its energy for streaks and decay
+   * tails. Null on tiers where wave foam is off.
    */
-  foamAccumulation: FoamAccumulation | null;
-  gerstnerMaxWaves: number;
+  foamFieldSampler: IFoamFieldSampler | null;
   /** Rain ripple simulation for normal blending. Null if not initialized. */
   rainRipples: RainRipples | null;
   /** Wake field sampler for wake normal blending. Null on WebGL or disabled. */
   wakeFieldSampler: IWakeFieldSampler | null;
+  /**
+   * Water-surface depth source for the refracted-column measurement. Null
+   * until `RenderPassManager` binds it; the refraction path then falls back
+   * to the fragment's own surface depth.
+   */
+  waterDepth: IWaterDepthPass | null;
   /** Whether running on WebGL backend (disables clip plane for split view). */
   isWebGL?: boolean;
 }
 
 // ============= Pipeline Stage Functions =============
 
+/** Clip-plane waterline uniforms slice of {@link SurfaceUniforms}. */
+type ClipPlaneUniforms = SurfaceUniforms["clipPlane"];
+
+/**
+ * Maps sub-footprint slope variance (0-1) to added reflection roughness. The
+ * variance is a length-deficit proxy, not a calibrated Beckmann σ², so this is
+ * a tuning scale: higher blurs the distant sky reflection sooner.
+ */
+const VARIANCE_TO_ROUGHNESS = 0.8;
+
+/**
+ * How fast screen-space reflections fade out as the reflection roughness rises.
+ * SSR is only valid for a near-mirror surface; past roughness ≈ `1 / this` it
+ * is fully replaced by the prefiltered environment.
+ */
+const SSR_ROUGHNESS_FADE = 3.0;
+
+/**
+ * Detects the waterline where the surface intersects the clip plane.
+ * Factor stays 0 (and the meniscus direction up) when the waterline is
+ * disabled.
+ */
+function computeWaterline(clipPlane: ClipPlaneUniforms): {
+  meniscusDir: Node;
+  waterlineFactor: Node;
+} {
+  const waterlineFactor = float(0.0).toVar("waterlineFactor");
+  const meniscusDir = vec3(0.0, 1.0, 0.0).toVar("meniscusDir");
+
+  If(clipPlane.waterlineEnabled.greaterThan(0.5), () => {
+    const waterlineResult = getClipPlaneWaterline({
+      cameraForward: clipPlane.cameraForward,
+      clipDistance: clipPlane.distance,
+      thickness: clipPlane.waterlineThickness,
+      smoothness: clipPlane.waterlineSmoothness,
+    });
+    waterlineFactor.assign(waterlineResult.factor);
+    meniscusDir.assign(waterlineResult.meniscusDir);
+  });
+
+  return { meniscusDir, waterlineFactor };
+}
+
+/** Parameters for the surface-normal stage. */
+interface SurfaceNormalParams {
+  clipPlane: ClipPlaneUniforms;
+  meniscusDir: Node;
+  normal: BuildWaterSurfaceNormalParams;
+  waterlineFactor: Node;
+}
+
+/**
+ * Builds the wave-surface normal, then tilts it toward the camera at the
+ * waterline to simulate the curved meniscus profile.
+ */
+function computeSurfaceNormal(params: SurfaceNormalParams): {
+  interpolatedNormal: Node;
+  rippleSplash: Node | null;
+  slopeVariance: Node;
+} {
+  const { clipPlane, meniscusDir, normal, waterlineFactor } = params;
+
+  const normalResult = buildWaterSurfaceNormal(normal);
+
+  const normalTiltAmount = waterlineFactor.mul(
+    clipPlane.waterlineNormalStrength,
+  );
+  const perturbedNormal = normalize(
+    mix(normalResult.interpolatedNormal, meniscusDir, normalTiltAmount),
+  );
+  const interpolatedNormal = mix(
+    normalResult.interpolatedNormal,
+    perturbedNormal,
+    waterlineFactor,
+  );
+
+  return {
+    interpolatedNormal,
+    rippleSplash: normalResult.rippleSplash,
+    slopeVariance: normalResult.slopeVariance,
+  };
+}
+
+/** Parameters for the water-color and reflection stage. */
+interface ReflectionStageParams {
+  frontFaceMultiplier: Node;
+  reflectionNormal: Node;
+  /** Added reflection roughness from sub-footprint slope variance. */
+  reflectionRoughness: Node;
+  sky: SkyProvider | null;
+  ssr: SSR;
+  textures: WaterTextures;
+  uniforms: SurfaceUniforms;
+  viewDir: Node;
+  waterColor: WaterColor;
+}
+
 /**
  * Samples water color from depth, computes sky/environment reflections,
  * and optionally blends in screen-space reflections.
  */
-function sampleReflections(
-  waterColorInstance: WaterColor,
-  uniforms: SurfaceUniforms,
-  viewDir: Node,
-  fresnelNormal: Node,
-  textures: WaterTextures,
-  ssr: SSR,
-  sky: Sky | null,
-  frontFaceMultiplier: Node,
-): {
+function sampleReflections(params: ReflectionStageParams): {
   isObjectInFront: Node;
   reflectDir: Node;
   reflectionColor: Node;
-  reflectionSampler: ((dir: Node) => Node) | undefined;
+  reflectionSampler: ((dir: Node, roughness: Node) => Node) | undefined;
   waterColor: Node;
   waterColumnDepth: Node;
 } {
+  const {
+    frontFaceMultiplier,
+    reflectionNormal,
+    reflectionRoughness,
+    sky,
+    ssr,
+    textures,
+    uniforms,
+    viewDir,
+    waterColor: waterColorInstance,
+  } = params;
+
   // .toVar() works around a Three.js TSL bug (r181) where the texture binding
   // is dropped unless the sample is forced into a concrete WGSL variable.
-  const depthSample = texture(textures.depth, screenUV).toVar("depthSample");
+  const depthSample = textures.sceneDepth.sample(screenUV).toVar("depthSample");
+
   const reflectionSampler = sky?.createReflectionSampler();
 
-  // Intrinsic water color, plus the unrefracted-UV water-column depth (used
-  // by downstream foam/SSS distance-aware paths). The Beer-Lambert clear
-  // factor used by the front-face composite is computed at the refracted
-  // UV in computeAboveWaterRefraction so attenuation matches the colour
-  // sample.
+  // Intrinsic water color, plus the unrefracted-UV water-column depth
+  // consumed by the distance-aware foam/SSS paths.
   const { waterColor, waterColumnDepth, isObjectInFront } =
     waterColorInstance.build({
       depthSample,
@@ -139,18 +248,32 @@ function sampleReflections(
   const { reflectionColor: baseReflectionColor, reflectDir } =
     buildReflectionSampling({
       viewDir,
-      fresnelNormal,
+      reflectionNormal,
       reflectionSampler,
+      roughness: reflectionRoughness,
     });
 
-  // Blend in screen-space reflections (front face only). The DDA march runs
-  // as a separate pass at scaled resolution; we just sample its result here.
+  // Screen-space reflections (front face only). The DDA march runs as a
+  // separate pass at scaled resolution; sample its result.
   const ssrResult: SSRResult = ssr.sample(screenUV);
 
+  // Fade SSR out as the surface roughens. SSR is a single sharp mirror ray;
+  // on rough / distant water the specular lobe is wide, so a sharp screen-space
+  // sample is invalid and smears grazing content (bright foam and crests) into
+  // white streaks. Where the slope variance is high, fall back to the
+  // prefiltered environment instead.
+  const ssrSharpness = clamp(
+    float(1.0).sub(reflectionRoughness.mul(SSR_ROUGHNESS_FADE)),
+    0.0,
+    1.0,
+  );
+  const ssrBlendWeight = ssrResult.ssrHitMask
+    .mul(frontFaceMultiplier)
+    .mul(ssrSharpness);
   const reflectionColor: Node = mix(
     baseReflectionColor,
     ssrResult.ssrColor,
-    ssrResult.ssrHitMask.mul(frontFaceMultiplier),
+    ssrBlendWeight,
   );
 
   return {
@@ -165,14 +288,15 @@ function sampleReflections(
 
 /** Parameters for the above-water refraction sample. */
 interface AboveWaterRefractionParams {
-  /** Per-channel Beer-Lambert absorption coefficient uniform node (vec3). */
-  absorptionColor: Node;
-  /** Linear scene depth texture (the same one passed to {@link WaterColor.build}). */
-  depthTexture: THREE.Texture;
   fresnel: Fresnel;
   /** Upward-pointing surface normal. */
   normal: Node;
   sceneColorTexture: THREE.Texture;
+  /** Scene depth sampler (the same one passed to {@link WaterColor.build}). */
+  sceneDepth: SceneDepthSampler;
+  /** Water-surface depth source, or null before the pass is bound. */
+  waterDepth: IWaterDepthPass | null;
+  waterColor: WaterColor;
 }
 
 /**
@@ -192,11 +316,38 @@ interface AboveWaterRefractionParams {
 function computeAboveWaterRefraction(params: AboveWaterRefractionParams): {
   refractedClearFactor: Node;
   refractedSceneColor: Node;
+  refractedWaterColor: Node;
 } {
-  const { absorptionColor, depthTexture, fresnel, normal, sceneColorTexture } =
-    params;
+  const {
+    fresnel,
+    normal,
+    sceneColorTexture,
+    sceneDepth,
+    waterDepth,
+    waterColor,
+  } = params;
 
   const waterSurfaceViewDepth = positionView.z.negate();
+
+  // Attenuate the offset by how thick the water column is beneath this
+  // fragment. The refracted ray's lateral displacement scales with the
+  // path it travels through water before reaching the seabed, so a thin
+  // column must produce a small offset. Without this, steep waves over a
+  // near-surface floor push each fragment's sample far across the seabed
+  // and neighbouring fragments smear into wildly different patches. The
+  // gap is measured at the unrefracted screen UV to avoid a circular
+  // dependency, mirroring the back-face path.
+  const waterNormDepth: Node = waterSurfaceViewDepth
+    .sub(cameraNear)
+    .div(cameraFar.sub(cameraNear));
+  const sceneNormDepthAtScreen: Node = sceneDepth.sample(screenUV);
+  const depthGap: Node = clamp(
+    sceneNormDepthAtScreen
+      .sub(waterNormDepth)
+      .div(sceneNormDepthAtScreen.add(0.0001)),
+    0.0,
+    1.0,
+  );
 
   // Candidate refracted UV from the normal offset. If this lands on an
   // above-water occluder (sail, mast, hull), sampling there would pull
@@ -206,12 +357,12 @@ function computeAboveWaterRefraction(params: AboveWaterRefractionParams): {
   // the surface reads its own pixel's seabed instead of an adjacent
   // foreground object.
   const refractionOffset: Node = vec2(
-    normal.x.mul(fresnel._refractionStrengthNode),
-    normal.z.mul(fresnel._refractionStrengthNode),
+    normal.x.mul(fresnel._refractionStrengthNode).mul(depthGap),
+    normal.z.mul(fresnel._refractionStrengthNode).mul(depthGap),
   );
   const refractionUVCandidate: Node = screenUV.add(refractionOffset);
-  const candidateDepthSample = texture(depthTexture, refractionUVCandidate);
-  const candidateSceneDepth = candidateDepthSample.x
+  const candidateSceneDepth = sceneDepth
+    .sample(refractionUVCandidate)
     .mul(cameraFar.sub(cameraNear))
     .add(cameraNear);
   const offsetHitsForeground: Node = candidateSceneDepth.lessThan(
@@ -223,38 +374,52 @@ function computeAboveWaterRefraction(params: AboveWaterRefractionParams): {
   );
 
   const sceneSample = texture(sceneColorTexture, refractionUV);
-  const refractedSceneColor = vec3(
-    sceneSample.x,
-    sceneSample.y,
-    sceneSample.z,
-  );
+  const refractedSceneColor = vec3(sceneSample.x, sceneSample.y, sceneSample.z);
 
-  const depthSample = texture(depthTexture, refractionUV);
-  const sceneLinearDepth = depthSample.x
+  const sceneLinearDepth = sceneDepth
+    .sample(refractionUV)
     .mul(cameraFar.sub(cameraNear))
     .add(cameraNear);
+
+  // Both ends of the column belong to one ray: the surface depth is sampled
+  // at the same refracted UV as the seabed depth. Where the shifted UV has no
+  // water (sentinel 1.0, e.g. above the horizon), the fragment's own surface
+  // depth is the only measurement available.
+  let columnStartDepth: Node = waterSurfaceViewDepth;
+  if (waterDepth) {
+    const surfaceNormDepthAtRefracted =
+      waterDepth.sampleUnclippedFrontDepth(refractionUV);
+    const surfaceDepthAtRefracted = surfaceNormDepthAtRefracted
+      .mul(cameraFar.sub(cameraNear))
+      .add(cameraNear);
+    const hasWaterAtRefracted = surfaceNormDepthAtRefracted.lessThan(0.999);
+    columnStartDepth = hasWaterAtRefracted.select(
+      surfaceDepthAtRefracted,
+      waterSurfaceViewDepth,
+    );
+  }
   const waterColumnDepth = max(
-    sceneLinearDepth.sub(waterSurfaceViewDepth),
+    sceneLinearDepth.sub(columnStartDepth),
     float(0.0),
   );
-  // Per-channel clear fraction. Each RGB channel attenuates at its own
-  // rate, so red dies fastest in clear water and the seabed reads bluer
-  // as the water column grows.
-  const refractedClearFactor = exp(
-    vec3(absorptionColor).negate().mul(waterColumnDepth),
-  );
+  const refractedClearFactor = waterColor.buildClearFactor(waterColumnDepth);
+  const refractedWaterColor = waterColor.buildMediumColor();
 
-  return { refractedClearFactor, refractedSceneColor };
+  return {
+    refractedClearFactor,
+    refractedSceneColor,
+    refractedWaterColor,
+  };
 }
 
 /** Parameters for the underwater surface optics computation. */
 interface UnderwaterSurfaceParams {
-  depthTexture: THREE.Texture;
   fresnel: Fresnel;
   /** Upward-pointing surface normal (same as the front-face normal). */
   normal: Node;
-  reflectionSampler: ((dir: Node) => Node) | undefined;
+  reflectionSampler: ((dir: Node, roughness: Node) => Node) | undefined;
   sceneColorTexture: THREE.Texture;
+  sceneDepth: SceneDepthSampler;
   viewDir: Node;
 }
 
@@ -263,19 +428,19 @@ interface UnderwaterSurfaceParams {
  * the water-air interface. Reflectance comes from the same dielectric
  * Fresnel function used above water; TIR is the natural `F = 1` case past
  * the critical angle. The Snell's window contents (refracted hemisphere)
- * mix between sky-sampled color and screen-space scene color based on
- * whether the refracted UV lands on above-water geometry.
+ * composite the screen-space scene capture, by its coverage alpha, over
+ * sky sampled along the refracted direction.
  */
 function computeUnderwaterSurface(params: UnderwaterSurfaceParams): {
   surfaceColor: Node;
   reflectance: Node;
 } {
   const {
-    depthTexture,
     fresnel,
     normal,
     reflectionSampler,
     sceneColorTexture,
+    sceneDepth,
     viewDir,
   } = params;
 
@@ -318,7 +483,7 @@ function computeUnderwaterSurface(params: UnderwaterSurfaceParams): {
   const waterNormDepth: Node = waterViewDepth
     .sub(cameraNear)
     .div(cameraFar.sub(cameraNear));
-  const sceneNormDepthAtScreen: Node = texture(depthTexture, screenUV).x;
+  const sceneNormDepthAtScreen: Node = sceneDepth.sample(screenUV);
   const depthGap: Node = clamp(
     sceneNormDepthAtScreen
       .sub(waterNormDepth)
@@ -333,58 +498,34 @@ function computeUnderwaterSurface(params: UnderwaterSurfaceParams): {
   );
   const refractionUV: Node = screenUV.add(refractionOffset);
 
-  // From below water, anything visible at the refracted UV that is not
-  // the sky is "above-water content" the underwater observer should see
-  // through Snell's window (e.g. the boat's deck or a distant island).
-  // The above-water boat sits *farther* from the camera than the water
-  // surface, so the front-face heuristic of "scene closer than water"
-  // does not apply here — the right test is "scene depth is finite, not
-  // at the far plane".
-  const sceneNormDepth: Node = texture(depthTexture, refractionUV).x;
-  const sceneLinearDepth: Node = sceneNormDepth
-    .mul(cameraFar.sub(cameraNear))
-    .add(cameraNear);
-  const refractedHitsScene: Node = sceneLinearDepth.lessThan(
-    cameraFar.mul(0.99),
-  );
+  // Snell's window: the capture's alpha is scene coverage, so composite
+  // it over sky sampled along the refracted direction (sky at infinity).
+  // F = 1 in TIR regions zeroes this branch; the up-direction substitute
+  // only keeps refract()'s zero vector out of the sampler.
   const refractedSceneColor = texture(sceneColorTexture, refractionUV);
-
-  // Sample sky in the refracted direction; substitute a safe up-direction
-  // when refract() reports TIR so the sampler does not see a zero vector.
-  let refractedSkyColor: Node;
+  const refractedSceneRGB = vec3(
+    refractedSceneColor.x,
+    refractedSceneColor.y,
+    refractedSceneColor.z,
+  );
+  let snellsWindow: Node = refractedSceneRGB;
   if (reflectionSampler) {
     const safeRefractedDir = isTIR.select(
       vec3(0.0, 1.0, 0.0),
       normalize(refractedDir),
     );
-    refractedSkyColor = reflectionSampler(safeRefractedDir);
-  } else {
-    refractedSkyColor = vec3(
-      refractedSceneColor.x,
-      refractedSceneColor.y,
-      refractedSceneColor.z,
-    );
+    const refractedSkyColor = reflectionSampler(safeRefractedDir, float(0.0));
+    const skyCoverage = refractedSceneColor.w.oneMinus();
+    snellsWindow = refractedSceneRGB.add(refractedSkyColor.mul(skyCoverage));
   }
 
-  // Snell's window contents: above-water scene where the refracted UV
-  // lands on visible non-sky geometry, sky cubemap everywhere else. F = 1
-  // in TIR regions makes this branch contribute zero.
-  const snellsWindow = mix(
-    refractedSkyColor,
-    vec3(refractedSceneColor.x, refractedSceneColor.y, refractedSceneColor.z),
-    refractedHitsScene.select(float(1.0), float(0.0)),
-  );
-
-  // TIR limb: without an underwater scene capture / downward-SSR, fall
-  // back to a sky sample taken in the mirror-reflected view direction.
-  // That keeps grazing back-face viewing tonally consistent with the
-  // above-water grazing path (which also samples the sky), instead of
-  // collapsing to a flat dark placeholder colour the moment the Fresnel
-  // limb crosses critical angle.
+  // TIR limb: sample the sky along the mirror-reflected view direction so
+  // grazing back-face viewing stays tonally consistent with the
+  // above-water grazing path, which also samples the sky.
   let underwaterReflection: Node = vec3(0.1, 0.2, 0.3);
   if (reflectionSampler) {
     const mirrorReflectDir = reflect(viewDir.negate(), normal);
-    underwaterReflection = reflectionSampler(mirrorReflectDir);
+    underwaterReflection = reflectionSampler(mirrorReflectDir, float(0.0));
   }
 
   // Mix transmitted (Snell's window) with reflected (underwater) by F.
@@ -395,6 +536,52 @@ function computeUnderwaterSurface(params: UnderwaterSurfaceParams): {
   );
 
   return { surfaceColor, reflectance };
+}
+
+/**
+ * Parameters for the foam stage: {@link FoamBuildParams} minus the sampled
+ * energies, which this stage samples itself from the two fields.
+ */
+interface FoamStageParams
+  extends Omit<FoamBuildParams, "foamEnergy" | "wakeFoamEnergy"> {
+  foamFieldSampler: IFoamFieldSampler | null;
+  /** True (choppy-displaced) world position, matching the wake field anchor. */
+  wakeCoords: { wakeWorldX: Node; wakeWorldZ: Node };
+  wakeFieldSampler: IWakeFieldSampler | null;
+}
+
+/**
+ * Samples the persistent foam-energy fields and builds the combined
+ * surface, wave-crest, and shoreline foam.
+ */
+function computeFoam(params: FoamStageParams): FoamResult {
+  const { foamFieldSampler, wakeCoords, wakeFieldSampler, ...foamParams } =
+    params;
+
+  // Sample the world-fixed foam-energy field. Its injection already combines
+  // the FFT cascades at each texel's world position, so a single sample
+  // carries persistent, interacting wave-crest foam.
+  let foamEnergy: Node | undefined;
+  if (foamFieldSampler) {
+    foamEnergy = foamFieldSampler.sampleEnergy(
+      foamParams.coords.fragWorldX,
+      foamParams.coords.fragWorldZ,
+    );
+  }
+
+  // The wake maintains its own world-anchored persistent foam-energy field
+  // (the FFT one is a tiled cascade and can't hold a world-absolute wake).
+  // Route it through WaveFoam as a dedicated energy input so it renders the
+  // same textured foam, alongside the crest foam.
+  let wakeFoamEnergy: Node | undefined;
+  if (wakeFieldSampler) {
+    wakeFoamEnergy = wakeFieldSampler.sampleFoamEnergy(
+      wakeCoords.wakeWorldX,
+      wakeCoords.wakeWorldZ,
+    );
+  }
+
+  return new Foam().build({ ...foamParams, foamEnergy, wakeFoamEnergy });
 }
 
 /** Output of {@link compositeColor}: radiance + alpha. */
@@ -414,6 +601,23 @@ interface CompositeResult {
   color: Node;
 }
 
+/** Parameters for the final radiance composite. */
+interface CompositeColorParams {
+  /** Per-channel Beer-Lambert clear fraction at the refracted UV. */
+  clearFactor: Node;
+  distanceToCamera: Node;
+  foamResult: FoamResult;
+  frontFaceMultiplier: Node;
+  interpolatedNormal: Node;
+  reflectionColor: Node;
+  refractedSceneColor: Node;
+  sparkle: Sparkle;
+  sunDir: Node;
+  sunIntensity: Node;
+  viewDir: Node;
+  waterColorWithSSS: Node;
+}
+
 /**
  * Composites the water surface's emitted radiance and per-fragment alpha.
  *
@@ -422,26 +626,27 @@ interface CompositeResult {
  * (`computeAboveWaterRefraction`) and passed in here as
  * `refractedSceneColor`; Beer-Lambert weights it against the water tint
  * by `clearFactor`. Output is opaque on the front face so the seabed
- * warps with the waves instead of being read at the unrefracted screen
- * UV via framebuffer alpha-blending.
+ * warps with the waves.
  *
  * Back face: `reflectionColor` is the complete `computeUnderwaterSurface`
  * output (Snell's window + TIR mix) and passes through unchanged.
  */
-function compositeColor(
-  waterColorWithSSS: Node,
-  interpolatedNormal: Node,
-  foamResult: FoamResult,
-  reflectionColor: Node,
-  refractedSceneColor: Node,
-  viewDir: Node,
-  sunDir: Node,
-  sunIntensity: Node,
-  distanceToCamera: Node,
-  sparkleInstance: Sparkle,
-  frontFaceMultiplier: Node,
-  clearFactor: Node,
-): CompositeResult {
+function compositeColor(params: CompositeColorParams): CompositeResult {
+  const {
+    clearFactor,
+    distanceToCamera,
+    foamResult,
+    frontFaceMultiplier,
+    interpolatedNormal,
+    reflectionColor,
+    refractedSceneColor,
+    sparkle: sparkleInstance,
+    sunDir,
+    sunIntensity,
+    viewDir,
+    waterColorWithSSS,
+  } = params;
+
   // Transmitted radiance through the water column. Per-channel
   // Beer-Lambert: refracted seabed attenuated by `clearFactor` plus the
   // water's intrinsic in-scatter color scaled by `(1 − clearFactor)`.
@@ -469,9 +674,8 @@ function compositeColor(
     frontFaceMultiplier,
   );
 
-  // Front-face opaque; back-face has always been opaque. Shoreline-zone
-  // fade further down brings alpha toward zero where the beach must
-  // show through.
+  // Opaque on both faces; the shoreline-zone fade downstream brings alpha
+  // toward zero where the beach must show through.
   let alpha: Node = float(1.0);
 
   // Sparkle: additive sun glints. Light added by the surface; alpha unchanged.
@@ -506,6 +710,66 @@ function compositeColor(
   return { color: finalColor, alpha };
 }
 
+/** Parameters for the shoreline-zone composite. */
+interface ShorelineZoneParams {
+  composite: CompositeResult;
+  foamResult: FoamResult;
+  frontFaceMultiplier: Node;
+  shorelineFoam: ShorelineFoam;
+}
+
+/**
+ * Fades the water out across the shoreline zone so the beach/terrain
+ * shows through, then composites shoreline foam on top so foam patches
+ * stay opaque.
+ */
+function applyShorelineZone(params: ShorelineZoneParams): CompositeResult {
+  const { composite, foamResult, frontFaceMultiplier, shorelineFoam } = params;
+
+  const activeZoneMask = foamResult.shorelineZoneMask
+    .mul(shorelineFoam._enabledNode)
+    .mul(frontFaceMultiplier);
+  const zoneFade = float(1.0).sub(activeZoneMask);
+  const fadedColor = vec3(
+    composite.color.x.mul(zoneFade),
+    composite.color.y.mul(zoneFade),
+    composite.color.z.mul(zoneFade),
+  );
+  const fadedAlpha = composite.alpha.mul(zoneFade);
+
+  const foamCoverage =
+    foamResult.shorelineFoamStrength.mul(frontFaceMultiplier);
+  const color = mix(fadedColor, foamResult.shorelineFoamTint, foamCoverage);
+  const alpha = mix(fadedAlpha, float(1.0), foamCoverage);
+
+  return { color, alpha };
+}
+
+/** Parameters for the waterline rim highlight. */
+interface WaterlineRimParams {
+  clipPlane: ClipPlaneUniforms;
+  meniscusDir: Node;
+  viewDir: Node;
+  waterlineFactor: Node;
+}
+
+/**
+ * Rim highlight at the waterline: at grazing angles to the meniscus,
+ * light focuses into a bright edge.
+ */
+function computeWaterlineRim(params: WaterlineRimParams): Node {
+  const { clipPlane, meniscusDir, viewDir, waterlineFactor } = params;
+
+  const meniscusNdotV = abs(dot(viewDir, meniscusDir));
+  const rimFactor = pow(
+    float(1.0).sub(meniscusNdotV),
+    clipPlane.waterlineHighlightSharpness,
+  );
+  return rimFactor
+    .mul(waterlineFactor)
+    .mul(clipPlane.waterlineHighlightStrength);
+}
+
 // ============= Main Builder =============
 
 /**
@@ -528,56 +792,31 @@ export function buildWaterFragmentColor(params: WaterFragmentParams): Node {
     sss,
     sky,
     cascadeSampler,
-    foamAccumulation,
-    gerstnerMaxWaves,
+    foamFieldSampler,
     rainRipples,
     wakeFieldSampler,
+    waterDepth,
   } = params;
   const { clipPlane, maskEnabled, sun } = uniforms;
 
-  const {
-    vSampleCoords,
-    vSampleCoords0,
-    vGerstnerNormal,
-    vGerstnerFolding,
-    worldX,
-    worldZ,
-  } = vertex;
-
-  const capabilities = oceanSim.getCapabilities();
-  const hasJacobianFoam = capabilities.hasJacobianFoam && params.jacobianFoam;
+  const { vSampleCoords, vHierarchicalCoords, worldX, worldZ } = vertex;
 
   const customColor = Fn(() => {
-    applyMask(textures.mask, maskEnabled);
+    if (textures.mask) {
+      applyMask(textures.mask, maskEnabled);
+    }
     applyClipPlane(clipPlane.cameraForward, clipPlane.distance);
 
-    // Front/back classification is a hybrid of the per-frame submersion state
-    // and the rasterizer's per-fragment `frontFacing` builtin. Above water
-    // (cameraSubmerged == 0) every fragment is forced front-face: the camera
-    // only ever sees the top of the surface, and the winding determinant is
-    // ill-defined on edge-on triangles (the flat horizon, choppy crests), so
-    // raw `frontFacing` flips on scattered pixels and paints back-face Snell's
-    // window as bright specks. Only when submerged do we trust per-fragment
-    // `frontFacing` — that is what lets a barely-submerged camera show back-
-    // face Snell's window through crests above it and front-face composite
-    // through troughs in the same frame.
+    // Above water, force front-face: `frontFacing` is ill-defined on
+    // edge-on triangles (flat horizon, choppy crests) and paints back-face
+    // Snell's window as bright specks. When submerged, per-fragment
+    // `frontFacing` lets a barely-submerged camera show Snell's window
+    // through crests and the front-face composite through troughs in the
+    // same frame.
     const isFrontFace = uniforms.cameraSubmerged.lessThan(0.5).or(frontFacing);
     const frontFaceMultiplier = isFrontFace.select(float(1.0), float(0.0));
 
-    // Detect waterline where surface intersects clip plane
-    const waterlineFactor = float(0.0).toVar("waterlineFactor");
-    const meniscusDir = vec3(0.0, 1.0, 0.0).toVar("meniscusDir");
-
-    If(clipPlane.waterlineEnabled.greaterThan(0.5), () => {
-      const waterlineResult = getClipPlaneWaterline({
-        cameraForward: clipPlane.cameraForward,
-        clipDistance: clipPlane.distance,
-        thickness: clipPlane.waterlineThickness,
-        smoothness: clipPlane.waterlineSmoothness,
-      });
-      waterlineFactor.assign(waterlineResult.factor);
-      meniscusDir.assign(waterlineResult.meniscusDir);
-    });
+    const { meniscusDir, waterlineFactor } = computeWaterline(clipPlane);
 
     const viewDir = normalize(cameraPosition.sub(positionWorld));
     const fragWorldX = vSampleCoords.x;
@@ -585,103 +824,100 @@ export function buildWaterFragmentColor(params: WaterFragmentParams): Node {
 
     // The wake field is world-anchored; sample it at the true (choppy-displaced)
     // fragment world position rather than the grid-reference coords so it stays
-    // pinned under the ship instead of shearing off with the FFT/Gerstner
-    // horizontal displacement in rough seas.
+    // pinned under the ship instead of shearing off with the FFT horizontal
+    // displacement in rough seas.
     const wakeWorldX = positionWorld.x;
     const wakeWorldZ = positionWorld.z;
 
-    // 1. Surface normals and eigenvalues (shared with the SSR G-buffer pass).
-    const normalResult = buildWaterSurfaceNormal({
-      oceanSim,
-      cascadeSampler,
-      fragWorldX,
-      fragWorldZ,
-      wakeWorldX,
-      wakeWorldZ,
-      vSampleCoords0,
-      vGerstnerNormal,
-      vGerstnerFolding,
-      gerstnerMaxWaves,
-      rainRipples,
-      wakeFieldSampler,
-      cameraPosition,
-      frontFaceMultiplier,
-    });
-    let interpolatedNormal: Node = normalResult.interpolatedNormal;
-    const eigen0 = normalResult.eigen0;
-    const eigen1 = normalResult.eigen1;
-    const rippleSplash = normalResult.rippleSplash;
+    // 1. Surface normals (shared with the SSR G-buffer pass), tilted at
+    // the waterline meniscus.
+    const { interpolatedNormal, rippleSplash, slopeVariance } =
+      computeSurfaceNormal({
+        clipPlane,
+        meniscusDir,
+        normal: {
+          oceanSim,
+          cascadeSampler,
+          fragWorldX,
+          fragWorldZ,
+          wakeWorldX,
+          wakeWorldZ,
+          vHierarchicalCoords,
+          rainRipples,
+          wakeFieldSampler,
+          cameraPosition,
+          frontFaceMultiplier,
+        },
+        waterlineFactor,
+      });
 
-    // Apply meniscus normal perturbation at waterline
-    // Tilt the surface normal toward the camera to simulate the curved water profile
-    const normalTiltAmount = waterlineFactor.mul(
-      clipPlane.waterlineNormalStrength,
-    );
-    const perturbedNormal = normalize(
-      mix(interpolatedNormal, meniscusDir, normalTiltAmount),
-    );
-    // Use perturbed normal for lighting calculations at the waterline
-    interpolatedNormal = mix(
-      interpolatedNormal,
-      perturbedNormal,
-      waterlineFactor,
-    );
+    // Filtered-BRDF reflection roughness from the sub-footprint wave slopes the
+    // normal mips fold away. Reading a rougher prefiltered environment mip where
+    // the waves are unresolved breaks up the distant sky mirror and tracks wind
+    // and view angle, replacing the old hand-tuned distance-blur ramp.
+    const reflectionRoughness = slopeVariance.mul(VARIANCE_TO_ROUGHNESS);
 
     // 2. Fresnel
     const fresnelResult = fresnelInstance.build({
       viewDir,
       interpolatedNormal,
+      slopeVariance,
       worldX,
       worldZ,
     });
-    const { fresnel, fresnelNormal, distanceToCamera } = fresnelResult;
+    const { fresnel, fresnelNormal, reflectionNormal, distanceToCamera } =
+      fresnelResult;
 
     // 3. Water color and reflections (sky + SSR)
     const {
       isObjectInFront,
       reflectionColor: baseReflectionColor,
       reflectionSampler,
-      waterColor,
       waterColumnDepth,
-    } = sampleReflections(
-      waterColorInstance,
+    } = sampleReflections({
+      frontFaceMultiplier,
+      reflectionNormal,
+      reflectionRoughness,
+      sky,
+      ssr,
+      textures,
       uniforms,
       viewDir,
-      fresnelNormal,
-      textures,
-      ssr,
-      sky,
-      frontFaceMultiplier,
-    );
+      waterColor: waterColorInstance,
+    });
 
     // 4a. Above-water refraction (front face): sample the underwater
     // scene at a wave-perturbed screen UV so everything below the
     // surface — seabed, fish, kelp — wobbles together. Depth is
     // resampled at the same refracted UV so Beer-Lambert attenuation
     // matches the sampled colour.
-    const { refractedClearFactor, refractedSceneColor } =
-      computeAboveWaterRefraction({
-        absorptionColor: waterColorInstance._absorptionColorNode,
-        depthTexture: textures.depth,
-        fresnel: fresnelInstance,
-        normal: fresnelNormal,
-        sceneColorTexture: textures.sceneColor,
-      });
+    const {
+      refractedClearFactor,
+      refractedSceneColor,
+      refractedWaterColor,
+    } = computeAboveWaterRefraction({
+      fresnel: fresnelInstance,
+      normal: fresnelNormal,
+      sceneColorTexture: textures.sceneColor,
+      sceneDepth: textures.sceneDepth,
+      waterDepth,
+      waterColor: waterColorInstance,
+    });
 
     // 4b. Underwater Snell's window / TIR (back face only)
     const sunDir = vec3(sun.direction);
 
     const reflectionColor: Node = vec3(baseReflectionColor).toVar();
     If(isFrontFace.not(), () => {
-      // Distance-faded `fresnelNormal` for the same reason as above:
-      // raw wave normals compress across pixels at distance and make
-      // the underwater Fresnel flicker between near-zero and TIR.
+      // Distance-faded `fresnelNormal`: raw wave normals compress across
+      // pixels at distance and make the underwater Fresnel flicker
+      // between near-zero and TIR.
       const underwater = computeUnderwaterSurface({
         viewDir,
         normal: fresnelNormal,
         reflectionSampler,
-        depthTexture: textures.depth,
         sceneColorTexture: textures.sceneColor,
+        sceneDepth: textures.sceneDepth,
         fresnel: fresnelInstance,
       });
       reflectionColor.assign(underwater.surfaceColor);
@@ -692,133 +928,74 @@ export function buildWaterFragmentColor(params: WaterFragmentParams): Node {
       viewDir,
       sunDir,
       waveNormal: interpolatedNormal,
-      waterColor,
+      waterColor: refractedWaterColor,
       distanceToCamera,
       transmissionColor: waterColorInstance._transmissionColorNode,
       sunIntensity: sun.intensity,
-      fadeStart: fresnelResult.fadeStart,
       fadeEnd: fresnelResult.fadeEnd,
     });
 
     // 6. Foam
-    // Sample the persistent foam accumulation buffer when available. The
-    // WaveFoam class reads this energy instead of the stateless smoothstep
-    // so foam persists and streaks after breaking events.
-    let foamEnergy: Node | undefined;
-    if (cascadeSampler && foamAccumulation) {
-      const foamBuffer0 = foamAccumulation.getFoamBuffer(
-        0,
-      ) as StorageBufferNode | null;
-      if (foamBuffer0) {
-        foamEnergy = cascadeSampler.sampleFoamAccumulation({
-          worldX: fragWorldX,
-          worldZ: fragWorldZ,
-          foamBuffer0,
-        });
-      }
-    }
-
-    // The wake maintains its own world-anchored persistent foam-energy buffer
-    // (the FFT one is a tiled cascade and can't hold a world-absolute wake).
-    // Merge it into the same energy the crests use, so it renders identically
-    // through WaveFoam. Only on the persistent path (WebGPU + foam buffer).
-    if (wakeFieldSampler && foamEnergy !== undefined) {
-      const wakeFoam = wakeFieldSampler.sampleFoamEnergy(wakeWorldX, wakeWorldZ);
-      foamEnergy = foamEnergy.max(wakeFoam);
-    }
-
-    const foam = new Foam();
-    const foamResult = foam.build({
+    const foamResult = computeFoam({
       coords: { fragWorldX, fragWorldZ },
-      eigenvalues: { eigen0, eigen1 },
+      foamFieldSampler,
       scene: {
         waterColumnDepth,
         isObjectInFront,
         fresnel,
-        surfaceNormal: interpolatedNormal,
       },
-      surfaceFoam: surfaceFoamInstance,
-      waveFoam: waveFoamInstance,
       shorelineFoam: shorelineFoamInstance,
-      features: {
-        hasJacobianFoam,
-      },
+      surfaceFoam: surfaceFoamInstance,
+      wakeCoords: { wakeWorldX, wakeWorldZ },
+      wakeFieldSampler,
+      waveFoam: waveFoamInstance,
       windDirection: uniforms.windDirection,
-      foamEnergy,
     });
 
-    // 7–9. Composite: Fresnel mix of refracted seabed and reflection on
-    // the front face, then sparkle and surface/wave foam. Output is
-    // opaque on the front face (the refracted-scene sample replaces the
-    // old framebuffer alpha-blend trick); shoreline foam composites on
-    // top of the shoreline-zone fade below.
-    //
-    // Pass `refractedClearFactor` (depth resampled at the refracted UV)
-    // rather than the screen-UV `clearFactor` so attenuation matches the
-    // refracted-colour sample and underwater silhouettes don't bleed
-    // bright halos around their displaced positions.
-    const composite = compositeColor(
-      waterColorWithSSS,
-      interpolatedNormal,
+    // 7. Composite: Fresnel mix of refracted seabed and reflection on
+    // the front face, then sparkle and surface/wave foam. Shoreline foam
+    // composites on top of the shoreline-zone fade below.
+    const composite = compositeColor({
+      clearFactor: refractedClearFactor,
+      distanceToCamera,
       foamResult,
+      frontFaceMultiplier,
+      interpolatedNormal,
       reflectionColor,
       refractedSceneColor,
-      viewDir,
+      sparkle: sparkleInstance,
       sunDir,
-      sun.intensity,
-      distanceToCamera,
-      sparkleInstance,
+      sunIntensity: sun.intensity,
+      viewDir,
+      waterColorWithSSS,
+    });
+
+    // 8. Shoreline zone fade + shoreline foam.
+    const shoreline = applyShorelineZone({
+      composite,
+      foamResult,
       frontFaceMultiplier,
-      refractedClearFactor,
-    );
+      shorelineFoam: shorelineFoamInstance,
+    });
 
-    // 10. Shoreline zone fade: bring water alpha down within the shoreline
-    // zone so the beach/terrain shows through, then composite shoreline foam
-    // on top so foam patches stay opaque.
-    const shorelineFoamEnabled = shorelineFoamInstance._enabledNode;
-    const activeZoneMask = foamResult.shorelineZoneMask
-      .mul(shorelineFoamEnabled)
-      .mul(frontFaceMultiplier);
-    const zoneFade = float(1.0).sub(activeZoneMask);
-    const fadedColor = vec3(
-      composite.color.x.mul(zoneFade),
-      composite.color.y.mul(zoneFade),
-      composite.color.z.mul(zoneFade),
-    );
-    const fadedAlpha = composite.alpha.mul(zoneFade);
-
-    const shorelineFoamCoverage =
-      foamResult.shorelineFoamStrength.mul(frontFaceMultiplier);
-    const shorelineColor = mix(
-      fadedColor,
-      foamResult.shorelineFoamTint,
-      shorelineFoamCoverage,
-    );
-    const shorelineAlpha = mix(fadedAlpha, float(1.0), shorelineFoamCoverage);
-
-    // 12. Waterline rim highlight (meniscus caustic simulation)
-    // Compute rim-light factor based on view angle relative to meniscus direction
-    // At grazing angles to the meniscus, light focuses creating a bright edge
-    const meniscusNdotV = abs(dot(viewDir, meniscusDir));
-    const rimFactor = pow(
-      float(1.0).sub(meniscusNdotV),
-      clipPlane.waterlineHighlightSharpness,
-    );
-    const rimHighlight = rimFactor
-      .mul(waterlineFactor)
-      .mul(clipPlane.waterlineHighlightStrength);
-
-    // Add rim highlight and rain impact flashes as additive light (no alpha change).
+    // 9. Waterline rim highlight and rain impact flashes, added as light
+    // (no alpha change).
+    const rimHighlight = computeWaterlineRim({
+      clipPlane,
+      meniscusDir,
+      viewDir,
+      waterlineFactor,
+    });
     const additive = rippleSplash
       ? rimHighlight.add(rippleSplash)
       : rimHighlight;
-    const finalColorWithWaterline = vec3(
-      shorelineColor.x.add(additive),
-      shorelineColor.y.add(additive),
-      shorelineColor.z.add(additive),
+    const finalColor = vec3(
+      shoreline.color.x.add(additive),
+      shoreline.color.y.add(additive),
+      shoreline.color.z.add(additive),
     );
 
-    return vec4(finalColorWithWaterline, shorelineAlpha);
+    return vec4(finalColor, shoreline.alpha);
   });
 
   return customColor();

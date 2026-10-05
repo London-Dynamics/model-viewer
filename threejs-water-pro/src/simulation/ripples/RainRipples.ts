@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Procedural rain ripple normal perturbation.
  *
@@ -32,7 +35,9 @@ import {
 import type { Node } from "three/webgpu";
 
 // Hardcoded ripple physics constants
+/** Ring wavenumber (rad/m) at the reference cell size. */
 const FREQUENCY = 2.5;
+/** Ring angular frequency (rad/s). */
 const SPEED = 15.0;
 const TEMPORAL_DECAY_BASE = 5.0;
 const SPATIAL_DECAY_BASE = 2.0;
@@ -59,7 +64,7 @@ export interface RainRippleParams {
   enabled: boolean;
   /** Distance where ripples fully fade out from camera. */
   fadeEnd: number;
-  /** Ripple cell size in world units (1–10). Controls individual ripple diameter. */
+  /** Ripple cell size in meters (0.1–1). Controls individual ripple diameter. */
   size: number;
   /** Ripple normal perturbation strength (0–1). */
   strength: number;
@@ -88,9 +93,9 @@ export class RainRipples {
   // Tunable ripple uniforms
   private _decayUniform = uniform(1.0);
   private _densityUniform = uniform(1.0);
-  private _sizeUniform = uniform(2.5);
+  private _sizeUniform = uniform(0.5);
   private _strengthUniform = uniform(0.5);
-  private _fadeEnd = uniform(500.0);
+  private _fadeEnd = uniform(100.0);
 
   /** Whether ripple effect is enabled. */
   get enabled(): boolean {
@@ -116,7 +121,7 @@ export class RainRipples {
     this._densityUniform.value = value;
   }
 
-  /** Ripple cell size in world units (1–10). */
+  /** Ripple cell size in meters (0.1–1). */
   get size(): number {
     return this._sizeUniform.value;
   }
@@ -208,10 +213,14 @@ export class RainRipples {
         // proportionally larger ripples. Reference size = 3.0m.
         const sizeScale = size.div(REFERENCE_SIZE);
 
-        // Wavefront propagation speed in world units per second
-        const wavefrontSpeed = waveSpeed
-          .div(waveNumber.max(0.01))
-          .mul(sizeScale);
+        // Ring wavenumber scales inversely with cell size so ring spacing
+        // is proportional to `size` (unchanged at the reference size).
+        const ringWaveNumber = waveNumber.div(sizeScale.max(0.001));
+
+        // Wavefront propagation speed in world units per second. This is the
+        // ring phase speed waveSpeed / ringWaveNumber, so the leading ring
+        // neither outruns nor lags the wavefront mask.
+        const wavefrontSpeed = waveSpeed.div(ringWaveNumber.max(0.01));
 
         // Scale spatial decay inversely with size so ripples fill larger cells
         const scaledSDecay = sDecay.div(sizeScale);
@@ -272,7 +281,7 @@ export class RainRipples {
 
               // Concentric ring phase
               const ringPhase = dist
-                .mul(waveNumber)
+                .mul(ringWaveNumber)
                 .sub(dropAge.mul(waveSpeed));
 
               // Temporal decay: drops fade over their lifetime
@@ -290,10 +299,12 @@ export class RainRipples {
               // dh/dx = dh/dr * (x / r)
               const cosPhase = cos(ringPhase);
               const sinPhase = sin(ringPhase);
-              const radialGrad = waveNumber
+              const radialGrad = ringWaveNumber
                 .mul(cosPhase)
                 .sub(dropSDecay.mul(sinPhase));
-              const gradScale = amplitude.div(dist);
+              // Ring height scales with size (self-similar ripples), so the
+              // slope k·A is size-invariant: fold sizeScale into the gradient.
+              const gradScale = amplitude.div(dist).mul(sizeScale);
 
               nx.addAssign(radialGrad.mul(gradScale).mul(ddx));
               nz.addAssign(radialGrad.mul(gradScale).mul(ddz));

@@ -1,15 +1,17 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Water surface normal computation, shared between the main water fragment
  * shader and the SSR reflection G-buffer pass.
  *
  * Combines (in order):
  *   1. Cascade-sampled FFT normal (WebGPU) or noise-based normal (WebGL).
- *   2. Gerstner analytical normal blended via Reoriented Normal Mapping.
- *   3. Optional rain ripple normal blended via RNM.
+ *   2. Optional rain ripple normal blended via RNM.
  *
- * Returns the surface normal plus eigenvalues used by foam shaders. Waterline
- * meniscus tilt is *not* included here — it depends on clip-plane uniforms
- * that only exist in the main material and is intentionally left to callers.
+ * Waterline meniscus tilt is *not* included here — it depends on clip-plane
+ * uniforms that only exist in the main material and is intentionally left
+ * to callers.
  */
 import { float, normalize, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -23,22 +25,16 @@ export interface BuildWaterSurfaceNormalParams {
   oceanSim: IWaveSimulation;
   /** CascadeSampler instance for WebGPU path. Null for WebGL. */
   cascadeSampler: CascadeSampler | null;
-  /** Grid-reference world X coordinate at the fragment (FFT/Gerstner are grid-anchored). */
+  /** Grid-reference world X coordinate at the fragment (FFT is grid-anchored). */
   fragWorldX: Node;
-  /** Grid-reference world Z coordinate at the fragment (FFT/Gerstner are grid-anchored). */
+  /** Grid-reference world Z coordinate at the fragment (FFT is grid-anchored). */
   fragWorldZ: Node;
   /** True (choppy-displaced) world X for sampling the world-anchored wake field. */
   wakeWorldX: Node;
   /** True (choppy-displaced) world Z for sampling the world-anchored wake field. */
   wakeWorldZ: Node;
-  /** Hierarchical cascade sample coordinates from the vertex stage. */
-  vSampleCoords0: Node;
-  /** Vertex-interpolated Gerstner normal. */
-  vGerstnerNormal: Node;
-  /** Vertex-interpolated Gerstner folding factor. */
-  vGerstnerFolding: Node;
-  /** Compile-time max number of Gerstner waves (0 disables). */
-  gerstnerMaxWaves: number;
+  /** Hierarchical cascade sample coordinates from the vertex stage, one per cascade after the first. */
+  vHierarchicalCoords: Node[];
   /** Rain ripple simulation, or null if disabled. */
   rainRipples: RainRipples | null;
   /** Wake field sampler for wake normal perturbation, or null if disabled. */
@@ -55,16 +51,17 @@ export interface BuildWaterSurfaceNormalParams {
 export interface BuildWaterSurfaceNormalResult {
   /** Final surface normal in world space. */
   interpolatedNormal: Node;
-  /** Cascade-0 eigenvalue (folding factor) for crest foam. */
-  eigen0: Node;
-  /** Cascade-1 eigenvalue (folding factor) for crest foam. */
-  eigen1: Node;
   /** Per-drop rain ripple splash factor. Null if rain ripples are disabled. */
   rippleSplash: Node | null;
+  /**
+   * Sub-footprint slope variance (0-1) from the cascade normal mips, driving
+   * the filtered-BRDF reflection roughness. Zero on the WebGL noise path.
+   */
+  slopeVariance: Node;
 }
 
 /**
- * Builds the wave-displaced surface normal and supporting eigenvalues.
+ * Builds the wave-displaced surface normal.
  *
  * Identical to the inline computation previously in `waterFragment.ts` so
  * the SSR G-buffer pass produces a `reflectDir` that matches the main pass.
@@ -79,10 +76,7 @@ export function buildWaterSurfaceNormal(
     fragWorldZ,
     wakeWorldX,
     wakeWorldZ,
-    vSampleCoords0,
-    vGerstnerNormal,
-    vGerstnerFolding,
-    gerstnerMaxWaves,
+    vHierarchicalCoords,
     rainRipples,
     wakeFieldSampler,
     cameraPosition,
@@ -90,74 +84,34 @@ export function buildWaterSurfaceNormal(
   } = params;
 
   let interpolatedNormal: Node;
-  let eigen0: Node;
-  let eigen1: Node;
+  let slopeVariance: Node = float(0.0);
 
   if (cascadeSampler) {
     // WebGPU path: hierarchical cascade sampling on storage textures
     // (HW bilinear). The storage textures are written every frame by
     // `computeNormals` alongside the storage buffers.
-    const normalTexture0 = oceanSim.getNormalTexture(0) as THREE.Texture;
-    const normalTexture1 =
-      cascadeSampler.cascadeCount >= 2
-        ? (oceanSim.getNormalTexture(1) as THREE.Texture)
-        : undefined;
+    const normalTextures = Array.from(
+      { length: cascadeSampler.cascadeCount },
+      (_, i) => oceanSim.getNormalTexture(i) as THREE.Texture,
+    );
+    const hierarchicalCoords = vHierarchicalCoords.map((coords) => ({
+      x: coords.x,
+      z: coords.y,
+    }));
 
     const result = cascadeSampler.sampleNormals(
       fragWorldX,
       fragWorldZ,
-      vSampleCoords0.x,
-      vSampleCoords0.y,
-      normalTexture0,
-      normalTexture1,
+      hierarchicalCoords,
+      normalTextures,
     );
 
-    if (gerstnerMaxWaves > 0) {
-      const gn = vGerstnerNormal;
-      // Reoriented Normal Mapping blend.
-      interpolatedNormal = normalize(
-        vec3(
-          result.normal.x.add(gn.x),
-          result.normal.y.add(gn.y.sub(1.0)),
-          result.normal.z.add(gn.z),
-        ),
-      );
-      eigen0 = result.eigen0.sub(vGerstnerFolding);
-    } else {
-      interpolatedNormal = result.normal;
-      eigen0 = result.eigen0;
-    }
-    eigen1 = result.eigen1;
+    interpolatedNormal = result.normal;
+    slopeVariance = result.slopeVariance;
   } else {
     // WebGL path: noise-based normal nodes.
     const normalNodes = oceanSim.getNormalNodes();
-
-    if (normalNodes.sampleNormalAndEigenvalue) {
-      const result = normalNodes.sampleNormalAndEigenvalue(
-        fragWorldX,
-        fragWorldZ,
-      );
-      interpolatedNormal = result.normal;
-      eigen0 = result.eigen0;
-      eigen1 = result.eigen1;
-    } else {
-      interpolatedNormal = normalNodes.sampleNormal(fragWorldX, fragWorldZ);
-      eigen0 = float(1.0);
-      eigen1 = float(1.0);
-    }
-
-    // Gerstner waves are large-scale, so their folding adds to the wave cascade.
-    if (gerstnerMaxWaves > 0) {
-      const gn = vGerstnerNormal;
-      interpolatedNormal = normalize(
-        vec3(
-          interpolatedNormal.x.add(gn.x),
-          interpolatedNormal.y.add(gn.y.sub(1.0)),
-          interpolatedNormal.z.add(gn.z),
-        ),
-      );
-      eigen0 = eigen0.sub(vGerstnerFolding);
-    }
+    interpolatedNormal = normalNodes.sampleNormal(fragWorldX, fragWorldZ);
   }
 
   // Wake field normal: perturb by the wake's height gradient (RNM blend) so the
@@ -187,5 +141,5 @@ export function buildWaterSurfaceNormal(
     rippleSplash = rippleResult.splash.mul(frontFaceMultiplier);
   }
 
-  return { interpolatedNormal, eigen0, eigen1, rippleSplash };
+  return { interpolatedNormal, rippleSplash, slopeVariance };
 }

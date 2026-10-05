@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Water material shader functions for TSL (Three.js Shading Language).
  * These functions are used by WaterMaterial for ocean surface rendering.
@@ -18,7 +21,6 @@ export { CascadeSampler } from "./cascadeSampler";
 export { Caustics } from "./caustics";
 export type {
   CausticsParams,
-  WaveCausticsBufferOptions,
   WaveCausticsTextureOptions,
 } from "./caustics";
 
@@ -28,14 +30,27 @@ export type {
 } from "./cascadeSampler";
 
 // Water color class
-export { WaterColor, buildReflectionSampling } from "./waterColor";
+export {
+  WaterColor,
+  buildReflectionSampling,
+  normalizeWaterColorConfig,
+} from "./waterColor";
 export type {
+  CustomWaterColorParams,
+  PhysicalWaterColorParams,
+  WaterColorConfig,
   WaterColorParams,
+  WaterColorMode,
   WaterColorBuildParams,
   WaterColorResult,
   ReflectionSamplingParams,
   ReflectionSamplingResult,
 } from "./waterColor";
+export {
+  JERLOV_WATER_TYPES,
+  type JerlovWaterType,
+  type WaterConstituents,
+} from "./waterConstituents";
 
 // Fresnel class
 export { Fresnel } from "./fresnel";
@@ -53,9 +68,7 @@ export type { SSSParams } from "./sss";
 export { Foam } from "./foam";
 export type {
   FoamCoords,
-  FoamEigenvalues,
   FoamSceneState,
-  FoamFeatures,
   FoamBuildParams,
   FoamResult,
 } from "./foamTypes";
@@ -91,15 +104,6 @@ export type { ClipPlaneWaterlineParams, WaterlineResult } from "./mask";
 // Waterline class
 export { Waterline } from "./waterline";
 export type { WaterlineParams } from "./waterline";
-
-// Gerstner waves (class + shared TSL function for vertex shader + buoyancy)
-export { Gerstner, computeGerstner } from "./gerstner";
-export type {
-  GerstnerParams,
-  InternalGerstnerParams,
-  ComputeGerstnerParams,
-  GerstnerResult,
-} from "./gerstner";
 
 // Vertex displacement builder (used by WaterSurfaceMaterial)
 export { buildWaterVertexDisplacement } from "./waterVertex";

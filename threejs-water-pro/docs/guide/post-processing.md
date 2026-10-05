@@ -6,9 +6,9 @@ The water system includes built-in post-processing effects and integrates with T
 
 `water.postProcessing.buildNode(scenePass, inputColor)` bundles three effects into a single TSL node:
 
-1. **Atmospheric Fog** — Distance-based fog that samples color from the sky. Configured via `water.fog`.
-2. **Underwater Haze** — Per-pixel depth fog and animated distortion when the camera is submerged. Configured via `water.underwater`.
-3. **Sun Shafts** — Screen-space god rays visible underwater. Configured via `water.sunShafts`.
+1. **Atmospheric Fog**: Distance-based fog that samples color from the sky. Configured via `water.fog`.
+2. **Underwater Haze**: Per-pixel depth fog and animated distortion when the camera is submerged. Configured via `water.underwater`.
+3. **Sun Shafts**: Screen-space god rays visible underwater. Configured via `water.sunShafts`.
 
 These effects are applied in order and composed into a single output node. See [Atmospheric Fog](/api/fog), [Underwater](/api/underwater), and [Sun Shafts](/api/sun-shafts) for configuration details.
 

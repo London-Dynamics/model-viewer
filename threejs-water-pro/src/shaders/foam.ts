@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Main foam orchestrator that combines all foam effects.
  *
@@ -34,24 +37,20 @@ export class Foam {
   build(params: FoamBuildParams): FoamResult {
     const {
       coords,
-      eigenvalues,
       scene,
       surfaceFoam: surfaceFoamInstance,
       waveFoam: waveFoamInstance,
       shorelineFoam: shorelineFoamInstance,
-      features,
       windDirection,
       foamEnergy,
+      wakeFoamEnergy,
     } = params;
     const { fragWorldX, fragWorldZ } = coords;
-    const { eigen0, eigen1 } = eigenvalues;
     const {
       waterColumnDepth,
       isObjectInFront,
       fresnel,
-      surfaceNormal,
     } = scene;
-    const { hasJacobianFoam } = features;
 
     // Surface foam
     const surfaceFoamResult = surfaceFoamInstance.build({
@@ -61,16 +60,13 @@ export class Foam {
     const surfaceFoamStrength: Node = surfaceFoamResult.strength;
     const surfaceFoamColor: Node = surfaceFoamResult.color;
 
-    // Turbulent foam (Jacobian-driven with anisotropic wind stretching)
+    // Wave-crest foam (persistent energy field, anisotropic wind stretching)
     const waveFoamResult = waveFoamInstance.build({
       worldX: fragWorldX,
       worldZ: fragWorldZ,
-      eigen0,
-      eigen1,
       windDirection,
-      surfaceNormal,
-      hasJacobianFoam: !!hasJacobianFoam,
       foamEnergy,
+      wakeFoamEnergy,
     });
     const turbulentFoamStrength: Node = waveFoamResult.strength;
     const waveFoamColor: Node = waveFoamResult.color;

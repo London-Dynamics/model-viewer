@@ -16,9 +16,7 @@ export declare class WebGLWaveSampler implements IWaveSampler {
     private positions;
     private currentSampleCount;
     private cachedResults;
-    private displacementReadBuffer;
-    private normalReadBuffer;
-    private lastReadResolution;
+    private cascadeReads;
     private _disposed;
     private readonly _t00;
     private readonly _t10;
@@ -29,17 +27,37 @@ export declare class WebGLWaveSampler implements IWaveSampler {
     constructor(simulation: WebGLWaveSimulation, renderer: THREE.WebGPURenderer);
     setPositions(positions: THREE.Vector2[] | THREE.Vector3[]): void;
     /**
-     * Evaluate Gerstner wave displacement and analytical normal on CPU.
+     * Compute bilinear texel indices and weights for a world position, matching
+     * the hardware linear-filtered texture sampling the surface uses.
+     *
+     * Texel `i` is centered at `(i + 0.5)`, so the lookup is shifted half a texel
+     * before flooring. Without that shift the CPU samples half a texel — `scale /
+     * (2 * resolution)` world units — off from the rendered surface, which reads as
+     * a height offset that grows with wave steepness.
      */
-    private evaluateGerstnerCPU;
+    private texelLerp;
     /**
-     * Sample displacement from the texture at the given world position.
+     * Sample a cascade's displacement at a world position. Returns a reused temp
+     * vector — read its components before the next sample call.
      */
-    private sampleDisplacement;
+    private sampleCascadeDisplacement;
     /**
-     * Sample normal from the texture at the given world position.
+     * Sample a cascade's surface normal at a world position. Decodes `[0,1]` to
+     * `[-1,1]` but does not normalize — cascades are RNM-blended then normalized
+     * once by the caller, matching the surface shader. Returns a reused temp.
      */
-    private sampleNormal;
+    private sampleCascadeNormal;
+    /**
+     * Read back each cascade's displacement and normal textures into CPU buffers,
+     * (re)allocating per-cascade buffers when a cascade's resolution changes.
+     */
+    private readCascades;
+    /**
+     * Store a readback result into a cascade buffer. The renderer normally hands
+     * back a `Float32Array` we can keep directly; otherwise copy into the existing
+     * buffer.
+     */
+    private storeReadback;
     updateLowLatency(): Promise<void>;
     update(): Promise<void>;
     getSample(index: number): WaveSample;

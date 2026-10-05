@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -28,8 +31,8 @@ export function createSprayFolder(
   });
 
   folder.addSlider("Size (m)", {
-    min: 1,
-    max: 100,
+    min: 0.5,
+    max: 10,
     step: 0.1,
     object: spray,
     key: "size",
@@ -61,7 +64,7 @@ export function createSprayFolder(
 
   folder.addSlider("Submersion Depth (m)", {
     min: 0,
-    max: 2,
+    max: 1,
     step: 0.05,
     object: spray,
     key: "submersionDepth",
@@ -117,7 +120,7 @@ export function createSprayFolder(
 
   folder.addSlider("Velocity Threshold (m/s)", {
     min: 0,
-    max: 10,
+    max: 3,
     step: 0.1,
     object: spray,
     key: "velocityThreshold",
@@ -139,13 +142,11 @@ export function createSprayFolder(
     key: "velocityHeightFactor",
   });
 
-  const visualizer = ui.app.sprayDebugVisualizer;
-  if (visualizer) {
-    folder.addCheckbox("Show Probes", {
-      value: visualizer.isEnabled(),
-      onChange: (v: boolean) => visualizer.setEnabled(v),
-    });
-  }
+  const visualizer = ui.app.rig.sprayDebugVisualizer;
+  folder.addCheckbox("Show Probes", {
+    value: visualizer.isEnabled(),
+    onChange: (v: boolean) => visualizer.setEnabled(v),
+  });
 
   return folder;
 }

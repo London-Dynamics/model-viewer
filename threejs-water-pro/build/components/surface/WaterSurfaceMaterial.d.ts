@@ -1,10 +1,12 @@
 import * as THREE from "three/webgpu";
 import type { IWaveSimulation } from "../../simulation/waves";
 import type { RainRipples } from "../../simulation/ripples";
-import type { FoamAccumulation } from "../../simulation/foam/FoamAccumulation";
-import type { Sky } from "../sky/Sky";
+import type { IFoamFieldSampler } from "../../simulation/foam";
+import type { SkyProvider } from "../sky/SkyProvider";
 import type { Node, TSLUniformNode } from "../../types/tsl";
 import type { IWakeFieldSampler } from "../../simulation/waves/wake";
+import { SceneDepthSampler } from "../../rendering/passes/SceneDepthSampler";
+import type { IWaterDepthPass } from "../../rendering/passes/IWaterDepthPass";
 import { type QualityLevel, type QualityLevelConfig } from "../../config/QualityLevels";
 import { WaterColor, Fresnel, SurfaceFoam, WaveFoam, ShorelineFoam, Sparkle, SSR, SSS, CascadeSampler, Waterline } from "../../shaders";
 /**
@@ -17,7 +19,6 @@ export interface SharedMaterialUniforms {
     sunDirection: TSLUniformNode;
     sunIntensity: TSLUniformNode;
     windDirection: TSLUniformNode;
-    foamAccumulation: FoamAccumulation | null;
     fresnel: Fresnel;
     rainRipples: RainRipples | null;
     shorelineFoam: ShorelineFoam;
@@ -29,13 +30,13 @@ export interface SharedMaterialUniforms {
     waterline: Waterline;
     waveFoam: WaveFoam;
     wakeFieldSampler: IWakeFieldSampler | null;
+    foamFieldSampler: IFoamFieldSampler | null;
 }
 export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     private oceanSim;
     private sky;
     private features;
     private cascadeCount;
-    private gerstnerMaxWaves;
     waterColor: WaterColor;
     fresnel: Fresnel;
     surfaceFoam: SurfaceFoam;
@@ -54,10 +55,9 @@ export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     timeUniform: THREE.UniformNode<number>;
     clipmapOffsetUniform: THREE.UniformNode<THREE.Vector2>;
     windDirectionUniform: TSLUniformNode;
-    private depthTexture;
-    cameraNearUniform: THREE.UniformNode<number>;
-    cameraFarUniform: THREE.UniformNode<number>;
+    private sceneDepth;
     useDepthTextureUniform: THREE.UniformNode<number>;
+    private _waterDepth;
     cameraSubmergedUniform: THREE.UniformNode<number>;
     clipPlaneDistanceUniform: THREE.UniformNode<number>;
     cameraForwardUniform: THREE.UniformNode<THREE.Vector3>;
@@ -66,8 +66,8 @@ export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     useSceneColorTextureUniform: THREE.UniformNode<number>;
     private maskTexture;
     rainRipples: RainRipples | null;
-    foamAccumulation: FoamAccumulation | null;
-    constructor(oceanSim: IWaveSimulation, sharedUniforms: SharedMaterialUniforms, sky?: Sky, quality?: QualityLevel | QualityLevelConfig["features"]);
+    private _foamFieldSampler;
+    constructor(oceanSim: IWaveSimulation, sharedUniforms: SharedMaterialUniforms, sky?: SkyProvider, quality?: QualityLevel | QualityLevelConfig["features"]);
     updateCascadeUniforms(): void;
     /**
      * Rebind to the wave simulation when its cascade config changes.
@@ -75,9 +75,20 @@ export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
      * uniformity with other cascade subscribers.
      */
     onCascadeChanged(_sim: IWaveSimulation): void;
-    setSky(sky: Sky): void;
-    setDepthTexture(depthTex: THREE.Texture, near: number, far: number): void;
+    setSky(sky: SkyProvider | null): void;
+    /**
+     * Bind the scene-depth sampler from the capture pass and rebuild the
+     * shader graph. The sampler tracks target rebuilds and camera-plane
+     * changes internally, so this is called once per material instance.
+     */
+    setSceneDepth(sceneDepth: SceneDepthSampler): void;
     setSceneColorTexture(sceneColorTex: THREE.Texture): void;
+    /**
+     * Bind the water-depth pass and rebuild the shader graph. The refraction
+     * path samples it so the refracted water column is measured from the
+     * surface depth along the sampled ray.
+     */
+    setWaterDepth(waterDepth: IWaterDepthPass): void;
     /**
      * Bind the SSR result texture and rebuild the fragment shader. Required
      * because `ssr.sample()` is called inside `setupMaterial`; if the result
@@ -86,10 +97,11 @@ export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
      */
     setSSRResultTexture(resultTex: THREE.Texture): void;
     /**
-     * Set the mask texture for hiding water in specific areas.
-     * @param maskTex - Screen-space mask texture from MaskPass
+     * Bind the active mask texture, or remove masking from the shader graph.
+     *
+     * @param maskTex - Screen-space mask texture from MaskPass, or `null`.
      */
-    setMaskTexture(maskTex: THREE.Texture): void;
+    setMaskTexture(maskTex: THREE.Texture | null): void;
     /**
      * Bind the wake field sampler from {@link WakeSystem}. Triggers a material
      * rebuild so the vertex shader graph includes the wake displacement read.
@@ -99,6 +111,14 @@ export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
      * @param sampler - Wake field sampler, or null.
      */
     setWakeFieldSampler(sampler: IWakeFieldSampler | null): void;
+    /**
+     * Bind the world-fixed foam field sampler. Triggers a material rebuild so the
+     * fragment graph reads the new sampler. Re-call when the field is rebuilt
+     * (resolution change). Pass null to remove persistent foam.
+     *
+     * @param sampler - Foam field sampler, or null.
+     */
+    setFoamFieldSampler(sampler: IFoamFieldSampler | null): void;
     private setupMaterial;
     /**
      * Get the current quality features configuration.
@@ -123,7 +143,5 @@ export declare class WaterSurfaceMaterial extends THREE.MeshBasicNodeMaterial {
     get waterPositionNode(): Node;
     /** The wave simulation backing this material. Used by the SSR G-buffer pass. */
     get waveSimulation(): IWaveSimulation;
-    /** Compile-time max Gerstner wave count. Used by the SSR G-buffer pass. */
-    get gerstnerWaveCount(): number;
 }
 //# sourceMappingURL=WaterSurfaceMaterial.d.ts.map

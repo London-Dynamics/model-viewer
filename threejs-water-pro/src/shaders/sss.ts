@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Physics-based subsurface scattering (SSS) for water.
  *
@@ -49,9 +52,7 @@ export interface SSSBuildParams {
   transmissionColor: Node;
   /** Sun light intensity. */
   sunIntensity: Node;
-  /** Distance at which fresnel fade starts. */
-  fadeStart: Node;
-  /** Distance at which fresnel fade ends. */
+  /** Distance at which the SSS distance fade ends. */
   fadeEnd: Node;
 }
 
@@ -120,7 +121,6 @@ export class SSS {
       distanceToCamera,
       transmissionColor,
       sunIntensity,
-      fadeStart,
       fadeEnd,
     } = params;
 
@@ -147,9 +147,10 @@ export class SSS {
         this._power,
       );
 
-      // Distance fade: fade out SSS at distance to avoid popping at horizon
+      // Distance fade: fade out SSS over the far half of the water extent
+      // to avoid popping at the horizon
       const distanceFade = float(1.0).sub(
-        smoothstep(fadeStart, fadeEnd, distanceToCamera),
+        smoothstep(fadeEnd.mul(0.5), fadeEnd, distanceToCamera),
       );
 
       // Final SSS factor

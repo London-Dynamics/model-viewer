@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { AudioManager } from "../audio/AudioManager";
 import type { ShipController } from "./ShipController";
 import type { CameraController, CameraMode } from "./CameraController";
@@ -117,8 +120,6 @@ export class ShipHUD {
         borderRadius: "0",
         padding: "8px 12px",
         background: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
         zIndex: "1000",
         fontFamily: MONO,
         fontSize: "11px",
@@ -175,8 +176,6 @@ export class ShipHUD {
         borderRadius: "10px",
         padding: "12px 14px",
         background: "rgba(10, 12, 16, 0.65)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
         zIndex: "1000",
         fontFamily: MONO,
         fontSize: "11px",

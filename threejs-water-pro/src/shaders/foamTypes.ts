@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Type definitions for foam shader functions.
  */
@@ -12,25 +15,12 @@ export interface FoamCoords {
   fragWorldZ: Node;
 }
 
-/** Eigenvalues from normal sampling for Jacobian foam */
-export interface FoamEigenvalues {
-  eigen0: Node;
-  eigen1: Node;
-}
-
 /** Scene state for foam calculation (computed values only; uniforms come via SurfaceUniforms) */
 export interface FoamSceneState {
   waterColumnDepth: Node;
   /** 1.0 when scene geometry is in front of water surface, 0.0 otherwise */
   isObjectInFront: Node;
   fresnel: Node;
-  /** Displaced surface normal (for leading edge detection) */
-  surfaceNormal: Node;
-}
-
-/** Capability flags for foam (not runtime toggles — these depend on backend support) */
-export interface FoamFeatures {
-  hasJacobianFoam?: boolean;
 }
 
 /**
@@ -38,20 +28,24 @@ export interface FoamFeatures {
  */
 export interface FoamBuildParams {
   coords: FoamCoords;
-  eigenvalues: FoamEigenvalues;
   scene: FoamSceneState;
   surfaceFoam: SurfaceFoam;
   waveFoam: WaveFoam;
   shorelineFoam: ShorelineFoam;
-  features: FoamFeatures;
   /** Global wind direction (radians) */
   windDirection: Node;
   /**
-   * Sampled persistent foam energy from `FoamAccumulation`.
-   * When provided (WebGPU + quality feature enabled), `WaveFoam` uses it
-   * in place of the stateless smoothstep mask. Omitted on WebGL.
+   * Sampled persistent foam energy from the foam-accumulation field. When
+   * provided, `WaveFoam` shades it into wave-crest foam. Omitted on quality
+   * tiers where wave foam is off.
    */
   foamEnergy?: Node;
+  /**
+   * Sampled wake-foam energy from the wake field. When provided, `WaveFoam`
+   * shades it through the textured foam path and merges it on top of the
+   * crest foam.
+   */
+  wakeFoamEnergy?: Node;
 }
 
 /**

@@ -1,9 +1,12 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
 function syncShipBuoyancy(ui: UIManager): void {
   const params = ui.params.buoyancy.ship;
-  const shipBuoyancyId = ui.app.shipBuoyancyId;
+  const shipBuoyancyId = ui.app.rig.shipBuoyancyId;
   if (shipBuoyancyId >= 0) {
     ui.water.buoyancy.updateObjectConfig(shipBuoyancyId, {
       heightOffset: params.heightOffset,
@@ -16,7 +19,7 @@ function syncShipBuoyancy(ui: UIManager): void {
 
 function syncBuoyBuoyancy(ui: UIManager): void {
   const params = ui.params.buoyancy.buoy;
-  for (const id of ui.app.islandBuoyIds) {
+  for (const id of ui.app.rig.islandBuoyIds) {
     ui.water.buoyancy.updateObjectConfig(id, {
       heightOffset: params.heightOffset,
       rotationInfluence: params.tiltAmount,
@@ -68,7 +71,7 @@ export function createBuoyancyFolder(
     onChange: (v) => {
       ui.params.buoyancy.ship.showSamplePoints = v;
       ui.params.buoyancy.buoy.showSamplePoints = v;
-      ui.app.buoyancyDebugVisualizer.setEnabled(v);
+      ui.app.rig.buoyancyDebugVisualizer.setEnabled(v);
     },
   });
 
@@ -78,16 +81,16 @@ export function createBuoyancyFolder(
     binding: () => ui.params.buoyancy.buoy.multiPoint,
     onChange: (v) => {
       ui.params.buoyancy.buoy.multiPoint = v;
-      for (const id of ui.app.islandBuoyIds) {
+      for (const id of ui.app.rig.islandBuoyIds) {
         ui.water.buoyancy.updateObjectConfig(id, { multiPoint: v });
       }
     },
   });
 
-  buoyFolder.addSlider("Height Offset", {
-    min: -5,
-    max: 5,
-    step: 0.1,
+  buoyFolder.addSlider("Height Offset (m)", {
+    min: -0.5,
+    max: 0.5,
+    step: 0.01,
     binding: () => ui.params.buoyancy.buoy.heightOffset,
     onChange: (v) => {
       ui.params.buoyancy.buoy.heightOffset = v;
@@ -134,17 +137,17 @@ export function createBuoyancyFolder(
     binding: () => ui.params.buoyancy.ship.multiPoint,
     onChange: (v) => {
       ui.params.buoyancy.ship.multiPoint = v;
-      const shipBuoyancyId = ui.app.shipBuoyancyId;
+      const shipBuoyancyId = ui.app.rig.shipBuoyancyId;
       if (shipBuoyancyId >= 0) {
         ui.water.buoyancy.updateObjectConfig(shipBuoyancyId, { multiPoint: v });
       }
     },
   });
 
-  shipFolder.addSlider("Height Offset", {
-    min: -10,
-    max: 10,
-    step: 0.1,
+  shipFolder.addSlider("Height Offset (m)", {
+    min: -2,
+    max: 2,
+    step: 0.01,
     binding: () => ui.params.buoyancy.ship.heightOffset,
     onChange: (v) => {
       ui.params.buoyancy.ship.heightOffset = v;

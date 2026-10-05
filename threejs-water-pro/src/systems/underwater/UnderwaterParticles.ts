@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import {
   attribute,
@@ -65,8 +68,8 @@ export class UnderwaterParticles implements WaterSubsystem {
   private sizeAttr: THREE.InstancedBufferAttribute;
 
   // Uniforms
-  private minSizeUniform = uniform(0.1);
-  private maxSizeUniform = uniform(0.5);
+  private minSizeUniform = uniform(0.03);
+  private maxSizeUniform = uniform(0.15);
   private colorUniform = uniform(new THREE.Color("#a0c8d0"));
   private opacityUniform = uniform(0.6);
 

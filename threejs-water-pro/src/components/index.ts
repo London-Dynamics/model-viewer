@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 export { WaterSurfaceMaterial } from "./surface/WaterSurfaceMaterial";
 export {
   WaterSurfaceGeometry,
@@ -10,3 +13,4 @@ export {
   type SkyParams,
   type SkySunOverlayParams,
 } from "./sky/Sky";
+export type { SkyProvider } from "./sky/SkyProvider";

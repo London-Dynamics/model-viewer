@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -23,11 +26,11 @@ export function createBoatFolder(
     },
   });
 
-  folder.addSlider("Thrust", {
+  folder.addSlider("Thrust (m/s²)", {
     object: ship,
     key: "thrust",
-    min: 1,
-    max: 50,
+    min: 0.5,
+    max: 10,
     step: 1,
   });
 
@@ -39,19 +42,19 @@ export function createBoatFolder(
     step: 0.05,
   });
 
-  folder.addSlider("Max Speed", {
+  folder.addSlider("Max Speed (m/s)", {
     object: ship,
     key: "maxSpeed",
-    min: 10,
-    max: 100,
+    min: 1,
+    max: 15,
     step: 1,
   });
 
-  folder.addSlider("Reverse Max Speed", {
+  folder.addSlider("Reverse Max Speed (m/s)", {
     object: ship,
     key: "reverseMaxSpeed",
-    min: 5,
-    max: 50,
+    min: 1,
+    max: 8,
     step: 1,
   });
 
@@ -79,7 +82,7 @@ export function createBoatFolder(
     step: 0.05,
   });
 
-  folder.addSlider("Rudder Rate", {
+  folder.addSlider("Rudder Rate (rad/s)", {
     object: ship,
     key: "rudderRate",
     min: 0.5,
@@ -87,7 +90,7 @@ export function createBoatFolder(
     step: 0.1,
   });
 
-  folder.addSlider("Rudder Return", {
+  folder.addSlider("Rudder Return (rad/s)", {
     object: ship,
     key: "rudderReturn",
     min: 0.5,

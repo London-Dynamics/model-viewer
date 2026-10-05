@@ -1,47 +1,36 @@
 # Quality Levels
 
-Three.js Water Pro provides four quality levels that control mesh resolution, FFT resolution, and optional visual features.
+Five quality levels control mesh resolution, FFT cascade count/resolution, and optional visual features. Mesh resolution is `segments` on the relevant `QUALITY_LEVELS` entry.
 
 ## Resolution Settings
 
-| Setting                    | Low  | Medium | High | Ultra |
-| -------------------------- | ---- | ------ | ---- | ----- |
-| Mesh Segments              | 16   | 32     | 64   | 128   |
-| Waves                      | 128  | 128    | 256  | 256   |
-| Ripples                    | -    | 256    | 256  | 512   |
-| Cascades                   | 1    | 2      | 2    | 2     |
-| Scene Color Resolution     | 1/4x | 1/2x   | 1/2x | 1x    |
+| Setting                | Low   | Medium       | High                   | Ultra                  | Max                     |
+| ----------------------- | ----- | ------------ | ----------------------- | ------------------------ | ------------------------- |
+| Mesh Segments            | 16    | 32           | 64                       | 128                       | 128                        |
+| Cascades Enabled          | Swell | Swell, Waves | Swell, Waves, Ripples   | Swell, Waves, Ripples    | Swell, Waves, Ripples      |
+| Cascade Resolutions       | 256   | 256 / 256    | 256 / 256 / 256          | 256 / 256 / 512           | 512 / 512 / 512             |
+| Scene Color Resolution    | 1/4x  | 1/2x         | 1/2x                     | 1x                         | 1x                          |
+| Finest Wave Detail         | ~12 m | ~1.1 m       | ~10.5 cm                  | ~5.3 cm                   | ~1.3 cm                     |
 
-There are two types of resolution settings
+Finest wave detail is the shortest resolved wavelength at the default `maxScale` of `1024` meters. Changing `maxScale` changes these values proportionally.
 
-1. The resolution of the water surface mesh
-2. The resolution of the FFT
+## Feature Availability
 
-The mesh resolution sets the upper limit on the displacement detail. This can actually be set fairly low and you will still get good results since all of the lighting is calculated at the fragment level. You may need to increase mesh resolution with very large wave heights or when the camera is close to the water surface. Mesh resolution is a property of the quality level — to change it, edit the `segments` value on the relevant `QUALITY_LEVELS` entry before creating the water system, or define your own quality configuration.
-
-The FFT resolution determines the upper limit of the wave detail. Higher FFT resolution = more detailed waves. Always use powers of 2. This setting has the biggest impact on performance.
-
-## Optional Features
-
-These features can be enabled or disabled based on quality level:
-
-| Feature                  | Low | Medium | High | Ultra |
-| ------------------------ | --- | ------ | ---- | ----- |
-| Screen Refraction        | -   | -      | Yes  | Yes   |
-| Domain Warp Foam         | -   | -      | Yes  | Yes   |
-| Screen-Space Reflections | -   | -      | Yes  | Yes   |
-
-Core rendering features (displacement, reflection, water color, fog, sparkle, sub-surface scattering, Snell's-window total internal reflection, wave foam, surface foam, shoreline foam) are always enabled at all quality levels.
-
-## Which Level Should I Use?
-
-- **Low**: Mobile devices or integrated GPUs. Basic ocean with a single FFT cascade.
-
-- **Medium**: Mid-range hardware. Adds wave detail and shoreline foam.
-
-- **High**: Dedicated GPUs. Full feature set including screen-space reflections and refraction.
-
-- **Ultra**: High-end systems. Same features as High with higher FFT resolution for finer wave detail.
+| Feature                  | Low | Medium | High | Ultra | Max |
+| ------------------------- | --- | ------ | ---- | ----- | --- |
+| Wave Displacement         | Yes | Yes    | Yes  | Yes   | Yes |
+| Reflection                | Yes | Yes    | Yes  | Yes   | Yes |
+| Water Color               | Yes | Yes    | Yes  | Yes   | Yes |
+| Fog                       | Yes | Yes    | Yes  | Yes   | Yes |
+| Sparkle                   | Yes | Yes    | Yes  | Yes   | Yes |
+| Subsurface Scattering     | Yes | Yes    | Yes  | Yes   | Yes |
+| Snell's-Window TIR        | Yes | Yes    | Yes  | Yes   | Yes |
+| Wave Foam                 | Yes | Yes    | Yes  | Yes   | Yes |
+| Surface Foam              | Yes | Yes    | Yes  | Yes   | Yes |
+| Shoreline Foam            | Yes | Yes    | Yes  | Yes   | Yes |
+| Screen Refraction          | -   | -      | Yes  | Yes   | Yes |
+| Domain Warp Foam           | -   | -      | Yes  | Yes   | Yes |
+| Screen-Space Reflections   | -   | -      | Yes  | Yes   | Yes |
 
 ## Setting Quality
 
@@ -61,6 +50,16 @@ await water.setQualityLevel("medium", params);
 ```
 
 Note that this invalidates internal render pass textures, so you must rebuild your post-processing pipeline afterwards. See [Post-Processing](/guide/post-processing#rebuilding-after-quality-changes).
+
+### Overriding a Single Cascade's Resolution
+
+Use `setCascadeResolution()` to change one FFT cascade's resolution independently of the rest of the quality level:
+
+```typescript
+await water.setCascadeResolution(2, 512, params); // finer ripples only
+```
+
+This uses the same rebuild path as `setQualityLevel()`, so the same post-processing rebuild note applies.
 
 ## Custom Quality Levels
 

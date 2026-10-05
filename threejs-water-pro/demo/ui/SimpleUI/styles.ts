@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 const CSS = `
 .sui-panel,
 .sui-panel * {
@@ -76,17 +79,28 @@ const CSS = `
 }
 
 .sui-folder-header {
+  width: 100%;
+  border: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
+  font: inherit;
+  text-align: left;
   user-select: none;
   transition: background 0.15s;
 }
 
 .sui-folder-header:hover {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.sui-folder-header:focus-visible {
+  outline: 2px solid #4a9eff;
+  outline-offset: -2px;
 }
 
 .sui-folder-title {
@@ -153,6 +167,13 @@ const CSS = `
 
 .sui-folder .sui-folder .sui-folder .sui-folder-title {
   color: #aaa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sui-folder-header,
+  .sui-chevron {
+    transition: none;
+  }
 }
 
 .sui-control {

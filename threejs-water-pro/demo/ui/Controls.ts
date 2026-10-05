@@ -1,8 +1,11 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type {
   PresetName,
   QualityLevel,
   Sky,
-  WaterPreset,
+  WaterPresetConfig,
   WaterSystem,
 } from "threejs-water-pro";
 import { Panel } from "./SimpleUI";
@@ -50,7 +53,7 @@ function colorToHex(c: { getHexString(): string }): string {
  * Some parameters are owned by `params` (sky, waves.fft, cascades, clipmap,
  * oceanFloor, fresnel.underwater, postProcessing, caustics, foam textures).
  * Others live on water system shader classes (color, foam uniforms,
- * fresnel.surface, ssr, sss, sparkle, fog, gerstner, sunShafts, spray).
+ * fresnel.surface, ssr, sss, sparkle, fog, sunShafts, spray).
  * This function reads from the correct source for each.
  *
  * Used both by the "Save Preset" button and the autosave loop — the
@@ -61,19 +64,31 @@ function colorToHex(c: { getHexString(): string }): string {
 export function extractPresetParams(
   water: WaterSystem,
   sky: Sky,
-  params: WaterPreset,
-): WaterPreset {
+  params: WaterPresetConfig,
+): WaterPresetConfig {
   const w = water;
   const p = params;
 
   return {
     caustics: JSON.parse(JSON.stringify(p.caustics)),
     clipmap: JSON.parse(JSON.stringify(p.clipmap)),
-    color: {
-      absorptionColor: colorToHex(w.color.absorptionColor),
-      transmissionColor: colorToHex(w.color.transmissionColor),
-      waterColor: colorToHex(w.color.waterColor),
+    environment: {
+      intensity: w.environment.intensity,
     },
+    color:
+      w.color.mode === "physical"
+        ? {
+            mode: "physical",
+            algae: w.color.algae,
+            silt: w.color.silt,
+            stain: w.color.stain,
+          }
+        : {
+            mode: "custom",
+            absorptionColor: colorToHex(w.color.absorptionColor),
+            transmissionColor: colorToHex(w.color.transmissionColor),
+            waterColor: colorToHex(w.color.waterColor),
+          },
     foam: {
       surface: {
         enabled: w.foam.surface.enabled,
@@ -88,14 +103,13 @@ export function extractPresetParams(
         opacity: w.foam.waves.opacity,
         color: colorToHex(w.foam.waves.color),
         size: w.foam.waves.size,
-        coverage: w.foam.waves.coverage,
-        crestCoverage: w.foam.waves.crestCoverage,
-        peakIntensity: w.foam.waves.peakIntensity,
         windStretch: w.foam.waves.windStretch,
-        waveWeight: w.foam.waves.waveWeight,
-        rippleWeight: w.foam.waves.rippleWeight,
         texture: p.foam.waves.texture,
-        persistence: JSON.parse(JSON.stringify(p.foam.waves.persistence)),
+        persistence: {
+          crestStrength: w.foam.waves.persistence.crestStrength,
+          decayTime: w.foam.waves.persistence.decayTime,
+          windwardStrength: w.foam.waves.persistence.windwardStrength,
+        },
       },
       shoreline: {
         enabled: w.foam.shoreline.enabled,
@@ -117,10 +131,7 @@ export function extractPresetParams(
     },
     fresnel: {
       surface: {
-        fadePower: w.fresnel.fadePower,
-        fadeStart: w.fresnel.fadeStart,
         iorRatio: w.fresnel.iorRatio,
-        normalStrength: w.fresnel.normalStrength,
         refractionStrength: w.fresnel.refractionStrength,
       },
       underwater: JSON.parse(JSON.stringify(p.fresnel.underwater)),
@@ -157,18 +168,9 @@ export function extractPresetParams(
         streakWidth: w.rain.particles.streakWidth,
       },
     },
-    lighting: {
-      ambient: {
-        skyColor: colorToHex(w.lighting.ambient.skyColor),
-        groundColor: colorToHex(w.lighting.ambient.groundColor),
-        intensity: w.lighting.ambient.intensity,
-      },
-    },
     sky: {
       ...JSON.parse(JSON.stringify(p.sky)),
       brightness: sky.brightnessUniform.value,
-      reflectionBlurDistance: sky.reflectionBlurDistanceUniform.value,
-      reflectionDistanceBlur: sky.reflectionDistanceBlurUniform.value,
       reflectionRoughness: sky.reflectionRoughnessUniform.value,
     },
     sparkle: {
@@ -204,14 +206,14 @@ export function extractPresetParams(
           fadeOutTime: 0.5,
           opacity: 0.4,
           respawnTime: 1.0,
-          size: 27.5,
+          size: 3,
           spawnJitterTime: 0.0,
           stretchX: 1.88,
           stretchY: 1.0,
-          submersionDepth: 0.5,
+          submersionDepth: 0.15,
           velocityHeightFactor: 0.0,
           velocityScaleFactor: 0.0,
-          velocityThreshold: 3.9,
+          velocityThreshold: 0.8,
         },
     ssr: {
       enabled: w.ssr.enabled,
@@ -230,12 +232,6 @@ export function extractPresetParams(
     },
     waves: {
       fft: JSON.parse(JSON.stringify(p.waves.fft)),
-      gerstner: {
-        wavelength: w.gerstner.wavelength,
-        amplitude: w.gerstner.amplitude,
-        wavelengthSpread: w.gerstner.wavelengthSpread,
-        directionalSpread: w.gerstner.directionalSpread,
-      },
     },
   };
 }
@@ -270,13 +266,14 @@ export function createUI(ui: UIManager, title?: string): Panel {
     },
   });
 
-  const qualitySelect = panel.addSelect("Quality", {
+  const qualitySelect = panel.addSelect("Water Quality", {
     value: ui.performanceParams.quality,
     options: [
       { label: "Low", value: "low" },
       { label: "Medium", value: "medium" },
       { label: "High", value: "high" },
       { label: "Ultra", value: "ultra" },
+      { label: "Max", value: "max" },
     ],
     onChange: async (v) => {
       qualitySelect.clearDirty();
@@ -321,7 +318,7 @@ export function createUI(ui: UIManager, title?: string): Panel {
     object: ui.water.underwater,
     key: "enabled",
     onChange: (v) => {
-      ui.app.visibility.setUnderwaterContent(v as boolean);
+      ui.app.scenery.setVisible(v as boolean);
     },
   });
 
@@ -367,7 +364,11 @@ export function createUI(ui: UIManager, title?: string): Panel {
 
   panel.addButton("Print Settings to Console", {
     onClick: () => {
-      const preset = extractPresetParams(ui.water, ui.app.sky, ui.params);
+      const preset = extractPresetParams(
+        ui.water,
+        ui.app.skyManager.sky,
+        ui.params,
+      );
       const settings = JSON.stringify(preset, null, 2);
       console.log("=== WATER PRESET SETTINGS ===");
       console.log(settings);
@@ -377,7 +378,11 @@ export function createUI(ui: UIManager, title?: string): Panel {
 
   panel.addButton("Download Preset", {
     onClick: () => {
-      const preset = extractPresetParams(ui.water, ui.app.sky, ui.params);
+      const preset = extractPresetParams(
+        ui.water,
+        ui.app.skyManager.sky,
+        ui.params,
+      );
       const settings = JSON.stringify(preset, null, 2);
       const blob = new Blob([settings], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -399,7 +404,7 @@ export function createUI(ui: UIManager, title?: string): Panel {
         if (!file) return;
         try {
           const text = await file.text();
-          const parsed = JSON.parse(text) as WaterPreset;
+          const parsed = JSON.parse(text) as WaterPresetConfig;
           presetSelect.markDirty();
           await ui.applyPreset(parsed);
           panel.refresh();

@@ -1,1 +1,1 @@
-{"version":3,"file":"seaOfThieves.d.ts","sourceRoot":"","sources":["../../../src/config/presets/seaOfThieves.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,SAAS,CAAC;AAE5C;;;GAGG;AACH,eAAO,MAAM,qBAAqB,EAAE,YA+OnC,CAAC"}
+{"version":3,"file":"seaOfThieves.d.ts","sourceRoot":"","sources":["../../../src/config/presets/seaOfThieves.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EAAE,gBAAgB,EAAE,MAAM,SAAS,CAAC;AAEhD,eAAO,MAAM,qBAAqB,EAAE,gBA2NnC,CAAC"}

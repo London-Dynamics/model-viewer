@@ -2,7 +2,7 @@
 
 World-space instanced billboard rain particles with procedural water surface ripples.
 
-Access via `water.rain` — a `RainSystem` that exposes `water.rain.particles` (streaks) and `water.rain.ripples` (surface ripples). Both are controlled by the same `enabled` flag from the preset.
+Access via `water.rain`, a `RainSystem` that exposes `water.rain.particles` (streaks) and `water.rain.ripples` (surface ripples). Both are controlled by the same `enabled` flag from the preset.
 
 ## `water.rain`
 
@@ -44,17 +44,17 @@ Release GPU resources.
 
 ## `water.rain.ripples`
 
-Procedural rain ripple normal perturbation. Tiles world space into cells; each cell spawns a raindrop on a time cycle. Computed analytically in the fragment shader — no buffers, no compute dispatches.
+Procedural rain ripple normal perturbation. World space is tiled into cells, and each cell spawns a raindrop on a time cycle. The effect is computed analytically in the fragment shader and uses no buffers or compute dispatches.
 
 ### Properties
 
 | Property  | Type      | Default | Description                                                |
 | --------- | --------- | ------- | ---------------------------------------------------------- |
 | `decay`   | `number`  | `1.0`   | How quickly ripples fade (0.1–5). Scales temporal and spatial decay |
-| `density` | `number`  | `1.0`   | Ripple spawn density (0–1). Higher = more ripples per area |
+| `density` | `number`  | `1.0`   | Ripple spawn density (0–2). Higher = more ripples per area |
 | `enabled` | `boolean` | `false` | Enable/disable ripples. Tied to `water.rain.particles.enabled` |
-| `fadeEnd` | `number`  | `500.0` | Distance in world units where ripples fully fade out       |
-| `size`    | `number`  | `2.5`   | Ripple cell size in world units (1–10)                     |
+| `fadeEnd` | `number`  | `100.0` | Distance in meters where ripples fully fade out            |
+| `size`    | `number`  | `0.5`   | Ripple cell size in meters (0.1–1)                         |
 | `strength`| `number`  | `0.5`   | Normal perturbation strength (0–1)                         |
 
 ## Example
@@ -71,7 +71,7 @@ water.rain.particles.streakLength = 0.5;
 // Tune surface ripples
 water.rain.ripples.strength = 0.6;
 water.rain.ripples.density = 1.5;
-water.rain.ripples.size = 3.0;
+water.rain.ripples.size = 0.6;
 water.rain.ripples.decay = 1.0;
-water.rain.ripples.fadeEnd = 400;
+water.rain.ripples.fadeEnd = 80;
 ```

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
 import type { IWakeFieldSampler } from "./IWakeFieldSampler";
@@ -35,7 +38,7 @@ export interface InjectAlongPathParams {
 
 /**
  * Backend-agnostic interface for the dispersive wake displacement-field
- * simulator (Tessendorf's iWave; see `wiki/wake/iwave.md`).
+ * simulator (Tessendorf's iWave).
  *
  * The field is a height grid advanced by a `√(−∇²)` convolution + explicit
  * leapfrog, giving deep-water dispersion (long waves outrun short → Kelvin
@@ -45,7 +48,8 @@ export interface InjectAlongPathParams {
  * Implementations:
  *   - {@link WebGPUWakeSimulation} — storage buffers; the update runs as a
  *     compute kernel.
- *   - WebGL — a zero-field stub (no compute path; renders calm water).
+ *   - {@link WebGLWakeSimulation} — float render targets; the same update runs
+ *     as render-to-texture fragment passes.
  */
 export interface IWakeSimulation {
   /** Free GPU and CPU resources owned by the simulator. */
@@ -57,7 +61,7 @@ export interface IWakeSimulation {
   /** Add a moving source along the segment `from → to` this frame. */
   injectAlongPath(params: InjectAlongPathParams): void;
 
-  /** Zero the field (so it reads as calm water) and re-anchor on the next step. */
+  /** Zero the field, put the solver to sleep, and re-anchor on the next step. */
   reset(): void;
 
   /** Set the velocity-damping friction `γ`. */
@@ -78,7 +82,8 @@ export interface IWakeSimulation {
   /**
    * Per-frame update. Call once after any injection for this frame. Advances the
    * field one leapfrog step (camera-shift folded in) and writes the displacement
-   * buffer the sampler reads.
+   * buffer the sampler reads. Implementations may skip solver work while a
+   * reset field remains asleep with no injection.
    *
    * @param dt - Time since last frame in seconds (clamped internally for stability).
    * @param originX - Camera-anchored buffer centre X in world units.

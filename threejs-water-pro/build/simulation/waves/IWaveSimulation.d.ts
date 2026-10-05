@@ -5,8 +5,6 @@
 import type * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
 import type { TSLBuffer } from "../../types/tsl";
-import type { InternalGerstnerParams } from "../../shaders/gerstner";
-import type { CascadeConfig } from "./types";
 /**
  * Capabilities of a wave simulation implementation.
  */
@@ -15,10 +13,6 @@ export interface WaveCapabilities {
     hasCascades: boolean;
     /** Whether GPU storage buffers are available for direct sampling */
     hasStorageBuffers: boolean;
-    /** Whether Jacobian-based foam detection is supported */
-    hasJacobianFoam: boolean;
-    /** Whether persistent per-cascade foam accumulation buffers are supported */
-    hasPersistentFoamBuffer: boolean;
     /** Number of active cascade levels (determined by quality config) */
     cascadeCount: number;
     /** The rendering backend being used */
@@ -37,15 +31,6 @@ export interface WaveDisplacementNodes {
      */
     sampleDisplacement: (worldX: Node, worldZ: Node) => Node;
 }
-/** Result from sampling wave normals with per-cascade eigenvalues. */
-export interface WaveNormalSampleResult {
-    /** Surface normal (vec3). */
-    normal: Node;
-    /** Wave-cascade eigenvalue for foam detection (0-1). Lower = more folding/steeper. */
-    eigen0: Node;
-    /** Ripple-cascade eigenvalue (0-1). Neutral (1.0) when no ripple cascade is active. */
-    eigen1: Node;
-}
 /**
  * TSL nodes for sampling wave normals in the fragment shader.
  * Used by materials to compute surface lighting.
@@ -58,17 +43,7 @@ export interface WaveNormalNodes {
      * @returns vec3 node with surface normal
      */
     sampleNormal: (worldX: Node, worldZ: Node) => Node;
-    /**
-     * Sample normal and per-cascade eigenvalues at a world position.
-     * Eigenvalues are used for wave crest foam detection: `eigen0` weights the
-     * wave cascade, `eigen1` the ripple cascade.
-     * @param worldX - X coordinate in world space
-     * @param worldZ - Z coordinate in world space
-     * @returns Object with normal and per-cascade eigenvalue nodes
-     */
-    sampleNormalAndEigenvalue?: (worldX: Node, worldZ: Node) => WaveNormalSampleResult;
 }
-export type { InternalGerstnerParams } from "../../shaders/gerstner";
 /**
  * Common interface for wave simulation implementations.
  * Both WebGPU and WebGL backends implement this interface.
@@ -110,39 +85,33 @@ export interface IWaveSimulation {
      * Used by materials when storage buffers aren't available.
      */
     getNormalNodes(): WaveNormalNodes;
+    /** Number of active cascades. */
+    getCascadeCount(): number;
     /** Get the displacement storage buffer for a cascade. Returns null on WebGL (uses textures). */
     getDisplacementBuffer(cascadeIndex?: number): TSLBuffer | null;
-    /** Get the normal storage buffer for a cascade. Returns null on WebGL (uses textures). */
-    getNormalBuffer(cascadeIndex?: number): TSLBuffer | null;
     /**
      * Get the normal texture for a cascade. Available on both backends:
-     * WebGL renders normals to a texture target; WebGPU writes a StorageTexture
-     * mirror of its normal storage buffer in `computeNormals`. Fragment-side
-     * consumers (cascade sampler, caustics, sun shafts) sample this with
-     * hardware bilinear.
+     * WebGL renders normals to a texture target; WebGPU writes an authoritative
+     * RGBA16F StorageTexture in `computeNormals`. Compute and fragment consumers
+     * sample it with hardware filtering.
      */
     getNormalTexture(cascadeIndex?: number): THREE.Texture | null;
     /** Get the resolution for a cascade. */
     getResolution(cascadeIndex?: number): number;
     /** Get the world-space scale for a cascade. */
     getScale(cascadeIndex?: number): number;
-    /** Update cascade configuration (scale, amplitude). */
-    updateCascadeConfig(index: number, config: CascadeConfig): void;
-    /** Get the Gerstner wave buffer node (uniformArray), or null if Gerstner disabled */
-    getGerstnerWaveBuffer(): Node | null;
-    /** Get the Gerstner wave count uniform node, or null if Gerstner disabled */
-    getGerstnerWaveCountUniform(): Node | null;
-    /** Get the compile-time max waves (determines shader loop bound) */
-    getGerstnerMaxWaves(): number;
-    /** Get the time uniform node for Gerstner evaluation */
-    getTimeUniform(): Node | null;
-    /** Update Gerstner wave parameters (auto-distributes waves from center wavelength) */
-    updateGerstnerParams(params: InternalGerstnerParams): void;
-    /** Get Gerstner wave state for CPU-side evaluation */
-    getGerstnerCPUState(): {
-        waveData: THREE.Vector4[] | null;
-        waveCount: number;
-        time: number;
-    };
+    /**
+     * Get a cascade's world-space scale uniform node (single source of truth,
+     * synced on cascade-config changes). Consumers that sample a cascade at a
+     * world position (e.g. the world-fixed foam field) bind to it. Null if the
+     * cascade is absent.
+     */
+    getScaleNode(cascadeIndex?: number): Node | null;
+    /**
+     * Resize the whole cascade set from a single largest tile size. Finer
+     * cascades derive from `maxScale` and their resolution (see
+     * `deriveCascadeScale`), and band edges are recomputed.
+     */
+    setMaxScale(maxScale: number): void;
 }
 //# sourceMappingURL=IWaveSimulation.d.ts.map

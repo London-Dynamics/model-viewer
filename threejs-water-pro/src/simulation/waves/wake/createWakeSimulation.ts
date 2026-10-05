@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type * as THREE from "three/webgpu";
 import type { IWakeSimulation } from "./IWakeSimulation";
 import type { WakeSimulationParams } from "./IWakeSimulation";
@@ -6,12 +9,13 @@ import { WebGLWakeSimulation } from "./webgl";
 
 /**
  * Construct the dispersive wake simulation for the active renderer backend.
- * WebGPU runs the iWave convolution + leapfrog as a compute kernel over storage
- * buffers; WebGL has no compute path, so it gets a zero-field stub (calm water).
+ * Both backends run the same iWave convolution + leapfrog: WebGPU as a compute
+ * kernel over storage buffers, WebGL as render-to-texture fragment passes over
+ * float render targets.
  *
  * @param params - Resolution, extent, shared gravity node, friction, generator cap.
  * @param renderer - Active renderer.
- * @param isWebGL - true to construct the WebGL stub; false for WebGPU.
+ * @param isWebGL - true for the WebGL render-to-texture backend; false for WebGPU compute.
  */
 export function createWakeSimulation(
   params: WakeSimulationParams,

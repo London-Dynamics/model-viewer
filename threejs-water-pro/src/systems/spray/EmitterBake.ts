@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Authored probe bake for spray emitters.
  *
@@ -65,14 +68,14 @@ export const DEFAULT_EMITTER_PARAMS: EmitterParams = {
   fadeOutTime: 0.5,
   opacity: 0.4,
   respawnTime: 1.0,
-  size: 27.5,
+  size: 3,
   spawnJitterTime: 0.0,
   stretchX: 1.88,
   stretchY: 1.0,
-  submersionDepth: 0.5,
+  submersionDepth: 0.15,
   velocityHeightFactor: 0.0,
   velocityScaleFactor: 0.0,
-  velocityThreshold: 3.9,
+  velocityThreshold: 0.8,
 };
 
 /** Frozen list of {@link EmitterParams} keys for typed iteration. */

@@ -1,19 +1,20 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WakeSystem — wake displacement orchestrator.
  *
  * Owns the generator registry, camera-anchored world-origin bookkeeping, and
  * the dispersive wake field simulator (Tessendorf's iWave: a `√(−∇²)`
  * convolution + leapfrog on a height grid, giving deep-water dispersion). The
- * backend (WebGPU compute or WebGL stub) is chosen by the factory at
- * construction; both satisfy {@link IWakeSimulation}.
+ * backend (WebGPU compute or WebGL render-to-texture) is chosen by the factory
+ * at construction; both satisfy {@link IWakeSimulation}.
  *
  * Per frame: every active generator adds a moving source along the path its
  * parent `Object3D` swept since the previous frame. The field then radiates and
  * fades that disturbance — long waves outrunning short (a Kelvin-shaped wake) —
- * and the water vertex shader reads the result as an additive term next to FFT
- * and Gerstner.
- *
- * See `wiki/wake/iwave.md` for the model and integration.
+ * and the water vertex shader reads the result as an additive term next to the
+ * FFT displacement.
  */
 import * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
@@ -31,8 +32,12 @@ import {
   type WakeGeneratorOptions,
 } from "./index";
 import type { WaterSubsystem } from "../types";
-import type { QualityLevel, QualityLevelConfig } from "../../config/QualityLevels";
-import type { WaterSceneParams } from "../../config/presets/types";
+import type {
+  QualityLevel,
+  QualityLevelConfig,
+} from "../../config/QualityLevels";
+import type { WaterSceneConfig } from "../../config/presets/types";
+import { viewCenterOnWater } from "../../utils/viewCenterOnWater";
 
 /**
  * Maximum generators injecting in a single frame (sizes a fixed uniform array;
@@ -71,13 +76,14 @@ export class WakeSystem implements WaterSubsystem {
   private _foamStrength: number = 1.0;
   private _foamBreakThreshold: number = 0.0;
 
-  /** Wake field simulator (WebGPU iWave compute or WebGL stub). */
+  /** Wake field simulator (WebGPU compute or WebGL render-to-texture iWave). */
   private _simulation: IWakeSimulation;
 
   private _enabled: boolean = true;
 
   /** Notified with the new sampler when the field is rebuilt (resolution change). */
-  private _onSamplerRebuilt: ((sampler: IWakeFieldSampler) => void) | null = null;
+  private _onSamplerRebuilt: ((sampler: IWakeFieldSampler) => void) | null =
+    null;
 
   /** Reusable temp objects. */
   private tempForward = new THREE.Vector3();
@@ -232,10 +238,7 @@ export class WakeSystem implements WaterSubsystem {
    *   {@link DEFAULT_WAKE_GENERATOR_OPTIONS}.
    * @returns Generator ID for later removal/update.
    */
-  addGenerator(
-    object: THREE.Object3D,
-    options?: WakeGeneratorOptions,
-  ): number {
+  addGenerator(object: THREE.Object3D, options?: WakeGeneratorOptions): number {
     const id = this.nextGeneratorId++;
     this.generators.set(id, {
       id,
@@ -263,17 +266,15 @@ export class WakeSystem implements WaterSubsystem {
    *
    * @returns true if updated, false if not found.
    */
-  updateGenerator(
-    id: number,
-    options: WakeGeneratorOptions,
-  ): boolean {
+  updateGenerator(id: number, options: WakeGeneratorOptions): boolean {
     const gen = this.generators.get(id);
     if (!gen) return false;
     if (options.active !== undefined) gen.active = options.active;
     if (options.depth !== undefined) gen.options.depth = options.depth;
     if (options.offset !== undefined) gen.options.offset.copy(options.offset);
     if (options.radius !== undefined) gen.options.radius = options.radius;
-    if (options.teleportThreshold !== undefined) gen.options.teleportThreshold = options.teleportThreshold;
+    if (options.teleportThreshold !== undefined)
+      gen.options.teleportThreshold = options.teleportThreshold;
     return true;
   }
 
@@ -335,7 +336,11 @@ export class WakeSystem implements WaterSubsystem {
    */
   async step(deltaTime: number): Promise<void> {
     if (!this._enabled) return;
-    const viewCenter = this.getViewCenterOnWater(this._camera);
+    const viewCenter = viewCenterOnWater(
+      this._camera,
+      this._worldSize * 0.5,
+      this.tempForward,
+    );
     const texelSize = this._worldSize / this._resolution;
     const originX = Math.round(viewCenter.x / texelSize) * texelSize;
     const originZ = Math.round(viewCenter.z / texelSize) * texelSize;
@@ -397,7 +402,7 @@ export class WakeSystem implements WaterSubsystem {
    * Reads only the foam and friction slice — enablement, resolution, and extent
    * are quality-tier-owned (see {@link onQualityChanged}), not preset-driven.
    */
-  applyParams(params: WaterSceneParams): void {
+  applyParams(params: WaterSceneConfig): void {
     this.friction = params.wake.friction;
     this.foamPersistence = params.wake.foamPersistence;
     this.foamStrength = params.wake.foamStrength;
@@ -428,37 +433,6 @@ export class WakeSystem implements WaterSubsystem {
   // ============================================
   // Private helpers
   // ============================================
-
-  /**
-   * Find where the camera's centre view ray hits the water surface (y = 0).
-   * Falls back to camera XZ if looking up or nearly horizontal. Result is
-   * clamped so the origin can't run away from the camera across the horizon.
-   */
-  private getViewCenterOnWater(
-    camera: THREE.Camera,
-  ): { x: number; z: number } {
-    const forward = this.tempForward
-      .set(0, 0, -1)
-      .applyQuaternion(camera.quaternion);
-    const halfWorld = this._worldSize * 0.5;
-
-    if (forward.y >= -0.01) {
-      return { x: camera.position.x, z: camera.position.z };
-    }
-
-    const t = -camera.position.y / forward.y;
-    const hitX = camera.position.x + forward.x * t;
-    const hitZ = camera.position.z + forward.z * t;
-
-    const dx = hitX - camera.position.x;
-    const dz = hitZ - camera.position.z;
-    const clampedX =
-      camera.position.x + Math.max(-halfWorld, Math.min(halfWorld, dx));
-    const clampedZ =
-      camera.position.z + Math.max(-halfWorld, Math.min(halfWorld, dz));
-
-    return { x: clampedX, z: clampedZ };
-  }
 
   /**
    * Resolve a generator's world-space injection point: the object's world
@@ -494,7 +468,8 @@ export class WakeSystem implements WaterSubsystem {
       offset: options?.offset?.clone() ?? new THREE.Vector3(0, 0, 0),
       radius: options?.radius ?? DEFAULT_WAKE_GENERATOR_OPTIONS.radius,
       teleportThreshold:
-        options?.teleportThreshold ?? DEFAULT_WAKE_GENERATOR_OPTIONS.teleportThreshold,
+        options?.teleportThreshold ??
+        DEFAULT_WAKE_GENERATOR_OPTIONS.teleportThreshold,
     };
   }
 }

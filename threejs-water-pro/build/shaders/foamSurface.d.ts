@@ -10,7 +10,7 @@
  */
 import * as THREE from "three/webgpu";
 import type { Node } from "./types";
-import { type BuiltInFoamName } from "./builtInFoamTextures";
+import type { BuiltInFoamName } from "./builtInFoamTextures";
 /** Preset-facing parameters for surface foam. */
 export interface SurfaceFoamParams {
     /** Foam tint color (hex string). */
@@ -74,6 +74,12 @@ export declare class SurfaceFoam {
     set foamTexture(value: THREE.Texture);
     /** Bulk-set parameters from a preset or params object. */
     update(params: SurfaceFoamParams): void;
+    /**
+     * Switch to a bundled foam texture by name, leaving every other parameter
+     * untouched. Use this for an isolated texture change; {@link foamTexture}
+     * binds a caller-owned texture instead.
+     */
+    loadTexture(name: BuiltInFoamName): void;
     /**
      * Builds surface foam strength from texture sampling.
      *

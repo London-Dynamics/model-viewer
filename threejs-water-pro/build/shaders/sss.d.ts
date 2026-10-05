@@ -24,9 +24,7 @@ export interface SSSBuildParams {
     transmissionColor: Node;
     /** Sun light intensity. */
     sunIntensity: Node;
-    /** Distance at which fresnel fade starts. */
-    fadeStart: Node;
-    /** Distance at which fresnel fade ends. */
+    /** Distance at which the SSS distance fade ends. */
     fadeEnd: Node;
 }
 /**

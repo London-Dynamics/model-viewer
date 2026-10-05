@@ -5,7 +5,7 @@ Three.js Water Pro's wave simulation supports synchronized wave simulations acro
 Given the same `seed`, parameters, `stepSize`, and `tick`, every client renders the same wave surface.
 
 ::: info
-The library does not ship netcode — it provides one sync primitive, `syncToTick`, that snaps the local simulation to a tick of your choosing.
+The library does not include netcode. It provides one sync primitive, `syncToTick`, which snaps the local simulation to a tick of your choosing.
 :::
 
 ## 1. Construct WaterSystem in Deterministic Mode
@@ -19,9 +19,9 @@ const water = await WaterSystem.create(renderer, scene, camera, "high", {
 
 `deterministic: true` runs the simulation on a fixed step so clients at different frame rates advance identically. Use the same `seed` on every client. 
 
-The default seed is `1`, which is fine for local testing but means every session looks identical — pass an explicit session seed in production.
+The default seed is `1`, which is suitable for local testing but means every session looks identical. Pass an explicit session seed in production.
 
-You can also flip `water.deterministic` at runtime instead of fixing it at construction. Toggling it preserves absolute simulation time, so wave phases continue unbroken; switching from non-deterministic into deterministic snaps to the nearest integer tick — call `syncToTick` afterwards if you need an exact authoritative tick.
+You can also change `water.deterministic` at runtime instead of fixing it at construction. Toggling it preserves absolute simulation time, so wave phases continue unbroken. Switching from non-deterministic to deterministic mode snaps to the nearest integer tick; call `syncToTick` afterwards if you need an exact authoritative tick.
 
 ## 2. Drive `update()` Normally
 
@@ -43,9 +43,9 @@ network.on("tick", ({ tick }) => {
 });
 ```
 
-`n` must be a finite integer. Forward and backward snaps are both allowed although effects like persistent foam have a time history that may take a few seconds to reach their new steady-state.
+`n` must be a finite integer. Forward and backward snaps are both allowed, although effects with a time history, such as persistent foam, may take a few seconds to reach their new steady state.
 
-`syncToTick` is instant—it does not run catch-up substeps regardless of how far the target is from the current local tick.
+`syncToTick` is instant; it does not run catch-up substeps regardless of how far the target is from the current local tick.
 
 ### Handling Tick Wraparound
 

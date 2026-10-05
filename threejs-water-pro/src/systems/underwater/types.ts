@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Underwater ambient particle parameters.
  * Properties are sorted alphabetically.
@@ -25,9 +28,9 @@ export const PARTICLE_DEFAULTS: ParticleParams = {
   color: "#ffffff",
   count: 1000,
   enabled: true,
-  farDistance: 209,
-  maxSize: 0.5,
-  minSize: 0.1,
-  nearDistance: 9,
+  farDistance: 40,
+  maxSize: 0.15,
+  minSize: 0.03,
+  nearDistance: 2,
   opacity: 0.5,
 };

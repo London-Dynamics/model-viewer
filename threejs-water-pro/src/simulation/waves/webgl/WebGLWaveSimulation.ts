@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WebGL FFT wave simulation using render-to-texture ping-pong buffers.
  * This implementation replicates the WebGPU compute shader approach using fragment shaders.
@@ -5,29 +8,24 @@
 
 import * as THREE from "three/webgpu";
 import {
-  uniform,
-  uniformArray,
   texture,
   vec2,
   vec3,
-  float,
   fract,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
 import type {
   IWaveSimulation,
-  InternalGerstnerParams,
   WaveCapabilities,
   WaveDisplacementNodes,
   WaveNormalNodes,
 } from "../IWaveSimulation";
-import type { CascadeConfig, CascadesConfig } from "../types";
+import type { CascadesConfig } from "../types";
 import type { TSLBuffer, TSLUniformNode } from "../../../types/tsl";
 import type { QualityLevelConfig } from "../../../config/QualityLevels";
 import { CascadeSimulationUniforms, type WaveUniforms } from "../../../uniforms";
-import { getCascadeConfigsArray } from "../types";
-import { WAVE_TIME_OMEGA_STEP } from "../timing";
+import { deriveCascadeScale } from "../types";
 import { assignCascadeBands } from "../cascadeBands";
 
 import {
@@ -117,14 +115,6 @@ export class WebGLWaveSimulation implements IWaveSimulation {
   // Full-screen quad for rendering
   private quadMesh: THREE.QuadMesh;
 
-  // Gerstner wave resources
-  private _gerstnerMaxWaves: number;
-  private _gerstnerWaveBuffer: Node | null = null;
-  private _gerstnerWaveCount = uniform(0);
-  private _timeUniform = uniform(0);
-
-  // TSL texture nodes for sampling in materials
-
   constructor(
     renderer: THREE.WebGPURenderer,
     options: WebGLWaveSimulationOptions,
@@ -132,19 +122,7 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     this.renderer = renderer;
     this._waveUniforms = options.waveUniforms;
     this._foamWindBias = options.foamWindBias;
-    this._gerstnerMaxWaves = options.qualityConfig.gerstnerMaxWaves;
     this._seed = options.seed;
-
-    // Gerstner wave buffer
-    if (this._gerstnerMaxWaves > 0) {
-      this._gerstnerWaveBuffer = uniformArray(
-        Array.from(
-          { length: this._gerstnerMaxWaves * 2 },
-          () => new THREE.Vector4(),
-        ),
-        "vec4",
-      );
-    }
 
     // Create full-screen quad for RTT passes
     this.quadMesh = new THREE.QuadMesh();
@@ -182,8 +160,6 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     return {
       hasCascades: true,
       hasStorageBuffers: false,
-      hasJacobianFoam: true,
-      hasPersistentFoamBuffer: false,
       cascadeCount: this.cascades.length,
       backend: "webgl",
     };
@@ -242,49 +218,15 @@ export class WebGLWaveSimulation implements IWaveSimulation {
       return blendedNormal.normalize();
     };
 
-    const sampleNormalAndEigenvalue = (worldX: Node, worldZ: Node) => {
-      let blendedNormal: Node = vec3(0, 1, 0);
-      // Per-cascade eigenvalues kept separate so foam can weight wave folding
-      // (cascade 0) and ripple folding (cascade 1) independently. Neutral 1.0
-      // means "no folding" for any cascade the quality level disabled.
-      let eigen0: Node = float(1.0);
-      let eigen1: Node = float(1.0);
-
-      for (let i = 0; i < cascades.length; i++) {
-        const cascade = cascades[i];
-        const uv = this.worldToUV(worldX, worldZ, cascade);
-        const normalTex = texture(cascade.normalTarget.texture);
-        const sampled = normalTex.sample(uv);
-        const normal = sampled.xyz.mul(2.0).sub(1.0);
-
-        if (i === 0) {
-          blendedNormal = normal;
-          eigen0 = sampled.w;
-        } else {
-          // RNM blending
-          blendedNormal = vec3(
-            blendedNormal.x.add(normal.x),
-            blendedNormal.y.add(normal.y.sub(1.0)),
-            blendedNormal.z.add(normal.z),
-          );
-          eigen1 = sampled.w;
-        }
-      }
-
-      return { normal: blendedNormal.normalize(), eigen0, eigen1 };
-    };
-
-    return { sampleNormal, sampleNormalAndEigenvalue };
+    return { sampleNormal };
   }
 
   /** Convert world coordinates to UV for a cascade's texture. */
   private worldToUV(worldX: Node, worldZ: Node, cascade: CascadeLevel): Node {
-    const resolution = float(cascade.resolution);
-    const baseRes = float(256.0);
-    const effectiveScale = cascade.uniforms.scale.mul(resolution).div(baseRes);
-
-    const uvX = fract(worldX.div(effectiveScale).add(0.5));
-    const uvZ = fract(worldZ.div(effectiveScale).add(0.5));
+    // Tile size is the cascade's world-space scale (matches spectrum.ts).
+    const scale = cascade.uniforms.scale;
+    const uvX = fract(worldX.div(scale).add(0.5));
+    const uvZ = fract(worldZ.div(scale).add(0.5));
     return vec2(uvX, uvZ);
   }
 
@@ -296,17 +238,19 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     cascadesConfig: CascadesConfig,
     qualityConfig: QualityLevelConfig,
   ): void {
-    const presetConfigs = getCascadeConfigsArray(cascadesConfig);
     const qualityCascades = qualityConfig.cascades;
+    const resolutions = qualityCascades
+      .filter((c) => c?.enabled)
+      .map((c) => c.resolution);
 
     let cascadeIndex = 0;
-    for (let i = 0; i < presetConfigs.length; i++) {
+    for (let i = 0; i < qualityCascades.length; i++) {
       const qualityCascade = qualityCascades[i];
       if (!qualityCascade?.enabled) continue;
 
       const cascade = this.createCascade(
-        presetConfigs[i],
-        qualityCascade.resolution,
+        cascadesConfig.maxScale,
+        resolutions,
         cascadeIndex,
       );
       this.cascades.push(cascade);
@@ -318,30 +262,34 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     resolution: number,
     type: THREE.TextureDataType = THREE.FloatType,
     useNearestFilter: boolean = false,
+    mipmaps: boolean = false,
   ): THREE.RenderTarget {
     const filter = useNearestFilter ? THREE.NearestFilter : THREE.LinearFilter;
     return new THREE.RenderTarget(resolution, resolution, {
-      minFilter: filter,
+      minFilter: mipmaps ? THREE.LinearMipmapLinearFilter : filter,
       magFilter: filter,
       wrapS: THREE.RepeatWrapping,
       wrapT: THREE.RepeatWrapping,
       format: THREE.RGBAFormat,
       type,
       depthBuffer: false,
+      generateMipmaps: mipmaps,
+      anisotropy: mipmaps ? 8 : 1,
     });
   }
 
   private createCascade(
-    config: CascadeConfig,
-    resolution: number,
+    maxScale: number,
+    resolutions: number[],
     cascadeIndex: number,
   ): CascadeLevel {
-    const { scale, amplitudeScale } = config;
+    const resolution = resolutions[cascadeIndex];
+    const scale = deriveCascadeScale(maxScale, resolutions, cascadeIndex);
     const numBits = Math.log2(resolution);
 
     // Create cascade uniforms (shared with all shaders for this cascade)
     const cascadeUniforms = new CascadeSimulationUniforms();
-    cascadeUniforms.init(resolution, scale, amplitudeScale);
+    cascadeUniforms.init(resolution, scale);
     // Decorrelate cascades by offsetting the root seed. The spectrum shader
     // multiplies randomSeed by 100000, so a +1 offset moves cells far apart
     // in the hash domain (see spectrum.ts).
@@ -350,7 +298,17 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     // Create render targets
     const h0Target = this.createRenderTarget(resolution, THREE.FloatType, true);
     const displacementTarget = this.createRenderTarget(resolution);
-    const normalTarget = this.createRenderTarget(resolution);
+    // Trilinear + anisotropic sampling band-limits the normals to the pixel
+    // footprint: averaging encoded normals cancels sub-pixel wave phases
+    // toward flat, so distant water stops shimmering while resolved
+    // wavelengths survive to the horizon. Matches the WebGPU compute path's
+    // normal StorageTexture (WebGPUWaveSimulation.ts).
+    const normalTarget = this.createRenderTarget(
+      resolution,
+      THREE.FloatType,
+      false,
+      true,
+    );
 
     const timeEvoDx = this.createRenderTarget(resolution, THREE.FloatType, true);
     const timeEvoDy = this.createRenderTarget(resolution, THREE.FloatType, true);
@@ -482,7 +440,6 @@ export class WebGLWaveSimulation implements IWaveSimulation {
   private updateCascade(cascade: CascadeLevel): void {
     // Update time on cascade uniforms (single source of truth)
     cascade.uniforms.time.value = this.time;
-    this._timeUniform.value = this.time;
 
     // Initialize spectrum if needed
     if (!cascade.initialized) {
@@ -531,8 +488,7 @@ export class WebGLWaveSimulation implements IWaveSimulation {
   // ============================================
 
   public init(): void {
-    assignCascadeBands(this.cascades.map((c) => c.uniforms), this._waveUniforms);
-    this._waveUniforms.bandDirty = false;
+    assignCascadeBands(this.cascades.map((c) => c.uniforms));
   }
 
   public async initializeBuffers(
@@ -550,11 +506,6 @@ export class WebGLWaveSimulation implements IWaveSimulation {
       this._explicitTimeThisFrame = false;
     } else {
       this.time += deltaTime * this._animationSpeed;
-    }
-
-    if (this._waveUniforms.bandDirty) {
-      assignCascadeBands(this.cascades.map((c) => c.uniforms), this._waveUniforms);
-      this._waveUniforms.bandDirty = false;
     }
 
     if (this._waveUniforms.dirty) {
@@ -599,11 +550,11 @@ export class WebGLWaveSimulation implements IWaveSimulation {
   // Cascade Access
   // ============================================
 
-  public getDisplacementBuffer(_cascadeIndex?: number): TSLBuffer | null {
-    return null;
+  public getCascadeCount(): number {
+    return this.cascades.length;
   }
 
-  public getNormalBuffer(_cascadeIndex?: number): TSLBuffer | null {
+  public getDisplacementBuffer(_cascadeIndex?: number): TSLBuffer | null {
     return null;
   }
 
@@ -615,13 +566,25 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     return this.cascades[cascadeIndex]?.uniforms.scale.value ?? 100;
   }
 
-  public updateCascadeConfig(index: number, config: CascadeConfig): void {
-    if (index >= this.cascades.length) return;
+  /**
+   * Get a cascade's world-space scale uniform node (the single source of truth
+   * shared with the cascade's FFT/normal shaders). The persistent-foam field
+   * sampler binds to it so its cascade-tiled world→UV mapping tracks the same
+   * scale as the normal texture the inject pass reads.
+   */
+  public getScaleNode(cascadeIndex: number = 0): Node | null {
+    return this.cascades[cascadeIndex]?.uniforms.scale ?? null;
+  }
 
-    const cascade = this.cascades[index];
-    cascade.uniforms.updateCascadeConfig(config.scale, config.amplitudeScale);
-    cascade.initialized = false;
-    assignCascadeBands(this.cascades.map((c) => c.uniforms), this._waveUniforms);
+  public setMaxScale(maxScale: number): void {
+    const resolutions = this.cascades.map((c) => c.uniforms.resolution.value);
+    for (let i = 0; i < this.cascades.length; i++) {
+      const cascade = this.cascades[i];
+      const scale = deriveCascadeScale(maxScale, resolutions, i);
+      cascade.uniforms.setScale(scale);
+      cascade.initialized = false;
+    }
+    assignCascadeBands(this.cascades.map((c) => c.uniforms));
   }
 
   // ============================================
@@ -654,89 +617,4 @@ export class WebGLWaveSimulation implements IWaveSimulation {
     return this.cascades[cascadeIndex]?.normalTarget ?? null;
   }
 
-  // ============================================
-  // Gerstner Wave Access
-  // ============================================
-
-  public getGerstnerWaveBuffer(): Node | null {
-    return this._gerstnerWaveBuffer;
-  }
-
-  public getGerstnerWaveCountUniform(): Node | null {
-    return this._gerstnerMaxWaves > 0 ? this._gerstnerWaveCount : null;
-  }
-
-  public getGerstnerMaxWaves(): number {
-    return this._gerstnerMaxWaves;
-  }
-
-  public getTimeUniform(): Node | null {
-    return this._timeUniform;
-  }
-
-  public getGerstnerCPUState(): {
-    waveData: THREE.Vector4[] | null;
-    waveCount: number;
-    time: number;
-  } {
-    if (!this._gerstnerWaveBuffer || this._gerstnerMaxWaves === 0) {
-      return { waveData: null, waveCount: 0, time: this.time };
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buf = this._gerstnerWaveBuffer as any;
-    return {
-      waveData: buf.array as THREE.Vector4[],
-      waveCount: this._gerstnerWaveCount.value,
-      time: this.time,
-    };
-  }
-
-  public updateGerstnerParams(params: InternalGerstnerParams): void {
-    if (!this._gerstnerWaveBuffer || this._gerstnerMaxWaves === 0) return;
-
-    const maxWaves = this._gerstnerMaxWaves;
-    const waveCount = maxWaves;
-    const gravity = this._waveUniforms.gravity.value;
-
-    const effectiveSpread =
-      waveCount > 1
-        ? Math.pow(params.wavelengthSpread, 2 / (waveCount - 1))
-        : 1.0;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buf = this._gerstnerWaveBuffer as any;
-    for (let i = 0; i < waveCount; i++) {
-      const centerIndex = (waveCount - 1) / 2;
-      const exponent = i - centerIndex;
-      const wavelength =
-        params.wavelength * Math.pow(effectiveSpread, exponent);
-
-      let direction = params.direction;
-      if (waveCount > 1) {
-        const t = i / (waveCount - 1) - 0.5;
-        direction = params.direction + t * params.directionalSpread;
-      }
-
-      const dirX = Math.cos(direction);
-      const dirZ = Math.sin(direction);
-
-      const sigma = waveCount / 3;
-      const taper = Math.exp((-0.5 * exponent * exponent) / (sigma * sigma));
-      const amplitude = params.amplitude * taper;
-
-      const steepness = params.steepness;
-      const k = (2 * Math.PI) / wavelength;
-      // Snap to the wave-sim loop period (see WebGPU sibling for rationale).
-      const omegaNatural = Math.sqrt(gravity * k);
-      const omega =
-        Math.round(omegaNatural / WAVE_TIME_OMEGA_STEP) * WAVE_TIME_OMEGA_STEP;
-      const phaseOffset = (i * 137.5) % (2 * Math.PI);
-
-      buf.array[i * 2].set(dirX, dirZ, amplitude, wavelength);
-      buf.array[i * 2 + 1].set(steepness, phaseOffset, omega, 0);
-    }
-    buf.needsUpdate = true;
-
-    this._gerstnerWaveCount.value = waveCount;
-  }
 }

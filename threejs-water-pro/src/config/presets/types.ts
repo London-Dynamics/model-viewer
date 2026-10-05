@@ -1,4 +1,8 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { BuiltInFoamName } from "../../shaders/builtInFoamTextures";
+import type { WaterColorConfig } from "../../shaders/waterColor";
 
 export type PresetName =
   | "arctic"
@@ -27,6 +31,14 @@ export interface WaterSceneParams {
     baseSize: number;
     levels: number;
   };
+  environment: {
+    /**
+     * Scene IBL intensity — scales `scene.environment` for every lit mesh
+     * (floor, ships, water), separately from a sky provider's own
+     * `brightness` trim. Default `1.0`.
+     */
+    intensity: number;
+  };
   fog: {
     color: string;
     enabled: boolean;
@@ -35,24 +47,7 @@ export interface WaterSceneParams {
     fadeStart: number;
     skyBlendDistance: number;
   };
-  color: {
-    /**
-     * Per-channel Beer-Lambert absorption coefficient (1/m), as a hex
-     * color. Each RGB channel is its own extinction rate, so red can
-     * absorb faster than blue — the mechanism that turns clear ocean
-     * blue-green with depth. Clear water uses small values (~`#0a0503`);
-     * murky water uses larger values uniformly.
-     */
-    absorptionColor: string;
-    transmissionColor: string;
-    /**
-     * Intrinsic water color — the in-scattered radiance from the water
-     * column itself, what infinite-depth water looks like. Shallow water
-     * reads as seabed tinted toward this color; deep water reads as
-     * this color directly.
-     */
-    waterColor: string;
-  };
+  color: WaterColorConfig;
   foam: {
     surface: {
       enabled: boolean;
@@ -75,25 +70,14 @@ export interface WaterSceneParams {
       color: string;
       /** Texture size in world units (larger = bigger foam pattern) */
       size: number;
-      /** How much foam is visible (0-1). Lower = more foam. */
-      coverage: number;
-      /** How much foam appears on wave crests (0-1). Higher = more foam. */
-      crestCoverage: number;
-      /** Caps the maximum foam intensity (0-1). Thins out dense wave crests without affecting subtler foam. */
-      peakIntensity: number;
-      /** How much the ripple cascade contributes to foam (0-1). Default: 1.0 */
-      rippleWeight: number;
-      /** How much the wave cascade contributes to foam (0-1). Default: 1.0 */
-      waveWeight: number;
       /** Stretches foam in the wind direction for streaky whitecaps. 0 = round, 1 = fully stretched. */
       windStretch: number;
       /** Name of the bundled foam texture to use. */
       texture: BuiltInFoamName;
       /**
-       * Persistent foam accumulation (WebGPU only). Replaces the stateless
-       * wave-crest smoothstep with an energy buffer that injects on breaking
-       * events and decays exponentially, producing visible streaks and
-       * decay tails.
+       * Persistent foam accumulation. Wave-crest foam is an energy field that
+       * injects on breaking events and decays exponentially, producing visible
+       * streaks and decay tails. Active on quality tiers with wave foam enabled.
        */
       persistence: {
         /**
@@ -130,10 +114,7 @@ export interface WaterSceneParams {
   };
   fresnel: {
     surface: {
-      fadePower: number;
-      fadeStart: number;
       iorRatio: number;
-      normalStrength: number;
       /**
        * Screen-space refraction UV-offset strength. Scales how far the
        * wave-perturbed surface displaces the sampled scene UVs for both
@@ -215,7 +196,7 @@ export interface WaterSceneParams {
       rippleDensity: number;
       /** Distance where ripples fully fade out from camera. */
       rippleFadeEnd: number;
-      /** Ripple cell size in world units (1–10). */
+      /** Ripple cell size in meters (0.1–1). */
       rippleSize: number;
       /** Ripple normal perturbation strength (0–1). */
       rippleStrength: number;
@@ -251,24 +232,6 @@ export interface WaterSceneParams {
     minDistance: number;
     power: number;
   };
-  lighting: {
-    ambient: {
-      /**
-       * Top half (sky) colour of the HemisphereLight. Tints diffuse fill on
-       * upward-facing surfaces. Hex string.
-       */
-      skyColor: string;
-      /**
-       * Bottom half (ground) colour of the HemisphereLight. Tints diffuse fill
-       * on downward-facing surfaces. Hex string.
-       */
-      groundColor: string;
-      /**
-       * HemisphereLight intensity. Useful range `0–2`.
-       */
-      intensity: number;
-    };
-  };
   sky: {
     /**
      * Optional sky-image source. The library ignores this — only the demo
@@ -281,10 +244,6 @@ export interface WaterSceneParams {
     };
     /** Brightness multiplier on the sampled sky colour. Default `1.0`. */
     brightness: number;
-    /** World-space distance at which distance-driven blur reaches its maximum. Default `1500`. */
-    reflectionBlurDistance: number;
-    /** Amplitude of the distance-driven roughness ramp, in `[0, 1]`. Default `0.5`. */
-    reflectionDistanceBlur: number;
     /** Base PMREM roughness for reflections, in `[0, 1]`. Default `0.02`. */
     reflectionRoughness: number;
     sun: {
@@ -388,30 +347,28 @@ export interface WaterSceneParams {
   waves: {
     fft: {
       amplitude: number;
-      frequency: number;
       animationSpeed: number;
       windSpeed: number;
       windDirection: number;
       choppiness: number;
+      /**
+       * Dominant wavelength in meters — the JONSWAP spectral peak. Sets
+       * wave size directly; `windSpeed` controls energy and steepness at
+       * that size, independently.
+       */
+      peakWavelength: number;
       spectralSharpness: number;
       standingWaveRatio: number;
       cascades: {
-        waves: { scale: number; amplitudeScale: number };
-        ripples: { scale: number; amplitudeScale: number };
+        /** World-space tile size of the largest cascade, in meters. */
+        maxScale: number;
       };
-    };
-    gerstner: {
-      /** Base wavelength in world units. Waves distribute geometrically around this. */
-      wavelength: number;
-      /** Base amplitude in world units */
-      amplitude: number;
-      /** Geometric ratio between consecutive wave wavelengths. Default: 1.4 */
-      wavelengthSpread: number;
-      /** Angular spread of wave directions in radians. Default: 0.1 */
-      directionalSpread: number;
     };
   };
 }
 
-// PresetConfig is now the full WaterSceneParams type
+/** Complete water scene parameters. */
 export type PresetConfig = WaterSceneParams;
+
+/** Explicit configuration name retained for API clarity. */
+export type WaterSceneConfig = WaterSceneParams;

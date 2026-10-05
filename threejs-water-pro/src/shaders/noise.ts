@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Simple 2D and 3D noise implementation in TSL
  * Uses a hash-based approach that's more reliable in TSL

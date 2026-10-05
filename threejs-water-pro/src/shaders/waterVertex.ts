@@ -1,24 +1,24 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { Node } from "three/webgpu";
 import {
   vec2,
   vec3,
-  float,
   Fn,
   positionLocal,
   varying,
 } from "three/tsl";
 import type { IWaveSimulation } from "../simulation/waves";
 import type { TSLUniformNode } from "../types/tsl";
-import type { CascadeSampler } from "./cascadeSampler";
+import type { CascadeSampler, HierarchicalCoords } from "./cascadeSampler";
 import type { IWakeFieldSampler } from "../simulation/waves/wake";
-import { computeGerstner } from "./index";
 
 export interface WaterVertexParams {
   clipmapOffset: TSLUniformNode;
   oceanSim: IWaveSimulation;
   /** CascadeSampler instance for WebGPU path. Null for WebGL. */
   cascadeSampler: CascadeSampler | null;
-  gerstnerMaxWaves: number;
   /** Wave-particle displacement sampler. Null when the material is built before the wake system is wired. */
   wakeFieldSampler: IWakeFieldSampler | null;
 }
@@ -26,9 +26,12 @@ export interface WaterVertexParams {
 export interface WaterVertexResult {
   positionNode: Node;
   vSampleCoords: Node;
-  vSampleCoords0: Node;
-  vGerstnerNormal: Node;
-  vGerstnerFolding: Node;
+  /**
+   * Hierarchical sample coordinates for cascades 1..cascadeCount-1, in
+   * order, one varying per cascade. Empty on the WebGL path (no
+   * hierarchical sampling).
+   */
+  vHierarchicalCoords: Node[];
   worldX: Node;
   worldZ: Node;
   hasStorageBuffers: boolean;
@@ -46,7 +49,7 @@ export interface WaterVertexResult {
 export function buildWaterVertexDisplacement(
   params: WaterVertexParams,
 ): WaterVertexResult {
-  const { clipmapOffset, oceanSim, cascadeSampler, gerstnerMaxWaves, wakeFieldSampler } = params;
+  const { clipmapOffset, oceanSim, cascadeSampler, wakeFieldSampler } = params;
 
   const pos = positionLocal;
   const worldX = pos.x.add(clipmapOffset.x);
@@ -55,24 +58,21 @@ export function buildWaterVertexDisplacement(
   let totalDispX: Node;
   let totalDispY: Node;
   let totalDispZ: Node;
-  let sampleX0: Node;
-  let sampleZ0: Node;
+  let hierarchicalCoords: HierarchicalCoords[] = [];
   const hasStorageBuffers = cascadeSampler !== null;
 
   if (cascadeSampler) {
     // WebGPU path: use CascadeSampler for hierarchical cascade sampling
-    const buffer0 = oceanSim.getDisplacementBuffer(0);
-    const buffer1 = cascadeSampler.cascadeCount >= 2
-      ? oceanSim.getDisplacementBuffer(1)
-      : undefined;
+    const buffers = Array.from({ length: cascadeSampler.cascadeCount }, (_, i) =>
+      oceanSim.getDisplacementBuffer(i),
+    );
 
-    const result = cascadeSampler.sampleDisplacement(worldX, worldZ, buffer0, buffer1);
+    const result = cascadeSampler.sampleDisplacement(worldX, worldZ, buffers);
 
     totalDispX = result.displacement.x;
     totalDispY = result.displacement.y;
     totalDispZ = result.displacement.z;
-    sampleX0 = result.hierarchicalCoordsX;
-    sampleZ0 = result.hierarchicalCoordsZ;
+    hierarchicalCoords = result.hierarchicalCoords;
   } else {
     // WebGL path: use noise-based displacement nodes
     const displacementNodes = oceanSim.getDisplacementNodes();
@@ -81,34 +81,10 @@ export function buildWaterVertexDisplacement(
     totalDispX = disp.x;
     totalDispY = disp.y;
     totalDispZ = disp.z;
-
-    // For WebGL, sample coords are just the world coords (no hierarchical sampling)
-    sampleX0 = worldX;
-    sampleZ0 = worldZ;
-  }
-
-  // Add Gerstner wave displacement (works on both WebGPU and WebGL via uniformArray)
-  let gerstnerNormalNode: Node = vec3(0, 1, 0);
-  let gerstnerFoldingNode: Node = float(0.0);
-  if (gerstnerMaxWaves > 0) {
-    const gerstner = computeGerstner({
-      worldX,
-      worldZ,
-      time: oceanSim.getTimeUniform()!,
-      waveBuffer: oceanSim.getGerstnerWaveBuffer()!,
-      waveCount: oceanSim.getGerstnerWaveCountUniform()!,
-      maxWaves: gerstnerMaxWaves,
-    });
-
-    totalDispX = totalDispX.add(gerstner.displacement.x);
-    totalDispY = totalDispY.add(gerstner.displacement.y);
-    totalDispZ = totalDispZ.add(gerstner.displacement.z);
-    gerstnerNormalNode = gerstner.normal;
-    gerstnerFoldingNode = gerstner.folding;
   }
 
   // Add wake field displacement. The wake field is world-anchored, so sample it
-  // at the horizontally-displaced surface position (grid XZ + FFT/Gerstner choppy
+  // at the horizontally-displaced surface position (grid XZ + FFT choppy
   // displacement) rather than the grid XZ — otherwise the choppy advection shears
   // the wake sideways off the ship in rough seas.
   if (wakeFieldSampler) {
@@ -130,18 +106,14 @@ export function buildWaterVertexDisplacement(
 
   // Create varyings for fragment shader
   const vSampleCoords = varying(vec2(worldX, worldZ), "vSampleCoords");
-  const vSampleCoords0 = varying(vec2(sampleX0, sampleZ0), "vSampleCoords0");
-
-  // Pass Gerstner normal and folding as varyings to avoid per-fragment sin/cos
-  const vGerstnerNormal = varying(gerstnerNormalNode, "vGerstnerNormal");
-  const vGerstnerFolding = varying(gerstnerFoldingNode, "vGerstnerFolding");
+  const vHierarchicalCoords = hierarchicalCoords.map((coords, i) =>
+    varying(vec2(coords.x, coords.z), `vHierarchicalCoords${i}`),
+  );
 
   return {
     positionNode: customPosition(),
     vSampleCoords,
-    vSampleCoords0,
-    vGerstnerNormal,
-    vGerstnerFolding,
+    vHierarchicalCoords,
     worldX,
     worldZ,
     hasStorageBuffers,

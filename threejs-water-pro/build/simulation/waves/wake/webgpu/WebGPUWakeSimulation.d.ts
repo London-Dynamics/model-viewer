@@ -2,7 +2,7 @@ import * as THREE from "three/webgpu";
 import type { IWakeSimulation, InjectAlongPathParams, WakeSimulationParams } from "../IWakeSimulation";
 import type { IWakeFieldSampler } from "../IWakeFieldSampler";
 /**
- * WebGPU dispersive wake simulator (Tessendorf's iWave; `wiki/wake/iwave.md`).
+ * WebGPU dispersive wake simulator (Tessendorf's iWave).
  *
  * A height grid advanced by a `√(−∇²)` convolution + explicit leapfrog, giving
  * deep-water dispersion. The convolution is a rank-2 separable approximation of
@@ -43,6 +43,8 @@ export declare class WebGPUWakeSimulation implements IWakeSimulation {
     private _firstFrame;
     /** When set, the next step zeroes the field (stored content is invalid). */
     private _pendingReset;
+    /** Sleeps the solver while every persistent field buffer is known to be zero. */
+    private _solverSleeping;
     /** Generators written this frame; consumed and reset by {@link step}. */
     private _genWriteIndex;
     constructor(params: WakeSimulationParams, renderer: THREE.WebGPURenderer);
@@ -55,8 +57,10 @@ export declare class WebGPUWakeSimulation implements IWakeSimulation {
     injectAlongPath(params: InjectAlongPathParams): void;
     reset(): void;
     step(dt: number, originX: number, originZ: number): Promise<void>;
-    /** Zero every field buffer (3 height + 3 foam + displacement) and reset the phase. */
-    private _clearField;
+    /** Zero every field buffer and put the solver to sleep. */
+    private _clearFieldAndSleep;
+    /** Re-anchor the field while the solver sleeps. */
+    private _anchorSleepingField;
     dispose(): void;
 }
 //# sourceMappingURL=WebGPUWakeSimulation.d.ts.map

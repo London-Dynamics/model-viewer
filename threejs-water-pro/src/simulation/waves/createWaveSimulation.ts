@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Factory functions for creating wave simulation and sampler instances.
  * Automatically detects the rendering backend and creates the appropriate implementation.

@@ -8,16 +8,18 @@ export interface WaterVertexParams {
     oceanSim: IWaveSimulation;
     /** CascadeSampler instance for WebGPU path. Null for WebGL. */
     cascadeSampler: CascadeSampler | null;
-    gerstnerMaxWaves: number;
     /** Wave-particle displacement sampler. Null when the material is built before the wake system is wired. */
     wakeFieldSampler: IWakeFieldSampler | null;
 }
 export interface WaterVertexResult {
     positionNode: Node;
     vSampleCoords: Node;
-    vSampleCoords0: Node;
-    vGerstnerNormal: Node;
-    vGerstnerFolding: Node;
+    /**
+     * Hierarchical sample coordinates for cascades 1..cascadeCount-1, in
+     * order, one varying per cascade. Empty on the WebGL path (no
+     * hierarchical sampling).
+     */
+    vHierarchicalCoords: Node[];
     worldX: Node;
     worldZ: Node;
     hasStorageBuffers: boolean;

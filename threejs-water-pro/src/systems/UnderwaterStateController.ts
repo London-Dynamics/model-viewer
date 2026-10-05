@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Underwater state controller.
  *
@@ -23,7 +26,6 @@ import type { UnderwaterParticles } from "./underwater";
 import type { WaterSurfaceMaterial } from "../components/surface/WaterSurfaceMaterial";
 import type { Waterline } from "../shaders/waterline";
 import type { OceanFloor } from "../components/floor/OceanFloor";
-import type { RenderPassManager } from "../rendering/RenderPassManager";
 import type { WaterSubsystem } from "./types";
 
 /**
@@ -44,8 +46,6 @@ export interface UnderwaterStateRefs {
   waterline: Waterline;
   /** Floor visibility flips off when underwater rendering is disabled. */
   oceanFloor: OceanFloor;
-  /** Render-pass manager skips underwater-only passes when disabled. */
-  rpm: RenderPassManager;
 }
 
 export class UnderwaterStateController implements WaterSubsystem {
@@ -103,21 +103,23 @@ export class UnderwaterStateController implements WaterSubsystem {
     refs.waterline.enabled = enabled;
     refs.oceanFloor.resolveVisibility(enabled);
 
-    if (!enabled) {
-      // Reset submersion state so app-level consumers (audio, UI, etc.)
-      // see the right value when the underwater branch is disabled.
-      this._cameraSubmerged = false;
-      refs.material.cameraSubmergedUniform.value = 0.0;
-      return;
+    // No submersion semantics outside the underwater branch — disabling it
+    // always reads as "above water" for this and every downstream consumer.
+    let submerged = false;
+    if (enabled) {
+      const waterHeight = refs.buoyancy.getCameraWaterHeight();
+      submerged = this._camera.position.y < waterHeight;
     }
 
-    const waterHeight = refs.buoyancy.getCameraWaterHeight();
-    const submerged = this._camera.position.y < waterHeight;
     this._cameraSubmerged = submerged;
     // Drives the surface front/back-face split: above water every fragment is
     // forced front-face (no winding-flip specks at the edge-on horizon); only
     // when submerged does the shader fall back to per-fragment `frontFacing`.
     refs.material.cameraSubmergedUniform.value = submerged ? 1.0 : 0.0;
+
+    if (!enabled) {
+      return;
+    }
 
     refs.underwater.update(gpuTime);
     refs.particles.update(deltaTime, this._camera);

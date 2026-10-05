@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WebGPU Water - Main Library Entry Point
  *
@@ -6,7 +9,11 @@
  */
 
 // High-level API (recommended for most users)
-export { WaterSystem, type WaterPreset } from "./WaterSystem";
+export {
+  WaterSystem,
+  type WaterPreset,
+  type WaterPresetConfig,
+} from "./WaterSystem";
 
 // Reactive param config types (for typing reactive property groups)
 export type { WavesConfig } from "./simulation/waves/types";
@@ -17,6 +24,19 @@ export type {
   HorizonConfig,
 } from "./components/surface/types";
 export type { UnderwaterConfig } from "./rendering/postprocessing/types";
+export {
+  JERLOV_WATER_TYPES,
+  type JerlovWaterType,
+  type WaterConstituents,
+} from "./shaders/waterConstituents";
+export type {
+  CustomWaterColorParams,
+  PhysicalWaterColorParams,
+  WaterColorConfig,
+  WaterColorMode,
+  WaterColorParams,
+} from "./shaders/waterColor";
+export { normalizeWaterColorConfig } from "./shaders/waterColor";
 
 // Waves (FFT ocean simulation and sampling)
 export {
@@ -25,10 +45,9 @@ export {
   WebGLWaveSimulation,
   WebGPUWaveSimulation,
   MAX_SAMPLE_POINTS,
-  getCascadeConfigsArray,
+  deriveCascadeScale,
   type IWaveSimulation,
   type CascadesConfig,
-  type CascadeConfig,
   type CascadeSimulationParams,
   type WaveSample,
 } from "./simulation/waves";
@@ -83,6 +102,7 @@ export {
   type SkyParams,
   type SkySunOverlayParams,
 } from "./components/sky/Sky";
+export type { SkyProvider } from "./components/sky/SkyProvider";
 
 // Floor (ocean floor with integrated caustics)
 export {
@@ -95,6 +115,7 @@ export type { OceanFloorCaustics } from "./components/floor/types";
 export {
   AtmosphericFog,
   Underwater,
+  type FoggedColorOptions,
   type FogParams,
 } from "./rendering/postprocessing";
 
@@ -107,16 +128,18 @@ export {
 } from "./systems/underwater";
 
 // Passes (render passes)
-export { SceneDepthPass } from "./rendering/passes/SceneDepthPass";
-export { SceneColorPass } from "./rendering/passes/SceneColorPass";
+export { SceneCapturePass } from "./rendering/passes/SceneCapturePass";
+export { SceneDepthSampler } from "./rendering/passes/SceneDepthSampler";
 
 // Config (presets and types)
 export {
   PRESETS,
   getPresetParams,
   applyPresetToParams,
+  normalizeWaterSceneConfig,
   type PresetName,
   type PresetConfig,
+  type WaterSceneConfig,
 } from "./config/presets";
 
 // Rain (particles, ripple simulation, and combined system)
@@ -124,12 +147,8 @@ export { RainSystem, type RainSystemParams } from "./systems/rain";
 export { RainParticles, type RainParams } from "./systems/rain";
 export { RainRipples, type RainRippleParams } from "./simulation/ripples";
 
-// Param types
-export type { GerstnerParams } from "./types/params";
-
 // Bundled foam textures
 export {
   loadBuiltInFoamTexture,
   type BuiltInFoamName,
 } from "./shaders/builtInFoamTextures";
-

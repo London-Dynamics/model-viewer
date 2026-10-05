@@ -7,27 +7,14 @@
  * that mimic real water caustics. Wave simulation normals distort the
  * UVs so the pattern swims in sync with wave motion.
  *
- * Supports two wave data sources (selected at build time):
- * - **Storage buffers** (WebGPU): Bilinear interpolation on storage buffer.
- * - **Textures** (WebGL): UV-tiled texture sampling.
+ * Wave normals are sampled from the simulation's shared normal texture.
  */
 import * as THREE from "three/webgpu";
-import type { Node, TSLBuffer } from "../types/tsl";
-/** Options for {@link Caustics.setWaveBuffers}. */
-export interface WaveCausticsBufferOptions {
-    /** Normal buffer from wave simulation. */
-    normalBuffer: TSLBuffer;
-    /** Buffer resolution in texels. */
-    resolution: number;
-    /** World-space scale of the buffer. */
-    scale: number;
-}
+import type { Node } from "../types/tsl";
 /** Options for {@link Caustics.setWaveTexture}. */
 export interface WaveCausticsTextureOptions {
-    /** Normal texture from wave simulation (WebGL render target). */
+    /** Normal texture from the wave simulation. */
     normalTexture: THREE.Texture;
-    /** Texture resolution in texels. */
-    resolution: number;
     /** World-space scale of the cascade. */
     scale: number;
 }
@@ -60,9 +47,7 @@ export declare class Caustics {
     private _waveDistortion;
     private _windDirection;
     private _voronoiTexture;
-    private _waveResolution;
     private _waveScale;
-    private _normalBuffer;
     private _normalTexture;
     private _time;
     constructor(time: Node);
@@ -96,22 +81,10 @@ export declare class Caustics {
      */
     setWindDirection(windDirection: Node): void;
     /**
-     * Set wave buffer references for caustics (WebGPU).
-     * Must be called before build() for caustics to take effect.
-     */
-    setWaveBuffers(options: WaveCausticsBufferOptions): void;
-    /**
-     * Set wave texture reference for caustics (WebGL).
+     * Set the wave-normal texture used by caustics.
      * Must be called before build() for caustics to take effect.
      */
     setWaveTexture(options: WaveCausticsTextureOptions): void;
-    /**
-     * Updates buffer resolution and scale at runtime.
-     *
-     * @param resolution - Resolution in texels.
-     * @param scale - World-space scale in units.
-     */
-    updateBufferParams(resolution: number, scale: number): void;
     /**
      * Builds the caustics shader node graph for the ocean floor material.
      * Uses `positionWorld` for fragment position and applies depth fade.
@@ -145,15 +118,5 @@ export declare class Caustics {
      * @param worldZ - World Z coordinate.
      */
     private sampleWaveNormal;
-    /**
-     * Bilinear interpolation on the normal storage buffer.
-     *
-     * @param worldX - World X coordinate.
-     * @param worldZ - World Z coordinate.
-     * @param effectiveScale - Resolution-adjusted scale.
-     * @param res - Buffer resolution (int uniform).
-     * @param resFloat - Buffer resolution (float uniform).
-     */
-    private sampleNormalBuffer;
 }
 //# sourceMappingURL=caustics.d.ts.map

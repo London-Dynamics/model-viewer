@@ -1,8 +1,8 @@
 import * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
 import type { TSLBuffer } from "../../../types/tsl";
-import type { IWaveSimulation, InternalGerstnerParams, WaveCapabilities, WaveDisplacementNodes, WaveNormalNodes } from "../IWaveSimulation";
-import type { CascadeConfig, CascadesConfig } from "../types";
+import type { IWaveSimulation, WaveCapabilities, WaveDisplacementNodes, WaveNormalNodes } from "../IWaveSimulation";
+import type { CascadesConfig } from "../types";
 import type { QualityLevelConfig } from "../../../config/QualityLevels";
 import { type WaveUniforms } from "../../../uniforms";
 import type { TSLUniformNode } from "../../../types/tsl";
@@ -21,16 +21,19 @@ export interface WebGPUWaveSimulationOptions {
  */
 export declare class WebGPUWaveSimulation implements IWaveSimulation {
     private cascades;
+    /** Persistent array identities let Three reuse both A/B compute-group states. */
+    private computeGlobalUpdateGroup;
+    private computeGlobalInitializeAndUpdateGroup;
+    private computeSharedUpdateGroup;
+    private computeSharedInitializeAndUpdateGroup;
     private renderer;
     private time;
     private _explicitTimeThisFrame;
     private _seed;
-    private _gerstnerMaxWaves;
     private _animationSpeed;
+    private sharedMemoryFFTEnabled;
     private _waveUniforms;
     private _foamWindBias;
-    private _gerstnerWaveBuffer;
-    private _gerstnerWaveCount;
     constructor(renderer: THREE.WebGPURenderer, options: WebGPUWaveSimulationOptions);
     /**
      * Override the simulation's time accumulator with an absolute time.
@@ -41,13 +44,8 @@ export declare class WebGPUWaveSimulation implements IWaveSimulation {
     setTime(t: number): void;
     get animationSpeed(): number;
     set animationSpeed(value: number);
-    /**
-     * Update Gerstner wave parameters using auto-distribution.
-     * Generates N wave descriptors from center wavelength, spread, direction, etc.
-     * Arbitrary wavelengths and directions are supported since Gerstner waves are
-     * evaluated analytically in the vertex shader (not on the FFT grid).
-     */
-    updateGerstnerParams(params: InternalGerstnerParams): void;
+    /** Whether at least one active cascade fits the device's workgroup limits. */
+    private get sharedMemoryFFTSupported();
     getCapabilities(): WaveCapabilities;
     getDisplacementNodes(): WaveDisplacementNodes;
     getNormalNodes(): WaveNormalNodes;
@@ -57,40 +55,40 @@ export declare class WebGPUWaveSimulation implements IWaveSimulation {
     private sampleBufferBilinear;
     private initCascades;
     private createCascade;
+    /**
+     * Read the initialized WebGPU device limits exposed by Three's backend.
+     * Missing/non-WebGPU backend state conservatively selects the global FFT.
+     */
+    private getComputeLimits;
+    /**
+     * A complete line uses R/2 pair owners and R × 24 bytes of shared storage.
+     * The current global-memory implementation remains the correctness fallback.
+     */
+    private canUseSharedMemoryFFT;
     private createComputeShadersForCascade;
     init(): void;
     update(deltaTime?: number): Promise<void>;
-    private queueCascadeUpdate;
-    private getIFFT2DShaders;
-    private queueIFFT2DForCascadeAsync;
-    updateCascadeConfig(index: number, config: CascadeConfig): void;
+    /**
+     * Encode every cascade's ordered update in one WebGPU compute pass and queue
+     * submission. Dispatch boundaries still order all storage-buffer hazards:
+     * init → time evolution → horizontal FFT → vertical FFT → normalize →
+     * normals.
+     */
+    private dispatchCascadeUpdates;
+    setMaxScale(maxScale: number): void;
     getCascadeCount(): number;
     getDisplacementBuffer(cascadeIndex?: number): TSLBuffer | null;
-    getNormalBuffer(cascadeIndex?: number): TSLBuffer | null;
-    /**
-     * Per-texel surface velocity (m/s) for a cascade, computed as
-     * `(currentDisplacement - previousDisplacement) / deltaTime`. Same layout
-     * as the displacement buffer; `.xyz` is the velocity vector, `.w` unused.
-     */
-    getVelocityBuffer(cascadeIndex?: number): TSLBuffer | null;
     getNormalTexture(cascadeIndex?: number): THREE.Texture | null;
     getResolution(cascadeIndex?: number): number;
     getScale(cascadeIndex?: number): number;
+    /**
+     * Get a cascade's world-space scale uniform node (the single source of truth
+     * synced on cascade-config changes). The world-fixed foam field binds to it so
+     * its world→texel sampling of the cascade normal texture tracks the live scale.
+     */
+    getScaleNode(cascadeIndex?: number): Node | null;
     getCascadeScales(): number[];
     getCascadeResolutions(): number[];
-    getGerstnerWaveBuffer(): Node | null;
-    getGerstnerMaxWaves(): number;
-    getGerstnerWaveCountUniform(): Node | null;
-    getTimeUniform(): Node | null;
-    /**
-     * Get Gerstner wave state for CPU-side evaluation.
-     * Returns the wave buffer array, active wave count, blend factor, and current time.
-     */
-    getGerstnerCPUState(): {
-        waveData: THREE.Vector4[] | null;
-        waveCount: number;
-        time: number;
-    };
     initializeBuffers(renderer: THREE.WebGPURenderer): Promise<void>;
     dispose(): void;
 }

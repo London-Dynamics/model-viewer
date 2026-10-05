@@ -22,7 +22,6 @@ import type { UnderwaterParticles } from "./underwater";
 import type { WaterSurfaceMaterial } from "../components/surface/WaterSurfaceMaterial";
 import type { Waterline } from "../shaders/waterline";
 import type { OceanFloor } from "../components/floor/OceanFloor";
-import type { RenderPassManager } from "../rendering/RenderPassManager";
 import type { WaterSubsystem } from "./types";
 /**
  * Fixed set of consumers the controller writes to. The constructor takes
@@ -42,8 +41,6 @@ export interface UnderwaterStateRefs {
     waterline: Waterline;
     /** Floor visibility flips off when underwater rendering is disabled. */
     oceanFloor: OceanFloor;
-    /** Render-pass manager skips underwater-only passes when disabled. */
-    rpm: RenderPassManager;
 }
 export declare class UnderwaterStateController implements WaterSubsystem {
     private readonly _refs;

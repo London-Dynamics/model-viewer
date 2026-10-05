@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Spray simulation compute shader.
  *
@@ -21,10 +24,7 @@
  */
 
 import { Fn, If, instanceIndex, vec3, vec4 } from "three/tsl";
-import {
-  createSurfaceHeightSampler,
-  type SprayGerstnerBindings,
-} from "./surfaceSample";
+import { createSurfaceHeightSampler } from "./surfaceSample";
 import type { CascadeSampler } from "../../../shaders/cascadeSampler";
 import type {
   FloatNode,
@@ -49,12 +49,8 @@ export interface SimulateComputeBindings {
 
   /** Shared cascade sampler (single source of truth for scale/resolution uniforms). */
   cascadeSampler: CascadeSampler;
-  /** Cascade-0 displacement buffer. */
-  displacementBuffer0: StorageBufferNode;
-  /** Cascade-1 displacement buffer (optional). */
-  displacementBuffer1?: StorageBufferNode;
-  /** Gerstner wave bindings, or null if Gerstner is disabled. */
-  gerstner: SprayGerstnerBindings | null;
+  /** Displacement buffers, one per cascade, coarsest first. */
+  displacementBuffers: StorageBufferNode[];
 
   /** Per-frame delta time in seconds (CPU-updated uniform). */
   deltaTime: UniformFloatNode;

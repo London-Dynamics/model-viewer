@@ -1,10 +1,9 @@
-import type { PresetName, WaterPreset } from "threejs-water-pro";
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
+import type { PresetName, WaterPresetConfig } from "threejs-water-pro";
 import type { WaterApp } from "../WaterApp";
-import {
-  syncAmbient,
-  syncPostProcessingUniforms,
-  syncSunPosition,
-} from "./folders";
+import { syncPostProcessingUniforms, syncSunPosition } from "./folders";
 
 /**
  * Thin orchestration layer for UI controls.
@@ -55,16 +54,14 @@ export class UIManager {
   // Orchestration Methods (coordinate multiple systems)
   // ============================================
 
-  async applyPreset(preset: PresetName | WaterPreset): Promise<void> {
+  async applyPreset(preset: PresetName | WaterPresetConfig): Promise<void> {
     await this.app.applyPreset(preset);
     syncSunPosition(this);
-    syncAmbient(this);
     syncPostProcessingUniforms(this);
   }
 
   async updateQualityLevel(): Promise<void> {
     await this.app.updateQualityLevel();
     syncSunPosition(this);
-    syncAmbient(this);
   }
 }

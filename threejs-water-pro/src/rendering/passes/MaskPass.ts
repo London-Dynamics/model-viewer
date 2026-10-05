@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { Fn, float, vec4, positionWorld, cameraPosition } from "three/tsl";
 
@@ -42,6 +45,8 @@ export class MaskPass {
     // Create mask material that outputs 1.0 where geometry is rendered
     this.maskMaterial = new THREE.MeshBasicNodeMaterial();
     this.maskMaterial.side = THREE.DoubleSide;
+    // Renders the user's scene as an override; keep the mask values unfogged.
+    this.maskMaterial.fog = false;
 
     // R = mask presence (1.0), G = distance from camera (for depth comparison)
     const maskOutput = Fn(() => {

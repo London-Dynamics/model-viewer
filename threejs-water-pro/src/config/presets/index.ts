@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Ocean environment presets based on oceanographic literature
  *
@@ -8,7 +11,13 @@
  * - Pierson-Moskowitz spectrum for fully developed seas
  */
 
-import type { PresetConfig, PresetName, WaterSceneParams } from "./types";
+import type {
+  PresetConfig,
+  PresetName,
+  WaterSceneConfig,
+  WaterSceneParams,
+} from "./types";
+import { normalizeWaterColorConfig } from "../../shaders/waterColor";
 import { ARCTIC_PRESET } from "./arctic";
 import { BLACK_FLAG_PRESET } from "./blackFlag";
 import { DUSK_PRESET } from "./dusk";
@@ -19,7 +28,12 @@ import { STORM_PRESET } from "./storm";
 import { SUNSET_PRESET } from "./sunset";
 
 
-export type { PresetName, PresetConfig, WaterSceneParams };
+export type {
+  PresetName,
+  PresetConfig,
+  WaterSceneConfig,
+  WaterSceneParams,
+};
 
 // Deep clone helper
 function deepClone<T>(obj: T): T {
@@ -51,8 +65,15 @@ function deepAssign<T extends object>(target: T, source: object): void {
   }
 }
 
+/** Replace an object's contents while retaining its identity for UI bindings. */
+function replaceObject(target: object, source: object): void {
+  const targetRecord = target as Record<string, unknown>;
+  for (const key of Object.keys(targetRecord)) delete targetRecord[key];
+  Object.assign(targetRecord, deepClone(source));
+}
+
 // Presets in alphabetical order
-export const PRESETS: Record<PresetName, PresetConfig> = {
+export const PRESETS: Record<PresetName, WaterSceneConfig> = {
   arctic: ARCTIC_PRESET,
   blackFlag: BLACK_FLAG_PRESET,
   dusk: DUSK_PRESET,
@@ -66,23 +87,36 @@ export const PRESETS: Record<PresetName, PresetConfig> = {
 /**
  * Get a complete params object for a preset (returns a deep clone)
  */
-export function getPresetParams(presetName: PresetName): WaterSceneParams {
+export function getPresetParams(presetName: PresetName): WaterSceneConfig {
   const preset = PRESETS[presetName];
   return deepClone(preset);
+}
+
+/** Convert supported preset input to the canonical v3.4 scene shape. */
+export function normalizeWaterSceneConfig(
+  params: WaterSceneConfig,
+): WaterSceneConfig {
+  const normalized = deepClone(params) as WaterSceneConfig;
+  normalized.color = normalizeWaterColorConfig(params.color);
+  return normalized;
 }
 
 /**
  * Apply a preset to an existing params object (mutates in place).
  * Uses deep assignment to preserve object references for UI bindings.
  *
- * Accepts either a built-in preset name or a complete WaterSceneParams object
+ * Accepts either a built-in preset name or complete scene parameters
  * (e.g. parsed from a downloaded JSON preset).
  */
 export function applyPresetToParams(
-  params: WaterSceneParams,
-  preset: PresetName | WaterSceneParams,
+  params: WaterSceneConfig,
+  preset: PresetName | WaterSceneConfig,
 ): void {
   const presetParams =
-    typeof preset === "string" ? getPresetParams(preset) : deepClone(preset);
-  deepAssign(params, presetParams);
+    typeof preset === "string"
+      ? getPresetParams(preset)
+      : normalizeWaterSceneConfig(preset);
+  const { color, ...sceneParams } = presetParams;
+  deepAssign(params, sceneParams);
+  replaceObject(params.color, color);
 }

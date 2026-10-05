@@ -12,7 +12,7 @@ hero:
 features:
   - icon: 🌊
     title: FFT-Based Waves
-    details: JONSWAP spectrum with 2 cascades (waves, ripples) plus analytical Gerstner swells for realistic ocean behavior at any scale.
+    details: JONSWAP spectrum with 3 cascades (swell, waves, ripples) for realistic ocean behavior at any scale.
   - icon: ⚡
     title: WebGPU Compute
     details: Built with WebGPU and Three.js TSL (Three Shading Language) for modern GPU acceleration and optimal performance.
@@ -36,8 +36,8 @@ This library provides a complete ocean rendering solution built specifically for
 
 ### Key Features
 
-- **Multi-cascade FFT simulation** - Two FFT frequency bands (waves, ripples) plus analytical Gerstner swells combine for detail at all distances
-- **JONSWAP spectrum** - Scientifically accurate wave generation based on wind conditions
+- **Multi-cascade FFT simulation** - Three FFT frequency bands (swell, waves, ripples) combine for detail at all distances
+- **JONSWAP spectrum** - Scientifically accurate wave generation with a directly-settable dominant wavelength and wind speed
 - **Subsurface scattering** - Light transmission through wave crests for that characteristic ocean glow
 - **Foam rendering** - Jacobian-based wave breaking detection plus procedural surface foam
 - **Infinite water** - Clipmap geometry with LOD for seamless ocean rendering to the horizon
@@ -51,4 +51,4 @@ This library provides a complete ocean rendering solution built specifically for
 
 ## License
 
-See license agreement [here](license.md)
+See the [Commercial Software License Agreement, version 2.2](license.md).

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Manages water masking — hiding water where mask objects are visible.
  *
@@ -21,6 +24,7 @@ export class WaterMasking {
 
   set enabled(value: boolean) {
     this._enabled.value = value ? 1.0 : 0.0;
+    this._renderPassManager?.setMaskActive(value && this._objects.size > 0);
   }
 
   /** @internal Uniform node for the mask-enabled flag (used by shader). */

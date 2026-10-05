@@ -7,7 +7,7 @@
  */
 import * as THREE from "three/webgpu";
 import type { Node } from "./types";
-import { type BuiltInFoamName } from "./builtInFoamTextures";
+import type { BuiltInFoamName } from "./builtInFoamTextures";
 /** Preset-facing parameters for shoreline foam. */
 export interface ShorelineFoamParams {
     /** Foam color (hex string). */
@@ -86,6 +86,12 @@ export declare class ShorelineFoam {
     get _enabledNode(): Node;
     /** Bulk-set parameters from a preset or params object. */
     update(params: ShorelineFoamParams): void;
+    /**
+     * Switch to a bundled foam texture by name, leaving every other parameter
+     * untouched. Use this for an isolated texture change; {@link foamTexture}
+     * binds a caller-owned texture instead.
+     */
+    loadTexture(name: BuiltInFoamName): void;
     /**
      * Builds shoreline foam strength, color, and zone mask.
      *

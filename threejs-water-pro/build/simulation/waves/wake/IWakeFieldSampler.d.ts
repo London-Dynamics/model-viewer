@@ -2,8 +2,8 @@ import type { Node } from "three/webgpu";
 /**
  * Wake displacement produced by {@link IWakeFieldSampler.sample}.
  *
- * The vertex shader adds the height to the FFT and Gerstner displacement totals
- * each frame; see `src/shaders/waterVertex.ts`.
+ * The vertex shader adds the height to the FFT displacement total each
+ * frame; see `src/shaders/waterVertex.ts`.
  */
 export interface WakeDisplacementSample {
     /** Vertical displacement (Y) at the sampled world position. */

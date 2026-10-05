@@ -18,6 +18,8 @@ export interface CombinedFFTShaderParams {
     srcBuffers: ComponentBuffers;
     dstBuffers: ComponentBuffers;
     resolution: number;
+    /** Zero-based FFT stage, specialized into the shader as a literal. */
+    stage: number;
 }
 export interface CombinedFFTNormalizeShaderParams {
     wave: WaveUniforms;
@@ -26,14 +28,23 @@ export interface CombinedFFTNormalizeShaderParams {
     displacementBuffer: TSLBuffer;
     resolution: number;
 }
+export interface CombinedFFTSharedShaderParams {
+    srcBuffers: ComponentBuffers;
+    dstBuffers: ComponentBuffers;
+    resolution: number;
+}
+/** Complete every horizontal FFT stage in two global-memory touches. */
+export declare const createCombinedFFTSharedHorizontalShader: (params: CombinedFFTSharedShaderParams) => import("three/webgpu").ComputeNode;
+/** Complete every vertical FFT stage in two global-memory touches. */
+export declare const createCombinedFFTSharedVerticalShader: (params: CombinedFFTSharedShaderParams) => import("three/webgpu").ComputeNode;
 /**
  * Creates the combined horizontal FFT butterfly pass shader for all 3 components.
  */
-export declare const createCombinedFFTHorizontalShader: ({ cascade, srcBuffers, dstBuffers, resolution, }: CombinedFFTShaderParams) => import("three/webgpu").ComputeNode;
+export declare const createCombinedFFTHorizontalShader: ({ cascade, srcBuffers, dstBuffers, resolution, stage, }: CombinedFFTShaderParams) => import("three/webgpu").ComputeNode;
 /**
  * Creates the combined vertical FFT butterfly pass shader for all 3 components.
  */
-export declare const createCombinedFFTVerticalShader: ({ cascade, srcBuffers, dstBuffers, resolution, }: CombinedFFTShaderParams) => import("three/webgpu").ComputeNode;
+export declare const createCombinedFFTVerticalShader: ({ cascade, srcBuffers, dstBuffers, resolution, stage, }: CombinedFFTShaderParams) => import("three/webgpu").ComputeNode;
 /**
  * Creates the combined FFT normalization shader for all 3 components.
  * Extracts real components, applies corrections, and writes to displacement buffer.

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -8,7 +11,7 @@ import type { Panel, Folder } from "../../SimpleUI";
  */
 export function syncSunPosition(ui: UIManager): void {
   const water = ui.water;
-  const sky = ui.app.sky;
+  const sky = ui.app.skyManager.sky;
   const params = ui.params.sky.sun;
 
   water.lighting.sun.update(params);
@@ -23,24 +26,21 @@ export function syncSunPosition(ui: UIManager): void {
 }
 
 /**
- * Push the current ambient preset values onto Lighting. The HemisphereLight
- * picks them up on the next step.
- */
-export function syncAmbient(ui: UIManager): void {
-  const ambient = ui.params.lighting.ambient;
-  const live = ui.water.lighting.ambient;
-  live.skyColor.set(ambient.skyColor);
-  live.groundColor.set(ambient.groundColor);
-  live.intensity = ambient.intensity;
-}
-
-/**
  * Creates all sky related controls directly on the parent folder.
  * Called from Controls.ts with the "Sky" folder as parent.
  */
 export function createSkyFolder(ui: UIManager, pane: Panel | Folder): void {
+  // Scales scene.environment IBL regardless of which sky is active, so it
+  // lives outside the HDRI folder below.
+  pane.addSlider("Environment Intensity", {
+    min: 0,
+    max: 3,
+    step: 0.01,
+    object: ui.water.environment,
+    key: "intensity",
+  });
+
   createHDRIControls(ui, pane);
-  createAmbientControls(ui, pane);
   createSunControls(ui, pane);
 }
 
@@ -48,13 +48,13 @@ function createHDRIControls(ui: UIManager, parent: Panel | Folder): void {
   const folder = parent.addFolder("HDRI", { expanded: true });
 
   folder.addSelect("File", {
-    options: ui.app.hdriOptions.map((opt) => ({
+    options: ui.app.skyManager.hdriOptions.map((opt) => ({
       label: opt.label,
       value: opt.url,
     })),
     binding: () => ui.params.hdriUrl,
     onChange: (v) => {
-      void ui.app.setHDRI(v as string);
+      void ui.app.skyManager.setHDRI(v as string);
     },
   });
 
@@ -62,9 +62,9 @@ function createHDRIControls(ui: UIManager, parent: Panel | Folder): void {
     min: 0.1,
     max: 2.0,
     step: 0.1,
-    binding: () => ui.app.sky.brightnessUniform.value,
+    binding: () => ui.app.skyManager.sky.brightness,
     onChange: (v) => {
-      ui.app.sky.brightnessUniform.value = v;
+      ui.app.skyManager.sky.brightness = v;
     },
   });
 
@@ -72,60 +72,9 @@ function createHDRIControls(ui: UIManager, parent: Panel | Folder): void {
     min: 0.0,
     max: 1.0,
     step: 0.01,
-    binding: () => ui.app.sky.reflectionRoughnessUniform.value,
+    binding: () => ui.app.skyManager.sky.reflectionRoughnessUniform.value,
     onChange: (v) => {
-      ui.app.sky.reflectionRoughnessUniform.value = v;
-    },
-  });
-
-  folder.addSlider("Reflection Distance Blur", {
-    min: 0.0,
-    max: 1.0,
-    step: 0.01,
-    binding: () => ui.app.sky.reflectionDistanceBlurUniform.value,
-    onChange: (v) => {
-      ui.app.sky.reflectionDistanceBlurUniform.value = v;
-    },
-  });
-
-  folder.addSlider("Reflection Blur Distance", {
-    min: 100,
-    max: 10000,
-    step: 100,
-    binding: () => ui.app.sky.reflectionBlurDistanceUniform.value,
-    onChange: (v) => {
-      ui.app.sky.reflectionBlurDistanceUniform.value = v;
-    },
-  });
-}
-
-function createAmbientControls(ui: UIManager, parent: Panel | Folder): void {
-  const folder = parent.addFolder("Ambient", { expanded: false });
-
-  folder.addColor("Sky Color", {
-    binding: () => ui.params.lighting.ambient.skyColor,
-    onChange: (v) => {
-      ui.params.lighting.ambient.skyColor = v;
-      syncAmbient(ui);
-    },
-  });
-
-  folder.addColor("Ground Color", {
-    binding: () => ui.params.lighting.ambient.groundColor,
-    onChange: (v) => {
-      ui.params.lighting.ambient.groundColor = v;
-      syncAmbient(ui);
-    },
-  });
-
-  folder.addSlider("Intensity", {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    binding: () => ui.params.lighting.ambient.intensity,
-    onChange: (v) => {
-      ui.params.lighting.ambient.intensity = v;
-      syncAmbient(ui);
+      ui.app.skyManager.sky.reflectionRoughnessUniform.value = v;
     },
   });
 }
@@ -244,7 +193,7 @@ function createSparkleControls(ui: UIManager, parent: Folder): void {
     key: "power",
   });
 
-  folder.addSlider("Min Distance", {
+  folder.addSlider("Min Distance (m)", {
     min: 0,
     max: 100,
     step: 1,
@@ -252,12 +201,11 @@ function createSparkleControls(ui: UIManager, parent: Folder): void {
     key: "minDistance",
   });
 
-  folder.addSlider("Fade Distance", {
-    min: 100,
-    max: 3000,
+  folder.addSlider("Fade Distance (m)", {
+    min: 20,
+    max: 500,
     step: 10,
     object: ui.water.sparkle,
     key: "fadeDistance",
   });
 }
-

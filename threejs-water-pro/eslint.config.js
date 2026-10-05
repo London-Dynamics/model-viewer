@@ -20,6 +20,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/', 'demo/dist/', 'node_modules/', '__tests__/', '*.config.js'],
+    ignores: ['dist/', 'demo/dist/', 'demo/vendor/', 'node_modules/', '__tests__/', '*.config.js'],
   }
 );

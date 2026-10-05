@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Sun sparkle (specular highlights) on water surface.
  *
@@ -62,9 +65,9 @@ export interface SparkleBuildParams {
 export class Sparkle {
   // ============= Private Uniforms =============
   private _enabled = uniform(1.0);
-  private _fadeDistance = uniform(500.0);
+  private _fadeDistance = uniform(150.0);
   private _intensity = uniform(1.0);
-  private _minDistance = uniform(10.0);
+  private _minDistance = uniform(5.0);
   private _power = uniform(512.0);
 
   // ============= Public Getters/Setters =============

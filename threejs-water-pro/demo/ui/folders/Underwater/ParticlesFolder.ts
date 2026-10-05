@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -34,9 +37,9 @@ export function createParticlesFolder(
     },
   });
 
-  folder.addSlider("Far Distance", {
-    min: 100,
-    max: 1000,
+  folder.addSlider("Far Distance (m)", {
+    min: 5,
+    max: 200,
     step: 1,
     binding: () => ui.params.postProcessing.underwaterParticles.farDistance,
     onChange: (v) => {
@@ -45,9 +48,9 @@ export function createParticlesFolder(
     },
   });
 
-  folder.addSlider("Max Size", {
+  folder.addSlider("Max Size (m)", {
     min: 0.1,
-    max: 2.0,
+    max: 0.5,
     step: 0.05,
     binding: () => ui.params.postProcessing.underwaterParticles.maxSize,
     onChange: (v) => {
@@ -56,9 +59,9 @@ export function createParticlesFolder(
     },
   });
 
-  folder.addSlider("Min Size", {
+  folder.addSlider("Min Size (m)", {
     min: 0.01,
-    max: 1.0,
+    max: 0.2,
     step: 0.01,
     binding: () => ui.params.postProcessing.underwaterParticles.minSize,
     onChange: (v) => {
@@ -67,9 +70,9 @@ export function createParticlesFolder(
     },
   });
 
-  folder.addSlider("Near Distance", {
+  folder.addSlider("Near Distance (m)", {
     min: 1,
-    max: 100,
+    max: 20,
     step: 1,
     binding: () => ui.params.postProcessing.underwaterParticles.nearDistance,
     onChange: (v) => {

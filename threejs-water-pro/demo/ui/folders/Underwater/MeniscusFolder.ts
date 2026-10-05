@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -39,9 +42,9 @@ export function createMeniscusFolder(
     key: "smoothness",
   });
 
-  folder.addSlider("Thickness", {
+  folder.addSlider("Thickness (m)", {
     min: 0.0,
-    max: 5.0,
+    max: 1.0,
     step: 0.01,
     object: ui.water.waterline,
     key: "thickness",

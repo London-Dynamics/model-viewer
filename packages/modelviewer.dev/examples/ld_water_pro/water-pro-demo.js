@@ -117,10 +117,6 @@ const loadHdri = (url) =>
     }, undefined, reject);
   });
 
-const useSkyEnvironment = (scene, sky) => {
-  scene.environment = sky._pmrem != null ? sky._pmrem.texture : null;
-};
-
 const frameCamera = (camera, controls) => {
   const pose = frameCameraPose(placement, boat.windshield, state.view) ??
       frameCameraPose(placement, boat.windshield, 'hero');
@@ -216,16 +212,13 @@ const boot = async () => {
   const water = await WaterSystem.create(renderer, scene, camera, 'high');
   const preset = getPresetParams('dusk');
   water.loadPreset(lakeLook(preset, state));
-  water.setElevation(0);
 
   setStatus('water: loading sky');
   let skyTexture = await loadHdri(hdriForTime(state.time));
   const openingLook = lakeLook(preset, state);
-  const sky = new Sky({
+  const sky = new Sky(renderer, {
     equirect: skyTexture,
     brightness: lakePresentation(state.time).skyBrightness,
-    reflectionBlurDistance: 1500,
-    reflectionDistanceBlur: 0.5,
     reflectionRoughness: openingLook.sky.reflectionRoughness,
     sunDirection: water.lighting.sun.direction,
     sunOverlay: {
@@ -237,10 +230,6 @@ const boot = async () => {
     },
   });
   water.setSky(sky);
-  useSkyEnvironment(scene, sky);
-  for (const mesh of sky.getMeshes()) {
-    scene.add(mesh);
-  }
 
   setStatus(`water: loading ${boat.label}`);
   const draco = new DRACOLoader();
@@ -309,7 +298,6 @@ const boot = async () => {
       const nextTexture = await loadHdri(nextUrl);
       nextTexture.userData.sourceUrl = nextUrl;
       sky.setTexture(nextTexture, renderer);
-      useSkyEnvironment(scene, sky);
       skyTexture = nextTexture;
     }
     const seaLabel = state.sea === 'calm' ? 'calm' : 'light';

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WaterReflectionGBufferPass renders the water surface at full resolution,
  * outputting `vec4(reflectDirWS.xyz, viewZ)` so the SSR ray-march pass can
@@ -33,7 +36,6 @@ export interface WaterReflectionGBufferPassOptions {
   cascadeSampler: CascadeSampler | null;
   clipmapOffset: UniformNode<THREE.Vector2>;
   fresnel: Fresnel;
-  gerstnerMaxWaves: number;
   oceanSim: IWaveSimulation;
   rainRipples: RainRipples | null;
 }
@@ -100,7 +102,7 @@ export class WaterReflectionGBufferPass {
 
   /**
    * Rebuild the shader graph after a quality-level change swapped any of the
-   * inputs (cascade sampler, gerstnerMaxWaves, rainRipples, etc.).
+   * inputs (cascade sampler, rainRipples, etc.).
    */
   public rebuild(options: WaterReflectionGBufferPassOptions): void {
     this.options = options;
@@ -158,7 +160,6 @@ export class WaterReflectionGBufferPass {
       oceanSim,
       cascadeSampler,
       fresnel,
-      gerstnerMaxWaves,
       rainRipples,
       clipmapOffset,
     } = this.options;
@@ -167,7 +168,6 @@ export class WaterReflectionGBufferPass {
       clipmapOffset,
       oceanSim,
       cascadeSampler,
-      gerstnerMaxWaves,
       wakeFieldSampler: null,
     });
     this.material.positionNode = vertex.positionNode;
@@ -187,10 +187,7 @@ export class WaterReflectionGBufferPass {
         fragWorldZ,
         wakeWorldX: positionWorld.x,
         wakeWorldZ: positionWorld.z,
-        vSampleCoords0: vertex.vSampleCoords0,
-        vGerstnerNormal: vertex.vGerstnerNormal,
-        vGerstnerFolding: vertex.vGerstnerFolding,
-        gerstnerMaxWaves,
+        vHierarchicalCoords: vertex.vHierarchicalCoords,
         rainRipples,
         wakeFieldSampler: null,
         cameraPosition,
@@ -200,13 +197,16 @@ export class WaterReflectionGBufferPass {
       const fresnelResult = fresnel.build({
         viewDir,
         interpolatedNormal: normalResult.interpolatedNormal,
+        slopeVariance: normalResult.slopeVariance,
         worldX: vertex.worldX,
         worldZ: vertex.worldZ,
       });
 
+      // Bent reflection normal: keeps grazing-angle rays from firing
+      // downward into the water when the wave normal tilts past edge-on.
       const reflectDirWS: Node = reflect(
         viewDir.negate(),
-        fresnelResult.fresnelNormal,
+        fresnelResult.reflectionNormal,
       );
 
       const viewZ: Node = positionView.z.negate();

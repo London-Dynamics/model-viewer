@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /** Outcome of one frame's per-generator injection check. */
 export type InjectionDecision =
   | { kind: "first-frame" }

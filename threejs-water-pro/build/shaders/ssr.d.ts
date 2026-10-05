@@ -1,10 +1,15 @@
 /**
  * Screen-space reflections (SSR) for the water surface.
  *
- * Adds reflections of scene geometry (boats, rocks, terrain) onto the water
- * via a screen-space DDA (Digital Differential Analyzer) ray march. The march
- * runs as a fullscreen post pass (see `SSRPass`); the water fragment shader
- * samples the resulting texture via {@link SSR.sample}.
+ * Adds reflections of above-water scene geometry (boats, rocks, cliffs) onto
+ * the water via a screen-space DDA (Digital Differential Analyzer) ray march.
+ * The march runs as a fullscreen post pass (see `SSRPass`); the water fragment
+ * shader samples the resulting texture via {@link SSR.sample}.
+ *
+ * Hits below the water surface are rejected. The scene capture excludes the
+ * water, so the seabed shows through behind every water pixel; without this
+ * guard the screen-space march registers the ocean floor as a reflected
+ * surface and paints its caustics across the water as false bright streaks.
  *
  * DDA vs fixed 3D stepping:
  * - Fixed stepping uses the same number of samples regardless of screen
@@ -15,6 +20,7 @@
  */
 import * as THREE from "three/webgpu";
 import type { Node } from "./types";
+import type { SceneDepthSampler } from "../rendering/passes/SceneDepthSampler";
 /** Preset-facing parameters for screen-space reflections. */
 export interface SSRParams {
     /** Whether SSR is active. */
@@ -82,20 +88,35 @@ export declare class SSR {
     /**
      * Builds the DDA march as a fullscreen-quad colorNode. Used by `SSRPass`.
      *
-     * @param depthTexture - Linear depth buffer (full-res).
+     * @param sceneDepth - Normalized-linear scene depth sampler (full-res).
      * @param sceneColorTexture - Scene color render target (for hit color).
      * @param gBufferTexture - Water reflection G-buffer with `(reflectDirWS.xyz, viewZ)`.
      * @param sceneCamera - Scene camera matrices/near/far as TSL nodes.
      */
-    buildMarchNode(depthTexture: THREE.Texture, sceneColorTexture: THREE.Texture, gBufferTexture: THREE.Texture, sceneCamera: SceneCameraNodes): Node;
+    buildMarchNode(sceneDepth: SceneDepthSampler, sceneColorTexture: THREE.Texture, gBufferTexture: THREE.Texture, sceneCamera: SceneCameraNodes): Node;
     /**
-     * Narrows a coarse DDA hit to sub-pixel precision via binary search
-     * between the last "in front" position and the first "behind" position.
+     * Narrows a coarse DDA hit to sub-pixel precision by bisecting the
+     * interval that brackets the crossing.
+     *
+     * @param behindUV - UV of a sample behind the depth buffer.
+     * @param behindInvZ - Inverse view Z at `behindUV`.
+     * @param inFrontUV - UV of a sample in front of the depth buffer. The
+     *   bisection assumes the crossing lies between the two, so this must be
+     *   in front — not merely the previously visited step.
+     * @param inFrontInvZ - Inverse view Z at `inFrontUV`.
      */
     private buildBinaryRefinement;
     /**
      * Computes a 0–1 confidence value combining edge fade, distance fade,
      * depth-ratio fade, strength, and enabled multipliers.
+     *
+     * @param refinedUV - UV after binary refinement.
+     * @param refinedInvZ - Inverse view Z after binary refinement.
+     * @param rayOriginZ - View-space Z of the ray origin.
+     * @param reflectDirViewZ - Z component of the unit view-space ray direction.
+     * @param waterViewZ - View-space depth of the water fragment the ray left.
+     * @param refinedSceneDepth - Linear scene depth the march already sampled
+     *   at `refinedUV`.
      */
     private buildHitConfidence;
 }

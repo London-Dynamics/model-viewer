@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 export { createBuoyancyFolder } from "./BuoyancyFolder";
 export { createColorsFolder } from "./ColorsFolder";
 export { createFoamFolder } from "./FoamFolder";

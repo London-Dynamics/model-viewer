@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import { float, floor, fract, int, mix, normalize, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TSLBuffer, TSLUniformNode } from "../../../../types/tsl";

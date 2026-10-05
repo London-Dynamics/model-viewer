@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Bundled foam textures shipped with the library.
  *
@@ -26,21 +29,32 @@ const FOAM_URLS: Record<BuiltInFoamName, string> = {
   foam4: foam4Url,
 };
 
-const _cache = new Map<BuiltInFoamName, THREE.Texture>();
+const _cache = new Map<BuiltInFoamName, Promise<THREE.Texture>>();
 const _loader = new THREE.TextureLoader();
 
 /**
- * Returns the bundled foam texture for the given name. The texture is loaded
- * once and cached; repeated calls return the same instance. The returned
- * texture uses `RepeatWrapping` on both axes so it tiles cleanly.
+ * Loads the bundled foam texture for the given name, resolving once the image
+ * has decoded. The decode is performed once per name and cached, so repeated
+ * calls share the same in-flight or settled promise. The resolved texture uses
+ * `RepeatWrapping` on both axes so it tiles cleanly.
+ *
+ * Resolving only after decode is what lets callers bind the texture without the
+ * GPU sampling an empty image; assigning a not-yet-decoded texture is the cause
+ * of foam swaps that "don't apply".
  */
-export function loadBuiltInFoamTexture(name: BuiltInFoamName): THREE.Texture {
+export function loadBuiltInFoamTexture(
+  name: BuiltInFoamName,
+): Promise<THREE.Texture> {
   const cached = _cache.get(name);
   if (cached) return cached;
 
-  const tex = _loader.load(FOAM_URLS[name]);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  _cache.set(name, tex);
-  return tex;
+  const promise = _loader.loadAsync(FOAM_URLS[name]).then((tex) => {
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  });
+  // Drop failed loads so a later call can retry instead of replaying the error.
+  promise.catch(() => _cache.delete(name));
+  _cache.set(name, promise);
+  return promise;
 }

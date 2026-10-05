@@ -10,9 +10,9 @@ Access via `water.ssr`.
 | ----------- | --------- | ------- | -------------------------------------------------------------------------- |
 | `enabled`   | `boolean` | `true`  | Enable/disable SSR                                                         |
 | `strength`  | `number`  | `0.8`   | Blend factor vs sky reflection (0–1)                                       |
-| `thickness` | `number`  | `0.1`   | Depth tolerance for ray-march hit testing. Larger values accept thicker / more distant hits |
+| `thickness` | `number`  | `0.1`   | Depth-ratio threshold that rejects false reflections from geometry close in front of the water; larger values reject more hits |
 
-`enabled`, `strength`, and `thickness` are user-facing knobs. `maxDistance` and `stepCount` are quality-tier knobs set by the active quality level.
+`enabled`, `strength`, and `thickness` are user-facing controls. `maxDistance` and `stepCount` are set by the active quality level; they can also be set via `water.ssr`, but switching quality levels overwrites manual values.
 
 ## Example
 

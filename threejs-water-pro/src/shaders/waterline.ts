@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Waterline meniscus effect at the clip plane boundary.
  *
@@ -38,8 +41,8 @@ export class Waterline {
   private _highlightSharpness = uniform(3.0);
   private _highlightStrength = uniform(0.8);
   private _normalStrength = uniform(0.7);
-  private _smoothness = uniform(0.3);
-  private _thickness = uniform(0.5);
+  private _smoothness = uniform(0.1);
+  private _thickness = uniform(0.15);
 
   // ============= Public Getters/Setters =============
 

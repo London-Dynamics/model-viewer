@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import type { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { ShipController } from "./ShipController";
@@ -22,9 +25,7 @@ export class CameraController {
   // ship is driven with WASD. The orbit target follows the ship each frame.
   private readonly followSmoothness = 10;
   /** Initial camera placement (height, behind) when entering third person. */
-  private readonly thirdPersonOffset = new THREE.Vector3(0, 180, -390);
-  /** Clamp the orbit just above the waterline so the camera can't dip under. */
-  private readonly thirdPersonMaxPolar = (88 * Math.PI) / 180;
+  private readonly thirdPersonOffset = new THREE.Vector3(0, 12, -25);
 
   // Flight camera state
   private flightVelocity = new THREE.Vector3();
@@ -38,7 +39,7 @@ export class CameraController {
     e: false,
     shift: false,
   };
-  private readonly flightSpeed = 20; // Base movement speed (units/sec)
+  private readonly flightSpeed = 10; // Base movement speed (units/sec)
   private readonly flightSprintMultiplier = 3; // Speed multiplier when holding shift
   private readonly flightAcceleration = 2; // How quickly velocity responds to input
   private readonly flightDamping = 5; // How quickly velocity decays when no input
@@ -135,17 +136,16 @@ export class CameraController {
     // Free camera and third person both use OrbitControls for orbit + zoom.
     // Third person locks the orbit target to the ship and disables panning
     // (the target follows the ship every frame); free camera allows panning.
-    this.orbitControls.enabled = mode === "freeCamera" || mode === "thirdPerson";
+    this.orbitControls.enabled =
+      mode === "freeCamera" || mode === "thirdPerson";
 
     if (mode === "thirdPerson") {
       this.orbitControls.enablePan = false;
-      this.orbitControls.maxPolarAngle = this.thirdPersonMaxPolar;
       // Entering third person: snap to a behind-the-ship view so the user
       // isn't left wherever the previous mode's camera happened to be.
       if (prev !== "thirdPerson") this.placeBehindShip();
     } else if (mode === "freeCamera") {
       this.orbitControls.enablePan = true;
-      this.orbitControls.maxPolarAngle = Math.PI;
     }
 
     for (const listener of this.modeChangeListeners) {

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type { UIManager } from "../../UIManager";
 import type { Panel, Folder } from "../../SimpleUI";
 
@@ -17,36 +20,12 @@ export function createReflectionsFolder(
     key: "iorRatio",
   });
 
-  fresnelFolder.addSlider("Normal Strength", {
-    min: 0.0,
-    max: 1,
-    step: 0.01,
-    object: ui.water.fresnel,
-    key: "normalStrength",
-  });
-
   fresnelFolder.addSlider("Refraction Strength", {
     min: 0,
     max: 0.5,
     step: 0.01,
     object: ui.water.fresnel,
     key: "refractionStrength",
-  });
-
-  fresnelFolder.addSlider("Fade Start (m)", {
-    min: 0,
-    max: 2000,
-    step: 10,
-    object: ui.water.fresnel,
-    key: "fadeStart",
-  });
-
-  fresnelFolder.addSlider("Fade Power", {
-    min: 0.1,
-    max: 10,
-    step: 0.1,
-    object: ui.water.fresnel,
-    key: "fadePower",
   });
 
   const ssrFolder = folder.addFolder("Screen-Space Reflections", {

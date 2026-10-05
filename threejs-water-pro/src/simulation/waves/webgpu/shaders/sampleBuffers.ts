@@ -1,12 +1,16 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
- * Shared TSL helpers for sampling FFT cascade storage buffers from compute shaders.
+ * Shared TSL helpers for sampling FFT cascade GPU resources from compute shaders.
  *
  * These were previously inlined inside `WebGPUWaveSampler.createComputeShader()`.
  * Extracted so other compute passes (spray emission, debug visualizers, etc.) can
  * reuse the same coordinate logic without duplicating the math.
  */
 
-import { int } from "three/tsl";
+import { float, int, textureLevel, vec2 } from "three/tsl";
+import type * as THREE from "three/webgpu";
 import { sampleBufferBilinear, worldToPixelCoords } from "../../../../shaders/common";
 import type { FloatNode, Node, StorageBufferNode } from "../../../../shaders/types";
 
@@ -38,64 +42,33 @@ export function sampleDisplacementXYZ(
 }
 
 /**
- * Sample a surface normal from a cascade normal buffer at a world position.
- * Converts the buffer's `[0, 1]` encoding back to `[-1, 1]` normal space.
+ * Sample a surface normal from a cascade normal texture at explicit LOD 0.
+ * Converts the texture's `[0, 1]` encoding back to `[-1, 1]` normal space.
  *
- * Note: the normal buffer's `.w` channel carries the directional foam/Jacobian
- * signal (see `computeNormals.ts`). Use {@link sampleNormalFull} if you need it.
+ * The half-texel offset preserves the old storage-buffer convention, where an
+ * integer pixel coordinate addressed the center of that texel. Hardware
+ * filtering maps normalized coordinate `i / resolution` halfway between
+ * texels `i - 1` and `i`, so adding `0.5 / resolution` keeps query and legacy
+ * node results aligned with their former buffer path.
  *
  * @param worldX - World-space X coordinate.
  * @param worldZ - World-space Z coordinate.
- * @param buffer - Cascade normal storage buffer.
- * @param resolution - Buffer side length in texels (int node).
- * @param scale - Cascade world-space tile extent (float node).
+ * @param normalTexture - Filterable cascade normal texture.
+ * @param resolution - Texture side length in texels.
+ * @param scale - Cascade world-space tile extent.
  * @returns vec3 surface normal in world space.
  */
-export function sampleNormal(
+export function sampleNormalTexture(
   worldX: Node,
   worldZ: Node,
-  buffer: StorageBufferNode,
+  normalTexture: THREE.Texture,
   resolution: Node,
   scale: Node,
 ): Node {
-  const { px, py } = worldToPixelCoords(
-    worldX as FloatNode,
-    worldZ as FloatNode,
-    resolution,
-    scale,
+  const halfTexel = float(0.5).div(float(resolution));
+  const uv = vec2(
+    (worldX as FloatNode).div(scale).add(0.5).add(halfTexel),
+    (worldZ as FloatNode).div(scale).add(0.5).add(halfTexel),
   );
-  return sampleBufferBilinear(px, py, buffer, int(resolution)).xyz
-    .mul(2.0)
-    .sub(1.0);
-}
-
-/**
- * Sample the full vec4 from a cascade normal buffer at a world position.
- * Keeps `.xyz` in encoded `[0, 1]` space and passes `.w` through untouched
- * (directional foam / Jacobian signal: LOW = break, HIGH = calm).
- *
- * Use this when you need both the normal and the foam signal from a single
- * bilinear read.
- *
- * @param worldX - World-space X coordinate.
- * @param worldZ - World-space Z coordinate.
- * @param buffer - Cascade normal storage buffer.
- * @param resolution - Buffer side length in texels (int node).
- * @param scale - Cascade world-space tile extent (float node).
- * @returns Raw vec4 from the cascade normal buffer.
- */
-export function sampleNormalFull(
-  worldX: Node,
-  worldZ: Node,
-  buffer: StorageBufferNode,
-  resolution: Node,
-  scale: Node,
-): Node {
-  const { px, py } = worldToPixelCoords(
-    worldX as FloatNode,
-    worldZ as FloatNode,
-    resolution,
-    scale,
-  );
-  return sampleBufferBilinear(px, py, buffer, int(resolution));
+  return textureLevel(normalTexture, uv, int(0)).xyz.mul(2.0).sub(1.0);
 }

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Type definitions for the WaterSystem high-level API
  */
@@ -15,10 +18,14 @@ import type { WaveSample } from "./simulation/waves";
  */
 export interface WaterSystemConfig {
   quality: QualityLevel;
-  cascades: {
-    waves: { resolution: number; enabled: boolean };
-    ripples: { resolution: number; enabled: boolean };
-  };
+  /**
+   * Cascade resolutions, coarsest to finest, matching the currently loaded
+   * quality level's cascade count. Each entry's resolution is independently
+   * overridable — tile sizes are derived from `maxScale` and every entry's
+   * resolution up to that point (see `deriveCascadeScale`), so overriding
+   * one resolution only reshapes cascades after it in the array.
+   */
+  cascades: { resolution: number; enabled: boolean }[];
 }
 
 /**

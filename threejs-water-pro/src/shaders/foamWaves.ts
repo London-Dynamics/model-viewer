@@ -1,8 +1,14 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
- * Wave crest (turbulent) foam with Jacobian-driven wave breaking detection.
+ * Wave crest (turbulent) foam.
  *
- * Combines texture-based foam with anisotropic wind stretching and Jacobian
- * eigenvalue analysis for realistic whitecaps on wave crests.
+ * Shades the persistent foam-energy field through a dissolve-textured mask:
+ * lingering whitecaps that streak along the wind and break up into bubble
+ * patterns as their energy decays. The energy itself is produced upstream by
+ * the foam accumulation (breaking-crest injection + exponential decay); this
+ * class only turns that energy into the visible, anisotropically-stretched foam.
  *
  * Owns its own TSL uniform nodes. External code reads/writes parameters
  * through getters and setters; the shader graph binds to the private
@@ -16,18 +22,14 @@ import {
   If,
   smoothstep,
   clamp,
-  texture,
   uniform,
   cos,
   sin,
-  dot,
 } from "three/tsl";
-import type { Node } from "./types";
-import { createDefaultFoamTexture } from "./foamDefaults";
-import {
-  loadBuiltInFoamTexture,
-  type BuiltInFoamName,
-} from "./builtInFoamTextures";
+import type { Node, UniformFloatNode } from "./types";
+import { FoamPersistence, type FoamPersistenceParams } from "./foamPersistence";
+import { FoamTextureSlot } from "./foamTextureSlot";
+import type { BuiltInFoamName } from "./builtInFoamTextures";
 
 // Dissolve smoothstep parameters for the persistent wave foam.
 // Half-width = 0.3 (texture units). Band width = 2 × half-width = 0.6.
@@ -44,45 +46,34 @@ const DISSOLVE_ENERGY_SCALE = 1.6;
 export interface WaveFoamParams {
   /** Foam tint color (hex string). */
   color: string;
-  /** How much foam is visible (0–1). Higher = more foam. */
-  coverage: number;
-  /** How much foam appears on wave crests (0–1). Higher = more foam. */
-  crestCoverage: number;
   /** Whether wave foam is active. */
   enabled: boolean;
   /** Master opacity (0–1). */
   opacity: number;
-  /** Caps the maximum foam intensity (0–1). */
-  peakIntensity: number;
-  /** How much the ripple cascade contributes to foam (0–1). */
-  rippleWeight: number;
+  /** Persistent foam-energy field tuning (crest/decay/windward). */
+  persistence: FoamPersistenceParams;
   /** Texture size in world units (larger = bigger foam pattern). */
   size: number;
   /** Name of the bundled foam texture to use. */
   texture: BuiltInFoamName;
-  /** How much the wave cascade contributes to foam (0–1). */
-  waveWeight: number;
   /** Stretches foam in the wind direction for streaky whitecaps. 0 = round, 1 = fully stretched. */
   windStretch: number;
 }
 
 /** Parameters for {@link WaveFoam.build}. */
 export interface WaveFoamBuildParams {
-  /** Eigenvalue from wave cascade (1 = flat, <1 = compressed/folding). */
-  eigen0: Node;
-  /** Eigenvalue from ripple cascade. */
-  eigen1: Node;
   /**
-   * Persistent foam energy sampled from {@link FoamAccumulation}. When
-   * provided (WebGPU + persistentFoamBuffer quality), the build path
-   * returns the energy-buffer foam; otherwise it falls back to the
-   * stateless smoothstep mask used on WebGL.
+   * Persistent foam energy sampled from the foam-accumulation field. The
+   * crest-foam energy source; gated by `enabled`. Omitted on quality tiers
+   * where wave foam is off.
    */
   foamEnergy?: Node;
-  /** Whether Jacobian data is available (WebGL stateless path only). */
-  hasJacobianFoam: boolean;
-  /** Displaced surface normal (for WebGL leading edge detection). */
-  surfaceNormal: Node;
+  /**
+   * Persistent wake-foam energy sampled from the wake field. When provided, it
+   * is shaded through the same dissolve-textured path as crest foam and merged
+   * on top, so wake foam appears even when crest foam is off.
+   */
+  wakeFoamEnergy?: Node;
   /** Global wind direction (radians). */
   windDirection: Node;
   /** Undisplaced world X coordinate. */
@@ -100,7 +91,7 @@ export interface WaveFoamResult {
 }
 
 /**
- * Wave crest (turbulent) foam with Jacobian-driven wave breaking.
+ * Wave crest (turbulent) foam shaded from the persistent foam-energy field.
  *
  * Owns its own TSL uniform nodes. External code reads/writes parameters
  * through getters and setters; the shader graph binds to the private
@@ -109,22 +100,23 @@ export interface WaveFoamResult {
 export class WaveFoam {
   // ============= Private Uniforms =============
   private _color = uniform(new THREE.Color(0xffffff));
-  private _coverage = uniform(0.5);
-  private _crestCoverage = uniform(0.5);
   private _enabled = uniform(1.0);
   private _opacity = uniform(0.5);
-  private _peakIntensity = uniform(1.0);
-  private _rippleWeight = uniform(1.0);
-  private _size = uniform(100.0);
-  private _texture = texture(createDefaultFoamTexture());
-  private _waveWeight = uniform(1.0);
+  private _size = uniform(12.0);
+  private _texture = new FoamTextureSlot();
   // Hardcoded to 1.0: leading-edge gating in `computeNormals.ts` is now
-  // exclusively the persistent foam's job. The `windwardStrength` uniform
-  // on FoamAccumulation gives the user control over windward injection
-  // strength directly. Kept as a uniform node so existing TSL bindings
-  // (computeNormals, stateless WebGL foam) don't need rewiring.
+  // exclusively the persistent foam's job. The `windwardStrength` foam
+  // uniform gives the user control over windward injection strength
+  // directly. Kept as a uniform node so the simulation's Jacobian/leading-edge
+  // binding (computeNormals) doesn't need rewiring.
   private _windBias = uniform(1.0);
   private _windStretch = uniform(0.5);
+
+  // ============= Owned Subobjects =============
+  // The persistent energy field's tuning lives here so the runtime path
+  // (`water.foam.waves.persistence`) matches the preset's `foam.waves.persistence`.
+  // The foam-field inject pass binds these same uniform nodes by reference.
+  private _persistence = new FoamPersistence();
 
   // ============= Public Getters/Setters =============
 
@@ -135,24 +127,6 @@ export class WaveFoam {
 
   set color(value: THREE.Color | string) {
     this._color.value = new THREE.Color(value);
-  }
-
-  /** How much foam is visible (0–1). Higher = more foam. */
-  get coverage(): number {
-    return this._coverage.value;
-  }
-
-  set coverage(value: number) {
-    this._coverage.value = value;
-  }
-
-  /** How much foam appears on wave crests (0–1). Higher = more foam. */
-  get crestCoverage(): number {
-    return this._crestCoverage.value;
-  }
-
-  set crestCoverage(value: number) {
-    this._crestCoverage.value = value;
   }
 
   /** Whether wave foam is active. */
@@ -173,24 +147,6 @@ export class WaveFoam {
     this._opacity.value = value;
   }
 
-  /** Caps the maximum foam intensity (0–1). */
-  get peakIntensity(): number {
-    return this._peakIntensity.value;
-  }
-
-  set peakIntensity(value: number) {
-    this._peakIntensity.value = value;
-  }
-
-  /** How much the ripple cascade contributes to foam (0–1). */
-  get rippleWeight(): number {
-    return this._rippleWeight.value;
-  }
-
-  set rippleWeight(value: number) {
-    this._rippleWeight.value = value;
-  }
-
   /** Texture size in world units (larger = bigger foam pattern). */
   get size(): number {
     return this._size.value;
@@ -198,15 +154,6 @@ export class WaveFoam {
 
   set size(value: number) {
     this._size.value = value;
-  }
-
-  /** How much the wave cascade contributes to foam (0–1). */
-  get waveWeight(): number {
-    return this._waveWeight.value;
-  }
-
-  set waveWeight(value: number) {
-    this._waveWeight.value = value;
   }
 
   /** Stretches foam in the wind direction for streaky whitecaps. */
@@ -227,6 +174,15 @@ export class WaveFoam {
     this._texture.value = value;
   }
 
+  /**
+   * Persistent foam-energy tuning (crest/decay/windward), surfaced as
+   * `water.foam.waves.persistence`. Always present — the energy field that
+   * consumes these may be absent on a tier, but the parameters are not.
+   */
+  get persistence(): FoamPersistence {
+    return this._persistence;
+  }
+
   // ============= Internal Accessors =============
 
   /** @internal TSL uniform node for wind bias — used by simulation Jacobian computation. */
@@ -234,197 +190,76 @@ export class WaveFoam {
     return this._windBias;
   }
 
+  /** @internal Wave-foam enable node — read by the foam field for its CPU-side gate. */
+  get _enabledNode(): UniformFloatNode {
+    return this._enabled;
+  }
+
   // ============= Public Methods =============
 
   /** Bulk-set parameters from a preset or params object. */
   update(params: WaveFoamParams): void {
     this.color = params.color;
-    this.coverage = params.coverage;
-    this.crestCoverage = params.crestCoverage;
     this.enabled = params.enabled;
     this.opacity = params.opacity;
-    this.peakIntensity = params.peakIntensity;
-    this.rippleWeight = params.rippleWeight;
     this.size = params.size;
-    this.waveWeight = params.waveWeight;
     this.windStretch = params.windStretch;
-    this.foamTexture = loadBuiltInFoamTexture(params.texture);
+    void this._texture.load(params.texture);
+    this._persistence.update(params.persistence);
   }
 
   /**
-   * Builds turbulent foam with Jacobian wave breaking and leading edge detection.
+   * Switch to a bundled foam texture by name, leaving every other parameter
+   * untouched — notably the persistence tuning. Use this for an isolated
+   * texture change; {@link foamTexture} binds a caller-owned texture instead.
+   */
+  loadTexture(name: BuiltInFoamName): void {
+    void this._texture.load(name);
+  }
+
+  /**
+   * Builds wave-crest foam from the persistent energy field. Crest energy is
+   * gated by `enabled`; wake energy (owned by the wake system) always
+   * contributes, so wake foam appears even when crest foam is off.
    *
-   * @param params - World coordinates, texture, eigenvalues, wind, and surface normal.
+   * @param params - World coordinates, energies, and wind direction.
    * @returns Foam strength and color nodes.
    */
   build(params: WaveFoamBuildParams): WaveFoamResult {
-    const {
-      worldX,
-      worldZ,
-      eigen0,
-      eigen1,
-      windDirection,
-      surfaceNormal,
-      hasJacobianFoam,
-      foamEnergy,
-    } = params;
+    const { worldX, worldZ, windDirection, foamEnergy, wakeFoamEnergy } = params;
 
     const strength = float(0.0).toVar();
 
-    If(this._enabled.greaterThan(0.5), () => {
-      if (foamEnergy !== undefined) {
-        // WebGPU path: persistent accumulation buffer is the only source of
-        // wave-crest foam. Toggling persistence off zeroes the buffer, so
-        // no runtime branch is needed here — disabled === zero energy.
-        const persistentFoam = this.calculatePersistentFoam(
-          worldX,
-          worldZ,
-          foamEnergy,
-          windDirection,
-        );
-        strength.assign(clamp(persistentFoam, 0.0, 1.0));
-        return;
-      }
-
-      // WebGL fallback: no compute support, so the stateless Jacobian +
-      // leading-edge path stands in for the accumulation buffer.
-      strength.assign(
-        this.buildStatelessFoam(
-          worldX,
-          worldZ,
-          eigen0,
-          eigen1,
-          windDirection,
-          surfaceNormal,
-          hasJacobianFoam,
-        ),
-      );
-    });
-
-    return { strength, color: vec3(this._color) };
-  }
-
-  /**
-   * Stateless wave-crest foam: Jacobian mask + leading-edge smoothstep +
-   * anisotropic texture sample. Used on WebGL, below the `persistentFoamBuffer`
-   * quality tier, and whenever the user toggles persistence off at runtime.
-   *
-   * @param worldX - Undisplaced world X.
-   * @param worldZ - Undisplaced world Z.
-   * @param eigen0 - Wave cascade eigenvalue.
-   * @param eigen1 - Ripple cascade eigenvalue.
-   * @param windDirection - Global wind direction (radians).
-   * @param surfaceNormal - Displaced surface normal for leading-edge detection.
-   * @param hasJacobianFoam - Whether Jacobian data is available.
-   */
-  private buildStatelessFoam(
-    worldX: Node,
-    worldZ: Node,
-    eigen0: Node,
-    eigen1: Node,
-    windDirection: Node,
-    surfaceNormal: Node,
-    hasJacobianFoam: boolean,
-  ): Node {
-    let jacobianValue: Node = float(0.0);
-    if (hasJacobianFoam) {
-      jacobianValue = this.buildJacobian(eigen0, eigen1);
+    if (foamEnergy !== undefined && wakeFoamEnergy !== undefined) {
+      // Crest and wake foam share the same dissolve-textured shading, and that
+      // shading is monotonic in energy, so merging the two energies and shading
+      // once is identical to shading each and taking the max — one foam-texture
+      // sample per fragment instead of two.
+      const mergedEnergy = foamEnergy.mul(this._enabled).max(wakeFoamEnergy);
+      const foam = this.calculatePersistentFoam(worldX, worldZ, mergedEnergy, windDirection);
+      strength.assign(clamp(foam, 0.0, 1.0));
+    } else if (foamEnergy !== undefined) {
+      // Crest only — guard the texture sample so it's skipped when foam is off.
+      If(this._enabled.greaterThan(0.5), () => {
+        const foam = this.calculatePersistentFoam(worldX, worldZ, foamEnergy, windDirection);
+        strength.assign(clamp(foam, 0.0, 1.0));
+      });
+    } else if (wakeFoamEnergy !== undefined) {
+      // No crest field for this tier; wake foam still shades through the same path.
+      const foam = this.calculatePersistentFoam(worldX, worldZ, wakeFoamEnergy, windDirection);
+      strength.assign(clamp(foam, 0.0, 1.0));
     }
 
-    const windDirX = cos(windDirection);
-    const windDirZ = sin(windDirection);
-    const normalDotWind = dot(
-      vec2(surfaceNormal.x, surfaceNormal.z),
-      vec2(windDirX, windDirZ),
-    );
-    const leadingEdgeFactor = smoothstep(0.0, 0.3, normalDotWind);
-
-    const foamMask = clamp(
-      jacobianValue.add(leadingEdgeFactor.mul(this._windBias)),
-      0.0,
-      1.0,
-    );
-
-    const rawTurbulentFoam = this.calculateTurbulentFoam(
-      worldX,
-      worldZ,
-      jacobianValue,
-      windDirection,
-    );
-
-    return clamp(rawTurbulentFoam.mul(foamMask), 0.0, this._peakIntensity);
+    return { strength, color: vec3(this._color) };
   }
 
   // ============= Private Helpers =============
 
   /**
-   * Computes Jacobian value from eigenvalues for wave breaking detection.
-   *
-   * @param eigen0 - Eigenvalue from wave cascade.
-   * @param eigen1 - Eigenvalue from ripple cascade.
-   */
-  private buildJacobian(eigen0: Node, eigen1: Node): Node {
-    const foldingAmount = clamp(
-      float(1.0)
-        .sub(eigen0)
-        .mul(this._waveWeight)
-        .add(float(1.0).sub(eigen1).mul(this._rippleWeight)),
-      0.0,
-      1.0,
-    );
-
-    const derivedThreshold = float(0.5).mul(
-      float(1.0).sub(this._crestCoverage),
-    );
-    const derivedSoftness = float(0.2);
-
-    return smoothstep(
-      derivedThreshold,
-      derivedThreshold.add(derivedSoftness),
-      foldingAmount,
-    );
-  }
-
-  /**
-   * Calculates turbulent foam with anisotropic stretching along wind direction.
-   */
-  private calculateTurbulentFoam(
-    worldX: Node,
-    worldZ: Node,
-    jacobianValue: Node,
-    windDirection: Node,
-  ): Node {
-    const baseUV = vec2(worldX.div(this._size), worldZ.div(this._size));
-
-    const stretchedUV = this.calculateAnisotropicUV(
-      baseUV,
-      windDirection,
-      this._windStretch,
-    );
-
-    const foamIntensity = this._texture.sample(stretchedUV).r;
-
-    const baseThreshold = float(1.0).sub(this._coverage);
-    const effectiveThreshold = clamp(
-      baseThreshold.sub(jacobianValue.mul(this._crestCoverage)),
-      0.0,
-      1.0,
-    );
-
-    const alphaMask = smoothstep(
-      effectiveThreshold,
-      effectiveThreshold.add(0.15),
-      foamIntensity,
-    );
-
-    return foamIntensity.mul(alphaMask).mul(this._opacity);
-  }
-
-  /**
    * Dissolve-style mask for the persistent wave foam.
    *
    * The foam texture is the visible value (so the bubble pattern shows
-   * through inside the foam patches). The persistent buffer drives a
+   * through inside the foam patches). The persistent energy drives a
    * smoothstep threshold over the texture: as energy decays the threshold
    * rises through the texture's histogram, clipping out dark pixels first
    * — so patches dissolve into islands of bright bubbles instead of fading
@@ -449,7 +284,7 @@ export class WaveFoam {
       windDirection,
       this._windStretch,
     );
-    const foamTexValue = this._texture.sample(stretchedUV).r;
+    const foamTexValue = this._texture.node.sample(stretchedUV).r;
 
     const energy = (foamEnergy as Node).max(float(0.0));
     const threshold = float(1.0).sub(energy.mul(DISSOLVE_ENERGY_SCALE));

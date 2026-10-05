@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import {
   instanceIndex,
   ivec2,
@@ -24,12 +27,9 @@ export interface NormalsShaderParams {
   foamWindBias: TSLUniformNode;
   cascade: CascadeSimulationUniforms;
   displacementBuffer: TSLBuffer;
-  normalBuffer: TSLBuffer;
   /**
-   * StorageTexture mirror of `normalBuffer`. Each thread writes the same
-   * packed vec4 to both — compute consumers read from the buffer, fragment
-   * consumers sample the texture via hardware bilinear. The mirror is
-   * cheap: one extra texture write per texel per frame.
+   * Authoritative RGBA16F normal/folding texture. All compute and fragment
+   * consumers sample it through the filterable texture path.
    */
   normalTexture: THREE.StorageTexture;
   resolution: number;
@@ -46,7 +46,6 @@ export const createNormalsShader = ({
   foamWindBias,
   cascade,
   displacementBuffer,
-  normalBuffer,
   normalTexture,
   resolution,
 }: NormalsShaderParams) => {
@@ -74,13 +73,12 @@ export const createNormalsShader = ({
     const dispUp = displacementBuffer.element(idxUp);
     const dispDown = displacementBuffer.element(idxDown);
 
-    // Calculate gradients for all displacement components using central finite differences
-    // Physical grid spacing: dx = effectiveScale / resolution
-    // effectiveScale = scale * resolution / 256 (normalized for resolution-independent wavelengths)
-    // Central difference uses 2 pixels: (f[i+1] - f[i-1]) / (2·dx)
-    const baseRes = float(256.0);
-    const effectiveScale = cascade.scale.mul(res.toFloat()).div(baseRes);
-    const gridSpacing = effectiveScale.div(res);
+    // Calculate gradients for all displacement components using central finite differences.
+    // Physical grid spacing dx = scale / resolution: the tile size is the
+    // cascade's world-space scale (matches spectrum.ts), so higher resolution
+    // shrinks the spacing and resolves finer wave slopes. Central difference uses
+    // 2 pixels: (f[i+1] - f[i-1]) / (2·dx).
+    const gridSpacing = cascade.scale.div(res.toFloat());
 
     // Gradients in X direction (horizontal)
     const dDx_dx = dispRight.x.sub(dispLeft.x).div(gridSpacing.mul(2.0));
@@ -183,17 +181,14 @@ export const createNormalsShader = ({
     const directionalEigenvalue = float(1.0).sub(directionalFolding);
 
     // Store normal (convert from [-1,1] to [0,1]) + directional eigenvalue
-    // in alpha for foam calculation. Mirror the same vec4 into both the
-    // storage buffer (read by compute consumers: foam inject, wave sampler
-    // readback) and the storage texture (sampled by fragment-side consumers
-    // via hardware bilinear: cascade sampler, caustics, sun shafts).
+    // in alpha for foam calculation. The filterable RGBA16F storage texture is
+    // the single normal source for compute and fragment consumers.
     const packed = vec4(
       normal.x.mul(0.5).add(0.5),
       normal.y.mul(0.5).add(0.5),
       normal.z.mul(0.5).add(0.5),
       directionalEigenvalue,
     );
-    normalBuffer.element(idx).assign(packed);
     textureStore(normalTexture, ivec2(x, y), packed).toWriteOnly();
   })().compute(resolution * resolution);
 };

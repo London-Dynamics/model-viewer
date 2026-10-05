@@ -8,6 +8,12 @@ export declare class WaveUniforms {
     windSpeed: THREE.UniformNode<number>;
     windDirection: THREE.UniformNode<number>;
     choppiness: THREE.UniformNode<number>;
+    /**
+     * Dominant wavelength in meters — the JONSWAP spectral peak (Hasselmann
+     * et al. 1973). Sets wave size directly; `windSpeed` controls energy and
+     * steepness at that size, independently.
+     */
+    peakWavelength: THREE.UniformNode<number>;
     gravity: THREE.UniformNode<number>;
     jonswapGamma: THREE.UniformNode<number>;
     /**
@@ -16,18 +22,14 @@ export declare class WaveUniforms {
      * above 1 narrow waves toward the wind direction, below 1 broaden them.
      */
     spectralSharpness: THREE.UniformNode<number>;
+    /**
+     * Blend between traveling waves (0) and standing waves (1). Wind
+     * directional bias only applies to the traveling portion, so the spectrum
+     * becomes more omnidirectional as this increases.
+     */
     standingWaveRatio: THREE.UniformNode<number>;
     /** Set when any uniform changes. Consumers clear after reinit. */
     dirty: boolean;
-    /**
-     * Set when a parameter that affects the Phillips·JONSWAP 2D energy integrand
-     * (`windSpeed`, `gravity`, `jonswapGamma`, `spectralSharpness`,
-     * `standingWaveRatio`) changes. The cascade band assignment runs an init-time
-     * numerical integral that depends on these — gating it on `bandDirty` instead
-     * of `dirty` keeps slider drags on unrelated params (choppiness, direction,
-     * amplitude) from paying the JS-side recompute cost.
-     */
-    bandDirty: boolean;
     update(params: WaveUniformParams): void;
 }
 export declare class SunUniforms {
@@ -44,29 +46,23 @@ export declare class SunUniforms {
 export declare class CascadeSimulationUniforms {
     resolution: THREE.UniformNode<number>;
     scale: THREE.UniformNode<number>;
-    amplitudeScale: THREE.UniformNode<number>;
     /**
-     * Lower edge of the wavenumber band this cascade owns (rad/m). Energy
-     * below this is smoothly attenuated to zero so adjacent cascades partition
-     * the spectrum without overlap. Tiny non-zero default keeps the shader's
-     * `smoothstep(kLo, kLo·1.5, k)` well-defined before assignCascadeBands writes
-     * a real value.
+     * Lower edge of this cascade's wavenumber band (rad/m). The spectrum shader
+     * cross-fades spectral density over [kBandLow/1.5, kBandLow·1.5] with a
+     * weight complementary to the previous cascade's high edge, so adjacent
+     * cascades partition the spectrum without loss or double-counting. The
+     * default is the "no low edge" sentinel used by the first cascade (see
+     * cascadeBands.ts).
      */
     kBandLow: THREE.UniformNode<number>;
     /**
-     * Upper edge of the wavenumber band this cascade owns (rad/m). The smooth
-     * cutoff between `kBandHigh/1.5` and `kBandHigh` also serves as anti-alias
-     * roll-off near the cascade's Nyquist limit. Large default acts as
-     * "unbounded" until assignCascadeBands writes a real value.
+     * Upper edge of this cascade's wavenumber band (rad/m). For inner cascades
+     * this is the seam shared with the next cascade's `kBandLow`; for the last
+     * cascade, assignCascadeBands places it at kNyquist/1.5 so the cross-fade
+     * reaches zero exactly at the Nyquist limit (anti-alias roll-off). Large
+     * default acts as "unbounded" until assignCascadeBands writes a real value.
      */
     kBandHigh: THREE.UniformNode<number>;
-    /**
-     * Init-time amplitude scaling that compensates for energy removed by the
-     * k-band window, so each cascade's total displacement variance matches
-     * the un-banded integral over its full [kFundamental, kNyquist] range.
-     * Recomputed whenever scale/resolution/windSpeed/gravity change.
-     */
-    bandAmplitudeCompensation: THREE.UniformNode<number>;
     foamLeadingEdgeScale: THREE.UniformNode<number>;
     time: THREE.UniformNode<number>;
     deltaTime: THREE.UniformNode<number>;
@@ -74,8 +70,8 @@ export declare class CascadeSimulationUniforms {
     fftDirection: THREE.UniformNode<number>;
     fftComponent: THREE.UniformNode<number>;
     randomSeed: THREE.UniformNode<number>;
-    init(resolution: number, scale: number, amplitudeScale: number): void;
-    updateCascadeConfig(scale: number, amplitudeScale: number): void;
+    init(resolution: number, scale: number): void;
+    setScale(scale: number): void;
 }
 /**
  * Ocean floor displacement uniforms (FBM terrain variation)

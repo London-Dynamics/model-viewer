@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import {
   Fn,
@@ -178,7 +181,7 @@ function createRenderTarget(width: number, height: number): THREE.RenderTarget {
     magFilter: THREE.NearestFilter,
     type: THREE.HalfFloatType,
     format: THREE.RGBAFormat,
-    depthBuffer: true,
+    depthBuffer: false,
   });
 }
 

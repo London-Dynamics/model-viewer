@@ -10,21 +10,18 @@
  * initial enabled/disabled state — users can override individual features
  * at runtime without triggering a shader recompile.
  */
-export type QualityLevel = "low" | "medium" | "high" | "ultra";
+export type QualityLevel = "low" | "medium" | "high" | "ultra" | "max";
 /**
  * Complete quality level configuration including features and cascades.
  */
 export interface QualityLevelConfig {
     segments: number;
-    gerstnerMaxWaves: number;
     features: {
         readonly displacement: true;
         readonly normals: true;
         readonly fresnel: true;
         readonly reflection: true;
         readonly waterColor: true;
-        jacobianFoam: boolean;
-        persistentFoamBuffer: boolean;
         surfaceFoam: boolean;
         turbulentFoam: boolean;
         shorelineFoam: boolean;
@@ -35,13 +32,14 @@ export interface QualityLevelConfig {
         domainWarpedFoam: boolean;
         ssr: boolean;
     };
-    sceneColorResolutionScale: number;
     sunShaftResolutionScale: number;
     ssrMaxDistance: number;
     ssrStepCount: number;
     wakeEnabled: boolean;
     wakeResolution: number;
     wakeWorldSize: number;
+    foamFieldResolution: number;
+    foamFieldWorldSize: number;
     sprayMaxParticles: number;
     sprayEnabledByDefault: boolean;
     cascades: {
@@ -52,19 +50,25 @@ export interface QualityLevelConfig {
 /**
  * Quality level configurations.
  *
- * LOW: Essential ocean rendering - waves only, core effects
- * MEDIUM: Good quality - waves + ripples, all core effects
- * HIGH: Full quality - all cascades, underwater effects
- * ULTRA: Maximum quality - highest resolution FFT
+ * LOW: Swell only - core effects
+ * MEDIUM: Swell + wind waves - all core effects
+ * HIGH: Swell + wind waves + ripples - underwater effects
+ * ULTRA: Same three cascades as High, with a sharper ripple cascade
+ * MAX: Three 512 grids with sharper swell/waves and a smaller ripple tile
  *
- * Cascade order: [waves, ripples] - largest to smallest scale.
- * Gerstner waves provide large-scale swells analytically (no FFT cascade needed).
+ * Cascade order: [swell, waves, ripples] - largest to smallest scale (swell
+ * is the longest-wavelength, longest-period component; wind-driven waves
+ * are next; ripples are the finest capillary detail). Quality adds cascades
+ * progressively through High rather than lowering their resolution. Ultra
+ * doubles ripples to 512. Max doubles swell and waves as well, shrinking the
+ * derived wave and ripple tiles to 48 m and 2.25 m. Its 512 ripple grid
+ * therefore restores a terminal detail floor of about 1.3 cm.
  *
- * Cascade resolution by level:
- * - LOW: 128 (waves only)
- * - MEDIUM: 128/256 (waves + ripples)
- * - HIGH: 256/256 (waves + ripples, higher res)
- * - ULTRA: 256/512 (waves + ripples, highest res)
+ * Tile sizes and seams below assume the default `maxScale` of 1024 m (see
+ * `deriveCascadeScale`). `maxScale` is a runtime-adjustable wave parameter,
+ * not a fixed constant — a larger value shifts every number below
+ * proportionally and can push the dominant wavelength out of a lower tier's
+ * coverage. See the cascade section of `docs/api/waves.md`.
  */
 export declare const QUALITY_LEVELS: Record<QualityLevel, QualityLevelConfig>;
 /**

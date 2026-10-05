@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Persists demo params to `localStorage` so user edits survive a page
  * refresh. The store does not know about preset shape — it just deep-merges
@@ -10,6 +13,8 @@ export class ParamsStore<T extends object> {
     private readonly _params: T,
     /** Called once per autosave tick to fold live shader values back into params. */
     private readonly _onBeforeSave?: () => void,
+    /** Optional schema-aware merge used when restoring a saved snapshot. */
+    private readonly _merge: (target: T, source: unknown) => void = deepMerge,
   ) {}
 
   /**
@@ -21,7 +26,7 @@ export class ParamsStore<T extends object> {
       const saved = localStorage.getItem(this._storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        deepMerge(this._params, parsed);
+        this._merge(this._params, parsed);
       }
     } catch {
       // Ignore corrupt localStorage data
@@ -48,6 +53,7 @@ export class ParamsStore<T extends object> {
  * Recursively merges plain-object source values into target. Arrays and
  * primitives at the source override the target value. Keys present on
  * source but absent on target are skipped — the schema is owned by target.
+ *
  */
 export function deepMerge(target: unknown, source: unknown): void {
   const t = target as Record<string, unknown>;

@@ -9,9 +9,9 @@ export { MAX_SAMPLE_POINTS } from "../IWaveSampler";
  * WebGPU wave sampler using GPU compute shaders.
  * Samples water height and surface normals at arbitrary world positions.
  *
- * Both FFT cascade displacement/normals and Gerstner wave displacement/normals
- * are evaluated on the GPU in the compute shader, including the inverse
- * position solve for horizontal displacement correction.
+ * FFT cascade displacement/normals are evaluated on the GPU in the compute
+ * shader, including the inverse position solve for horizontal displacement
+ * correction.
  */
 export declare class WebGPUWaveSampler implements IWaveSampler {
     private renderer;
@@ -22,7 +22,6 @@ export declare class WebGPUWaveSampler implements IWaveSampler {
     private outputBufferNode;
     private sampleCountUniform;
     private cascadeUniforms;
-    private gerstnerMaxWaves;
     private computeNode;
     private cachedResults;
     private currentSampleCount;

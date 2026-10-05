@@ -1,5 +1,10 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import { version } from "./package.json";
+
+// Legal-comment banner (/*! */) survives minification, so the shipped
+// artifact always carries a copyright/license notice (see LICENSE.md §4.4).
+const banner = `/*! Three.js Water Pro v${version} | © 2025–2026 DRG Software Solutions LLC | Proprietary — licensed, not sold. See LICENSE.md */`;
 
 export default defineConfig({
   build: {
@@ -25,6 +30,7 @@ export default defineConfig({
         globals: {
           three: "THREE",
         },
+        banner,
       },
     },
     sourcemap: true,

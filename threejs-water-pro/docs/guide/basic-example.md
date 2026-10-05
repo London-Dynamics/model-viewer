@@ -19,27 +19,34 @@ cd my-ocean-project
 ### Step 2: Install Three.js
 
 ```bash
-npm install three@^0.181.0
-npm install --save-dev @types/three@^0.181.0
+npm install three@^0.183.0
+npm install --save-dev @types/three@^0.183.0
 ```
 
 ### Step 3: Add the Library
 
 1. Unzip `threejs-water-pro.zip` into your root directory.
 
-2. Create a `threejs-water-pro` sub-directory within your `src` directory.
+2. In the unzipped package, install dependencies and build the library:
 
-3. Copy the contents of the `build` directory into the directory you just created.
+```bash
+npm install
+npm run build:lib
+```
 
-4. Your file structure should look something like this:
+3. Create a `threejs-water-pro` sub-directory within your `src` directory.
+
+4. Copy the contents of the `build` directory into the directory you just created.
+
+5. Your file structure should look something like this:
 
 ```
 my-ocean-project/
 ├── src/
-│   └── threejs-water-pro/
-│       ├── index.js      ← Main library bundle
-│       ├── index.js.map  ← Source map
-│       └── index.d.ts    ← TypeScript declarations
+│   ├── threejs-water-pro/
+│   │   ├── index.js      ← Main library bundle
+│   │   ├── index.js.map  ← Source map
+│   │   └── index.d.ts    ← TypeScript declarations
 │   └── main.ts
 ├── index.html
 └── package.json
@@ -86,7 +93,6 @@ import * as THREE from "three/webgpu";
 import { pass } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { UltraHDRLoader } from "three/addons/loaders/UltraHDRLoader.js";
 import { WaterSystem, Sky, getPresetParams } from "./threejs-water-pro";
 
 function setupPostProcessing(
@@ -139,16 +145,14 @@ async function main() {
   const water = await WaterSystem.create(renderer, scene, camera, "high");
   water.loadPreset(preset);
 
-  // Load an equirectangular HDRI for the sky
-  const loader = new UltraHDRLoader();
+  // Load an equirectangular sky image
+  const loader = new THREE.TextureLoader();
   const equirect = await loader.loadAsync("sky.jpg");
   equirect.mapping = THREE.EquirectangularReflectionMapping;
   equirect.wrapS = THREE.RepeatWrapping;
-  equirect.generateMipmaps = false;
-  equirect.minFilter = THREE.LinearFilter;
-  equirect.magFilter = THREE.LinearFilter;
+  equirect.colorSpace = THREE.SRGBColorSpace;
 
-  const sky = new Sky({
+  const sky = new Sky(renderer, {
     equirect,
     sunDirection: water.lighting.sun.direction,
   });
@@ -212,7 +216,7 @@ main();
 ```
 
 ::: tip Sky image
-This example loads an equirectangular HDRI named `sky.jpg` from your project root — supply your own. Free ones are available at [Polyhaven](https://polyhaven.com/hdris) (download the "JPG" / UltraHDR variant to match `UltraHDRLoader`). The water still renders without it, but reflections and atmospheric fog read from the sky.
+This example loads an equirectangular sky image named `sky.jpg` from your project root; supply your own. Free skies are available at [Polyhaven](https://polyhaven.com/hdris) (download the "JPG" variant; `TextureLoader` reads an UltraHDR JPG as its SDR base image). The water still renders without a sky, but reflections and atmospheric fog read from it.
 :::
 
 ### Step 6: Run the Project
@@ -245,9 +249,16 @@ my-ocean-project/
 
 1. Unzip `threejs-water-pro.zip`
 
-2. Copy `build/index.js` into your `lib` folder.
+2. In the unzipped package, install dependencies and build the library:
 
-3. _Optional_: If you want source maps, also copy `build/index.js.map` into your `lib` folder.
+```bash
+npm install
+npm run build:lib
+```
+
+3. Copy `build/index.js` into your `lib` folder.
+
+4. _Optional_: If you want source maps, also copy `build/index.js.map` into your `lib` folder.
 
 ### Step 3: Create index.html
 
@@ -279,10 +290,10 @@ Three.js Water Pro uses Three.js as a dependency. You will need to import Three.
     <script type="importmap">
       {
         "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.181.0/build/three.webgpu.min.js",
-          "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.181.0/build/three.webgpu.min.js",
-          "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.181.0/build/three.tsl.min.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.181.0/examples/jsm/"
+          "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.min.js",
+          "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.webgpu.min.js",
+          "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.tsl.min.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
         }
       }
     </script>
@@ -300,7 +311,6 @@ import * as THREE from "three/webgpu";
 import { pass } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { UltraHDRLoader } from "three/addons/loaders/UltraHDRLoader.js";
 import { WaterSystem, Sky, getPresetParams } from "../lib/index.js";
 
 function setupPostProcessing(renderer, water) {
@@ -350,16 +360,14 @@ async function main() {
   const water = await WaterSystem.create(renderer, scene, camera, "high");
   water.loadPreset(preset);
 
-  // Load an equirectangular HDRI for the sky
-  const loader = new UltraHDRLoader();
+  // Load an equirectangular sky image
+  const loader = new THREE.TextureLoader();
   const equirect = await loader.loadAsync("sky.jpg");
   equirect.mapping = THREE.EquirectangularReflectionMapping;
   equirect.wrapS = THREE.RepeatWrapping;
-  equirect.generateMipmaps = false;
-  equirect.minFilter = THREE.LinearFilter;
-  equirect.magFilter = THREE.LinearFilter;
+  equirect.colorSpace = THREE.SRGBColorSpace;
 
-  const sky = new Sky({
+  const sky = new Sky(renderer, {
     equirect,
     sunDirection: water.lighting.sun.direction,
   });
@@ -423,7 +431,7 @@ main();
 ```
 
 ::: tip Sky image
-This example loads an equirectangular HDRI named `sky.jpg` — supply your own (e.g. from [Polyhaven](https://polyhaven.com/hdris), the "JPG" / UltraHDR variant) and place it where your server can reach it. The water still renders without it, but reflections and atmospheric fog read from the sky.
+This example loads an equirectangular sky image named `sky.jpg`; supply your own (for example, a "JPG" download from [Polyhaven](https://polyhaven.com/hdris)) and place it where your server can reach it. The water still renders without a sky, but reflections and atmospheric fog read from it.
 :::
 
 ### Step 5: Serve the Files

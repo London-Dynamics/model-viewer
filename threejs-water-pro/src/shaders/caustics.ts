@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Caustics shader for ocean floor lighting effects.
  *
@@ -7,9 +10,7 @@
  * that mimic real water caustics. Wave simulation normals distort the
  * UVs so the pattern swims in sync with wave motion.
  *
- * Supports two wave data sources (selected at build time):
- * - **Storage buffers** (WebGPU): Bilinear interpolation on storage buffer.
- * - **Textures** (WebGL): UV-tiled texture sampling.
+ * Wave normals are sampled from the simulation's shared normal texture.
  */
 import * as THREE from "three/webgpu";
 import {
@@ -17,39 +18,28 @@ import {
   clamp,
   cos,
   float,
-  floor,
   fract,
   Fn,
   If,
+  int,
   mix,
   positionWorld,
   sin,
   texture,
+  textureLevel,
   uniform,
   vec2,
   vec3,
   pow,
 } from "three/tsl";
 import type { TextureNode } from "three/webgpu";
-import type { Node, StorageBufferNode, TSLBuffer } from "../types/tsl";
+import type { Node } from "../types/tsl";
 import { createVoronoiTexture } from "./voronoiData";
-
-/** Options for {@link Caustics.setWaveBuffers}. */
-export interface WaveCausticsBufferOptions {
-  /** Normal buffer from wave simulation. */
-  normalBuffer: TSLBuffer;
-  /** Buffer resolution in texels. */
-  resolution: number;
-  /** World-space scale of the buffer. */
-  scale: number;
-}
 
 /** Options for {@link Caustics.setWaveTexture}. */
 export interface WaveCausticsTextureOptions {
-  /** Normal texture from wave simulation (WebGL render target). */
+  /** Normal texture from the wave simulation. */
   normalTexture: THREE.Texture;
-  /** Texture resolution in texels. */
-  resolution: number;
   /** World-space scale of the cascade. */
   scale: number;
 }
@@ -80,8 +70,8 @@ export class Caustics {
   private _depthAttenuation = uniform(0.4);
   private _enabled = uniform(1.0);
   private _intensity = uniform(0.61);
-  private _scale = uniform(65.0);
-  private _waterSize = uniform(400.0);
+  private _scale = uniform(7.5);
+  private _waterSize = uniform(20.0);
   private _waveDistortion = uniform(0.2);
 
   // Shared reference to the wave system's wind direction (radians)
@@ -91,9 +81,7 @@ export class Caustics {
   private _voronoiTexture: TextureNode;
 
   // Wave normal sampling (for UV distortion)
-  private _waveResolution = uniform(256);
   private _waveScale = uniform(118.0);
-  private _normalBuffer: StorageBufferNode | null = null;
   private _normalTexture: TextureNode;
 
   // Shared time reference (owned externally)
@@ -198,34 +186,12 @@ export class Caustics {
   }
 
   /**
-   * Set wave buffer references for caustics (WebGPU).
-   * Must be called before build() for caustics to take effect.
-   */
-  setWaveBuffers(options: WaveCausticsBufferOptions): void {
-    this._normalBuffer = options.normalBuffer as unknown as StorageBufferNode;
-    this._waveResolution.value = options.resolution;
-    this._waveScale.value = options.scale;
-  }
-
-  /**
-   * Set wave texture reference for caustics (WebGL).
+   * Set the wave-normal texture used by caustics.
    * Must be called before build() for caustics to take effect.
    */
   setWaveTexture(options: WaveCausticsTextureOptions): void {
     this._normalTexture = texture(options.normalTexture);
-    this._waveResolution.value = options.resolution;
     this._waveScale.value = options.scale;
-  }
-
-  /**
-   * Updates buffer resolution and scale at runtime.
-   *
-   * @param resolution - Resolution in texels.
-   * @param scale - World-space scale in units.
-   */
-  updateBufferParams(resolution: number, scale: number): void {
-    this._waveResolution.value = resolution;
-    this._waveScale.value = scale;
   }
 
   /**
@@ -273,7 +239,9 @@ export class Caustics {
   buildPatternAtWorldPos(worldX: Node, worldZ: Node): Node {
     // Distort UVs with wave normals so pattern swims with waves
     const waveNormal = this.sampleWaveNormal(worldX, worldZ);
-    const distortion = vec2(waveNormal.x, waveNormal.z).mul(this._waveDistortion);
+    const distortion = vec2(waveNormal.x, waveNormal.z).mul(
+      this._waveDistortion,
+    );
 
     // Scroll direction derived from wind direction
     const scrollDir = vec2(sin(this._windDirection), cos(this._windDirection));
@@ -313,8 +281,7 @@ export class Caustics {
     const s1B = this._voronoiTexture.sample(uv1.add(offsetB));
     const b = this.combineLayers(mix(s1B.x, s1B.y, ridgeMix), layer2);
 
-    return pow(vec3(r, g, b).mul(this._intensity), float(4.5))
-      .clamp(0.0, 1.0);
+    return pow(vec3(r, g, b).mul(this._intensity), float(4.5)).clamp(0.0, 1.0);
   }
 
   // ============= Private Helpers =============
@@ -339,57 +306,22 @@ export class Caustics {
    * @param worldZ - World Z coordinate.
    */
   private sampleWaveNormal(worldX: Node, worldZ: Node): Node {
-    const res = this._waveResolution;
-    const resFloat = float(res);
-    const baseRes = float(256.0);
-    const effectiveScale = this._waveScale.mul(resFloat).div(baseRes);
+    // The cascade tile spans exactly `scale` meters (see worldToPixelCoords).
+    const scale = this._waveScale;
 
-    const sample = this._normalBuffer
-      ? this.sampleNormalBuffer(worldX, worldZ, effectiveScale, res, resFloat)
-      : this._normalTexture.sample(
-          vec2(
-            fract(worldX.div(effectiveScale).add(0.5)),
-            fract(worldZ.div(effectiveScale).add(0.5)),
-          ),
-        );
+    // Texture path: the cascade normal texture is mipmapped for the water
+    // surface, and the `fract()` wrap makes UV derivatives jump at every tile
+    // boundary, which sends hardware LOD selection to the coarsest mip along
+    // those seams. Caustics focus on unfiltered slopes.
+    const sample = textureLevel(
+      this._normalTexture,
+      vec2(
+        fract(worldX.div(scale).add(0.5)),
+        fract(worldZ.div(scale).add(0.5)),
+      ),
+      int(0),
+    );
 
     return sample.xyz.mul(2.0).sub(1.0);
-  }
-
-  /**
-   * Bilinear interpolation on the normal storage buffer.
-   *
-   * @param worldX - World X coordinate.
-   * @param worldZ - World Z coordinate.
-   * @param effectiveScale - Resolution-adjusted scale.
-   * @param res - Buffer resolution (int uniform).
-   * @param resFloat - Buffer resolution (float uniform).
-   */
-  private sampleNormalBuffer(
-    worldX: Node,
-    worldZ: Node,
-    effectiveScale: Node,
-    res: Node,
-    resFloat: Node,
-  ): Node {
-    const px = worldX.div(effectiveScale).add(0.5).mul(resFloat);
-    const py = worldZ.div(effectiveScale).add(0.5).mul(resFloat);
-
-    const x0Float = floor(px);
-    const y0Float = floor(py);
-    const fx = px.sub(x0Float);
-    const fy = py.sub(y0Float);
-
-    const x0 = x0Float.toInt().mod(res).add(res).mod(res);
-    const y0 = y0Float.toInt().mod(res).add(res).mod(res);
-    const x1 = x0.add(1).mod(res);
-    const y1 = y0.add(1).mod(res);
-
-    const d00 = this._normalBuffer!.element(y0.mul(res).add(x0));
-    const d10 = this._normalBuffer!.element(y0.mul(res).add(x1));
-    const d01 = this._normalBuffer!.element(y1.mul(res).add(x0));
-    const d11 = this._normalBuffer!.element(y1.mul(res).add(x1));
-
-    return mix(mix(d00, d10, fx), mix(d01, d11, fx), fy);
   }
 }

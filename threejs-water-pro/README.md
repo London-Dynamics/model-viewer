@@ -41,3 +41,9 @@ To build docs for static hosting:
 ```bash
 npm run docs:build
 ```
+
+## License
+
+Three.js Water Pro is commercial software, licensed not sold. © 2025–2026 DRG Software Solutions LLC. All rights reserved. See the [Commercial Software License Agreement, version 2.2](./LICENSE.md) for the full terms.
+
+Bundled third-party assets (HDRIs, models, audio, and textures under `demo/` and `src/assets/`) retain their own licenses and attributions — see the `LICENSE`/`LICENSING` files in those directories. They are not covered by the Three.js Water Pro license.

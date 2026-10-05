@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * WaterSystem - High-level API for the WebGPU water rendering system.
  */
@@ -6,10 +9,8 @@ import * as THREE from "three/webgpu";
 import {
   createWaveSimulation,
   createWaveSampler,
-  getCascadeConfigsArray,
   type IWaveSimulation,
   type IWaveSampler,
-  type CascadeConfig,
   WAVE_TIME_PERIOD_SECONDS,
 } from "./simulation/waves";
 import { WaterSurfaceMaterial } from "./components/surface/WaterSurfaceMaterial";
@@ -24,27 +25,32 @@ import { Underwater, AtmosphericFog } from "./rendering/postprocessing";
 import { UnderwaterParticles } from "./systems/underwater";
 import { RainSystem } from "./systems/rain";
 import { SpraySystem } from "./systems/spray";
-import { FoamAccumulation } from "./simulation/foam/FoamAccumulation";
-import type { Sky } from "./components/sky/Sky";
+import { createFoamAccumulation } from "./simulation/foam";
+import type { FoamAccumulation } from "./simulation/foam";
+import type { SkyProvider } from "./components/sky/SkyProvider";
 import {
   OceanFloor,
   type OceanFloorOptions,
 } from "./components/floor/OceanFloor";
-import { getPresetParams, type PresetName } from "./config/presets";
+import {
+  getPresetParams,
+  normalizeWaterSceneConfig,
+  type PresetName,
+} from "./config/presets";
 import {
   QUALITY_LEVELS,
   type QualityLevel,
   type QualityLevelConfig,
 } from "./config/QualityLevels";
 import { RenderPassManager } from "./rendering/RenderPassManager";
-import type { WaterSceneParams } from "./config/presets/types";
+import type { WaterSceneConfig } from "./config/presets/types";
 import { WaveUniforms } from "./uniforms";
 import { Lighting } from "./systems/Lighting";
+import { Environment } from "./systems/environment";
 import { UnderwaterStateController } from "./systems/UnderwaterStateController";
 import { PostProcessingPipeline } from "./systems/PostProcessingPipeline";
 import type { WaterSystemConfig } from "./types";
 import type { WaterSystemOptions } from "./types/params";
-import { Gerstner } from "./shaders/gerstner";
 import { WaterColor } from "./shaders/waterColor";
 import { Fresnel } from "./shaders/fresnel";
 import { Sparkle } from "./shaders/sparkle";
@@ -58,11 +64,19 @@ import { SunShafts } from "./shaders/sunShafts";
 import { Waterline } from "./shaders/waterline";
 import type { WaterSubsystem } from "./systems/types";
 
+/** A complete water preset accepted by runtime APIs. */
+export type WaterPreset = WaterSceneConfig;
+
+/** Explicit configuration name retained for API clarity. */
+export type WaterPresetConfig = WaterSceneConfig;
+
 /**
- * A complete water preset. Defines every parameter of the water system.
- * Implement this interface to create custom presets.
+ * `Scene.fogNode` is a node-renderer feature (r171+, `three/src/renderers/
+ * common/nodes/Nodes.js`) that `@types/three` does not declare yet.
  */
-export type WaterPreset = WaterSceneParams;
+interface SceneWithFogNode extends THREE.Scene {
+  fogNode: THREE.Node | null;
+}
 
 /** Default seed for the Phillips spectrum. */
 const DEFAULT_SEED = 1;
@@ -89,18 +103,17 @@ export class WaterSystem {
   private clipmap!: WaterSurfaceGeometry;
 
   private oceanFloor: OceanFloor;
-  private oceanFloorDepth = 0;
   private _underwater: Underwater;
   private atmosphericFogPass: AtmosphericFog;
 
   private renderPassManager!: RenderPassManager;
   private _lighting!: Lighting;
+  private _environment!: Environment;
   private _underwaterController!: UnderwaterStateController;
   private _postProcessing!: PostProcessingPipeline;
 
   private _heightQueryPos = new THREE.Vector3();
   private _waveUniforms: WaveUniforms;
-  private _gerstner: Gerstner;
   private _underwaterDistortion!: UnderwaterDistortion;
   private _sunShafts: SunShafts;
 
@@ -156,7 +169,7 @@ export class WaterSystem {
    * registration order is iteration order, and there is no removal hook
    * outside `dispose`.
    *
-   * See the "Subsystem Isolation" section of `CLAUDE.md` for the rule.
+   * See the "Subsystem Boundaries" section of `AGENTS.md` for the rule.
    */
   private _subsystems: WaterSubsystem[] = [];
   // ============================================
@@ -329,7 +342,6 @@ export class WaterSystem {
     this._sampler = sampler;
     this._lighting = lighting;
     this.oceanFloor = oceanFloor;
-    this.oceanFloorDepth = oceanFloor.getDepth();
     this._underwater = underwater;
     this.atmosphericFogPass = atmosphericFogPass;
     this._waveUniforms = waveUniforms;
@@ -338,28 +350,14 @@ export class WaterSystem {
     this._deterministic = deterministic;
     this._stepSize = stepSize;
 
-    this._gerstner = new Gerstner(waveUniforms, () => {
-      this.oceanSim.updateGerstnerParams(this._gerstner.getInternalParams());
-    });
-
     this._sunShafts = new SunShafts();
     this._underwaterDistortion = new UnderwaterDistortion(
       this._underwater.timeUniform,
     );
 
-    const cascadeConfigs = QUALITY_LEVELS[quality].cascades;
     this._config = Object.freeze({
       quality,
-      cascades: {
-        waves: {
-          resolution: cascadeConfigs[0].resolution,
-          enabled: cascadeConfigs[0].enabled,
-        },
-        ripples: {
-          resolution: cascadeConfigs[1].resolution,
-          enabled: cascadeConfigs[1].enabled,
-        },
-      },
+      cascades: QUALITY_LEVELS[quality].cascades.map((c) => ({ ...c })),
     });
   }
 
@@ -373,7 +371,7 @@ export class WaterSystem {
       sunDirection: this._lighting.sun.direction,
       sunIntensity: this._lighting.sun.intensity,
       windDirection: this._waveUniforms.windDirection,
-      foamAccumulation: this._foamAccumulation,
+      foamFieldSampler: this._foamAccumulation?.getSampler() ?? null,
       fresnel: this._fresnel,
       rainRipples: this._rainSystem.ripples,
       shorelineFoam: this._shorelineFoam,
@@ -479,6 +477,18 @@ export class WaterSystem {
     const underwater = new Underwater();
     const atmosphericFogPass = new AtmosphericFog();
 
+    // Atmospheric fog is forward (per-material): the renderer applies this
+    // node inside every material with the default `fog: true`, after shading
+    // and before blending, so fog composes correctly through any transparency.
+    if (scene.fog !== null) {
+      console.warn(
+        "[WaterSystem] scene.fog is set; the water system's atmospheric fog " +
+          "(scene.fogNode) takes precedence over it.",
+      );
+    }
+    (scene as SceneWithFogNode).fogNode =
+      atmosphericFogPass.createSceneFogNode();
+
     // Construct WaterSystem first — shader class field initializers run here,
     // providing stable instances that survive quality level changes.
     const waterSystem = new WaterSystem(
@@ -500,31 +510,47 @@ export class WaterSystem {
       deterministic,
       stepSize,
     );
-    // Bind the underwater post-pass to the surface `WaterColor` uniforms so
-    // above- and below-water Beer-Lambert share one absorption coefficient
-    // and one in-scatter color (Phase 01).
-    underwater.bindColorNodes(
-      waterSystem._waterColor._absorptionColorNode,
-      waterSystem._waterColor._waterColorNode,
-    );
+    // Share the physical/custom color model between surface and underwater.
+    underwater.bindWaterColor(waterSystem._waterColor);
     waterSystem._subsystems.push(lighting);
+
+    // Owns scene.environment and the active sky provider's backdrop meshes;
+    // registered before any setSky call so its onSkyChanged hook is reached.
+    waterSystem._environment = new Environment(scene);
+    // A provider may rebuild its environment texture mid-session (quality
+    // tier resize); rerun the full setSky rebind so every compiled sampler
+    // recaptures the new texture instead of sampling the destroyed one.
+    waterSystem._environment.onEnvironmentTextureChanged = () => {
+      waterSystem.setSky(waterSystem.renderPassManager.getCurrentSky());
+    };
+    waterSystem._subsystems.push(waterSystem._environment);
+
     // Wake steps via the registry (after buoyancy, which the registry loop
     // follows) and disposes via the registry — no bespoke handling in _step.
     waterSystem._subsystems.push(wakeSystem);
 
     waterSystem._rainSystem = new RainSystem(waveUniforms, camera);
 
-    // Persistent wave-crest foam accumulation buffer (WebGPU + opted-in
-    // quality tiers only — `tryCreate` returns null elsewhere). Must
-    // exist before the material so its storage buffers are exposed
-    // through SharedMaterialUniforms at material-build time.
-    waterSystem._foamAccumulation = FoamAccumulation.tryCreate(
+    // Persistent wave-crest foam accumulator (the only wave-crest foam path).
+    // A registered subsystem that steps and rebinds to a new wave sim itself; its
+    // persistence tuning and enable come from WaveFoam's shared nodes. Must exist
+    // before the material so its sampler is exposed through SharedMaterialUniforms
+    // at material-build time.
+    waterSystem._foamAccumulation = createFoamAccumulation(
       renderer,
       oceanSim,
       waveUniforms,
-      qualityConfig.features.persistentFoamBuffer,
+      {
+        persistence: waveFoam.persistence,
+        enabledNode: waveFoam._enabledNode,
+        resolution: qualityConfig.foamFieldResolution,
+        worldSize: qualityConfig.foamFieldWorldSize,
+      },
     );
-    waterSystem._foamAccumulation?.update(params.foam.waves.persistence);
+    if (waterSystem._foamAccumulation) {
+      waterSystem._foamAccumulation.setCamera(camera);
+      waterSystem._subsystems.push(waterSystem._foamAccumulation);
+    }
 
     // Create material using stable shader classes from the WaterSystem instance
     const waterMaterial = new WaterSurfaceMaterial(
@@ -536,12 +562,15 @@ export class WaterSystem {
     waterMaterial.ssr.maxDistance = qualityConfig.ssrMaxDistance;
     waterMaterial.ssr.stepCount = qualityConfig.ssrStepCount;
     waterSystem.waterMaterial = waterMaterial;
-    // The wake sampler is bound at material-build time via SharedMaterialUniforms
-    // (active on both backends), so it survives quality rebuilds automatically.
+    // The wake/foam samplers are bound at material-build time via
+    // SharedMaterialUniforms, so they survive quality rebuilds automatically.
     // Only a runtime field rebuild (resolution change) needs an explicit re-bind,
     // onto whichever material is current — not the one captured here.
     wakeSystem.onSamplerRebuild((sampler) =>
       waterSystem.waterMaterial.setWakeFieldSampler(sampler),
+    );
+    waterSystem._foamAccumulation?.onSamplerRebuild((sampler) =>
+      waterSystem.waterMaterial.setFoamFieldSampler(sampler),
     );
 
     // Wave-crest spray (WebGPU only). Pool size comes from the quality
@@ -591,7 +620,6 @@ export class WaterSystem {
       spray: waterSystem._spray,
       underwater,
       atmosphericFog: atmosphericFogPass,
-      sceneColorResolutionScale: qualityConfig.sceneColorResolutionScale,
       isWebGL,
     });
     waterSystem.renderPassManager = renderPassManager;
@@ -613,7 +641,6 @@ export class WaterSystem {
       material: waterMaterial,
       waterline: waterSystem._waterline,
       oceanFloor,
-      rpm: renderPassManager,
     });
     waterSystem._subsystems.push(waterSystem._underwaterController);
 
@@ -632,7 +659,6 @@ export class WaterSystem {
     );
 
     waterSystem._postProcessing = new PostProcessingPipeline({
-      atmosphericFog: atmosphericFogPass,
       rainSystem: waterSystem._rainSystem,
       rpm: renderPassManager,
       ssr: waterSystem._ssr,
@@ -645,13 +671,13 @@ export class WaterSystem {
     waterSystem.masking.bind(renderPassManager);
 
     waterSystem.applyParams(params);
-    waterSystem.applyQualityFeatureDefaults(qualityConfig.features);
+    waterSystem.clampFeaturesToQuality(qualityConfig.features);
     waterSystem.syncFadeEndToWaterExtent();
 
     camera.updateMatrixWorld(true);
     oceanSim.update(0);
     clipmap.update(camera.position);
-    renderPassManager.renderDepthPass(renderer);
+    renderPassManager.renderCapturePass(renderer);
 
     return waterSystem;
   }
@@ -687,6 +713,7 @@ export class WaterSystem {
     this._rainSystem.setCamera(cam);
     this._sunShafts.setCamera(cam);
     this._wake.setCamera(cam);
+    this._foamAccumulation?.setCamera(cam);
   }
 
   /** The Three.js scene containing the water */
@@ -744,14 +771,19 @@ export class WaterSystem {
     return this._waveUniforms;
   }
 
-  /** Gerstner swell parameters (amplitude, wavelength, spreads) */
-  get gerstner(): Gerstner {
-    return this._gerstner;
-  }
-
   // ============================================
   // Public Getters/Setters — Appearance
   // ============================================
+
+  /**
+   * Whether the camera is below the water surface this frame. Always `false`
+   * while underwater effects are disabled. Useful for gating app-level
+   * content that only makes sense on one side of the surface (audio, UI,
+   * post-fog FX composites).
+   */
+  get cameraSubmerged(): boolean {
+    return this._underwaterController.cameraSubmerged;
+  }
 
   /** Water color */
   get color(): WaterColor {
@@ -797,13 +829,22 @@ export class WaterSystem {
   }
 
   /**
-   * Lighting subsystem (sun + ambient). Access sun uniforms via
-   * `water.lighting.sun`, the directional light via
-   * `water.lighting.sunLight`, and the hemisphere fill via
-   * `water.lighting.hemisphereLight`.
+   * Lighting subsystem. Access sun uniforms via `water.lighting.sun` and
+   * the directional light via `water.lighting.sunLight`. Ambient fill
+   * comes from the sky's environment lighting, scaled by
+   * `water.environment.intensity`.
    */
   get lighting(): Lighting {
     return this._lighting;
+  }
+
+  /**
+   * Environment subsystem. Owns `scene.environmentNode` (the active sky
+   * provider's prefiltered PMREM, scaled by intensity and brightness, lighting
+   * every scene mesh) and the `water.environment.intensity` trim.
+   */
+  get environment(): Environment {
+    return this._environment;
   }
 
   // ============================================
@@ -821,14 +862,6 @@ export class WaterSystem {
       waves: this._waveFoam,
       shoreline: this._shorelineFoam,
     };
-  }
-
-  /**
-   * Persistent wave-crest foam accumulation buffer. Returns `null` on
-   * backends/quality tiers where the compute buffer is unavailable.
-   */
-  get foamAccumulation(): FoamAccumulation | null {
-    return this._foamAccumulation;
   }
 
   // ============================================
@@ -972,29 +1005,7 @@ export class WaterSystem {
     // time bounded — it cannot drift past the fold across many updates.
     this.oceanSim.setTime(gpuTime * this._waveUniforms.animationSpeed);
 
-    // When wave uniforms change (e.g., windDirection), update Gerstner wave buffer
-    if (this._waveUniforms.dirty) {
-      this._gerstner.triggerUpdate();
-    }
-
-    // Update camera forward direction for clip plane
-    this._camera.getWorldDirection(this._cameraForward);
-    this.waterMaterial.updateCameraForward(this._cameraForward);
-
-    if (this._cameraTracking) {
-      this.updateClipmapPosition(this._camera.position);
-    }
-
-    this.renderPassManager.getCurrentSky()?.followCamera(this._camera);
-
     await this.oceanSim.update(deltaTime);
-
-    // Persistent foam accumulation consumes the Jacobian eigenvalue from the
-    // normal buffer just written by the wave sim. Runs before spray and
-    // surface render so the sampled energy reflects this frame's breaking.
-    if (this._foamAccumulation) {
-      await this._foamAccumulation.tick(deltaTime);
-    }
 
     this.buoyancy.setCameraPosition(
       this._camera.position.x,
@@ -1027,8 +1038,26 @@ export class WaterSystem {
    * final render (depth, mask, scene-color, water-depth, sun-shaft). Called
    * after the substep loop drains so these passes fire exactly once per
    * displayed frame regardless of how many simulation substeps executed.
+   *
+   * The substep loop above yields to the event loop on real GPU awaits,
+   * and camera-mutating input handlers (e.g. OrbitControls drag) run
+   * inside those gaps. Everything from here through the host's render
+   * call must execute in one task, so the camera the captures render from
+   * is the camera the final render uses. The awaits below don't break
+   * that: every hook body is synchronous, and awaiting an already-resolved
+   * promise stays in the current task.
    */
   private async _renderPasses(): Promise<void> {
+    // Camera-coupled per-frame state must be read here, after the last
+    // event-loop yield — reading it in `_step` samples a camera the input
+    // handlers may still move before the frame renders.
+    this._camera.getWorldDirection(this._cameraForward);
+    this.waterMaterial.updateCameraForward(this._cameraForward);
+    if (this._cameraTracking) {
+      this.updateClipmapPosition(this._camera.position);
+    }
+    this.renderPassManager.getCurrentSky()?.followCamera(this._camera);
+
     this.renderer.info.reset();
     for (const s of this._subsystems) {
       await s.renderPass?.(this.renderer);
@@ -1073,6 +1102,9 @@ export class WaterSystem {
   dispose(): void {
     this._disposed = true;
 
+    // Release the scene fog so materials rendered after disposal build clean.
+    (this._scene as SceneWithFogNode).fogNode = null;
+
     // Non-registered subsystems disposed by name (they are recreated
     // across the lifecycle and the registry does not track them).
     this.oceanSim.dispose();
@@ -1083,16 +1115,13 @@ export class WaterSystem {
       this._scene.remove(this._spray.getMesh());
       this._spray.dispose();
     }
-    if (this._foamAccumulation) {
-      this._foamAccumulation.dispose();
-      this._foamAccumulation = null;
-    }
     this._sampler.dispose();
 
     this._scene.remove(this.clipmap.getObject());
     this.clipmap.dispose();
 
     this.waterMaterial.dispose();
+    this._waterColor.dispose();
 
     this.renderPassManager.dispose();
 
@@ -1126,23 +1155,72 @@ export class WaterSystem {
    */
   async setQualityLevel(
     quality: QualityLevel,
-    params: WaterSceneParams,
+    params: WaterPreset,
   ): Promise<void> {
-    const previousQuality = this._config.quality;
-    if (quality === previousQuality) return;
+    if (quality === this._config.quality) return;
+    await this._rebuildForQuality(
+      QUALITY_LEVELS[quality],
+      quality,
+      normalizeWaterSceneConfig(params),
+    );
+  }
 
-    const qualityConfig = QUALITY_LEVELS[quality];
+  /**
+   * Change a single cascade's FFT resolution at runtime, independently of
+   * the rest of the quality level. Tile sizes re-derive from `maxScale` and
+   * every cascade's resolution up to `index` (see `deriveCascadeScale`), so
+   * this only reshapes cascades after `index` — the quality level's other
+   * settings (segments, effect defaults, etc.) are unchanged. Composes with
+   * prior overrides: the base is the currently active `cascades`, not the
+   * named quality level's defaults.
+   *
+   * Uses the same rebuild path as {@link setQualityLevel}, so the same
+   * post-processing-pipeline rebuild note applies.
+   *
+   * @param index - Cascade index to override (0..cascadeCount-1).
+   * @param resolution - New FFT resolution in texels (must be a power of two).
+   * @param params - Current water scene parameters to reapply after rebuild.
+   */
+  async setCascadeResolution(
+    index: number,
+    resolution: number,
+    params: WaterPreset,
+  ): Promise<void> {
+    if (this._config.cascades[index]?.resolution === resolution) return;
 
+    const quality = this._config.quality;
+    const cascades = this._config.cascades.map((c, i) =>
+      i === index ? { ...c, resolution } : { ...c },
+    );
+    const qualityConfig: QualityLevelConfig = {
+      ...QUALITY_LEVELS[quality],
+      cascades,
+    };
+
+    await this._rebuildForQuality(
+      qualityConfig,
+      quality,
+      normalizeWaterSceneConfig(params),
+    );
+  }
+
+  /**
+   * Shared rebuild path for {@link setQualityLevel} and
+   * {@link setCascadeResolution}: disposes and recreates every
+   * quality-dependent subsystem for the given config, then updates
+   * `_config` to match.
+   */
+  private async _rebuildForQuality(
+    qualityConfig: QualityLevelConfig,
+    quality: QualityLevel,
+    params: WaterSceneConfig,
+  ): Promise<void> {
     // Dispose quality-dependent subsystems (preserve scene children).
     // renderPassManager survives the rebuild — it holds sky, dynamic
     // objects, mask objects, and render targets that are not
     // quality-dependent.
     this.oceanSim.dispose();
     this._sampler.dispose();
-    if (this._foamAccumulation) {
-      this._foamAccumulation.dispose();
-      this._foamAccumulation = null;
-    }
     this._scene.remove(this.clipmap.getObject());
     this.clipmap.dispose();
     this.waterMaterial.dispose();
@@ -1159,16 +1237,12 @@ export class WaterSystem {
     await oceanSim.initializeBuffers(this.renderer);
     this.oceanSim = oceanSim;
 
-    // Recreate persistent foam accumulation against the new sim before
-    // the material is built so SharedMaterialUniforms picks up the new
-    // storage buffer nodes at bind time.
-    this._foamAccumulation = FoamAccumulation.tryCreate(
-      this.renderer,
-      oceanSim,
-      this._waveUniforms,
-      qualityConfig.features.persistentFoamBuffer,
-    );
-    this._foamAccumulation?.update(params.foam.waves.persistence);
+    // The foam accumulator survives the quality switch (it's a registered
+    // subsystem); only its injection is bound to the wave sim, so it rebinds to
+    // the new one here. Its targets + sampler are sim-independent, so the
+    // material below keeps a valid foam sampler. Resolution / world extent are
+    // re-applied by its `onQualityChanged` hook in the registry loop.
+    this._foamAccumulation?.setOceanSim(oceanSim);
 
     // Recreate material using stable shader class instances from this WaterSystem
     const waterMaterial = new WaterSurfaceMaterial(
@@ -1231,11 +1305,10 @@ export class WaterSystem {
 
     // Rebind the render pass manager in place. Sky, mask objects, and
     // render targets all survive; only the water-facing
-    // references (clipmap, material, resolution scale) need updating.
+    // references (clipmap, material) need updating.
     this.renderPassManager.rebind({
       clipmap: this.clipmap,
       waterMaterial,
-      sceneColorResolutionScale: qualityConfig.sceneColorResolutionScale,
     });
 
     // Rebind every depth-texture consumer against the new render targets.
@@ -1248,36 +1321,24 @@ export class WaterSystem {
       await s.onQualityChanged?.(quality, qualityConfig);
     }
 
-    // Repopulate Gerstner wave buffer in the new simulation
-    this._gerstner.triggerUpdate();
-
     // Update config
-    const cascadeConfigs = QUALITY_LEVELS[quality].cascades;
     this._config = Object.freeze({
       quality,
-      cascades: {
-        waves: {
-          resolution: cascadeConfigs[0].resolution,
-          enabled: cascadeConfigs[0].enabled,
-        },
-        ripples: {
-          resolution: cascadeConfigs[1].resolution,
-          enabled: cascadeConfigs[1].enabled,
-        },
-      },
+      cascades: qualityConfig.cascades.map((c) => ({ ...c })),
     });
 
-    // Apply all params to new subsystems, then override enabled states
-    // with the quality level's feature defaults
+    // Apply all params to new subsystems, then clamp effect enabled states to
+    // what this quality level supports (heavy effects off on low-end tiers).
+    // The clamp only forces effects off, so preset/user "off" choices persist.
     this.applyParams(params);
-    this.applyQualityFeatureDefaults(qualityConfig.features);
+    this.clampFeaturesToQuality(qualityConfig.features);
     this.syncFadeEndToWaterExtent();
 
     // Initialize the new simulation
     this._camera.updateMatrixWorld(true);
     oceanSim.update(0);
     this.clipmap.update(this._camera.position);
-    this.renderPassManager.renderDepthPass(this.renderer);
+    this.renderPassManager.renderCapturePass(this.renderer);
   }
 
   // ============================================
@@ -1295,34 +1356,31 @@ export class WaterSystem {
    */
   loadPreset(preset: PresetName | WaterPreset): void {
     const params =
-      typeof preset === "string" ? getPresetParams(preset) : preset;
+      typeof preset === "string"
+        ? getPresetParams(preset)
+        : normalizeWaterSceneConfig(preset);
     this.applyParams(params);
   }
 
   /**
-   * Set the active sky. The caller is responsible for adding / removing
-   * the sky's meshes to / from the scene.
-   *
-   * @param sky - A `Sky` instance, or `null` to disable sky reflections
-   *   and fog.
+   * Set (or clear) the active sky provider. Mesh lifecycle,
+   * `scene.environment`, and all subsystem rebinds are handled internally;
+   * the outgoing provider is never disposed.
    */
-  setSky(sky: Sky | null): void {
-    if (sky) {
-      // Prefilter the sky's reflection environment before the material binds
-      // to it, so the reflection sampler captures the resulting PMREM texture
-      // rather than a black one baked from a not-yet-uploaded source.
-      sky.uploadSource(this.renderer);
-      this.waterMaterial.setSky(sky);
-    }
+  setSky(sky: SkyProvider | null): void {
+    // Core infrastructure first: hooks below may query rpm.getCurrentSky().
     this.renderPassManager.setSky(sky);
+    for (const s of this._subsystems) {
+      s.onSkyChanged?.(sky);
+    }
   }
 
   /**
-   * Update cascade configuration at the specified index.
-   * Call this after modifying cascade params (scale, amplitude, enabled).
+   * Resize the cascade set from a single largest tile size (meters). Finer
+   * cascades and their band edges derive automatically.
    */
-  updateCascadeConfig(index: number, config: CascadeConfig): void {
-    this.applyCascadeConfig(index, config);
+  setMaxScale(maxScale: number): void {
+    this.oceanSim.setMaxScale(maxScale);
     this._fireCascadeChanged();
   }
 
@@ -1336,14 +1394,6 @@ export class WaterSystem {
   setPosition(x: number, z: number): void {
     this._manualPosition.set(x, 0, z);
     this.updateClipmapPosition(this._manualPosition);
-  }
-
-  /**
-   * Set the world-space Y elevation for the ocean surface and floor.
-   */
-  setElevation(y: number): void {
-    this.clipmap.setElevation(y);
-    this.oceanFloor.getMesh().position.y = y - this.oceanFloorDepth;
   }
 
   /**
@@ -1470,12 +1520,13 @@ export class WaterSystem {
   /**
    * Apply all parameters from a preset.
    */
-  private applyParams(params: WaterSceneParams): void {
+  private applyParams(params: WaterSceneConfig): void {
     // Shader class updates (each class owns its own uniforms)
     // Both WebGL and WebGPU use FFT-based waves with shared WaveUniforms
     this._waveUniforms.update(params.waves.fft);
 
     this._lighting.applyParams(params);
+    this._environment.applyParams(params);
     this._wake.applyParams(params);
     this.color.update(params.color);
     this.color.waterDepth = params.oceanFloor.depth;
@@ -1490,9 +1541,6 @@ export class WaterSystem {
     this.foam.shoreline.update(params.foam.shoreline);
     this.ssr.update(params.ssr);
 
-    // Gerstner waves (derived from wave params — recomputed on preset load)
-    this._gerstner.update(params.waves.gerstner);
-
     this._underwaterDistortion.update(params.postProcessing.underwater);
     this._underwater.tintColor = params.postProcessing.underwater.tintColor;
 
@@ -1500,9 +1548,6 @@ export class WaterSystem {
 
     // Wave-crest spray (WebGPU only; null on other backends)
     this._spray?.update(params.spray);
-
-    // Persistent wave-crest foam buffer (WebGPU + high/ultra only)
-    this._foamAccumulation?.update(params.foam.waves.persistence);
 
     // Underwater particles
     this._particles.updateParams(params.postProcessing.underwaterParticles);
@@ -1517,23 +1562,24 @@ export class WaterSystem {
   }
 
   /**
-   * Override effect enabled states with the quality level's feature defaults.
-   * Called after applyParams so quality-level defaults take precedence over
-   * preset values when switching quality levels. Users can still override
-   * individual features at runtime via the UI.
+   * Clamp effect enabled states to the quality level's capabilities. A quality
+   * feature flag can only force an effect off — keeping heavy effects like SSR
+   * disabled on low-end tiers — and never forces one on. Called after
+   * applyParams, so a preset's or user's "off" choice survives a quality switch
+   * instead of being re-enabled by the new level's defaults.
    */
-  private applyQualityFeatureDefaults(
+  private clampFeaturesToQuality(
     features: QualityLevelConfig["features"],
   ): void {
-    this._ssr.enabled = features.ssr;
-    this._sss.enabled = features.sss;
-    this._sparkle.enabled = features.sparkle;
-    this._surfaceFoam.enabled = features.surfaceFoam;
-    this._waveFoam.enabled = features.turbulentFoam;
-    this._shorelineFoam.enabled = features.shorelineFoam;
-    if (this._foamAccumulation) {
-      this._foamAccumulation.enabled = features.persistentFoamBuffer;
-    }
+    this._ssr.enabled = this._ssr.enabled && features.ssr;
+    this._sss.enabled = this._sss.enabled && features.sss;
+    this._sparkle.enabled = this._sparkle.enabled && features.sparkle;
+    this._surfaceFoam.enabled =
+      this._surfaceFoam.enabled && features.surfaceFoam;
+    // The foam field reads this same enable node, so it follows automatically.
+    this._waveFoam.enabled = this._waveFoam.enabled && features.turbulentFoam;
+    this._shorelineFoam.enabled =
+      this._shorelineFoam.enabled && features.shorelineFoam;
   }
 
   /**
@@ -1569,21 +1615,11 @@ export class WaterSystem {
     });
   }
 
-  private updateAllCascadeConfigs(params: WaterSceneParams): void {
-    const configs = getCascadeConfigsArray(params.waves.fft.cascades);
-    for (let i = 0; i < configs.length; i++) {
-      const config = configs[i];
-      this.applyCascadeConfig(i, {
-        ...config,
-        scale: config.scale / params.waves.fft.frequency,
-        amplitudeScale: config.amplitudeScale * params.waves.fft.amplitude,
-      });
-    }
+  private updateAllCascadeConfigs(params: WaterSceneConfig): void {
+    // Amplitude is applied globally in the FFT shader via the shared wave
+    // uniform, so it does not flow through here.
+    this.oceanSim.setMaxScale(params.waves.fft.cascades.maxScale);
     this._fireCascadeChanged();
-  }
-
-  private applyCascadeConfig(index: number, config: CascadeConfig): void {
-    this.oceanSim.updateCascadeConfig(index, config);
   }
 
   /**

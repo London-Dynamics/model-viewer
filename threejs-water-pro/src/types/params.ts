@@ -1,18 +1,20 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Parameter interfaces for uniform classes.
  * These match the structure in defaults.ts and are used by the uniform
  * group classes in uniforms.ts.
  *
  * Shader class parameter interfaces (ColorParams → WaterColorParams,
- * FresnelParams, SurfaceFoamParams, WaveFoamParams, ShorelineFoamParams,
- * UnderwaterSurfaceParams, SSRParams, SSSParams, SparkleParams)
- * now live in their respective shader class files under src/shaders/.
+ * FresnelParams, SurfaceFoamParams, WaveFoamParams, FoamPersistenceParams,
+ * ShorelineFoamParams, UnderwaterSurfaceParams, SSRParams, SSSParams,
+ * SparkleParams) now live in their respective shader class files under src/shaders/.
  *
  * Properties within each interface are sorted alphabetically.
  */
 
 // Re-export from shader class files
-export type { GerstnerParams } from "../shaders/gerstner";
 export type { SunShaftsParams } from "../shaders/sunShafts";
 
 /**
@@ -45,6 +47,7 @@ export interface WaveUniformParams {
   choppiness: number;
   gravity?: number;
   jonswapGamma?: number;
+  peakWavelength: number;
   spectralSharpness: number;
   standingWaveRatio?: number;
   windDirection: number;

@@ -1,1 +1,1 @@
-{"version":3,"file":"sunset.d.ts","sourceRoot":"","sources":["../../../src/config/presets/sunset.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,SAAS,CAAC;AAE5C,eAAO,MAAM,aAAa,EAAE,YAqP3B,CAAC"}
+{"version":3,"file":"sunset.d.ts","sourceRoot":"","sources":["../../../src/config/presets/sunset.ts"],"names":[],"mappings":"AAGA,OAAO,KAAK,EAAE,gBAAgB,EAAE,MAAM,SAAS,CAAC;AAEhD,eAAO,MAAM,aAAa,EAAE,gBA2N3B,CAAC"}

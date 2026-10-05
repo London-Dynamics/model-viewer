@@ -1,11 +1,16 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Post-processing pipeline.
  *
  * Owns two related concerns:
  *
  * 1. **Node-graph composition.** The hard-coded chain
- *    `atmospheric fog → underwater → screen-space caustics → sun shafts → rain`
+ *    `underwater → screen-space caustics → sun shafts → rain`
  *    that produces the final TSL output node for Three.js post-processing.
+ *    (Atmospheric fog is not a pass — it applies per material via
+ *    `scene.fogNode`, so it is already in the scene colour.)
  *    Exposed as {@link buildNode}.
  *
  * 2. **Per-frame conditional pass gating.** Which of the screen-space
@@ -21,7 +26,7 @@
 import type * as THREE from "three/webgpu";
 import type { Node, PassNode } from "three/webgpu";
 import { convertToTexture } from "three/tsl";
-import type { AtmosphericFog, Underwater } from "../rendering/postprocessing";
+import type { Underwater } from "../rendering/postprocessing";
 import type { UnderwaterDistortion } from "../shaders/underwaterDistortion";
 import type { SunShafts } from "../shaders/sunShafts";
 import type { SSR } from "../shaders/ssr";
@@ -36,7 +41,6 @@ import type { WaterSubsystem } from "./types";
  * TSL node-graph chain.
  */
 export interface PostProcessingPipelineRefs {
-  atmosphericFog: AtmosphericFog;
   rainSystem: RainSystem;
   rpm: RenderPassManager;
   ssr: SSR;
@@ -60,13 +64,13 @@ export class PostProcessingPipeline implements WaterSubsystem {
    * `postProcessing.outputNode = ...`. The returned node chains live
    * uniform references — UI tweaks propagate without rebuilding.
    *
-   * Order is fixed: atmospheric fog runs first (so it tints everything,
-   * including geometry visible through Snell's window), underwater fog
-   * picks above/below water per fragment, sun shafts composite on top,
-   * and rain composites last so the streaks layer above everything else
-   * but below the user's downstream effects. Caustics are baked into
-   * the ocean-floor material itself, so they're already in the scene
-   * colour and need no post-process layer.
+   * Order is fixed: underwater fog picks above/below water per fragment
+   * (atmospheric fog is already in the scene colour — it applies per
+   * material via `scene.fogNode`), sun shafts composite on top, and rain
+   * composites last so the streaks layer above everything else but below
+   * the user's downstream effects. Caustics are baked into the ocean-floor
+   * material itself, so they're already in the scene colour and need no
+   * post-process layer.
    *
    * @param scenePass - The Three.js post-processing scene pass.
    * @param inputColor - Optional input colour to chain after. Defaults
@@ -77,25 +81,24 @@ export class PostProcessingPipeline implements WaterSubsystem {
 
     const distortedUV = refs.underwaterDistortion.buildDistortedUV();
 
-    const foggedScene = refs.atmosphericFog.createEffectNode(
-      scenePass,
-      inputColor,
-    );
+    const sceneColor = inputColor ?? scenePass.getTextureNode("output");
 
-    // Underwater haze switches between fogged scene above water and underwater fog below.
+    // Underwater gate (1 = underwater, 0 = above water), shared with the
+    // sun-shaft composite below so both read one depth-pass sample.
+    const underwaterGate = refs.sunShafts.buildUnderwaterGate();
+
+    // Underwater haze switches between the (already fogged) scene above
+    // water and underwater fog below.
     const underwaterResult = refs.underwater.createEffectNode(
       scenePass,
-      foggedScene,
+      sceneColor,
       distortedUV,
     );
 
-    // Gate the shaft composite to the underwater region. Built on the GPU
-    // side (not inside `buildComposite`, which the WASM shader engine compiles
-    // and can't follow the depth-pass sample methods through).
-    const sunShaftGate = refs.sunShafts.buildUnderwaterGate();
+    // Gate the shaft composite to the underwater region.
     const withSunShafts = refs.sunShafts.buildComposite(
       underwaterResult,
-      sunShaftGate,
+      underwaterGate,
     );
 
     // Materialize the fog + shaft composite so the despeckle can sample its
@@ -116,37 +119,35 @@ export class PostProcessingPipeline implements WaterSubsystem {
    * material's surface composition. Hooked into the {@link WaterSubsystem}
    * `renderPass` slot so `WaterSystem` iterates it through the registry.
    *
-   * - **Depth pass** always runs — the water material samples it for
-   *   shoreline alpha fade in addition to the post-processing chain.
+   * - **Scene capture** always runs — the water material samples its
+   *   depth for shoreline alpha fade and its colour for refraction; the
+   *   transparent sub-passes run only when underwater is enabled (only
+   *   the fog decomposition consumes them).
    * - **Mask pass** runs only when at least one masking object is
    *   registered with the render pass manager.
-   * - **Scene colour pass** runs when SSR or underwater is enabled
-   *   (both sample the colour texture).
-   * - **Water depth pass** runs only when underwater is enabled.
+   * - **Water depth pass** always runs — the surface refraction samples
+   *   it for the refracted column's surface depth, and the underwater fog
+   *   for per-pixel submersion.
    * - **Sun shaft pass** is delegated to `SunShafts.renderPass`, which
    *   self-gates on its own enabled flag plus the underwater state.
-   * - **SSR G-buffer + SSR pass** — G-buffer is skipped when SSR is
-   *   disabled (the SSR shader's `_enabled` guard short-circuits before
-   *   reading the stale G-buffer, and the result RT stays cleared).
+   * - **SSR G-buffer + SSR pass** — both draws are skipped when SSR is
+   *   disabled. The persistent result target is cleared once on the
+   *   enabled-to-disabled transition (and after resize), then left untouched.
    */
   async renderPass(renderer: THREE.WebGPURenderer): Promise<void> {
     const refs = this._refs;
     const underwaterEnabled = refs.underwater.enabled;
     const ssrEnabled = refs.ssr.enabled;
 
-    refs.rpm.renderDepthPass(renderer);
+    // The transparent-capture sub-passes only feed the underwater fog
+    // decomposition; above water, transparency fogs itself per material.
+    refs.rpm.renderCapturePass(renderer, underwaterEnabled);
 
     if (refs.rpm.getMaskObjectCount() > 0) {
       refs.rpm.renderMaskPass(renderer);
     }
 
-    if (ssrEnabled || underwaterEnabled) {
-      refs.rpm.renderSceneColorPass(renderer);
-    }
-
-    if (underwaterEnabled) {
-      refs.rpm.renderWaterDepthPass(renderer);
-    }
+    refs.rpm.renderWaterDepthPass(renderer);
 
     // SunShafts self-gates on its own `enabled` flag plus the
     // underwater controller's `underwaterEnabled` (sun shafts are an
@@ -156,13 +157,13 @@ export class PostProcessingPipeline implements WaterSubsystem {
 
     if (ssrEnabled) {
       refs.rpm.renderSSRGBufferPass(renderer);
+      refs.rpm.renderSSRPass(renderer);
+    } else {
+      refs.rpm.clearSSRPassIfNeeded(renderer);
     }
-    refs.rpm.renderSSRPass(renderer);
   }
 
   dispose(): void {
-    // No owned resources — the refs are owned by `WaterSystem` and each
-    // disposes itself. Implementing `dispose` keeps the registry contract
-    // self-consistent and makes any future resource ownership explicit.
+    // No owned resources; every ref is owned and disposed by its owner.
   }
 }

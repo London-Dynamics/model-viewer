@@ -1,33 +1,45 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
-import { instancedArray, uniformArray, uniform, storage, float, int, floor, mix, vec3 } from "three/tsl";
+import { instancedArray, storage, float, int, floor, mix, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
 import type { TSLBuffer, TSLComputeShader } from "../../../types/tsl";
 import type {
   IWaveSimulation,
-  InternalGerstnerParams,
   WaveCapabilities,
   WaveDisplacementNodes,
   WaveNormalNodes,
 } from "../IWaveSimulation";
-import type { CascadeConfig, CascadesConfig } from "../types";
+import type { CascadesConfig } from "../types";
 import type { QualityLevelConfig } from "../../../config/QualityLevels";
 import { CascadeSimulationUniforms, type WaveUniforms } from "../../../uniforms";
 import type { TSLUniformNode } from "../../../types/tsl";
-import { getCascadeConfigsArray } from "../types";
+import { deriveCascadeScale } from "../types";
 import { assignCascadeBands } from "../cascadeBands";
-import { WAVE_TIME_OMEGA_STEP } from "../timing";
 import {
   createInitSpectrumShader,
   createTimeEvolutionShader,
 } from "./shaders/spectrum";
 import { createNormalsShader } from "./shaders/computeNormals";
-import { createVelocityShader } from "./shaders/computeVelocity";
+import { sampleNormalTexture } from "./shaders/sampleBuffers";
 import {
   createCombinedFFTHorizontalShader,
+  createCombinedFFTSharedHorizontalShader,
+  createCombinedFFTSharedVerticalShader,
   createCombinedFFTVerticalShader,
   createCombinedFFTNormalizeShader,
 } from "./shaders/fft";
+
+/** Three vec2<f32> fields are resident in workgroup memory during a line FFT. */
+const SHARED_FFT_BYTES_PER_ELEMENT = 3 * 2 * Float32Array.BYTES_PER_ELEMENT;
+
+interface WebGPUComputeLimits {
+  maxComputeInvocationsPerWorkgroup: number;
+  maxComputeWorkgroupSizeX: number;
+  maxComputeWorkgroupStorageSize: number;
+}
 
 export interface WebGPUWaveSimulationOptions {
   cascades: CascadesConfig;
@@ -51,14 +63,9 @@ interface CascadeLevel {
   // Storage buffers
   h0Buffer: TSLBuffer;
   displacementBuffer: TSLBuffer;
-  prevDisplacementBuffer: TSLBuffer;
-  velocityBuffer: TSLBuffer;
-  normalBuffer: TSLBuffer;
   /**
-   * StorageTexture mirror of `normalBuffer`, written alongside it by
-   * `computeNormals`. Used by fragment-side consumers (cascade sampler,
-   * caustics, sun shafts) so they sample via hardware bilinear instead
-   * of doing manual 4-tap reads on a storage buffer.
+   * Authoritative RGBA16F normal/folding texture, written by `computeNormals`
+   * and sampled by compute and fragment consumers via hardware filtering.
    */
   normalTexture: THREE.StorageTexture;
 
@@ -74,13 +81,13 @@ interface CascadeLevel {
   computeInitSpectrum: TSLComputeShader;
   computeTimeEvolution: TSLComputeShader;
   computeNormals: TSLComputeShader;
-  computeVelocity: TSLComputeShader;
-  computeFFTHorizontalPingToPong: TSLComputeShader;
-  computeFFTHorizontalPongToPing: TSLComputeShader;
-  computeFFTVerticalPingToPong: TSLComputeShader;
-  computeFFTVerticalPongToPing: TSLComputeShader;
-  computeFFTNormalizePing: TSLComputeShader;
-  computeFFTNormalizePong: TSLComputeShader;
+  /** Complete global-memory hot-path update, excluding spectrum init. */
+  computeGlobalUpdate: TSLComputeShader[];
+  /** Complete shared-memory update, or the global fallback when unsupported. */
+  computeSharedUpdate: TSLComputeShader[];
+
+  /** Whether this cascade can fuse each complete row/column FFT in workgroup memory. */
+  supportsSharedMemoryFFT: boolean;
 
   // State
   initialized: boolean;
@@ -92,33 +99,26 @@ interface CascadeLevel {
  */
 export class WebGPUWaveSimulation implements IWaveSimulation {
   private cascades: CascadeLevel[] = [];
+  /** Persistent array identities let Three reuse both A/B compute-group states. */
+  private computeGlobalUpdateGroup: TSLComputeShader[] = [];
+  private computeGlobalInitializeAndUpdateGroup: TSLComputeShader[] = [];
+  private computeSharedUpdateGroup: TSLComputeShader[] = [];
+  private computeSharedInitializeAndUpdateGroup: TSLComputeShader[] = [];
   private renderer: THREE.WebGPURenderer;
   private time: number = 0;
   private _explicitTimeThisFrame = false;
   private _seed: number;
-  private _gerstnerMaxWaves: number;
   private _animationSpeed: number = 1.0;
+  private sharedMemoryFFTEnabled = true;
 
   private _waveUniforms: WaveUniforms;
   private _foamWindBias: TSLUniformNode;
-
-  private _gerstnerWaveBuffer: Node | null = null;
-  private _gerstnerWaveCount = uniform(0);
 
   constructor(renderer: THREE.WebGPURenderer, options: WebGPUWaveSimulationOptions) {
     this.renderer = renderer;
     this._waveUniforms = options.waveUniforms;
     this._foamWindBias = options.foamWindBias;
-    this._gerstnerMaxWaves = options.qualityConfig.gerstnerMaxWaves;
     this._seed = options.seed;
-
-    // Allocate Gerstner wave buffer as uniformArray (UBO-based, works on both backends)
-    if (this._gerstnerMaxWaves > 0) {
-      this._gerstnerWaveBuffer = uniformArray(
-        Array.from({ length: this._gerstnerMaxWaves * 2 }, () => new THREE.Vector4()),
-        "vec4",
-      );
-    }
 
     this.initCascades(options.cascades, options.qualityConfig);
   }
@@ -145,78 +145,9 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     this._animationSpeed = value;
   }
 
-  // ============================================
-  // Gerstner Waves
-  // ============================================
-
-  /**
-   * Update Gerstner wave parameters using auto-distribution.
-   * Generates N wave descriptors from center wavelength, spread, direction, etc.
-   * Arbitrary wavelengths and directions are supported since Gerstner waves are
-   * evaluated analytically in the vertex shader (not on the FFT grid).
-   */
-  updateGerstnerParams(params: InternalGerstnerParams): void {
-    if (!this._gerstnerWaveBuffer || this._gerstnerMaxWaves === 0) return;
-
-    const maxWaves = this._gerstnerMaxWaves;
-    const waveCount = maxWaves;
-    const gravity = this._waveUniforms.gravity.value;
-
-    // Compute effective spread to maintain constant wavelength range regardless of wave count.
-    // wavelengthSpread defines the total range: [baseWavelength/spread, baseWavelength*spread]
-    // With N waves, we need effectiveSpread^((N-1)/2) = spread, so effectiveSpread = spread^(2/(N-1))
-    const effectiveSpread =
-      waveCount > 1
-        ? Math.pow(params.wavelengthSpread, 2 / (waveCount - 1))
-        : 1.0;
-
-    // Write per-wave data into the uniformArray (2 vec4s per wave)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buf = this._gerstnerWaveBuffer as any;
-    for (let i = 0; i < waveCount; i++) {
-      // Geometric distribution of wavelengths around center using effective spread
-      const centerIndex = (waveCount - 1) / 2;
-      const exponent = i - centerIndex;
-      const wavelength =
-        params.wavelength * Math.pow(effectiveSpread, exponent);
-
-      // Direction distribution: evenly spread across directionalSpread
-      let direction = params.direction;
-      if (waveCount > 1) {
-        const t = i / (waveCount - 1) - 0.5; // [-0.5, 0.5]
-        direction = params.direction + t * params.directionalSpread;
-      }
-
-      const dirX = Math.cos(direction);
-      const dirZ = Math.sin(direction);
-
-      // Amplitude with Gaussian-like tapering from center (using original spread for taper shape)
-      const sigma = waveCount / 3;
-      const taper = Math.exp(-0.5 * (exponent * exponent) / (sigma * sigma));
-      const amplitude = params.amplitude * taper;
-
-      const steepness = params.steepness;
-
-      // Deep water dispersion: omega = sqrt(g * k), snapped to the wave-sim
-      // loop period so each Gerstner component completes an integer number
-      // of cycles per `WAVE_TIME_PERIOD_SECONDS`. Per-wave perturbation is
-      // at most π/period; for typical Gerstner omegas this is well under
-      // 0.2%.
-      const k = (2 * Math.PI) / wavelength;
-      const omegaNatural = Math.sqrt(gravity * k);
-      const omega =
-        Math.round(omegaNatural / WAVE_TIME_OMEGA_STEP) * WAVE_TIME_OMEGA_STEP;
-
-      // Deterministic phase offset per wave for variety
-      const phaseOffset = ((i * 137.5) % (2 * Math.PI));
-
-      // Pack into uniformArray: vec4(dirX, dirZ, amplitude, wavelength), vec4(steepness, phaseOffset, omega, 0)
-      buf.array[i * 2].set(dirX, dirZ, amplitude, wavelength);
-      buf.array[i * 2 + 1].set(steepness, phaseOffset, omega, 0);
-    }
-    buf.needsUpdate = true;
-
-    this._gerstnerWaveCount.value = waveCount;
+  /** Whether at least one active cascade fits the device's workgroup limits. */
+  private get sharedMemoryFFTSupported(): boolean {
+    return this.cascades.some((cascade) => cascade.supportsSharedMemoryFFT);
   }
 
   // ============================================
@@ -227,8 +158,6 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     return {
       hasCascades: true,
       hasStorageBuffers: true,
-      hasJacobianFoam: true,
-      hasPersistentFoamBuffer: true,
       cascadeCount: this.cascades.length,
       backend: "webgpu",
     };
@@ -270,13 +199,16 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
 
       for (let i = 0; i < cascades.length; i++) {
         const cascade = cascades[i];
-        const buffer = storage(cascade.normalBuffer, "vec4", cascade.resolution * cascade.resolution);
         const resolution = float(cascade.resolution);
         const scale = float(cascade.scale);
 
-        const n = this.sampleBufferBilinear(worldX, worldZ, buffer, resolution, scale);
-        // Normals stored in [0,1], convert to [-1,1]
-        const normal = n.mul(2.0).sub(1.0);
+        const normal = sampleNormalTexture(
+          worldX,
+          worldZ,
+          cascade.normalTexture,
+          resolution,
+          scale,
+        );
 
         if (i === 0) {
           blendedNormal = normal;
@@ -306,11 +238,9 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     resolution: Node,
     scale: Node,
   ): Node {
-    const baseRes = float(256.0);
-    const effectiveScale = scale.mul(resolution).div(baseRes);
-
-    const px = worldX.div(effectiveScale).add(0.5).mul(resolution);
-    const py = worldZ.div(effectiveScale).add(0.5).mul(resolution);
+    // Tile size is the cascade's world-space scale (matches spectrum.ts).
+    const px = worldX.div(scale).add(0.5).mul(resolution);
+    const py = worldZ.div(scale).add(0.5).mul(resolution);
 
     const x0Float = floor(px);
     const y0Float = floor(py);
@@ -346,17 +276,19 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     cascadesConfig: CascadesConfig,
     qualityConfig: QualityLevelConfig,
   ) {
-    const presetConfigs = getCascadeConfigsArray(cascadesConfig);
     const qualityCascades = qualityConfig.cascades;
+    const resolutions = qualityCascades
+      .filter((c) => c.enabled)
+      .map((c) => c.resolution);
 
     let cascadeIndex = 0;
-    for (let i = 0; i < presetConfigs.length; i++) {
+    for (let i = 0; i < qualityCascades.length; i++) {
       const qualityCascade = qualityCascades[i];
       if (!qualityCascade.enabled) continue;
 
       const cascade = this.createCascade(
-        presetConfigs[i],
-        qualityCascade.resolution,
+        cascadesConfig.maxScale,
+        resolutions,
         cascadeIndex,
       );
       this.cascades.push(cascade);
@@ -365,16 +297,17 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
   }
 
   private createCascade(
-    config: CascadeConfig,
-    resolution: number,
+    maxScale: number,
+    resolutions: number[],
     cascadeIndex: number,
   ): CascadeLevel {
-    const { scale, amplitudeScale } = config;
+    const resolution = resolutions[cascadeIndex];
+    const scale = deriveCascadeScale(maxScale, resolutions, cascadeIndex);
     const numBits = Math.log2(resolution);
     const count = resolution * resolution;
 
     const uniforms = new CascadeSimulationUniforms();
-    uniforms.init(resolution, scale, amplitudeScale);
+    uniforms.init(resolution, scale);
     // Decorrelate cascades by offsetting the root seed. The spectrum shader
     // multiplies randomSeed by 100000, so a +1 offset moves cells far apart
     // in the hash domain (see spectrum.ts).
@@ -382,22 +315,22 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
 
     const h0Buffer = instancedArray(count, "vec4");
     const displacementBuffer = instancedArray(count, "vec4");
-    const prevDisplacementBuffer = instancedArray(count, "vec4");
-    const velocityBuffer = instancedArray(count, "vec4");
-    const normalBuffer = instancedArray(count, "vec4");
     const normalTexture = new THREE.StorageTexture(resolution, resolution);
     normalTexture.format = THREE.RGBAFormat;
-    normalTexture.type = THREE.FloatType;
+    normalTexture.type = THREE.HalfFloatType;
     normalTexture.magFilter = THREE.LinearFilter;
-    normalTexture.minFilter = THREE.LinearFilter;
+    // Trilinear + anisotropic sampling band-limits the normals to the pixel
+    // footprint: averaging encoded normals cancels sub-pixel wave phases
+    // toward flat, so distant water stops shimmering while resolved
+    // wavelengths survive to the horizon. The backend regenerates the mip
+    // chain automatically after each compute write (`StorageTexture`
+    // defaults `mipmapsAutoUpdate = true`); anisotropy keeps the cross-view
+    // axis sharp at the grazing angles that dominate ocean viewing.
+    normalTexture.minFilter = THREE.LinearMipmapLinearFilter;
+    normalTexture.generateMipmaps = true;
+    normalTexture.anisotropy = 8;
     normalTexture.wrapS = THREE.RepeatWrapping;
     normalTexture.wrapT = THREE.RepeatWrapping;
-    normalTexture.generateMipmaps = false;
-    // `mipmapsAutoUpdate` skips the per-frame mipmap rebuild that
-    // StorageTexture does by default after compute writes. The property
-    // is missing from @types/three but is read by the WebGPU backend
-    // (see renderers/webgpu/Textures: `skipAutoGeneration = isStorageTexture && mipmapsAutoUpdate === false`).
-    (normalTexture as unknown as { mipmapsAutoUpdate: boolean }).mipmapsAutoUpdate = false;
     const fftPingBufferDx = instancedArray(count, "vec2");
     const fftPongBufferDx = instancedArray(count, "vec2");
     const fftPingBufferDy = instancedArray(count, "vec2");
@@ -412,9 +345,6 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
       uniforms,
       h0Buffer,
       displacementBuffer,
-      prevDisplacementBuffer,
-      velocityBuffer,
-      normalBuffer,
       normalTexture,
       fftPingBufferDx,
       fftPongBufferDx,
@@ -425,15 +355,49 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
       computeInitSpectrum: null as unknown as TSLComputeShader,
       computeTimeEvolution: null as unknown as TSLComputeShader,
       computeNormals: null as unknown as TSLComputeShader,
-      computeVelocity: null as unknown as TSLComputeShader,
-      computeFFTHorizontalPingToPong: null as unknown as TSLComputeShader,
-      computeFFTHorizontalPongToPing: null as unknown as TSLComputeShader,
-      computeFFTVerticalPingToPong: null as unknown as TSLComputeShader,
-      computeFFTVerticalPongToPing: null as unknown as TSLComputeShader,
-      computeFFTNormalizePing: null as unknown as TSLComputeShader,
-      computeFFTNormalizePong: null as unknown as TSLComputeShader,
+      computeGlobalUpdate: [],
+      computeSharedUpdate: [],
+      supportsSharedMemoryFFT: false,
       initialized: false,
     };
+  }
+
+  /**
+   * Read the initialized WebGPU device limits exposed by Three's backend.
+   * Missing/non-WebGPU backend state conservatively selects the global FFT.
+   */
+  private getComputeLimits(): WebGPUComputeLimits | null {
+    const backend = this.renderer.backend as unknown as {
+      device?: { limits?: Partial<WebGPUComputeLimits> };
+    };
+    const limits = backend.device?.limits;
+    if (
+      limits?.maxComputeInvocationsPerWorkgroup === undefined ||
+      limits.maxComputeWorkgroupSizeX === undefined ||
+      limits.maxComputeWorkgroupStorageSize === undefined
+    ) {
+      return null;
+    }
+
+    return limits as WebGPUComputeLimits;
+  }
+
+  /**
+   * A complete line uses R/2 pair owners and R × 24 bytes of shared storage.
+   * The current global-memory implementation remains the correctness fallback.
+   */
+  private canUseSharedMemoryFFT(resolution: number): boolean {
+    const limits = this.getComputeLimits();
+    if (!limits) return false;
+
+    const pairOwners = resolution / 2;
+    const storageBytes = resolution * SHARED_FFT_BYTES_PER_ELEMENT;
+    return (
+      Number.isInteger(pairOwners) &&
+      pairOwners <= limits.maxComputeInvocationsPerWorkgroup &&
+      pairOwners <= limits.maxComputeWorkgroupSizeX &&
+      storageBytes <= limits.maxComputeWorkgroupStorageSize
+    );
   }
 
   private createComputeShadersForCascade(cascade: CascadeLevel): void {
@@ -472,70 +436,106 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
       foamWindBias: this._foamWindBias,
       cascade: cascadeUniforms,
       displacementBuffer: cascade.displacementBuffer,
-      normalBuffer: cascade.normalBuffer,
       normalTexture: cascade.normalTexture,
       resolution,
     });
 
-    cascade.computeVelocity = createVelocityShader({
-      displacementBuffer: cascade.displacementBuffer,
-      prevDisplacementBuffer: cascade.prevDisplacementBuffer,
-      velocityBuffer: cascade.velocityBuffer,
-      deltaTime: cascadeUniforms.deltaTime,
-      resolution,
-    });
+    const computeGlobalIFFT2D: TSLComputeShader[] = [];
+    let dataInPing = true;
 
-    cascade.computeFFTHorizontalPingToPong = createCombinedFFTHorizontalShader({
-      cascade: cascadeUniforms,
-      srcBuffers: pingBuffers,
-      dstBuffers: pongBuffers,
-      resolution,
-    });
+    for (let stage = 0; stage < numBits; stage++) {
+      computeGlobalIFFT2D.push(
+        createCombinedFFTHorizontalShader({
+          cascade: cascadeUniforms,
+          srcBuffers: dataInPing ? pingBuffers : pongBuffers,
+          dstBuffers: dataInPing ? pongBuffers : pingBuffers,
+          resolution,
+          stage,
+        }),
+      );
+      dataInPing = !dataInPing;
+    }
 
-    cascade.computeFFTHorizontalPongToPing = createCombinedFFTHorizontalShader({
-      cascade: cascadeUniforms,
-      srcBuffers: pongBuffers,
-      dstBuffers: pingBuffers,
-      resolution,
-    });
+    for (let stage = 0; stage < numBits; stage++) {
+      computeGlobalIFFT2D.push(
+        createCombinedFFTVerticalShader({
+          cascade: cascadeUniforms,
+          srcBuffers: dataInPing ? pingBuffers : pongBuffers,
+          dstBuffers: dataInPing ? pongBuffers : pingBuffers,
+          resolution,
+          stage,
+        }),
+      );
+      dataInPing = !dataInPing;
+    }
 
-    cascade.computeFFTVerticalPingToPong = createCombinedFFTVerticalShader({
-      cascade: cascadeUniforms,
-      srcBuffers: pingBuffers,
-      dstBuffers: pongBuffers,
-      resolution,
-    });
+    cascade.supportsSharedMemoryFFT = this.canUseSharedMemoryFFT(resolution);
+    const computeSharedIFFT2D: TSLComputeShader[] = [];
+    if (cascade.supportsSharedMemoryFFT) {
+      // Time evolution writes ping. One workgroup then owns a whole row and a
+      // whole column in turn, keeping every radix-2 stage in 3 × vec2 shared
+      // arrays. The finished 2D transform returns to ping for normalization.
+      computeSharedIFFT2D.push(
+        createCombinedFFTSharedHorizontalShader({
+          srcBuffers: pingBuffers,
+          dstBuffers: pongBuffers,
+          resolution,
+        }),
+        createCombinedFFTSharedVerticalShader({
+          srcBuffers: pongBuffers,
+          dstBuffers: pingBuffers,
+          resolution,
+        }),
+      );
+    } else {
+      // Unsupported cascades keep the global algorithm even while the shared
+      // path is enabled for smaller cascades.
+      computeSharedIFFT2D.push(...computeGlobalIFFT2D);
+    }
 
-    cascade.computeFFTVerticalPongToPing = createCombinedFFTVerticalShader({
-      cascade: cascadeUniforms,
-      srcBuffers: pongBuffers,
-      dstBuffers: pingBuffers,
-      resolution,
-    });
-
-    cascade.computeFFTNormalizePing = createCombinedFFTNormalizeShader({
+    const computeNormalize = createCombinedFFTNormalizeShader({
       wave,
       cascade: cascadeUniforms,
+      // Both the shared path (ping → pong → ping) and the even number of
+      // global horizontal + vertical stages finish in ping.
       fftBuffers: pingBuffers,
       displacementBuffer: cascade.displacementBuffer,
       resolution,
     });
-
-    cascade.computeFFTNormalizePong = createCombinedFFTNormalizeShader({
-      wave,
-      cascade: cascadeUniforms,
-      fftBuffers: pongBuffers,
-      displacementBuffer: cascade.displacementBuffer,
-      resolution,
-    });
+    cascade.computeGlobalUpdate = [
+      cascade.computeTimeEvolution,
+      ...computeGlobalIFFT2D,
+      computeNormalize,
+      cascade.computeNormals,
+    ];
+    cascade.computeSharedUpdate = [
+      cascade.computeTimeEvolution,
+      ...computeSharedIFFT2D,
+      computeNormalize,
+      cascade.computeNormals,
+    ];
   }
 
   public init() {
-    assignCascadeBands(this.cascades.map((c) => c.uniforms), this._waveUniforms);
-    this._waveUniforms.bandDirty = false;
+    assignCascadeBands(this.cascades.map((c) => c.uniforms));
     for (let i = 0; i < this.cascades.length; i++) {
       this.createComputeShadersForCascade(this.cascades[i]);
     }
+
+    // Three keys compute-group backend state by array identity. Build both A/B
+    // command sequences once so toggling does not reconstruct either graph.
+    this.computeGlobalUpdateGroup = this.cascades.flatMap(
+      (cascade) => cascade.computeGlobalUpdate,
+    );
+    this.computeGlobalInitializeAndUpdateGroup = this.cascades.flatMap(
+      (cascade) => [cascade.computeInitSpectrum, ...cascade.computeGlobalUpdate],
+    );
+    this.computeSharedUpdateGroup = this.cascades.flatMap(
+      (cascade) => cascade.computeSharedUpdate,
+    );
+    this.computeSharedInitializeAndUpdateGroup = this.cascades.flatMap(
+      (cascade) => [cascade.computeInitSpectrum, ...cascade.computeSharedUpdate],
+    );
   }
 
   public async update(deltaTime: number = 0.016): Promise<void> {
@@ -545,11 +545,6 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
       this.time += deltaTime * this._animationSpeed;
     }
 
-    if (this._waveUniforms.bandDirty) {
-      assignCascadeBands(this.cascades.map((c) => c.uniforms), this._waveUniforms);
-      this._waveUniforms.bandDirty = false;
-    }
-
     if (this._waveUniforms.dirty) {
       for (const cascade of this.cascades) {
         cascade.initialized = false;
@@ -557,72 +552,62 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
       this._waveUniforms.dirty = false;
     }
 
+    await this.dispatchCascadeUpdates(this.renderer, deltaTime);
+  }
+
+  /**
+   * Encode every cascade's ordered update in one WebGPU compute pass and queue
+   * submission. Dispatch boundaries still order all storage-buffer hazards:
+   * init → time evolution → horizontal FFT → vertical FFT → normalize →
+   * normals.
+   */
+  private async dispatchCascadeUpdates(
+    renderer: THREE.WebGPURenderer,
+    deltaTime: number,
+  ): Promise<void> {
+    const needsInitialization = this.cascades.some(
+      (cascade) => !cascade.initialized,
+    );
+
     for (const cascade of this.cascades) {
+      cascade.uniforms.time.value = this.time;
       cascade.uniforms.deltaTime.value = deltaTime;
-      await this.queueCascadeUpdate(cascade);
+    }
+
+    const useSharedMemoryFFT =
+      this.sharedMemoryFFTEnabled && this.sharedMemoryFFTSupported;
+    const computeGroup = useSharedMemoryFFT
+      ? needsInitialization
+        ? this.computeSharedInitializeAndUpdateGroup
+        : this.computeSharedUpdateGroup
+      : needsInitialization
+        ? this.computeGlobalInitializeAndUpdateGroup
+        : this.computeGlobalUpdateGroup;
+    if (computeGroup.length === 0) return;
+
+    await renderer.computeAsync(computeGroup);
+    if (needsInitialization) {
+      // Existing invalidation paths mark every cascade dirty together. If a
+      // future path invalidates only one, reinitializing the others is still
+      // deterministic and keeps this persistent all-cascade group valid.
+      for (const cascade of this.cascades) {
+        cascade.initialized = true;
+      }
     }
   }
 
-  private async queueCascadeUpdate(cascade: CascadeLevel): Promise<void> {
-    cascade.uniforms.time.value = this.time;
-
-    if (!cascade.initialized) {
-      await this.renderer.computeAsync(cascade.computeInitSpectrum);
-      cascade.initialized = true;
+  public setMaxScale(maxScale: number) {
+    const resolutions = this.cascades.map((c) => c.uniforms.resolution.value);
+    for (let i = 0; i < this.cascades.length; i++) {
+      const cascade = this.cascades[i];
+      const scale = deriveCascadeScale(maxScale, resolutions, i);
+      cascade.uniforms.setScale(scale);
+      cascade.scale = scale;
+      cascade.initialized = false;
     }
-
-    await this.renderer.computeAsync(cascade.computeTimeEvolution);
-    await this.queueIFFT2DForCascadeAsync(cascade);
-
-    // Velocity runs AFTER FFT normalize (consumes fresh displacement) and
-    // BEFORE normals — normals don't depend on velocity, so ordering is only
-    // about reading the freshly-written displacementBuffer before anything
-    // else overwrites it.
-    await this.renderer.computeAsync(cascade.computeVelocity);
-    await this.renderer.computeAsync(cascade.computeNormals);
-  }
-
-  private *getIFFT2DShaders(cascade: CascadeLevel): Generator<TSLComputeShader> {
-    let dataInPing = true;
-
-    for (let stage = 0; stage < cascade.numBits; stage++) {
-      cascade.uniforms.fftStage.value = stage;
-      yield dataInPing
-        ? cascade.computeFFTHorizontalPingToPong
-        : cascade.computeFFTHorizontalPongToPing;
-      dataInPing = !dataInPing;
-    }
-
-    for (let stage = 0; stage < cascade.numBits; stage++) {
-      cascade.uniforms.fftStage.value = stage;
-      yield dataInPing
-        ? cascade.computeFFTVerticalPingToPong
-        : cascade.computeFFTVerticalPongToPing;
-      dataInPing = !dataInPing;
-    }
-
-    yield dataInPing
-      ? cascade.computeFFTNormalizePing
-      : cascade.computeFFTNormalizePong;
-  }
-
-  private async queueIFFT2DForCascadeAsync(cascade: CascadeLevel): Promise<void> {
-    for (const shader of this.getIFFT2DShaders(cascade)) {
-      await this.renderer.computeAsync(shader);
-    }
-  }
-
-  public updateCascadeConfig(index: number, config: CascadeConfig) {
-    if (index >= this.cascades.length) return;
-
-    const cascade = this.cascades[index];
-    cascade.uniforms.updateCascadeConfig(config.scale, config.amplitudeScale);
-    cascade.scale = config.scale;
-    cascade.initialized = false;
-    // Cascade scale changed → band edges shift and the compensation integral
-    // changes; recompute across all cascades since neighbor crossovers depend
-    // on this one.
-    assignCascadeBands(this.cascades.map((c) => c.uniforms), this._waveUniforms);
+    // Tile sizes changed → band edges shift; recompute across all cascades
+    // since neighbor seams depend on each other.
+    assignCascadeBands(this.cascades.map((c) => c.uniforms));
   }
 
   // ============================================
@@ -637,19 +622,6 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     return this.cascades[cascadeIndex]?.displacementBuffer ?? null;
   }
 
-  public getNormalBuffer(cascadeIndex: number = 0): TSLBuffer | null {
-    return this.cascades[cascadeIndex]?.normalBuffer ?? null;
-  }
-
-  /**
-   * Per-texel surface velocity (m/s) for a cascade, computed as
-   * `(currentDisplacement - previousDisplacement) / deltaTime`. Same layout
-   * as the displacement buffer; `.xyz` is the velocity vector, `.w` unused.
-   */
-  public getVelocityBuffer(cascadeIndex: number = 0): TSLBuffer | null {
-    return this.cascades[cascadeIndex]?.velocityBuffer ?? null;
-  }
-
   public getNormalTexture(cascadeIndex: number = 0): THREE.Texture | null {
     return this.cascades[cascadeIndex]?.normalTexture ?? null;
   }
@@ -662,6 +634,15 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     return this.cascades[cascadeIndex]?.scale ?? 100;
   }
 
+  /**
+   * Get a cascade's world-space scale uniform node (the single source of truth
+   * synced on cascade-config changes). The world-fixed foam field binds to it so
+   * its world→texel sampling of the cascade normal texture tracks the live scale.
+   */
+  public getScaleNode(cascadeIndex: number = 0): Node | null {
+    return this.cascades[cascadeIndex]?.uniforms.scale ?? null;
+  }
+
   public getCascadeScales(): number[] {
     return this.cascades.map((c) => c.scale);
   }
@@ -670,71 +651,16 @@ export class WebGPUWaveSimulation implements IWaveSimulation {
     return this.cascades.map((c) => c.resolution);
   }
 
-  // ============================================
-  // Gerstner Wave Access (IWaveSimulation)
-  // ============================================
-
-  public getGerstnerWaveBuffer(): Node | null {
-    return this._gerstnerWaveBuffer;
-  }
-
-  public getGerstnerMaxWaves(): number {
-    return this._gerstnerMaxWaves;
-  }
-
-  public getGerstnerWaveCountUniform(): Node | null {
-    return this._gerstnerMaxWaves > 0 ? this._gerstnerWaveCount : null;
-  }
-
-  public getTimeUniform(): Node | null {
-    return this.cascades[0]?.uniforms.time ?? null;
-  }
-
-  /**
-   * Get Gerstner wave state for CPU-side evaluation.
-   * Returns the wave buffer array, active wave count, blend factor, and current time.
-   */
-  public getGerstnerCPUState(): {
-    waveData: THREE.Vector4[] | null;
-    waveCount: number;
-    time: number;
-  } {
-    if (!this._gerstnerWaveBuffer || this._gerstnerMaxWaves === 0) {
-      return { waveData: null, waveCount: 0, time: this.time };
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const buf = this._gerstnerWaveBuffer as any;
-    return {
-      waveData: buf.array as THREE.Vector4[],
-      waveCount: this._gerstnerWaveCount.value,
-      time: this.time,
-    };
-  }
-
   public async initializeBuffers(renderer: THREE.WebGPURenderer): Promise<void> {
     this.time += 0.016 * this._animationSpeed;
-
-    for (const cascade of this.cascades) {
-      cascade.uniforms.time.value = this.time;
-      cascade.uniforms.deltaTime.value = 0.016;
-
-      if (!cascade.initialized) {
-        await renderer.computeAsync(cascade.computeInitSpectrum);
-        cascade.initialized = true;
-      }
-
-      await renderer.computeAsync(cascade.computeTimeEvolution);
-
-      for (const shader of this.getIFFT2DShaders(cascade)) {
-        await renderer.computeAsync(shader);
-      }
-
-      await renderer.computeAsync(cascade.computeVelocity);
-      await renderer.computeAsync(cascade.computeNormals);
-    }
+    await this.dispatchCascadeUpdates(renderer, 0.016);
   }
 
   public dispose(): void {
+    this.computeGlobalUpdateGroup = [];
+    this.computeGlobalInitializeAndUpdateGroup = [];
+    this.computeSharedUpdateGroup = [];
+    this.computeSharedInitializeAndUpdateGroup = [];
     this.cascades = [];
   }
 

@@ -13,9 +13,14 @@ import * as THREE from "three/webgpu";
 /** Names of the foam textures bundled with the library. */
 export type BuiltInFoamName = "foam1" | "foam2" | "foam3" | "foam4";
 /**
- * Returns the bundled foam texture for the given name. The texture is loaded
- * once and cached; repeated calls return the same instance. The returned
- * texture uses `RepeatWrapping` on both axes so it tiles cleanly.
+ * Loads the bundled foam texture for the given name, resolving once the image
+ * has decoded. The decode is performed once per name and cached, so repeated
+ * calls share the same in-flight or settled promise. The resolved texture uses
+ * `RepeatWrapping` on both axes so it tiles cleanly.
+ *
+ * Resolving only after decode is what lets callers bind the texture without the
+ * GPU sampling an empty image; assigning a not-yet-decoded texture is the cause
+ * of foam swaps that "don't apply".
  */
-export declare function loadBuiltInFoamTexture(name: BuiltInFoamName): THREE.Texture;
+export declare function loadBuiltInFoamTexture(name: BuiltInFoamName): Promise<THREE.Texture>;
 //# sourceMappingURL=builtInFoamTextures.d.ts.map

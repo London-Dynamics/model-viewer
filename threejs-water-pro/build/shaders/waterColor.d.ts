@@ -1,45 +1,37 @@
-/**
- * Physical Beer-Lambert water color.
- *
- * Single intrinsic water color plus a per-channel absorption coefficient.
- * The depth-dependent appearance falls out of the physics:
- *
- *   transmitted = refractedScene * exp(-absorption * depth)
- *               + waterColor     * (1 - exp(-absorption * depth))
- *
- * where `absorption` is a `vec3` (per RGB channel). Shallow water reads
- * as seabed tinted toward `waterColor`; deep water reads as `waterColor`.
- * The wavelength-dependent attenuation is what makes clear ocean go
- * blue-green at depth — a scalar absorption rate cannot reproduce that.
- *
- * Owns its own TSL uniform nodes. External code reads/writes parameters
- * through getters and setters; the shader graph binds to the private
- * uniform nodes via {@link build}.
- */
+/** Runtime-switchable spectral/Jerlov and artist-authored water color. */
 import * as THREE from "three/webgpu";
 import type { Node } from "./types";
-/** Preset-facing parameters for water color. */
+import { type JerlovWaterType } from "./waterConstituents";
+export type WaterColorMode = "physical" | "custom";
+/** Full-spectrum physical water color derived from constituent concentrations. */
+export interface PhysicalWaterColorParams {
+    mode: "physical";
+    algae: number;
+    silt: number;
+    stain: number;
+}
+/** Artist-authored water color with per-channel Beer-Lambert absorption. */
 export interface WaterColorParams {
-    /**
-     * Per-channel Beer-Lambert absorption coefficient (1/world-unit), encoded
-     * as a hex color. Each RGB channel is its own extinction rate, so red can
-     * absorb faster than blue — the mechanism that turns clear ocean
-     * blue-green with depth. Typical clear ocean ≈ `#0a0503` (R≈0.04, G≈0.02,
-     * B≈0.01 per metre); murkier water uses larger values uniformly.
-     */
     absorptionColor: string;
-    /** Color of light transmitted through the water (hex string). */
     transmissionColor: string;
-    /**
-     * Intrinsic water color — the in-scattered radiance the camera receives
-     * from the water column itself, independent of what's behind it. What
-     * infinite-depth water looks like. Hex string.
-     */
     waterColor: string;
 }
+/** Custom mode; `mode` is optional so existing v3.3 configs remain valid. */
+export interface CustomWaterColorParams extends WaterColorParams {
+    mode?: "custom";
+}
+/** Water-color configuration accepted by presets and runtime APIs. */
+export type WaterColorConfig = PhysicalWaterColorParams | CustomWaterColorParams;
+/**
+ * Validate a color configuration and return a fresh object with an explicit
+ * mode, suitable for persisted state.
+ */
+export declare function normalizeWaterColorConfig(params: WaterColorConfig): PhysicalWaterColorParams | (WaterColorParams & {
+    mode: "custom";
+});
 /** Parameters for {@link WaterColor.build}. */
 export interface WaterColorBuildParams {
-    /** Depth sample from the depth texture (R = normalized depth). */
+    /** Normalized linear scene depth sample (0 = near plane, 1 = far / sky). */
     depthSample: Node;
     /** View direction Y component for fallback depth. */
     viewDirY: Node;
@@ -57,36 +49,44 @@ export interface WaterColorResult {
     clearFactor: Node;
     /** 1.0 when scene geometry is in front of water surface, 0.0 otherwise. */
     isObjectInFront: Node;
-    /** The intrinsic water color (in-scatter radiance) as a vec3 node. */
+    /** Active physical in-scatter or artist-authored water color. */
     waterColor: Node;
     /** Water column depth in world units. */
     waterColumnDepth: Node;
 }
-/**
- * Physical Beer-Lambert water color with per-channel absorption.
- *
- * Owns its own TSL uniform nodes. External code reads/writes parameters
- * through getters and setters; the shader graph binds to the private
- * uniform nodes via {@link build}.
- */
+/** Runtime-switchable physical and custom water-color model. */
 export declare class WaterColor {
+    private _mode;
+    private _algae;
+    private _silt;
+    private _stain;
+    private _customMode;
+    private _inScatter;
+    private _crestTransmission;
     private _absorptionColor;
-    private _transmissionColor;
     private _waterColor;
+    private _transmissionColor;
     private _waterDepth;
+    private _transmittanceValues;
+    private _transmittanceLUT;
+    constructor();
+    get mode(): WaterColorMode;
+    set mode(value: WaterColorMode);
+    get algae(): number;
+    set algae(value: number);
+    get silt(): number;
+    set silt(value: number);
+    get stain(): number;
+    set stain(value: number);
     /**
-     * Per-channel Beer-Lambert absorption coefficient (1/world-unit).
-     * Each RGB channel is its own extinction rate.
+     * Per-channel Beer-Lambert absorption coefficient used by custom mode.
      */
     get absorptionColor(): THREE.Color;
     set absorptionColor(value: THREE.Color | string);
     /** Color of light transmitted through the water. */
     get transmissionColor(): THREE.Color;
     set transmissionColor(value: THREE.Color | string);
-    /**
-     * Intrinsic water color (in-scatter radiance) — what infinite-depth
-     * water looks like.
-     */
+    /** Intrinsic in-scattered water color used by custom mode. */
     get waterColor(): THREE.Color;
     set waterColor(value: THREE.Color | string);
     /**
@@ -95,44 +95,41 @@ export declare class WaterColor {
      */
     get waterDepth(): number;
     set waterDepth(value: number);
-    /** Bulk-set parameters from a preset or params object. */
-    update(params: WaterColorParams): void;
+    /** Normalize and apply a supported preset or params object. */
+    update(params: WaterColorConfig): void;
+    /** Seed the physical model from a Jerlov water type. */
+    setJerlovType(type: JerlovWaterType): void;
+    /** Release resources owned by this color model. */
+    dispose(): void;
+    /** Transmittance through the active water-color model. */
+    buildClearFactor(columnDepth: Node): Node;
+    /** Physical in-scatter or artist-authored custom water color. */
+    buildMediumColor(): Node;
     /**
-     * Builds the water-column depth and per-channel Beer-Lambert clear
-     * fraction at the unrefracted screen UV. The refracted composite
-     * resamples depth at the refracted UV and computes its own clearFactor
-     * via {@link _absorptionColorNode}.
+     * Builds water-column depth, active transmittance, and medium color at the
+     * unrefracted screen UV. The refracted composite resamples the same model at
+     * its refracted depth.
      *
      * @param params - Depth sample, view direction, and depth texture flag.
      */
     build(params: WaterColorBuildParams): WaterColorResult;
     /**
+     * Interpolates the physical transmittance curve from its uniform buffer.
+     *
+     * @param pathLength - Water-column length in world units.
+     */
+    private buildPhysicalClearFactor;
+    /**
      * Calculates the water column depth from depth texture or fallback.
      *
      * @param viewDirY - Y component of the view direction.
-     * @param depthSample - Depth texture sample (R = normalized depth).
+     * @param depthSample - Normalized linear scene depth sample.
      * @param useDepthTexture - Whether the depth texture is available (0 or 1).
      */
     private buildWaterColumnDepth;
-    /**
-     * Transmission color uniform node (for SSS and other stages).
-     * @internal
-     */
+    private _derivePhysicalOptics;
+    /** Active crest-transmission node consumed by SSS. @internal */
     get _transmissionColorNode(): Node;
-    /**
-     * Per-channel Beer-Lambert absorption uniform node. The front-face
-     * refraction path resamples depth at the refracted UV and computes its
-     * own per-channel clearFactor from this value.
-     * @internal
-     */
-    get _absorptionColorNode(): Node;
-    /**
-     * Intrinsic water-color uniform node. The screen-space underwater
-     * post-pass binds to this same node so above- and below-water Beer-Lambert
-     * use a single in-scatter color (Phase 01).
-     * @internal
-     */
-    get _waterColorNode(): Node;
 }
 /**
  * Input parameters for buildReflectionSampling.
@@ -140,10 +137,19 @@ export declare class WaterColor {
 export interface ReflectionSamplingParams {
     /** View direction (from surface toward camera). */
     viewDir: Node;
-    /** Surface normal for reflection direction. */
-    fresnelNormal: Node;
-    /** Sky reflection sampler (optional). */
-    reflectionSampler?: (dir: Node) => Node;
+    /**
+     * Surface normal for the reflection direction. Pass the bent
+     * `reflectionNormal` from {@link FresnelResult} so the reflection
+     * vector cannot dip below the local surface at grazing angles.
+     */
+    reflectionNormal: Node;
+    /** Sky reflection sampler (optional): `(dir, extraRoughness) => color`. */
+    reflectionSampler?: (dir: Node, roughness: Node) => Node;
+    /**
+     * Sub-footprint slope variance driving the reflection blur (filtered-BRDF
+     * roughness). Higher where the pixel folds away unresolved waves.
+     */
+    roughness: Node;
 }
 /**
  * Result from buildReflectionSampling.

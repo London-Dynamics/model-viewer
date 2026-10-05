@@ -7,12 +7,9 @@ export interface NormalsShaderParams {
     foamWindBias: TSLUniformNode;
     cascade: CascadeSimulationUniforms;
     displacementBuffer: TSLBuffer;
-    normalBuffer: TSLBuffer;
     /**
-     * StorageTexture mirror of `normalBuffer`. Each thread writes the same
-     * packed vec4 to both — compute consumers read from the buffer, fragment
-     * consumers sample the texture via hardware bilinear. The mirror is
-     * cheap: one extra texture write per texel per frame.
+     * Authoritative RGBA16F normal/folding texture. All compute and fragment
+     * consumers sample it through the filterable texture path.
      */
     normalTexture: THREE.StorageTexture;
     resolution: number;
@@ -23,5 +20,5 @@ export interface NormalsShaderParams {
  * Computes surface normals from displacement gradients using finite differences.
  * Also calculates the Jacobian determinant for foam generation (surface compression).
  */
-export declare const createNormalsShader: ({ wave, foamWindBias, cascade, displacementBuffer, normalBuffer, normalTexture, resolution, }: NormalsShaderParams) => THREE.ComputeNode;
+export declare const createNormalsShader: ({ wave, foamWindBias, cascade, displacementBuffer, normalTexture, resolution, }: NormalsShaderParams) => THREE.ComputeNode;
 //# sourceMappingURL=computeNormals.d.ts.map

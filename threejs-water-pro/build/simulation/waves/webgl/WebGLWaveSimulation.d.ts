@@ -4,8 +4,8 @@
  */
 import * as THREE from "three/webgpu";
 import type { Node } from "three/webgpu";
-import type { IWaveSimulation, InternalGerstnerParams, WaveCapabilities, WaveDisplacementNodes, WaveNormalNodes } from "../IWaveSimulation";
-import type { CascadeConfig, CascadesConfig } from "../types";
+import type { IWaveSimulation, WaveCapabilities, WaveDisplacementNodes, WaveNormalNodes } from "../IWaveSimulation";
+import type { CascadesConfig } from "../types";
 import type { TSLBuffer, TSLUniformNode } from "../../../types/tsl";
 import type { QualityLevelConfig } from "../../../config/QualityLevels";
 import { type WaveUniforms } from "../../../uniforms";
@@ -31,10 +31,6 @@ export declare class WebGLWaveSimulation implements IWaveSimulation {
     private _waveUniforms;
     private _foamWindBias;
     private quadMesh;
-    private _gerstnerMaxWaves;
-    private _gerstnerWaveBuffer;
-    private _gerstnerWaveCount;
-    private _timeUniform;
     constructor(renderer: THREE.WebGPURenderer, options: WebGLWaveSimulationOptions);
     /**
      * Override the simulation's time accumulator with an absolute time.
@@ -60,11 +56,18 @@ export declare class WebGLWaveSimulation implements IWaveSimulation {
     initializeBuffers(_renderer: THREE.WebGPURenderer): Promise<void>;
     update(deltaTime?: number): void;
     dispose(): void;
+    getCascadeCount(): number;
     getDisplacementBuffer(_cascadeIndex?: number): TSLBuffer | null;
-    getNormalBuffer(_cascadeIndex?: number): TSLBuffer | null;
     getResolution(cascadeIndex?: number): number;
     getScale(cascadeIndex?: number): number;
-    updateCascadeConfig(index: number, config: CascadeConfig): void;
+    /**
+     * Get a cascade's world-space scale uniform node (the single source of truth
+     * shared with the cascade's FFT/normal shaders). The persistent-foam field
+     * sampler binds to it so its cascade-tiled world→UV mapping tracks the same
+     * scale as the normal texture the inject pass reads.
+     */
+    getScaleNode(cascadeIndex?: number): Node | null;
+    setMaxScale(maxScale: number): void;
     /** Get the displacement texture for a cascade. */
     getDisplacementTexture(cascadeIndex?: number): THREE.Texture | null;
     /** Get the normal texture for a cascade. */
@@ -73,15 +76,5 @@ export declare class WebGLWaveSimulation implements IWaveSimulation {
     getDisplacementRenderTarget(cascadeIndex?: number): THREE.RenderTarget | null;
     /** Get the normal render target for CPU readback. */
     getNormalRenderTarget(cascadeIndex?: number): THREE.RenderTarget | null;
-    getGerstnerWaveBuffer(): Node | null;
-    getGerstnerWaveCountUniform(): Node | null;
-    getGerstnerMaxWaves(): number;
-    getTimeUniform(): Node | null;
-    getGerstnerCPUState(): {
-        waveData: THREE.Vector4[] | null;
-        waveCount: number;
-        time: number;
-    };
-    updateGerstnerParams(params: InternalGerstnerParams): void;
 }
 //# sourceMappingURL=WebGLWaveSimulation.d.ts.map

@@ -1,48 +1,51 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
- * Post-processing atmospheric fog that applies distance-based fog to the scene.
- * The fog colour starts as a flat constant near the camera and blends toward the
- * sky colour (sampled in the view direction) with distance, so distant geometry
- * matches the sky at the horizon while nearby fog stays a controllable tint.
+ * Atmospheric fog, applied per material via `scene.fogNode`. The fog colour
+ * starts as a flat constant near the camera and blends toward the sky colour
+ * (sampled in the view direction) with distance, so distant geometry matches
+ * the sky at the horizon while nearby fog stays a controllable tint.
  *
- * Uses the scene pass depth buffer which includes water surface depth.
+ * Because the fog node runs at the end of each material's fragment shading —
+ * before blending — it composes correctly through every kind of transparency:
+ * each fragment fogs itself at its own distance, then blends normally. Alpha,
+ * additive, alpha-tested, sprite, and arbitrarily stacked content all work
+ * without any capture or decomposition.
  */
 import {
   Fn,
-  uv,
+  If,
   vec3,
   vec4,
   float,
   min,
   smoothstep,
-  step,
-  normalize,
   mix,
   pow,
   uniform,
   length,
-  abs,
-  texture,
+  output,
+  positionWorld,
+  cameraPosition,
+  materialReference,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
-import { Node, PassNode } from "three/webgpu";
-import type { TextureNode } from "three/webgpu";
-import type { Sky } from "../../components/sky/Sky";
+import type { Node } from "three/webgpu";
+import type { SkyProvider } from "../../components/sky/SkyProvider";
 
-/**
- * 1×1 stand-in for the depth-pass texture nodes. Its contents are never sampled:
- * `RenderPassManager` binds the real targets at construction, before the node
- * graph is built or the first frame renders — so the value is arbitrary.
- */
-function createPlaceholder(): THREE.DataTexture {
-  const tex = new THREE.DataTexture(
-    new Float32Array([0, 0, 0, 0]),
-    1,
-    1,
-    THREE.RGBAFormat,
-    THREE.FloatType,
-  );
-  tex.needsUpdate = true;
-  return tex;
+/** Options for {@link AtmosphericFog.createFoggedColorNode}. */
+export interface FoggedColorOptions {
+  /** Radial view distance (world units, camera → point). */
+  distance: Node;
+  /**
+   * How fog consumes the colour. `"tint"` (default) mixes toward the fog
+   * colour — for surfaces. `"fade"` scales toward zero — for additive light,
+   * which loses energy with distance rather than taking on the fog's colour.
+   */
+  mode?: "fade" | "tint";
+  /** World-space direction from the camera to the point (for the sky-colour blend). */
+  worldDirection: Node;
 }
 
 /** Parameters for atmospheric fog. */
@@ -62,26 +65,23 @@ export interface FogParams {
 }
 
 /**
- * Post-processing atmospheric fog.
+ * Atmospheric fog above water.
  *
- * Applies distance-based fog using the scene pass depth buffer,
- * which includes water surface depth for correct fog on water.
+ * `WaterSystem` assigns {@link createSceneFogNode} to `scene.fogNode`, so the
+ * renderer applies the fog inside every material that keeps the default
+ * `material.fog = true`. Set `material.fog = false` on backdrops (sky domes,
+ * clouds, starfields) and on anything that self-fogs via the public builders.
  */
 export class AtmosphericFog {
-  private sky: Sky | null = null;
+  private sky: SkyProvider | null = null;
 
   // Uniform nodes for fog parameters
   private _color = uniform(new THREE.Color("#b4c0cc"));
-  private _fadeStart = uniform(500.0);
-  private _fadeEnd = uniform(1800.0);
+  private _fadeStart = uniform(50.0);
+  private _fadeEnd = uniform(300.0);
   private _fadePower = uniform(1.0);
-  private _skyBlendDistance = uniform(1500.0);
+  private _skyBlendDistance = uniform(500.0);
   private _enabled = uniform(1.0);
-
-  /** Transparent object depth (B=depth) from the depth pre-pass. */
-  private transparentDepthTextureNode = texture(createPlaceholder());
-  /** Transparent object per-pixel alpha (A) from the depth pre-pass colour target. */
-  private transparentColorTextureNode = texture(createPlaceholder());
 
   /**
    * Constant near-distance fog colour. Distant fog blends toward the sky colour
@@ -156,168 +156,120 @@ export class AtmosphericFog {
   /**
    * Set the sky for fog colour sampling.
    */
-  setSky(sky: Sky | null): void {
+  setSky(sky: SkyProvider | null): void {
     this.sky = sky;
   }
 
-  /** Bind the transparent object depth texture from the depth pre-pass. */
-  setTransparentDepthTexture(tex: THREE.Texture): void {
-    this.transparentDepthTextureNode.value = tex;
-  }
+  /**
+   * The per-material fog node `WaterSystem` assigns to `scene.fogNode`. Runs
+   * at the end of every fogged material's fragment shading, before blending.
+   *
+   * Additive-blended materials fade toward zero with distance — light loses
+   * energy in fog rather than taking on its colour — and everything else
+   * mixes toward the sky-blended fog colour. The blend mode is read through
+   * `materialReference`, a per-object uniform, so materials that share a
+   * compiled shader program still fog by their own blending.
+   */
+  createSceneFogNode(): Node {
+    // Per-render-object uniform (THREE.AdditiveBlending === 2). Reading it at
+    // render time — not build time — keeps shared shader programs correct.
+    const blending = materialReference("blending", "float");
 
-  /** Bind the transparent object premultiplied-colour/alpha texture from the depth pre-pass. */
-  setTransparentColorTexture(tex: THREE.Texture): void {
-    this.transparentColorTextureNode.value = tex;
+    return Fn(() => {
+      const fogged = vec3(output.rgb).toVar();
+      // Skip the fog math (including the sky sample) entirely when disabled.
+      If(this._enabled.greaterThan(0.5), () => {
+        const worldDelta = positionWorld.sub(cameraPosition);
+        const dist = length(worldDelta);
+        const factor = this.buildFogFactor(dist);
+        If(blending.equal(float(THREE.AdditiveBlending)), () => {
+          fogged.assign(vec3(output.rgb).mul(float(1.0).sub(factor)));
+        }).Else(() => {
+          const fogColor = this.createFogColorNode(worldDelta, dist);
+          fogged.assign(mix(vec3(output.rgb), fogColor, factor));
+        });
+      });
+      return vec4(fogged, output.a);
+    })();
   }
 
   /**
-   * Create the post-processing effect node.
+   * TSL: fog opacity in [0, 1] at a radial view distance (world units,
+   * camera → point), on the same curve the scene fog applies, gated by
+   * {@link enabled}.
    *
-   * @param scenePass - The scene pass node for texture sampling (includes depth)
-   * @returns TSL node that applies atmospheric fog, or the input unchanged if no sky
+   * The distance must be radial — `length(worldPos - cameraPos)` — not the
+   * view-space depth `viewZ`; the scene fogs by radial distance, so a `viewZ`
+   * self-fogged object would mismatch it toward the frame edges.
+   *
+   * Binds the live parameter uniforms: preset loads and setter changes
+   * propagate without rebuilding.
    */
-  createEffectNode(scenePass: PassNode, inputColor?: Node): Node {
-    const sceneColor = inputColor ?? scenePass.getTextureNode("output");
+  createFogFactorNode(distance: Node): Node {
+    return this.buildFogFactor(distance);
+  }
 
-    // Fog requires a sky for colour sampling
-    if (!this.sky) {
-      return sceneColor;
+  /**
+   * TSL: the fog colour seen at `distance` along `worldDirection` — the flat
+   * near {@link color} blending toward the sky sample over
+   * {@link skyBlendDistance}, exactly as the scene fog computes it. Samples
+   * the sky texture once; callers compositing many layers should hoist the
+   * result. Falls back to the flat {@link color} when no sky is set, so call
+   * after `water.setSky(...)`.
+   */
+  createFogColorNode(worldDirection: Node, distance: Node): Node {
+    // The sky sampler normalizes the direction itself.
+    const skyColor: Node = this.sky
+      ? this.sky.createFogSampler()(worldDirection)
+      : vec3(this._color);
+    return this.buildFogColor(skyColor, distance);
+  }
+
+  /**
+   * TSL convenience: `color` as seen through fog at a radial view distance.
+   * `mode: "tint"` (default) mixes toward the fog colour; `mode: "fade"`
+   * scales toward zero, for additive light. Use this to self-fog content the
+   * scene fog can't reach (e.g. FX composited after post-processing) so it
+   * fades on the same curve as the scene — and set `material.fog = false` on
+   * such materials so the scene fog doesn't apply twice.
+   */
+  createFoggedColorNode(color: Node, options: FoggedColorOptions): Node {
+    const factor = this.buildFogFactor(options.distance);
+    if (options.mode === "fade") {
+      return vec3(color).mul(float(1.0).sub(factor));
     }
+    const fogColor = this.createFogColorNode(
+      options.worldDirection,
+      options.distance,
+    );
+    return mix(vec3(color), fogColor, factor);
+  }
 
-    const fogSampler = this.sky.createFogSampler();
-    const fogColorConst = this._color;
-    const fadeStart = this._fadeStart;
-    const fadeEnd = this._fadeEnd;
-    const fadePower = this._fadePower;
-    const skyBlendDistance = this._skyBlendDistance;
-    const fogEnabled = this._enabled;
+  /**
+   * Fog opacity at a radial view distance:
+   * `smoothstep(fadeStart, fadeEnd, distance) ^ fadePower`, gated by the
+   * enable uniform. Single source of the curve — the scene fog node and the
+   * public builders must never diverge.
+   */
+  private buildFogFactor(distance: Node): Node {
+    const clampedStart = min(this._fadeStart, this._fadeEnd);
+    return pow(
+      smoothstep(clampedStart, this._fadeEnd, distance),
+      this._fadePower,
+    ).mul(this._enabled);
+  }
 
-    // Raw depth for sky detection AND for manual viewZ reconstruction. Backdrop
-    // meshes (sky domes, clouds, starfields) follow the depthWrite:false
-    // convention, so the depth buffer stays at the clear value where they render.
-    // Any geometry that writes depth — mountains, ships, trees, water, floor —
-    // gets a value strictly less than the clear value and correctly receives fog.
-    // We derive viewZ manually from raw depth + camera near/far rather than
-    // calling scenePass.getViewZNode() because the pass's internal near/far
-    // uniforms can lag behind actual camera state in some pipelines.
-    const rawDepthNode: TextureNode = scenePass.getTextureNode("depth");
-    const transDepthNode = this.transparentDepthTextureNode;
-    const transColorNode = this.transparentColorTextureNode;
-
-    // Use the scene pass's camera matrices for world direction reconstruction.
-    // TSL built-ins (cameraProjectionMatrixInverse, cameraWorldMatrix) reference
-    // the post-processing camera, not the scene camera.
-    const camera = scenePass.camera as THREE.PerspectiveCamera;
-    const projectionMatrixInverse = uniform(camera.projectionMatrixInverse);
-    const cameraMatrixWorld = uniform(camera.matrixWorld);
-    const cameraNearU = uniform(camera.near);
-    const cameraFarU = uniform(camera.far);
-
-    return Fn(() => {
-      const uvCoord = uv();
-
-      // Sample raw depth explicitly at this pixel. Using a TextureNode as a
-      // scalar in arithmetic otherwise returns vec4, silently poisoning viewZ.
-      const rawDepth = rawDepthNode.sample(uvCoord).r;
-
-      // Reconstruct view-space direction from screen UV
-      // UV (0,0) is top-left in WebGPU, NDC (0,1) is top - flip Y
-      const ndcX = uvCoord.x.mul(2.0).sub(1.0);
-      const ndcY = float(1.0).sub(uvCoord.y.mul(2.0));
-      const ndcPos = vec4(ndcX, ndcY, float(1.0), float(1.0));
-
-      // Transform from NDC to view space using scene camera's projection matrix
-      const viewPos = projectionMatrixInverse.mul(ndcPos);
-      const viewDir3 = vec3(
-        viewPos.x.div(viewPos.w),
-        viewPos.y.div(viewPos.w),
-        viewPos.z.div(viewPos.w),
-      );
-
-      // Reconstruct view-space Z from raw depth (forward-Z). Positive distance.
-      // perspectiveDepthToViewZ: viewZ_neg = near*far / ((far-near)*d - far)
-      const viewZ = cameraNearU
-        .mul(cameraFarU)
-        .div(cameraFarU.sub(cameraNearU).mul(rawDepth).sub(cameraFarU))
-        .negate();
-      // Transparent objects don't write the scene depth buffer, so a near
-      // transparent object must be fogged separately from the background behind
-      // it. Decompose the pixel into the transparent layer (premultiplied colour
-      // and coverage alpha, at its own depth) and the background (the remainder,
-      // at the scene depth), fog each at its own distance, then recomposite — so
-      // the object fogs by its near depth while the empty texels of a billboard
-      // and the background seen through it fog by the far depth.
-      const transColorSample = transColorNode.sample(uvCoord);
-      const transNormDepth = transDepthNode.sample(uvCoord).z;
-      const transViewZ = transNormDepth
-        .mul(cameraFarU.sub(cameraNearU))
-        .add(cameraNearU);
-      // The colour target has no occlusion against opaques, so only treat the
-      // transparent object as present where it is in front of the scene depth.
-      const inFront = transViewZ.lessThan(viewZ);
-      const transAlpha = inFront.select(transColorSample.a, float(0.0));
-      const transPremul = inFront.select(transColorSample.rgb, vec3(0.0));
-
-      // Detect sky pixels by the unwritten-depth convention: a backdrop mesh
-      // with depthWrite:false leaves the raw depth at the clear value (1.0 in
-      // forward-Z), while any rendered geometry writes a value strictly less.
-      // NOTE: forward-Z only; reverse-Z would invert the comparison.
-      const isSky = step(float(1.0), rawDepth);
-      const clampedStart = min(fadeStart, fadeEnd);
-
-      // Fog factor at each layer's distance. Radial distance = |viewPosition| =
-      // viewDir3 * (viewZ / |viewDir3.z|); the direction factor is shared. The
-      // background's fog is suppressed on sky pixels (unwritten depth); the
-      // transparent layer is real near geometry, so it is not.
-      const dirOverZ = length(viewDir3).div(abs(viewDir3.z));
-      const bgDist = dirOverZ.mul(viewZ);
-      const transDist = dirOverZ.mul(transViewZ);
-      const fogFar = pow(smoothstep(clampedStart, fadeEnd, bgDist), fadePower)
-        .mul(fogEnabled)
-        .mul(float(1.0).sub(isSky));
-      const fogNear = pow(
-        smoothstep(clampedStart, fadeEnd, transDist),
-        fadePower,
-      ).mul(fogEnabled);
-
-      // Transform from view space to world space direction using scene camera's world matrix
-      const worldDir4 = cameraMatrixWorld.mul(vec4(viewDir3, float(0.0)));
-      const worldDir = normalize(vec3(worldDir4.x, worldDir4.y, worldDir4.z));
-
-      // Sky colour sampled along the view direction (depends only on direction).
-      const skyColor = fogSampler(worldDir);
-
-      // Blend the flat near-fog colour toward the sky colour with distance: near
-      // fog is the constant `color`, distant fog matches the sky so geometry
-      // meeting the horizon carries no colour seam. Each layer blends at its own
-      // distance. Guard against a degenerate (zero) blend distance.
-      const constColor = vec3(fogColorConst);
-      const blendDist = skyBlendDistance.max(float(1.0));
-      const fogColorNear = mix(
-        constColor,
-        skyColor,
-        smoothstep(float(0.0), blendDist, transDist),
-      );
-      const fogColorFar = mix(
-        constColor,
-        skyColor,
-        smoothstep(float(0.0), blendDist, bgDist),
-      );
-
-      // Recomposite the two premultiplied layers: the transparent contribution
-      // fogged at its own distance + the background remainder fogged at the scene
-      // distance. With no transparent object (alpha 0) this reduces to the
-      // standard single-layer fog.
-      const bgContrib = vec3(sceneColor).sub(transPremul).max(float(0.0));
-      const foggedTrans = mix(transPremul, fogColorNear.mul(transAlpha), fogNear);
-      const foggedBg = mix(
-        bgContrib,
-        fogColorFar.mul(float(1.0).sub(transAlpha)),
-        fogFar,
-      );
-      const foggedColor = foggedTrans.add(foggedBg);
-
-      return vec4(foggedColor, sceneColor.a);
-    })();
+  /**
+   * Blend the flat near-fog colour toward the sky colour with distance, so
+   * geometry meeting the horizon carries no colour seam. Guards against a
+   * degenerate (zero) blend distance.
+   */
+  private buildFogColor(skyColor: Node, distance: Node): Node {
+    const blendDist = this._skyBlendDistance.max(float(1.0));
+    return mix(
+      vec3(this._color),
+      skyColor,
+      smoothstep(float(0.0), blendDist, distance),
+    );
   }
 }

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * TSL-based spectrum generation and time evolution for WebGL FFT.
  * Uses MeshBasicNodeMaterial with outputNode for render-to-texture passes.
@@ -18,18 +21,21 @@ import {
   sqrt,
   cos,
   sin,
-  exp,
-  pow,
-  step,
+  round,
   max,
   log2,
-  round,
   smoothstep,
   texture,
 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 import type { WaveUniforms, CascadeSimulationUniforms } from "../../../../uniforms";
 import { hash } from "../../../../shaders/common";
+import {
+  peakAngularFrequency,
+  jonswapAlpha,
+  jonswapRadialSpectrum,
+  hasselmannDirectionalSpread,
+} from "../../jonswapSpectrum";
 import { WAVE_TIME_OMEGA_STEP } from "../../timing";
 
 /** Creates a placeholder 1x1 texture for initialization */
@@ -46,7 +52,9 @@ export interface InitSpectrumMaterialParams {
 }
 
 /**
- * Creates a material for initial spectrum generation (Phillips/JONSWAP).
+ * Creates a material for initial spectrum generation using a JONSWAP
+ * spectrum with Hasselmann directional spreading (see
+ * `../../jonswapSpectrum.ts`).
  * Output: vec4(h0Real, h0Imag, kx, ky)
  */
 export function createInitSpectrumMaterial(
@@ -60,15 +68,16 @@ export function createInitSpectrumMaterial(
     const x = pixelCoord.x;
     const y = pixelCoord.y;
 
-    // Resolution-normalized scale (base resolution = 256)
-    const baseRes = float(256.0);
-    const effectiveScale = cascade.scale.mul(res).div(baseRes);
+    // The cascade's tile size is its world-space `scale`, independent of FFT
+    // resolution: kFund = 2π/scale (the longest wave) is fixed across quality
+    // levels, while kNyq = π·res/scale rises with resolution to add finer waves.
+    const scale = cascade.scale;
 
     // Wave vector k
     const nx = x.sub(res.mul(0.5));
     const ny = y.sub(res.mul(0.5));
-    const kx = nx.mul(2.0).mul(Math.PI).div(effectiveScale);
-    const ky = ny.mul(2.0).mul(Math.PI).div(effectiveScale);
+    const kx = nx.mul(2.0).mul(Math.PI).div(scale);
+    const ky = ny.mul(2.0).mul(Math.PI).div(scale);
     const kLength = sqrt(kx.mul(kx).add(ky.mul(ky)));
 
     // Suppress DC component
@@ -84,22 +93,27 @@ export function createInitSpectrumMaterial(
     const kNormY = ky.div(kSafe);
     const kDotW = kNormX.mul(windDirX).add(kNormY.mul(windDirY));
 
-    // Pierson-Moskowitz peak frequency and deep-water dispersion.
-    const omegaPeak = float(0.877).mul(wave.gravity).div(wave.windSpeed.max(0.1));
+    // Deep-water dispersion. See WebGPU spectrum.ts for the full derivation.
     const omega = sqrt(wave.gravity.mul(kSafe));
+    const omegaPeak = peakAngularFrequency(wave.peakWavelength, wave.gravity);
+    const alpha = jonswapAlpha(wave.windSpeed, omegaPeak, wave.gravity);
 
-    // Hasselmann 1980 frequency-dependent directional spread.
-    const omegaRatio = omega.div(omegaPeak.max(0.0001));
-    const sBelow = float(9.77).mul(pow(omegaRatio, float(5.0)));
-    const sAbove = float(9.77).mul(pow(omegaRatio, float(-2.5)));
-    const sRaw = mix(sBelow, sAbove, step(float(1.0), omegaRatio));
-    // Clamp ≥ 0.5 caps the narrow-cone regime — sBelow blows up like ratio^5
-    // near and just below the peak — so cos^(2s) underneath stays numerically
-    // well-behaved.
-    const s = sRaw.mul(wave.spectralSharpness).max(float(0.5));
+    const radialSpectrum = jonswapRadialSpectrum({
+      k: kSafe,
+      omega,
+      omegaPeak,
+      alpha,
+      gravity: wave.gravity,
+      jonswapGamma: wave.jonswapGamma,
+    });
 
-    const halfAngleCos = sqrt(max(float(0.0001), kDotW.add(1.0).mul(0.5)));
-    const directionalSpread = pow(halfAngleCos, s.mul(2.0));
+    // Hasselmann directional spread, normalized so ∫D dθ = 1.
+    const directionalSpread = hasselmannDirectionalSpread({
+      omega,
+      omegaPeak,
+      kDotWind: kDotW,
+      spectralSharpness: wave.spectralSharpness,
+    });
 
     // Smooth upwind attenuation; replaces discontinuous step() at θ = ±90°.
     const backwardWaveScale = mix(float(0.07), float(1.0), wave.standingWaveRatio);
@@ -108,54 +122,34 @@ export function createInitSpectrumMaterial(
       mix(backwardWaveScale, float(1.0), alignment),
     );
 
-    // Phillips spectrum
-    const L = wave.windSpeed.mul(wave.windSpeed).div(wave.gravity);
-    const kLength2 = kSafe.mul(kSafe);
-    const kLength4 = kLength2.mul(kLength2);
-    const effectiveScale2 = effectiveScale.mul(effectiveScale);
-    const phillips = exp(float(-1.0).div(kLength2.mul(L).mul(L)))
-      .div(kLength4)
-      .mul(directionalFactor)
-      .div(effectiveScale2);
+    // Per-mode variance Ψ·Δk²/2 (see WebGPU spectrum.ts for the derivation).
+    const deltaK = float(2.0 * Math.PI).div(scale);
+    const deltaK2 = deltaK.mul(deltaK);
+    const jonswap = radialSpectrum.mul(directionalFactor).mul(deltaK2);
 
-    // JONSWAP peak enhancement
-    const sigmaLow = float(0.07);
-    const sigmaHigh = float(0.09);
-    const sigma = mix(sigmaLow, sigmaHigh, step(omegaPeak, omega));
-    const omegaDiff = omega.sub(omegaPeak);
-    const sigmaOmegaPeak = sigma.mul(omegaPeak);
-    const r = exp(
-      omegaDiff.mul(omegaDiff).negate().div(float(2.0).mul(sigmaOmegaPeak).mul(sigmaOmegaPeak).add(0.0001)),
-    );
-    const peakEnhancement = pow(wave.jonswapGamma, r);
-    const jonswap = phillips.mul(peakEnhancement);
-
-    // Per-cascade k-band window. See WebGPU spectrum.ts for full explanation.
+    // Per-cascade k-band window with complementary seam cross-fades.
+    // See WebGPU spectrum.ts for full explanation.
     const kLo = cascade.kBandLow;
     const kHi = cascade.kBandHigh;
-    const lowEdge = smoothstep(kLo, kLo.mul(1.5), kSafe);
-    const highEdge = float(1.0).sub(smoothstep(kHi.div(1.5), kHi, kSafe));
+    const lowEdge = smoothstep(kLo.div(1.5), kLo.mul(1.5), kSafe);
+    const highEdge = float(1.0).sub(
+      smoothstep(kHi.div(1.5), kHi.mul(1.5), kSafe),
+    );
     const bandWindow = lowEdge.mul(highEdge);
     const bandedJonswap = jonswap.mul(bandWindow);
 
     // Gaussian random using hash
     const idx = y.mul(res).add(x);
     const seed = idx.add(cascade.randomSeed.mul(100000.0));
-    // @ts-expect-error - TSL Fn parameter type inference issue
     const xi1 = hash(seed);
-    // @ts-expect-error - TSL Fn parameter type inference issue
     const xi2 = hash(seed.add(1000.0));
 
     // Box-Muller transform
     const gaussianR = sqrt(float(-2.0).mul(log2(max(float(0.0001), xi1)).mul(0.693147)));
     const theta = float(2.0).mul(Math.PI).mul(xi2);
 
-    // Initial spectrum amplitude; bandAmplitudeCompensation restores per-cascade
-    // total energy after the band window removes off-band frequencies.
-    const h0Magnitude = gaussianR
-      .mul(sqrt(bandedJonswap))
-      .mul(float(0.707107))
-      .mul(cascade.bandAmplitudeCompensation);
+    // Initial spectrum amplitude: h̃₀(k) = ξ · √(S(k)/2)
+    const h0Magnitude = gaussianR.mul(sqrt(bandedJonswap)).mul(float(0.707107));
     const h0Real = h0Magnitude.mul(cos(theta));
     const h0Imag = h0Magnitude.mul(sin(theta));
 

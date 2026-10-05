@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Show/hide the `#loading-overlay` DOM element. Looks up the element
  * lazily so the overlay can be constructed before the DOM is ready.

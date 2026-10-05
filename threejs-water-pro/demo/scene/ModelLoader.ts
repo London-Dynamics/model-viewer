@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
@@ -42,7 +45,7 @@ async function loadShipModel(gltfLoader: GLTFLoader): Promise<{
 
   const shipModel = shipGltf.scene as unknown as THREE.Mesh;
   shipModel.rotation.y = Math.PI;
-  shipModel.position.set(-500, 0, -295);
+  shipModel.position.set(-40, 0, 0);
   shipModel.traverse((obj) => {
     if (obj instanceof THREE.Mesh) {
       obj.castShadow = true;
@@ -50,8 +53,8 @@ async function loadShipModel(gltfLoader: GLTFLoader): Promise<{
     }
   });
 
-  const shipScale = 15;
-  shipModel.scale.set(shipScale, shipScale, shipScale);
+  // The model is authored at real-world size (~24 m hull), matching the
+  // water's physical calibration, so it needs no scale.
 
   // Use the ship itself as its mask (no dedicated mask geometry for this model).
   const shipWaterMask = shipModel;
@@ -73,9 +76,9 @@ function seededRandom(seed: number): () => number {
  * Check if a position is within the island exclusion zone
  */
 function isInIslandZone(x: number, z: number): boolean {
-  const islandX = 500;
-  const islandZ = -500;
-  const exclusionRadius = 300;
+  const islandX = 25;
+  const islandZ = -25;
+  const exclusionRadius = 15;
   const dx = x - islandX;
   const dz = z - islandZ;
   return dx * dx + dz * dz < exclusionRadius * exclusionRadius;
@@ -217,11 +220,13 @@ async function loadOceanFloorObjects(
   };
   const random = seededRandom(42);
 
-  // Configuration
-  const floorDepth = -100.2;
-  const spawnRadius = 800;
-  const centerX = -300;
-  const centerZ = 300;
+  // Configuration. Instances are baked relative to the ocean floor, sunk
+  // slightly so they never hover over displaced terrain; each mesh's own Y is
+  // set from the floor depth (see `UnderwaterScenery.setFloorDepth`).
+  const floorDepth = -0.01;
+  const spawnRadius = 40;
+  const centerX = -15;
+  const centerZ = 15;
 
   // Instance counts per model type
   const rockCount = 50;
@@ -263,7 +268,7 @@ async function loadOceanFloorObjects(
         );
         tempPosition.set(pos.x, floorDepth, pos.z);
         tempQuaternion.setFromAxisAngle(yAxis, random() * Math.PI * 2);
-        const scale = 100 + random() * 50;
+        const scale = 5 + random() * 2.5;
         tempScale.set(scale, scale, scale);
         tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
         instancedMesh.setMatrixAt(i, tempMatrix);
@@ -291,7 +296,7 @@ async function loadOceanFloorObjects(
       const pos = generateValidPosition(random, spawnRadius, centerX, centerZ);
       tempPosition.set(pos.x, floorDepth, pos.z);
       tempQuaternion.setFromAxisAngle(yAxis, random() * Math.PI * 2);
-      const scale = 0.12 + random() * 0.16;
+      const scale = 0.006 + random() * 0.008;
       tempScale.set(scale, scale, scale);
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       instancedMesh.setMatrixAt(i, tempMatrix);
@@ -318,7 +323,7 @@ async function loadOceanFloorObjects(
       const pos = generateValidPosition(random, spawnRadius, centerX, centerZ);
       tempPosition.set(pos.x, floorDepth, pos.z);
       tempQuaternion.setFromAxisAngle(yAxis, random() * Math.PI * 2);
-      const scale = 15 + random() * 20;
+      const scale = 0.75 + random() * 1;
       tempScale.set(scale, scale, scale);
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       instancedMesh.setMatrixAt(i, tempMatrix);
@@ -349,7 +354,7 @@ async function loadOceanFloorObjects(
       );
       tempPosition.set(pos.x, floorDepth, pos.z);
       tempQuaternion.setFromAxisAngle(xAxis, -Math.PI / 2);
-      const scale = 1 + random() * 1;
+      const scale = 0.05 + random() * 0.05;
       tempScale.set(scale, scale, scale);
       tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
       grassInstancedMesh.setMatrixAt(i, tempMatrix);
@@ -368,13 +373,18 @@ async function loadOceanFloorObjects(
 async function loadIslandModel(gltfLoader: GLTFLoader): Promise<THREE.Mesh> {
   const islandGltf = await gltfLoader.loadAsync("/models/island.glb");
   const islandModel = islandGltf.scene as unknown as THREE.Mesh;
-  islandModel.position.set(500, 40, -500);
-  islandModel.scale.set(30, 30, 30);
+  islandModel.position.set(25, 3.5, -25);
+  islandModel.scale.set(1, 1, 1);
   islandModel.rotation.x = Math.PI / 2;
   islandModel.rotation.y = -Math.PI;
 
   islandModel.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
+
+    // The scan ships position + uv only; the lit material needs normals.
+    if (!obj.geometry.getAttribute("normal")) {
+      obj.geometry.computeVertexNormals();
+    }
 
     obj.castShadow = true;
     obj.receiveShadow = true;
@@ -428,9 +438,9 @@ export async function loadAllModels(): Promise<LoadedModels> {
 
   // Create buoys in a ring around the island
   const buoyTemplate = buoyGltf.scene as unknown as THREE.Mesh;
-  buoyTemplate.scale.set(5, 5, 5);
+  buoyTemplate.scale.set(0.25, 0.25, 0.25);
   const islandCenter = islandModel.position;
-  const buoyRadius = 1000;
+  const buoyRadius = 50;
   const buoyCount = 12;
   const islandBuoys: THREE.Mesh[] = [];
   for (let i = 0; i < buoyCount; i++) {

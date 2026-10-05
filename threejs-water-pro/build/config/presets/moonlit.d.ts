@@ -1,7 +1,3 @@
-import type { PresetConfig } from "./types";
-/**
- * MOONLIT - Serene Night
- * Calm nighttime ocean with moonlight reflections and gentle swells
- */
-export declare const MOONLIT_PRESET: PresetConfig;
+import type { WaterSceneConfig } from "./types";
+export declare const MOONLIT_PRESET: WaterSceneConfig;
 //# sourceMappingURL=moonlit.d.ts.map

@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 export { createCausticsFolder } from "./CausticsFolder";
 export { createClipPlaneFolder } from "./ClipPlaneFolder";
 export { createDistortionFolder } from "./DistortionFolder";

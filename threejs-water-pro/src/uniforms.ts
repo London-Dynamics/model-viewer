@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { uniform } from "three/tsl";
 import type { TSLUniformNode } from "./types/tsl";
@@ -11,9 +14,15 @@ import type { OceanFloorOptions } from "./components/floor/types";
 export class WaveUniforms {
   animationSpeed = 1.0;
   amplitude = uniform(1.0);
-  windSpeed = uniform(50.0);
+  windSpeed = uniform(8.0);
   windDirection = uniform(0.0);
   choppiness = uniform(1.0);
+  /**
+   * Dominant wavelength in meters — the JONSWAP spectral peak (Hasselmann
+   * et al. 1973). Sets wave size directly; `windSpeed` controls energy and
+   * steepness at that size, independently.
+   */
+  peakWavelength = uniform(70.0);
   gravity = uniform(9.81);
   jonswapGamma = uniform(3.3);
   /**
@@ -22,42 +31,28 @@ export class WaveUniforms {
    * above 1 narrow waves toward the wind direction, below 1 broaden them.
    */
   spectralSharpness = uniform(1.0);
+  /**
+   * Blend between traveling waves (0) and standing waves (1). Wind
+   * directional bias only applies to the traveling portion, so the spectrum
+   * becomes more omnidirectional as this increases.
+   */
   standingWaveRatio = uniform(0.0);
 
   /** Set when any uniform changes. Consumers clear after reinit. */
   dirty = true;
-  /**
-   * Set when a parameter that affects the Phillips·JONSWAP 2D energy integrand
-   * (`windSpeed`, `gravity`, `jonswapGamma`, `spectralSharpness`,
-   * `standingWaveRatio`) changes. The cascade band assignment runs an init-time
-   * numerical integral that depends on these — gating it on `bandDirty` instead
-   * of `dirty` keeps slider drags on unrelated params (choppiness, direction,
-   * amplitude) from paying the JS-side recompute cost.
-   */
-  bandDirty = true;
 
   update(params: WaveUniformParams) {
-    const nextGravity = params.gravity ?? 9.81;
-    const nextGamma = params.jonswapGamma ?? 3.3;
-    const nextStanding = params.standingWaveRatio ?? 0.0;
-    const bandAffecting =
-      params.windSpeed !== this.windSpeed.value ||
-      nextGravity !== this.gravity.value ||
-      nextGamma !== this.jonswapGamma.value ||
-      params.spectralSharpness !== this.spectralSharpness.value ||
-      nextStanding !== this.standingWaveRatio.value;
-
     this.animationSpeed = params.animationSpeed ?? this.animationSpeed;
     this.amplitude.value = params.amplitude;
     this.windSpeed.value = params.windSpeed;
     this.windDirection.value = params.windDirection;
     this.choppiness.value = params.choppiness;
-    this.gravity.value = nextGravity;
-    this.jonswapGamma.value = nextGamma;
+    this.peakWavelength.value = params.peakWavelength;
+    this.gravity.value = params.gravity ?? 9.81;
+    this.jonswapGamma.value = params.jonswapGamma ?? 3.3;
     this.spectralSharpness.value = params.spectralSharpness;
-    this.standingWaveRatio.value = nextStanding;
+    this.standingWaveRatio.value = params.standingWaveRatio ?? 0.0;
     this.dirty = true;
-    if (bandAffecting) this.bandDirty = true;
   }
 }
 
@@ -91,30 +86,24 @@ export class SunUniforms {
 export class CascadeSimulationUniforms {
   resolution = uniform(256);
   scale = uniform(100);
-  amplitudeScale = uniform(1.0);
 
   /**
-   * Lower edge of the wavenumber band this cascade owns (rad/m). Energy
-   * below this is smoothly attenuated to zero so adjacent cascades partition
-   * the spectrum without overlap. Tiny non-zero default keeps the shader's
-   * `smoothstep(kLo, kLo·1.5, k)` well-defined before assignCascadeBands writes
-   * a real value.
+   * Lower edge of this cascade's wavenumber band (rad/m). The spectrum shader
+   * cross-fades spectral density over [kBandLow/1.5, kBandLow·1.5] with a
+   * weight complementary to the previous cascade's high edge, so adjacent
+   * cascades partition the spectrum without loss or double-counting. The
+   * default is the "no low edge" sentinel used by the first cascade (see
+   * cascadeBands.ts).
    */
   kBandLow = uniform(1.0e-9);
   /**
-   * Upper edge of the wavenumber band this cascade owns (rad/m). The smooth
-   * cutoff between `kBandHigh/1.5` and `kBandHigh` also serves as anti-alias
-   * roll-off near the cascade's Nyquist limit. Large default acts as
-   * "unbounded" until assignCascadeBands writes a real value.
+   * Upper edge of this cascade's wavenumber band (rad/m). For inner cascades
+   * this is the seam shared with the next cascade's `kBandLow`; for the last
+   * cascade, assignCascadeBands places it at kNyquist/1.5 so the cross-fade
+   * reaches zero exactly at the Nyquist limit (anti-alias roll-off). Large
+   * default acts as "unbounded" until assignCascadeBands writes a real value.
    */
   kBandHigh = uniform(1.0e9);
-  /**
-   * Init-time amplitude scaling that compensates for energy removed by the
-   * k-band window, so each cascade's total displacement variance matches
-   * the un-banded integral over its full [kFundamental, kNyquist] range.
-   * Recomputed whenever scale/resolution/windSpeed/gravity change.
-   */
-  bandAmplitudeCompensation = uniform(1.0);
 
   foamLeadingEdgeScale = uniform(2.0);
 
@@ -128,15 +117,13 @@ export class CascadeSimulationUniforms {
   // caller sets a fixed root seed.
   randomSeed = uniform(1);
 
-  init(resolution: number, scale: number, amplitudeScale: number) {
+  init(resolution: number, scale: number) {
     this.resolution.value = resolution;
     this.scale.value = scale;
-    this.amplitudeScale.value = amplitudeScale;
   }
 
-  updateCascadeConfig(scale: number, amplitudeScale: number) {
+  setScale(scale: number) {
     this.scale.value = scale;
-    this.amplitudeScale.value = amplitudeScale;
   }
 }
 
@@ -147,8 +134,8 @@ export class CascadeSimulationUniforms {
 export class FloorDisplacementUniforms {
   blendSoftness = uniform(0.3);
   blendThreshold = uniform(0.5);
-  displacementScale = uniform(150.0);
-  displacementStrength = uniform(5.0);
+  displacementScale = uniform(7.5);
+  displacementStrength = uniform(0.4);
   lacunarity = uniform(2.0);
   normalScale = uniform(1.0);
   persistence = uniform(0.5);

@@ -1,5 +1,9 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { RenderOrder } from "../../rendering/renderOrder";
 
 export interface ClipmapConfig {
   levels: number; // Number of LOD levels (e.g., 4)
@@ -40,7 +44,6 @@ export type SnappedPositionListener = (x: number, z: number) => void;
 
 export class WaterSurfaceGeometry {
   private static readonly UNDERWATER_DEPTH = 1000;
-  private elevation = 0;
 
   private config: ClipmapConfig;
   private container: THREE.Group;
@@ -111,10 +114,9 @@ export class WaterSurfaceGeometry {
 
     const surfaceMesh = new THREE.Mesh(mergedSurfaceGeometry, material);
     surfaceMesh.frustumCulled = false;
-    // Render water before other transparent objects so it writes depth first.
-    // Other transparent objects (with depthWrite=false) then correctly
-    // depth-test against the water surface.
-    surfaceMesh.renderOrder = -1;
+    // Writes depth ahead of the other transparents (which use depthWrite=false)
+    // and ahead of a sky provider's cloud layer, so both depth-test against it.
+    surfaceMesh.renderOrder = RenderOrder.transparent.waterSurface;
     this.container.add(surfaceMesh);
     this.surfaceMesh = surfaceMesh;
 
@@ -129,7 +131,7 @@ export class WaterSurfaceGeometry {
 
     const underwaterMesh = new THREE.Mesh(mergedUnderwaterGeometry, this.underwaterMaterial);
     underwaterMesh.frustumCulled = false;
-    underwaterMesh.renderOrder = -1;
+    underwaterMesh.renderOrder = RenderOrder.opaque.underwaterVolume;
     this.container.add(underwaterMesh);
     this.underwaterMesh = underwaterMesh;
   }
@@ -596,7 +598,7 @@ export class WaterSurfaceGeometry {
     this.snappedPosition.set(snappedX, snappedZ);
 
     // All levels share the same center position
-    this.container.position.set(snappedX, this.elevation, snappedZ);
+    this.container.position.set(snappedX, 0, snappedZ);
 
     for (const fn of this._snappedPositionListeners) {
       fn(snappedX, snappedZ);
@@ -608,12 +610,6 @@ export class WaterSurfaceGeometry {
    */
   public getSnappedPosition(): THREE.Vector2 {
     return this.snappedPosition.clone();
-  }
-
-  /** Set the world-space Y elevation for the ocean surface. */
-  public setElevation(elevation: number): void {
-    this.elevation = elevation;
-    this.container.position.y = elevation;
   }
 
   /**

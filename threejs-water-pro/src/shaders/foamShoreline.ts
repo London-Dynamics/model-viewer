@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * Shoreline foam — appears in shallow water near objects using depth-based masking.
  *
@@ -6,22 +9,10 @@
  * uniform nodes via {@link build}.
  */
 import * as THREE from "three/webgpu";
-import {
-  vec2,
-  vec3,
-  float,
-  If,
-  smoothstep,
-  texture,
-  mix,
-  uniform,
-} from "three/tsl";
+import { vec2, vec3, float, If, smoothstep, mix, uniform } from "three/tsl";
 import type { Node } from "./types";
-import { createDefaultFoamTexture } from "./foamDefaults";
-import {
-  loadBuiltInFoamTexture,
-  type BuiltInFoamName,
-} from "./builtInFoamTextures";
+import { FoamTextureSlot } from "./foamTextureSlot";
+import type { BuiltInFoamName } from "./builtInFoamTextures";
 
 // ============= Params & Result interfaces =============
 
@@ -76,9 +67,9 @@ export class ShorelineFoam {
   private _coverage = uniform(0.5);
   private _enabled = uniform(1.0);
   private _opacity = uniform(0.5);
-  private _range = uniform(50.0);
-  private _size = uniform(50.0);
-  private _texture = texture(createDefaultFoamTexture());
+  private _range = uniform(2.0);
+  private _size = uniform(10.0);
+  private _texture = new FoamTextureSlot();
 
   // ============= Public Getters/Setters =============
 
@@ -165,7 +156,16 @@ export class ShorelineFoam {
     this.opacity = params.opacity;
     this.range = params.range;
     this.size = params.size;
-    this.foamTexture = loadBuiltInFoamTexture(params.texture);
+    void this._texture.load(params.texture);
+  }
+
+  /**
+   * Switch to a bundled foam texture by name, leaving every other parameter
+   * untouched. Use this for an isolated texture change; {@link foamTexture}
+   * binds a caller-owned texture instead.
+   */
+  loadTexture(name: BuiltInFoamName): void {
+    void this._texture.load(name);
   }
 
   /**
@@ -204,7 +204,7 @@ export class ShorelineFoam {
 
     If(this._enabled.greaterThan(0.5), () => {
       const foamUV = vec2(worldX.div(this._size), worldZ.div(this._size));
-      const foamIntensity = this._texture.sample(foamUV).r;
+      const foamIntensity = this._texture.node.sample(foamUV).r;
 
       const depthFalloff = float(1.0).div(this._range.add(0.001));
       const baseThreshold = float(1.0).sub(this._coverage);

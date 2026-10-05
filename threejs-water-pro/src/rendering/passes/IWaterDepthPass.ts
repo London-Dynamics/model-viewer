@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import type * as THREE from "three/webgpu";
 import type { Node, UniformNode } from "three/webgpu";
 

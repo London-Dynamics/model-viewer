@@ -4,13 +4,12 @@
  * group classes in uniforms.ts.
  *
  * Shader class parameter interfaces (ColorParams → WaterColorParams,
- * FresnelParams, SurfaceFoamParams, WaveFoamParams, ShorelineFoamParams,
- * UnderwaterSurfaceParams, SSRParams, SSSParams, SparkleParams)
- * now live in their respective shader class files under src/shaders/.
+ * FresnelParams, SurfaceFoamParams, WaveFoamParams, FoamPersistenceParams,
+ * ShorelineFoamParams, UnderwaterSurfaceParams, SSRParams, SSSParams,
+ * SparkleParams) now live in their respective shader class files under src/shaders/.
  *
  * Properties within each interface are sorted alphabetically.
  */
-export type { GerstnerParams } from "../shaders/gerstner";
 export type { SunShaftsParams } from "../shaders/sunShafts";
 /**
  * Options passed to `WaterSystem.create`. All fields are optional.
@@ -41,6 +40,7 @@ export interface WaveUniformParams {
     choppiness: number;
     gravity?: number;
     jonswapGamma?: number;
+    peakWavelength: number;
     spectralSharpness: number;
     standingWaveRatio?: number;
     windDirection: number;

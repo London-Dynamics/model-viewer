@@ -1,3 +1,6 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 import * as THREE from "three/webgpu";
 import type { IWaveSampler, IWaveSimulation } from "../../simulation/waves";
 import { MAX_SAMPLE_POINTS } from "../../simulation/waves";

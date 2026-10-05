@@ -22,10 +22,13 @@ export interface TimeEvolutionShaderParams {
     numBits: number;
 }
 /**
- * Creates the initial spectrum generation shader (Phillips spectrum)
+ * Creates the initial spectrum generation shader.
  *
- * Generates the initial Fourier coefficients h̃₀(k) for ocean waves using the Phillips spectrum.
- * This shader runs once at initialization to set up the frequency domain representation.
+ * Generates the initial Fourier coefficients h̃₀(k) for ocean waves using a
+ * JONSWAP spectrum (see `../../jonswapSpectrum.ts`) with Hasselmann
+ * directional spreading. This shader runs once at initialization
+ * (and whenever wave parameters change) to set up the frequency domain
+ * representation.
  */
 export declare const createInitSpectrumShader: ({ wave, cascade, h0Buffer, resolution, }: InitSpectrumShaderParams) => import("three/webgpu").ComputeNode;
 /**

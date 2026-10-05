@@ -1,44 +1,61 @@
+// Three.js Water Pro © 2025–2026 DRG Software Solutions LLC.
+// Proprietary — licensed, not sold. See LICENSE.md.
+
 /**
  * CascadeSampler - WebGPU-only class for sampling FFT ocean simulation buffers.
  *
  * Handles bilinear interpolation, hierarchical cascade sampling, and normal blending.
  * This class is only instantiated when WebGPU storage buffers are available.
  */
-import { float, int, normalize, texture, uniform, vec2, vec3 } from "three/tsl";
+import {
+  clamp,
+  float,
+  int,
+  length,
+  max,
+  normalize,
+  texture,
+  uniform,
+  vec2,
+  vec3,
+} from "three/tsl";
 import type * as THREE from "three/webgpu";
 import type { FloatNode, Node, StorageBufferNode, UniformFloatNode } from "./types";
 import { sampleBufferBilinear, worldToPixelCoords } from "./common";
 
 // ============= Result Types =============
 
+/** World XZ used to sample one cascade, hierarchically displaced by every coarser cascade. */
+export interface HierarchicalCoords {
+  x: Node;
+  z: Node;
+}
+
 /** Result from {@link CascadeSampler.sampleDisplacement}. */
 export interface CascadeDisplacementResult {
   /** Combined displacement from all cascades (vec3). */
   displacement: Node;
-  /** X coordinate for sampling cascade 1 (displaced by cascade 0). */
-  hierarchicalCoordsX: Node;
-  /** Z coordinate for sampling cascade 1 (displaced by cascade 0). */
-  hierarchicalCoordsZ: Node;
+  /**
+   * Sample coordinates for cascades 1..cascadeCount-1, in order (empty when
+   * cascadeCount is 1). Pass to {@link CascadeSampler.sampleNormals} so the
+   * fragment stage samples each cascade's normal at the same hierarchically
+   * displaced position used here.
+   */
+  hierarchicalCoords: HierarchicalCoords[];
 }
 
 /** Result from {@link CascadeSampler.sampleNormals}. */
 export interface CascadeNormalsResult {
   /** Blended normal from all cascades (vec3). */
   normal: Node;
-  /** Eigenvalue from cascade 0 (waves). Smaller = more folding. */
-  eigen0: Node;
-  /** Eigenvalue from cascade 1 (ripples). Smaller = more folding. */
-  eigen1: Node;
-}
-
-/** Parameters for {@link CascadeSampler.sampleFoamAccumulation}. */
-export interface FoamAccumulationSampleParams {
-  /** Cascade 0 foam energy buffer. */
-  foamBuffer0: StorageBufferNode;
-  /** World X coordinate (cascade 0 sampling site). */
-  worldX: Node;
-  /** World Z coordinate (cascade 0 sampling site). */
-  worldZ: Node;
+  /**
+   * Sub-footprint slope variance (0-1), the roughness the mip-averaged
+   * normals discard. Mip filtering shortens the averaged normal when
+   * sub-texel normals disagree, so `1 - |n|` per cascade (summed) measures
+   * how much wave detail the pixel footprint folded away — the input to a
+   * filtered-BRDF reflection roughness (Toksvig 2005).
+   */
+  slopeVariance: Node;
 }
 
 // ============= CascadeSampler Class =============
@@ -50,83 +67,30 @@ export interface FoamAccumulationSampleParams {
  * displacement (vertex stage) and normals (fragment stage) with proper
  * hierarchical cascade blending.
  *
- * Hierarchical sampling ensures smaller-scale cascades (ripples) are sampled
- * at positions displaced by larger-scale cascades (waves), so ripples correctly
- * "ride" on the wave structures.
+ * Hierarchical sampling ensures finer cascades are sampled at positions
+ * displaced by every coarser cascade before them, so ripples correctly
+ * "ride" on swell and waves.
  */
 export class CascadeSampler {
-  // Cascade uniforms
-  private _resolution0 = uniform(256);
-  private _scale0 = uniform(118.0);
-  private _resolution1 = uniform(256);
-  private _scale1 = uniform(397.0);
+  private _resolutions: UniformFloatNode[];
+  private _scales: UniformFloatNode[];
 
-  /** Number of active cascades (affects shader compilation). */
-  readonly cascadeCount: 1 | 2;
+  /** Number of active cascades (affects shader compilation). Fixed for the sampler's lifetime. */
+  readonly cascadeCount: number;
 
   /**
    * Creates a CascadeSampler for the specified cascade count.
    *
-   * @param cascadeCount - Number of cascades (1 or 2).
+   * @param cascadeCount - Number of cascades (1-3).
    */
-  constructor(cascadeCount: 1 | 2) {
+  constructor(cascadeCount: number) {
     this.cascadeCount = cascadeCount;
-  }
-
-  // ============= Uniform Accessors =============
-
-  /** Resolution of cascade 0 (waves) in texels. */
-  get resolution0(): number {
-    return this._resolution0.value;
-  }
-  set resolution0(value: number) {
-    this._resolution0.value = value;
-  }
-
-  /** World-space scale of cascade 0 (waves) in units. */
-  get scale0(): number {
-    return this._scale0.value;
-  }
-  set scale0(value: number) {
-    this._scale0.value = value;
-  }
-
-  /** Resolution of cascade 1 (ripples) in texels. */
-  get resolution1(): number {
-    return this._resolution1.value;
-  }
-  set resolution1(value: number) {
-    this._resolution1.value = value;
-  }
-
-  /** World-space scale of cascade 1 (ripples) in units. */
-  get scale1(): number {
-    return this._scale1.value;
-  }
-  set scale1(value: number) {
-    this._scale1.value = value;
-  }
-
-  // ============= Internal Uniform Accessors (for shader graph) =============
-
-  /** @internal Resolution0 uniform node for shader binding. */
-  get _resolution0Node(): UniformFloatNode {
-    return this._resolution0;
-  }
-
-  /** @internal Scale0 uniform node for shader binding. */
-  get _scale0Node(): UniformFloatNode {
-    return this._scale0;
-  }
-
-  /** @internal Resolution1 uniform node for shader binding. */
-  get _resolution1Node(): UniformFloatNode {
-    return this._resolution1;
-  }
-
-  /** @internal Scale1 uniform node for shader binding. */
-  get _scale1Node(): UniformFloatNode {
-    return this._scale1;
+    this._resolutions = [];
+    this._scales = [];
+    for (let i = 0; i < cascadeCount; i++) {
+      this._resolutions.push(uniform(256));
+      this._scales.push(uniform(500.0));
+    }
   }
 
   // ============= Bulk Update =============
@@ -134,18 +98,13 @@ export class CascadeSampler {
   /**
    * Updates a cascade's resolution and scale.
    *
-   * @param index - Cascade index (0 or 1).
+   * @param index - Cascade index (0..cascadeCount-1).
    * @param resolution - Resolution in texels.
    * @param scale - World-space scale in units.
    */
   updateCascade(index: number, resolution: number, scale: number): void {
-    if (index === 0) {
-      this._resolution0.value = resolution;
-      this._scale0.value = scale;
-    } else if (index === 1) {
-      this._resolution1.value = resolution;
-      this._scale1.value = scale;
-    }
+    this._resolutions[index].value = resolution;
+    this._scales[index].value = scale;
   }
 
   // ============= Sampling Methods =============
@@ -153,54 +112,46 @@ export class CascadeSampler {
   /**
    * Samples displacement from cascade buffers with hierarchical blending.
    *
-   * For 2 cascades: cascade 1 is sampled at positions displaced by cascade 0,
-   * so ripples "ride" on waves.
+   * Each cascade after the first is sampled at coordinates displaced by the
+   * running sum of every coarser cascade's displacement, so finer cascades
+   * "ride" on the ones before them.
    *
    * @param worldX - World X coordinate.
    * @param worldZ - World Z coordinate.
-   * @param buffer0 - Cascade 0 displacement buffer.
-   * @param buffer1 - Cascade 1 displacement buffer (required if cascadeCount is 2).
+   * @param buffers - Displacement buffers, one per cascade, coarsest first.
    */
   sampleDisplacement(
     worldX: Node,
     worldZ: Node,
-    buffer0: StorageBufferNode,
-    buffer1?: StorageBufferNode,
+    buffers: StorageBufferNode[],
   ): CascadeDisplacementResult {
-    const d0 = this.sampleDisplacementBuffer(
-      worldX as FloatNode,
-      worldZ as FloatNode,
-      buffer0,
-      this._resolution0,
-      this._scale0,
-    );
+    let sampleX = worldX as FloatNode;
+    let sampleZ = worldZ as FloatNode;
+    let dispX: Node = float(0.0);
+    let dispY: Node = float(0.0);
+    let dispZ: Node = float(0.0);
+    const hierarchicalCoords: HierarchicalCoords[] = [];
 
-    if (this.cascadeCount === 1) {
-      return {
-        displacement: vec3(d0.x, d0.y, d0.z),
-        hierarchicalCoordsX: worldX,
-        hierarchicalCoordsZ: worldZ,
-      };
+    for (let i = 0; i < this.cascadeCount; i++) {
+      const d = this.sampleDisplacementBuffer(
+        sampleX,
+        sampleZ,
+        buffers[i],
+        this._resolutions[i],
+        this._scales[i],
+      );
+      dispX = i === 0 ? d.x : dispX.add(d.x);
+      dispY = i === 0 ? d.y : dispY.add(d.y);
+      dispZ = i === 0 ? d.z : dispZ.add(d.z);
+
+      if (i < this.cascadeCount - 1) {
+        sampleX = sampleX.add(d.x) as FloatNode;
+        sampleZ = sampleZ.add(d.z) as FloatNode;
+        hierarchicalCoords.push({ x: sampleX, z: sampleZ });
+      }
     }
 
-    // 2 cascades: hierarchical sampling
-    // Cascade 1 sampled at position displaced by cascade 0
-    const hierarchicalCoordsX = (worldX as FloatNode).add(d0.x);
-    const hierarchicalCoordsZ = (worldZ as FloatNode).add(d0.z);
-
-    const d1 = this.sampleDisplacementBuffer(
-      hierarchicalCoordsX as FloatNode,
-      hierarchicalCoordsZ as FloatNode,
-      buffer1!,
-      this._resolution1,
-      this._scale1,
-    );
-
-    return {
-      displacement: vec3(d0.x.add(d1.x), d0.y.add(d1.y), d0.z.add(d1.z)),
-      hierarchicalCoordsX,
-      hierarchicalCoordsZ,
-    };
+    return { displacement: vec3(dispX, dispY, dispZ), hierarchicalCoords };
   }
 
   /**
@@ -213,76 +164,48 @@ export class CascadeSampler {
    *
    * @param worldX - World X coordinate (for cascade 0).
    * @param worldZ - World Z coordinate (for cascade 0).
-   * @param hierarchicalCoordsX - Hierarchical X coordinate (for cascade 1).
-   * @param hierarchicalCoordsZ - Hierarchical Z coordinate (for cascade 1).
-   * @param normalTexture0 - Cascade 0 normal storage texture.
-   * @param normalTexture1 - Cascade 1 normal storage texture (required if cascadeCount is 2).
+   * @param hierarchicalCoords - Sample coordinates for cascades 1..cascadeCount-1
+   *   from {@link sampleDisplacement}.
+   * @param normalTextures - Cascade normal storage textures, one per cascade, coarsest first.
    */
   sampleNormals(
     worldX: Node,
     worldZ: Node,
-    hierarchicalCoordsX: Node,
-    hierarchicalCoordsZ: Node,
-    normalTexture0: THREE.Texture,
-    normalTexture1: THREE.Texture | undefined,
+    hierarchicalCoords: HierarchicalCoords[],
+    normalTextures: THREE.Texture[],
   ): CascadeNormalsResult {
     const sample0 = this.sampleNormalTexture(
       worldX as FloatNode,
       worldZ as FloatNode,
-      normalTexture0,
-      this._resolution0,
-      this._scale0,
+      normalTextures[0],
+      this._scales[0],
     );
 
-    let rawNormal: Node;
-    let eigen0: Node;
-    let eigen1: Node;
+    let accX: Node = sample0.normal.x;
+    let accY: Node = sample0.normal.y;
+    let accZ: Node = sample0.normal.z;
+    // Slope variances of independent wavelet bands add (Bruneton et al. 2010,
+    // Eq. 4), so accumulate each cascade's length-deficit contribution.
+    let slopeVariance: Node = sample0.variance;
 
-    if (this.cascadeCount === 1) {
-      rawNormal = normalize(sample0.normal);
-      eigen0 = sample0.eigenvalue;
-      eigen1 = float(1.0); // Neutral eigenvalue for inactive cascade
-    } else {
-      // 2 cascades with hierarchical sampling
-      const sample1 = this.sampleNormalTexture(
-        hierarchicalCoordsX as FloatNode,
-        hierarchicalCoordsZ as FloatNode,
-        normalTexture1!,
-        this._resolution1,
-        this._scale1,
+    for (let i = 1; i < this.cascadeCount; i++) {
+      const coords = hierarchicalCoords[i - 1];
+      const sample = this.sampleNormalTexture(
+        coords.x as FloatNode,
+        coords.z as FloatNode,
+        normalTextures[i],
+        this._scales[i],
       );
-
-      // Blend using reoriented normal mapping
-      const n0 = sample0.normal;
-      const n1 = sample1.normal;
-      rawNormal = normalize(
-        vec3(n0.x.add(n1.x), n0.y.add(n1.y.sub(1.0)), n0.z.add(n1.z)),
-      );
-      eigen0 = sample0.eigenvalue;
-      eigen1 = sample1.eigenvalue;
+      accX = accX.add(sample.normal.x);
+      accY = accY.add(sample.normal.y.sub(1.0));
+      accZ = accZ.add(sample.normal.z);
+      slopeVariance = slopeVariance.add(sample.variance);
     }
 
-    return { normal: rawNormal, eigen0, eigen1 };
-  }
-
-  /**
-   * Samples the persistent foam accumulation buffer at a world-space
-   * coordinate. Only cascade 0 is stored; ripple-scale injection would
-   * smear into a uniform haze.
-   *
-   * @param params - World coordinates and foam buffer bindings.
-   * @returns Foam energy at the sampled location (FloatNode, `≥ 0`).
-   */
-  sampleFoamAccumulation(params: FoamAccumulationSampleParams): Node {
-    const { worldX, worldZ, foamBuffer0 } = params;
-
-    return this.sampleFoamBuffer(
-      worldX as FloatNode,
-      worldZ as FloatNode,
-      foamBuffer0,
-      this._resolution0,
-      this._scale0,
-    );
+    return {
+      normal: normalize(vec3(accX, accY, accZ)),
+      slopeVariance: clamp(slopeVariance, 0.0, 1.0),
+    };
   }
 
   // ============= Private Helpers =============
@@ -314,50 +237,28 @@ export class CascadeSampler {
    *
    * @param worldX - World X coordinate.
    * @param worldZ - World Z coordinate.
-   * @param tex - Normal storage texture (RGBA32F, RepeatWrapping, LinearFilter).
-   * @param resolution - Cascade resolution uniform (texels per side).
+   * @param tex - Normal storage texture (RGBA16F, RepeatWrapping, mipmapped trilinear/anisotropic).
    * @param scale - Cascade world-space scale uniform.
    */
   private sampleNormalTexture(
     worldX: FloatNode,
     worldZ: FloatNode,
     tex: THREE.Texture,
-    resolution: UniformFloatNode,
     scale: UniformFloatNode,
-  ): { normal: Node; eigenvalue: Node } {
-    const baseRes = float(256.0);
-    const effectiveScale = (scale as FloatNode)
-      .mul(float(resolution))
-      .div(baseRes);
-    const u = worldX.div(effectiveScale).add(0.5);
-    const v = worldZ.div(effectiveScale).add(0.5);
+  ): { normal: Node; variance: Node } {
+    // The cascade tile spans exactly `scale` meters (see worldToPixelCoords).
+    const u = worldX.div(scale as FloatNode).add(0.5);
+    const v = worldZ.div(scale as FloatNode).add(0.5);
     const sample = texture(tex).sample(vec2(u, v));
 
     // Convert normal from [0,1] to [-1,1]
     const normal = sample.xyz.mul(2.0).sub(1.0);
-    const eigenvalue = sample.w;
 
-    return { normal, eigenvalue };
-  }
+    // Length deficit of the mip-averaged normal: 1 at full detail, shrinking
+    // as the footprint folds sub-texel normals together. `1 - |n|` is the
+    // discarded sub-footprint slope variance (Toksvig 2005).
+    const variance = max(float(1.0).sub(length(normal)), 0.0);
 
-  /**
-   * Samples a cascade's foam accumulation buffer (vec2 `.x` = energy).
-   *
-   * @param worldX - World X coordinate.
-   * @param worldZ - World Z coordinate.
-   * @param buffer - Foam energy storage buffer (vec2 per texel).
-   * @param resolution - Buffer resolution uniform.
-   * @param scale - World-space scale uniform.
-   */
-  private sampleFoamBuffer(
-    worldX: FloatNode,
-    worldZ: FloatNode,
-    buffer: StorageBufferNode,
-    resolution: UniformFloatNode,
-    scale: UniformFloatNode,
-  ): Node {
-    const { px, py } = worldToPixelCoords(worldX, worldZ, resolution, scale);
-    const sample = sampleBufferBilinear(px, py, buffer, int(resolution));
-    return sample.x;
+    return { normal, variance };
   }
 }

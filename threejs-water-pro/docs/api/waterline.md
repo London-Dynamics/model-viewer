@@ -15,6 +15,20 @@ Access via `water.waterline`.
 | `smoothness`         | `number`  | `0.3`   | Edge fade width (0 = hard edge, higher = softer)              |
 | `thickness`          | `number`  | `0.5`   | Half-width of the effect in world units (meters)              |
 
+## Methods
+
+### `update`
+
+```typescript
+update(params: WaterlineParams): void
+```
+
+Sets `highlightSharpness`, `highlightStrength`, `normalStrength`, `smoothness`, and `thickness` in a single call, typically from a preset. `update` does not change `enabled`.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `params` | `WaterlineParams` | The meniscus values to apply. `enabled` is not part of `WaterlineParams`. |
+
 ## Example
 
 ```typescript
