@@ -8,10 +8,10 @@ import {Sky, WaterSystem, getPresetParams} from 'threejs-water-pro';
 import {
   boatDemoPlacement,
   boatFromParam,
-  demoParentPoint,
+  frameCameraPose,
   hdriForTime,
-  LAKE_REFLECTION_ROUGHNESS,
   lakeLook,
+  lakePresentation,
 } from './boat-placement.js';
 
 const params = new URLSearchParams(location.search);
@@ -119,49 +119,75 @@ const useSkyEnvironment = (scene, sky) => {
 };
 
 const frameCamera = (camera, controls) => {
-  const windshield = demoParentPoint(boat.windshield, placement);
-  if (state.view === 'glass') {
-    controls.target.set(windshield[0], windshield[1], windshield[2]);
-    camera.position.set(
-        windshield[0] + placement.scale * 0.35,
-        windshield[1] + placement.scale * 0.2,
-        windshield[2] + placement.scale * 1.35);
-  } else {
-    controls.target.set(0, placement.worldHeight * 0.28, 0);
-    camera.position.set(
-        placement.worldLength * 0.45,
-        placement.worldHeight * 0.62,
-        placement.worldLength * 0.9);
-  }
+  const pose = frameCameraPose(placement, boat.windshield, state.view) ??
+      frameCameraPose(placement, boat.windshield, 'hero');
+  controls.target.set(pose.target[0], pose.target[1], pose.target[2]);
+  camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
   camera.near = 0.1;
   camera.far = 50000;
   camera.updateProjectionMatrix();
   controls.update();
 };
 
-const countTransparency = (root) => {
-  const blend = [];
-  const mask = [];
-  root.traverse((obj) => {
+const isWindowMaterial = (material) => {
+  if (material == null) {
+    return false;
+  }
+  if (material.transmission > 0) {
+    return true;
+  }
+  return /glass|windshield/i.test(material.name || '');
+};
+
+/**
+ * Transmission glass is drawn before the water pass, and the hull mask
+ * hides every water fragment behind the boat. Both show the sand floor
+ * through the windshield. Windows become a light alpha blend and leave
+ * the mask so the lake composites behind them.
+ */
+const separateWindows = (hull, boatGroup) => {
+  const windows = [];
+  hull.traverse((obj) => {
     if (obj.isMesh !== true) {
       return;
     }
     const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    if (!materials.some(isWindowMaterial)) {
+      return;
+    }
     for (const material of materials) {
-      if (material == null) {
+      if (!isWindowMaterial(material)) {
         continue;
       }
-      if (material.transparent === true && !(material.alphaTest > 0)) {
-        blend.push(material.name || '(unnamed)');
-      } else if (material.alphaTest > 0) {
-        mask.push(material.name || '(unnamed)');
-      }
+      material.transmission = 0;
+      material.transparent = true;
+      material.opacity = Math.min(material.opacity || 1, 0.2);
+      material.depthWrite = false;
+      material.roughness = Math.min(material.roughness ?? 0.05, 0.08);
+      material.side = THREE.DoubleSide;
+      material.needsUpdate = true;
     }
+    windows.push(obj);
   });
-  return {
-    blend: [...new Set(blend)],
-    mask: [...new Set(mask)],
-  };
+  const glassGroup = new THREE.Group();
+  glassGroup.name = 'windows';
+  boatGroup.add(glassGroup);
+  boatGroup.updateMatrixWorld(true);
+  for (const mesh of windows) {
+    glassGroup.attach(mesh);
+  }
+  return windows.length;
+};
+
+const applyPresentation = (renderer, sky, look) => {
+  const grade = lakePresentation(state.time);
+  renderer.toneMappingExposure = grade.exposure;
+  if (sky != null) {
+    sky.brightnessUniform.value = grade.skyBrightness;
+    sky.reflectionRoughnessUniform.value = look.sky.reflectionRoughness;
+    sky.sunEnabledUniform.value = look.sky.sun.diskEnabled ? 1 : 0;
+    sky.sunColorUniform.value.set(look.sky.sun.diskColor);
+  }
 };
 
 const boot = async () => {
@@ -191,13 +217,21 @@ const boot = async () => {
 
   setStatus('water: loading sky');
   let skyTexture = await loadHdri(hdriForTime(state.time));
+  const openingLook = lakeLook(sunset, state);
   const sky = new Sky({
     equirect: skyTexture,
-    brightness: 0.3,
+    brightness: lakePresentation(state.time).skyBrightness,
     reflectionBlurDistance: 1500,
     reflectionDistanceBlur: 0.5,
-    reflectionRoughness: LAKE_REFLECTION_ROUGHNESS,
+    reflectionRoughness: openingLook.sky.reflectionRoughness,
     sunDirection: water.lighting.sun.direction,
+    sunOverlay: {
+      enabled: openingLook.sky.sun.diskEnabled,
+      color: openingLook.sky.sun.diskColor,
+      emissiveColor: '#fff8e0',
+      emissiveIntensity: 5,
+      radius: 0.02,
+    },
   });
   water.setSky(sky);
   useSkyEnvironment(scene, sky);
@@ -233,9 +267,8 @@ const boot = async () => {
       placement.meshPosition[2]);
   boatGroup.add(hull);
   scene.add(boatGroup);
-
-  const transparency = countTransparency(hull);
-  water.masking.add(boatGroup);
+  const windowCount = separateWindows(hull, boatGroup);
+  water.masking.add(hull);
   water.buoyancy.addObject(boatGroup, {
     multiPoint: true,
     useBoundingBox: false,
@@ -265,7 +298,9 @@ const boot = async () => {
   };
 
   const applyLook = async () => {
-    water.loadPreset(lakeLook(sunset, state));
+    const look = lakeLook(sunset, state);
+    water.loadPreset(look);
+    applyPresentation(renderer, sky, look);
     const nextUrl = hdriForTime(state.time);
     if (skyTexture.userData.sourceUrl !== nextUrl) {
       const nextTexture = await loadHdri(nextUrl);
@@ -274,15 +309,15 @@ const boot = async () => {
       useSkyEnvironment(scene, sky);
       skyTexture = nextTexture;
     }
-    const seaLabel = state.sea === 'calm' ? 'calm (~4 cm)' : 'light (sunset demo)';
+    const seaLabel = state.sea === 'calm' ? 'calm' : 'light';
     const modeLabel = state.reference ? 'hull only' : 'water';
-    setStatus(`${state.time} / ${seaLabel} / ${modeLabel}`);
+    setStatus(`${boat.label} / ${state.time} / ${seaLabel} / ${modeLabel}`);
     detailEl.textContent =
         `${boat.label} ${placement.worldLength.toFixed(1)} m world length ` +
         `(${(placement.worldLength / placement.scale).toFixed(2)} m real × ${placement.scale}). ` +
         `Beam ${placement.worldBeam.toFixed(1)} m. ` +
-        `Glass blend: ${transparency.blend.join(', ') || 'none'}. ` +
-        `Alpha mask: ${transparency.mask.length}.`;
+        `Waterline ${placement.waterlineLocalY.toFixed(2)} m. ` +
+        `Windows ${windowCount}.`;
   };
   skyTexture.userData.sourceUrl = hdriForTime(state.time);
   await applyLook();

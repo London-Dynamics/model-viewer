@@ -10,6 +10,7 @@ import {
   AQUILA_45_GLB,
   AQUILA_45_SKU,
   AQUILA_45_WINDSHIELD,
+  AQUILA_WATERLINE_Y,
   BOATS,
   CENTURION_RI230_BOUNDS,
   CENTURION_RI245_BOUNDS,
@@ -17,13 +18,16 @@ import {
   CENTURION_RI245_SKU,
   CENTURION_RI245_WINDSHIELD,
   DEMO_BOAT_SCALE,
+  RI245_WATERLINE_Y,
   boatDemoPlacement,
   boatFromParam,
   boundsSize,
   centurionDemoPlacement,
   demoParentPoint,
+  frameCameraPose,
   hdriForTime,
   lakeLook,
+  lakePresentation,
 } from '../examples/ld_water_pro/boat-placement.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -87,28 +91,37 @@ assert.equal(light.waves.gerstner.wavelength, 852);
 assert.equal(light.waves.fft.cascades.ripples.scale, 379);
 assert.equal(light.waves.fft.cascades.waves.scale, 2088);
 assert.equal(light.clipmap.baseSize, 800);
-assert.equal(light.waves.fft.amplitude, 1.56);
-assert.equal(light.waves.gerstner.amplitude, 2.06);
+assert.ok(Math.abs(light.waves.fft.amplitude - 1.56 * 2.2) < 1e-9);
+assert.ok(Math.abs(light.waves.gerstner.amplitude - 2.06 * 2.2) < 1e-9);
 assert.equal(light.waves.fft.windSpeed, 17.9);
-assert.equal(light.color.waterColor, '#0a8ec4');
+assert.equal(light.color.waterColor, '#0c3d5c');
+assert.equal(light.color.absorptionColor, '#3a140c');
+assert.equal(light.oceanFloor.depth, 420);
 assert.equal(light.fresnel.surface.iorRatio, 1.08);
-assert.equal(light.ssr.strength, 0.08);
-assert.equal(light.sky.reflectionRoughness, 0.36);
+assert.equal(light.ssr.strength, 0.14);
+assert.equal(light.sky.reflectionRoughness, 0.2);
+assert.equal(light.sky.sun.elevation, 11);
+assert.equal(light.fog.color, '#e08a55');
 
 const calm = lakeLook(sunset, {time: 'sunset', sea: 'calm'});
 assert.equal(calm.waves.gerstner.wavelength, 852);
 assert.equal(calm.clipmap.baseSize, 800);
-assert.ok(Math.abs(calm.waves.gerstner.amplitude - 2.06 * 0.28) < 1e-9);
-assert.ok(Math.abs(calm.waves.fft.amplitude - 1.56 * 0.28) < 1e-9);
-assert.equal(calm.waves.fft.windSpeed, 6);
-assert.equal(calm.sky.sun.elevation, 14);
+assert.ok(Math.abs(calm.waves.gerstner.amplitude - 2.06 * 0.12) < 1e-9);
+assert.ok(Math.abs(calm.waves.fft.amplitude - 1.56 * 0.12) < 1e-9);
+assert.equal(calm.waves.fft.windSpeed, 3);
+assert.equal(calm.sky.sun.elevation, 11);
+assert.ok(calm.waves.gerstner.amplitude < light.waves.gerstner.amplitude * 0.1);
 
-const midday = lakeLook(sunset, {time: 'midday', sea: 'light'});
+const midday = lakeLook(sunset, {time: 'midday', sea: 'calm'});
 assert.equal(midday.waves.gerstner.wavelength, 852);
-assert.equal(midday.sky.sun.elevation, 58);
-assert.equal(midday.fog.color, '#d7e6f0');
-assert.equal(midday.color.waterColor, '#1a8fbe');
+assert.equal(midday.sky.sun.elevation, 74);
+assert.equal(midday.fog.color, '#c9e4f6');
+assert.equal(midday.color.waterColor, '#3ec8e6');
+assert.notEqual(midday.color.waterColor, light.color.waterColor);
 assert.equal(midday.fresnel.surface.iorRatio, 1.08);
+assert.ok(midday.waves.gerstner.amplitude < light.waves.gerstner.amplitude * 0.1);
+assert.ok(lakePresentation('midday').skyBrightness > lakePresentation('sunset').skyBrightness);
+assert.ok(lakePresentation('midday').exposure > lakePresentation('sunset').exposure);
 
 assert.equal(hdriForTime('sunset').includes('industrial_sunset'), true);
 assert.equal(hdriForTime('midday').includes('kloofendal_43d_clear'), true);
@@ -144,6 +157,8 @@ assert.equal(boatFromParam('RI245'), BOATS.ri245);
 assert.equal(boatFromParam('nope').id, 'ri245');
 assert.equal(boatFromParam('aquila').id, 'aquila');
 assert.equal(boatFromParam('45-sport'), BOATS.aquila);
+assert.equal(boatFromParam('demo').id, 'demo');
+assert.equal(boatFromParam('dutch'), BOATS.demo);
 assert.equal(AQUILA_45_SKU, '45-sport');
 assert.match(
     AQUILA_45_GLB,
@@ -160,7 +175,15 @@ assert.ok(aquilaSpanZ > aquilaSpanX, 'Aquila length is the Z axis');
 const aquila = boatDemoPlacement(BOATS.aquila);
 assert.equal(aquila.scale, 15);
 assert.equal(aquila.yaw, 0);
-assert.equal(aquila.buoyancy.heightOffset, 0);
+assert.equal(aquila.buoyancy.heightOffset, -AQUILA_WATERLINE_Y * 15);
+assert.ok(aquila.buoyancy.heightOffset < -10, 'Aquila sinks to the rub rail');
+const ri245Registry = boatDemoPlacement(BOATS.ri245);
+assert.equal(ri245Registry.buoyancy.heightOffset, -RI245_WATERLINE_Y * 15);
+assert.equal(boatDemoPlacement(BOATS.demo).buoyancy.heightOffset, 0);
+const aquilaWaterline = demoParentPoint([0, AQUILA_WATERLINE_Y, 0], aquila);
+assert.ok(
+    Math.abs(aquilaWaterline[1] + aquila.buoyancy.heightOffset) < 1e-6,
+    'Aquila rub-rail height meets the lake after the draft offset');
 assert.ok(Math.abs(aquila.worldLength - aquilaSpanZ * 15) < 1e-6);
 assert.ok(Math.abs(aquila.worldBeam - aquilaSpanX * 15) < 1e-6);
 assert.ok(aquila.worldLength > 210 && aquila.worldLength < 215);
@@ -186,6 +209,33 @@ assert.ok(AQUILA_45_WINDSHIELD[2] > 1, 'Aquila windshield sits forward of the or
 const aquilaGlass = demoParentPoint(AQUILA_45_WINDSHIELD, aquila);
 assert.ok(aquilaGlass[2] > 0, 'Aquila windshield faces demo +Z');
 assert.ok(aquilaGlass[1] > 30, 'Aquila windshield is above the scaled waterline');
+
+const heroDirection = (pose) => {
+  const d = [
+    pose.position[0] - pose.target[0],
+    pose.position[1] - pose.target[1],
+    pose.position[2] - pose.target[2],
+  ];
+  const len = Math.hypot(d[0], d[1], d[2]);
+  return d.map((component) => component / len);
+};
+const riHero = heroDirection(frameCameraPose(ri245Registry, BOATS.ri245.windshield, 'hero'));
+const aqHero = heroDirection(frameCameraPose(aquila, BOATS.aquila.windshield, 'hero'));
+const demoHero = heroDirection(frameCameraPose(
+    boatDemoPlacement(BOATS.demo), null, 'hero'));
+for (let axis = 0; axis < 3; axis += 1) {
+  assert.ok(Math.abs(riHero[axis] - aqHero[axis]) < 1e-9, 'Ri245 and Aquila share the hero bearing');
+  assert.ok(Math.abs(riHero[axis] - demoHero[axis]) < 1e-9, 'the demo ship shares the hero bearing');
+}
+assert.equal(frameCameraPose(boatDemoPlacement(BOATS.demo), null, 'glass'), null);
+const riGlass = frameCameraPose(ri245Registry, BOATS.ri245.windshield, 'glass');
+const aqGlass = frameCameraPose(aquila, BOATS.aquila.windshield, 'glass');
+assert.ok(riGlass.target[2] > riGlass.position[2], 'Ri245 glass looks toward +Z');
+assert.ok(aqGlass.target[2] > aqGlass.position[2], 'Aquila glass looks toward +Z');
+assert.ok(aqGlass.target[1] < aqGlass.position[1], 'Aquila glass looks down at the lake');
+assert.match(html, /boat=demo/);
+assert.match(demoJs, /separateWindows/);
+assert.match(demoJs, /frameCameraPose/);
 assert.match(html, /three\/webgpu/);
 assert.match(html, /threejs-water-pro\/build\/index\.js/);
 assert.match(html, /water-pro-demo\.js/);

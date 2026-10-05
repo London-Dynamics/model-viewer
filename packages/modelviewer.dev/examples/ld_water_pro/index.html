@@ -80,7 +80,7 @@
                 <div class="ld-card-body">
                   <h3 class="ld-panel-title">LD Water Pro</h3>
                   <p id="water-pro-detail" class="ld-helper-text">
-                    Demo scale 15, bow on +Z. boat=ri245 or boat=aquila.
+                    Demo scale 15, bow on +Z. boat=ri245, aquila, or demo.
                   </p>
                   <div class="ld-sections">
                     <section>
@@ -143,28 +143,27 @@
                 <h4>
                   This page runs threejs-water-pro the way its own demo does:
                   one WebGPU renderer, sunset water units left intact, and the
-                  boat scaled by 15. Pick a hull with boat=ri245 (default) or
-                  boat=aquila (alias 45-sport). Ri245 MY 2027 is 8.23 m on +X
-                  and 3.88 m of beam on Z; a −90° yaw puts the bow on +Z, about
-                  123 m in the demo world. Aquila 45 Sport is 14.18 m on +Z and
-                  4.61 m of beam on X. The bow already faces +Z, so yaw stays
-                  0 and the cat is about 213 m long at the same scale. Calm
-                  lowers wave height only. It does not divide the clipmap or
-                  wavelengths by 15. Near water stays lake blue: the
-                  grazing mirror of the sun and the white deck is softened.
+                  boat scaled by 15. Pick a hull with boat=ri245 (default),
+                  boat=aquila (alias 45-sport), or boat=demo (the vendored
+                  dutch ship). All three share one hero bearing, scaled by
+                  hull length, with the bow on +Z. Ri245 and Aquila sink so
+                  the rub rail meets the lake; the demo ship's origin is
+                  already its waterline. Sunset is a warm low sun and a
+                  deeper sea. Midday is a high sun and a bright calm lake.
+                  Calm lowers wave height only. It does not divide the
+                  clipmap or wavelengths by 15.
                 </h4>
                 <h4>
-                  Ri245 window glass is the BLEND material "Glass", opacity
-                  0.1. Aquila windshield-glass is KHR_materials_transmission
-                  with an opaque alpha mode, plus one BLEND material
-                  GlassClear at opacity 0.2. The water depth pass still treats
-                  transmission materials as opaque. Hull only hides the water
-                  mesh so the same materials can be compared without the water
-                  shader. Query params: boat=ri245|aquila|45-sport,
-                  time=sunset|midday, sea=light|calm, view=hero|glass,
-                  reference=1. A full 4k sky prefilter did not finish on a
-                  software WebGPU adapter; add pmremsize=512 there. A desktop
-                  GPU can omit it.
+                  Aquila windshield glass is KHR_materials_transmission. The
+                  page turns those windows into a light alpha blend and
+                  leaves them out of the hull mask, so the lake shows
+                  through the glass instead of the sand floor. The demo
+                  ship has no windshield. Query params:
+                  boat=ri245|aquila|45-sport|demo, time=sunset|midday,
+                  sea=light|calm, view=hero|glass, reference=1. A full 4k
+                  sky prefilter did not finish on a software WebGPU
+                  adapter; add pmremsize=512 there. A desktop GPU can omit
+                  it.
                 </h4>
                 <h4>
                   Ri245 requires KHR_draco_mesh_compression. The page attaches

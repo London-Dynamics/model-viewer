@@ -16,10 +16,15 @@
  * 6f7c6465-0a86-4ea6-81c5-ac8856f7e6a0) is 14.18 m on +Z and 4.61 m of beam
  * on X. Outdrives sit at −Z and the windshield mesh is forward of midships,
  * so the bow already faces +Z and the yaw stays 0. The glTF origin sits
- * about 0.41 m above the keel.
+ * about 0.41 m above the keel, which is below the black rub rail. Each
+ * boat carries `waterlineLocalY`: the glTF height that should meet the
+ * lake. Buoyancy sinks the wrapper by that many metres times the scale.
  *
- * Select a boat with ?boat=ri245 (default), ?boat=aquila, or ?boat=45-sport.
- * Scale stays 15.
+ * The vendored dutch ship (`boat=demo`) is the third hull. Its bow is
+ * already +Z. It has no windshield, so the glass framing does not apply.
+ *
+ * Select a boat with ?boat=ri245 (default), ?boat=aquila, ?boat=45-sport,
+ * or ?boat=demo. Scale stays 15. Hero and glass cameras share one recipe.
  */
 
 export const DEMO_BOAT_SCALE = 15;
@@ -46,6 +51,13 @@ export const CENTURION_RI245_BOUNDS = {
 /** dummy_windscreen / Dummy New Windscreen Vented, glTF metres. */
 export const CENTURION_RI245_WINDSHIELD = [1.23223591, 1.62456667, 0];
 
+/**
+ * glTF Y that should sit on the lake. Rub rail bottom is 0.92 m; the
+ * visible hull shell starts near y = 0, so the origin alone leaves the
+ * boat on top of the water.
+ */
+export const RI245_WATERLINE_Y = 0.85;
+
 export const AQUILA_45_SKU = '45-sport';
 
 export const AQUILA_45_GLB =
@@ -64,10 +76,42 @@ export const AQUILA_45_BOUNDS = {
 export const AQUILA_45_WINDSHIELD = [0, 2.8839784, 2.12949878];
 
 /**
+ * glTF Y that should sit on the lake. The black rub rail
+ * (BlackRubber) runs y = 0.97–1.92 along the hull. The origin is only
+ * 0.41 m above the keel, so the pontoons were perched on the surface.
+ */
+export const AQUILA_WATERLINE_Y = 0.88;
+
+export const DEMO_SHIP_GLB =
+  '/threejs-water-pro/demo/public/models/dutch_ship_medium_2k.glb';
+
+/**
+ * Metres. Bowsprit is +Z, beam on X, keel at min Y. Masts make the
+ * height large; the hero camera uses length, not this height.
+ */
+export const DEMO_SHIP_BOUNDS = {
+  min: [-3.320786237716675, -1.9999947547912598, -10.325664520263672],
+  max: [3.487828016281128, 22.656585693359375, 13.74468994140625],
+};
+
+/** Authored waterline. Keel is already 2 m under the origin. */
+export const DEMO_SHIP_WATERLINE_Y = 0;
+
+/**
  * `bowAxis` is the glTF axis that points at the bow before yaw.
  * `x` needs −90° so the bow lands on demo +Z. `z` is already forward.
  */
 export const BOATS = {
+  demo: {
+    id: 'demo',
+    label: 'Demo ship',
+    sku: 'dutch-ship',
+    url: DEMO_SHIP_GLB,
+    bounds: DEMO_SHIP_BOUNDS,
+    windshield: null,
+    bowAxis: 'z',
+    waterlineLocalY: DEMO_SHIP_WATERLINE_Y,
+  },
   ri245: {
     id: 'ri245',
     label: 'Centurion Ri245',
@@ -76,6 +120,7 @@ export const BOATS = {
     bounds: CENTURION_RI245_BOUNDS,
     windshield: CENTURION_RI245_WINDSHIELD,
     bowAxis: 'x',
+    waterlineLocalY: RI245_WATERLINE_Y,
   },
   aquila: {
     id: 'aquila',
@@ -85,10 +130,14 @@ export const BOATS = {
     bounds: AQUILA_45_BOUNDS,
     windshield: AQUILA_45_WINDSHIELD,
     bowAxis: 'z',
+    waterlineLocalY: AQUILA_WATERLINE_Y,
   },
 };
 
 const BOAT_PARAMS = {
+  demo: 'demo',
+  dutch: 'demo',
+  'dutch-ship': 'demo',
   ri245: 'ri245',
   aquila: 'aquila',
   '45-sport': 'aquila',
@@ -158,9 +207,9 @@ export function rotateYawXZ(x, z, yaw) {
 
 /**
  * Child matrix is T * Ry(yaw) * S. XZ of the hull centre moves to the parent
- * origin. The glTF origin stays at parent y = 0 so the keel stays under the
- * waterline after scaling. `bowAxis` `x` is length-on-X (Ri245). `z` is
- * length-on-Z (Aquila).
+ * origin. The mesh keeps the glTF origin at the wrapper's y = 0.
+ * `waterlineLocalY` sinks that wrapper so the painted waterline meets
+ * the lake. `bowAxis` `x` is length-on-X (Ri245). `z` is length-on-Z.
  */
 export function boatDemoPlacement(boat, scale = DEMO_BOAT_SCALE) {
   const {bounds, bowAxis} = boat;
@@ -173,6 +222,7 @@ export function boatDemoPlacement(boat, scale = DEMO_BOAT_SCALE) {
   const [rx, rz] = rotateYawXZ(scale * cx, scale * cz, yaw);
   const length = alongX ? spanX : spanZ;
   const beam = alongX ? spanZ : spanX;
+  const waterlineLocalY = boat.waterlineLocalY ?? 0;
   return {
     scale,
     yaw,
@@ -181,12 +231,62 @@ export function boatDemoPlacement(boat, scale = DEMO_BOAT_SCALE) {
     worldBeam: beam * scale,
     worldHeight: (bounds.max[1] - bounds.min[1]) * scale,
     keelLocalY: bounds.min[1],
+    waterlineLocalY,
     buoyancy: {
       sampleLength: length * scale * 0.85,
       sampleWidth: beam * scale * 0.8,
       sampleOffset: [0, 0, 0],
-      heightOffset: 0,
+      heightOffset: waterlineLocalY === 0 ? 0 : -waterlineLocalY * scale,
     },
+  };
+}
+
+/**
+ * One hero bearing for every hull: starboard-bow quarter, in fractions
+ * of world length, bow toward +Z. Distance follows length so a longer
+ * boat is not framed from a different angle.
+ *
+ * Glass eye sits just aft of the windshield and looks forward and down
+ * at the lake. Offsets are metres, then multiplied by the shared scale.
+ * Returns null when the boat has no windshield.
+ */
+export const HERO_FRAMING = {
+  position: [0.7, 0.28, 1.15],
+  target: [0, 0.02, 0],
+};
+
+export const GLASS_FRAMING = {
+  eye: [0, 0.15, -1.1],
+  look: [0, -0.45, 6.8],
+};
+
+export function frameCameraPose(placement, windshield, view) {
+  if (view === 'glass') {
+    if (windshield == null) {
+      return null;
+    }
+    const w = demoParentPoint(windshield, placement);
+    const s = placement.scale;
+    const draft = placement.buoyancy.heightOffset;
+    const eye = GLASS_FRAMING.eye;
+    const look = GLASS_FRAMING.look;
+    return {
+      position: [
+        w[0] + eye[0] * s,
+        w[1] + eye[1] * s + draft,
+        w[2] + eye[2] * s,
+      ],
+      target: [
+        w[0] + look[0] * s,
+        w[1] + look[1] * s + draft,
+        w[2] + look[2] * s,
+      ],
+    };
+  }
+  const length = placement.worldLength;
+  return {
+    position: HERO_FRAMING.position.map((component) => component * length),
+    target: HERO_FRAMING.target.map((component) => component * length),
   };
 }
 
@@ -233,39 +333,83 @@ const assignPath = (root, path, value) => {
 
 /**
  * Lake looks keep the sunset preset's spatial units (clipmap, cascade tile
- * scale, gerstner wavelength). Calm only lowers wave height and wind.
- * Midday raises the sun and cools the fog without retuning the ocean grid.
+ * scale, gerstner wavelength). Light seas raise wave height enough to read
+ * at ship scale. Calm flattens it. Sunset and midday use different body
+ * colours, sun height, and fog so the frames do not match.
+ *
+ * Absorption is strong enough that a view through the windshield dies
+ * out before the sand floor (depth 420). IOR stays low so the near water
+ * does not mirror the white deck.
  */
+export const LIGHT_WAVE_GAIN = 2.2;
+export const CALM_WAVE_GAIN = 0.12;
+
 export function lakeLook(preset, {time, sea}) {
   const next = structuredClone(preset);
-  if (sea === 'calm') {
-    next.waves.fft.amplitude *= 0.28;
-    next.waves.gerstner.amplitude *= 0.28;
-    next.waves.fft.windSpeed = 6;
-  } else if (sea !== 'light') {
+  if (sea === 'light') {
+    next.waves.fft.amplitude *= LIGHT_WAVE_GAIN;
+    next.waves.gerstner.amplitude *= LIGHT_WAVE_GAIN;
+  } else if (sea === 'calm') {
+    next.waves.fft.amplitude *= CALM_WAVE_GAIN;
+    next.waves.gerstner.amplitude *= CALM_WAVE_GAIN;
+    next.waves.fft.windSpeed = 3;
+  } else {
     throw new Error(`Unknown sea state: ${sea}`);
   }
-  assignPath(next, ['color', 'absorptionColor'], '#2a1008');
-  assignPath(next, ['color', 'waterColor'], '#0a8ec4');
-  assignPath(next, ['color', 'transmissionColor'], '#b5e6f7');
+  assignPath(next, ['color', 'absorptionColor'], '#3a140c');
   assignPath(next, ['fresnel', 'surface', 'iorRatio'], 1.08);
-  assignPath(next, ['ssr', 'strength'], 0.08);
-  assignPath(next, ['sparkle', 'intensity'], 0.12);
-  assignPath(next, ['foam', 'surface', 'opacity'], 0.08);
-  assignPath(next, ['foam', 'surface', 'coverage'], 0.04);
-  assignPath(next, ['foam', 'waves', 'opacity'], 0.06);
-  assignPath(next, ['sky', 'reflectionRoughness'], LAKE_REFLECTION_ROUGHNESS);
-  if (time === 'midday') {
-    next.sky.sun.elevation = 58;
-    next.sky.sun.azimuth = 165;
-    next.sky.sun.diskColor = '#fff4d2';
-    next.fog.color = '#d7e6f0';
-    next.color.waterColor = '#1a8fbe';
-    next.color.transmissionColor = '#b7e4f5';
-  } else if (time !== 'sunset') {
+  assignPath(next, ['oceanFloor', 'depth'], 420);
+  if (time === 'sunset') {
+    assignPath(next, ['color', 'waterColor'], '#0c3d5c');
+    assignPath(next, ['color', 'transmissionColor'], '#f0c09a');
+    assignPath(next, ['fog', 'color'], '#e08a55');
+    assignPath(next, ['sky', 'sun', 'elevation'], 11);
+    assignPath(next, ['sky', 'sun', 'azimuth'], 78);
+    assignPath(next, ['sky', 'sun', 'diskColor'], '#ffb070');
+    assignPath(next, ['sky', 'sun', 'diskEnabled'], true);
+    assignPath(next, ['sky', 'sun', 'intensity'], 1.8);
+    assignPath(next, ['sky', 'reflectionRoughness'], 0.2);
+    assignPath(next, ['ssr', 'strength'], 0.14);
+    assignPath(next, ['sparkle', 'intensity'], 0.35);
+    assignPath(next, ['foam', 'surface', 'opacity'], 0.22);
+    assignPath(next, ['foam', 'surface', 'coverage'], 0.1);
+    assignPath(next, ['foam', 'waves', 'opacity'], 0.12);
+    assignPath(next, ['lighting', 'ambient', 'skyColor'], '#e0a080');
+    assignPath(next, ['lighting', 'ambient', 'groundColor'], '#6a4030');
+    assignPath(next, ['lighting', 'ambient', 'intensity'], 0.55);
+  } else if (time === 'midday') {
+    assignPath(next, ['color', 'waterColor'], '#3ec8e6');
+    assignPath(next, ['color', 'transmissionColor'], '#e7f7ff');
+    assignPath(next, ['fog', 'color'], '#c9e4f6');
+    assignPath(next, ['sky', 'sun', 'elevation'], 74);
+    assignPath(next, ['sky', 'sun', 'azimuth'], 200);
+    assignPath(next, ['sky', 'sun', 'diskColor'], '#fff6d8');
+    assignPath(next, ['sky', 'sun', 'diskEnabled'], false);
+    assignPath(next, ['sky', 'sun', 'intensity'], 1.35);
+    assignPath(next, ['sky', 'reflectionRoughness'], 0.42);
+    assignPath(next, ['ssr', 'strength'], 0.05);
+    assignPath(next, ['sparkle', 'intensity'], 0.08);
+    assignPath(next, ['foam', 'surface', 'opacity'], sea === 'calm' ? 0.02 : 0.08);
+    assignPath(next, ['foam', 'surface', 'coverage'], sea === 'calm' ? 0.02 : 0.05);
+    assignPath(next, ['foam', 'waves', 'opacity'], sea === 'calm' ? 0.02 : 0.05);
+    assignPath(next, ['lighting', 'ambient', 'skyColor'], '#e8f4ff');
+    assignPath(next, ['lighting', 'ambient', 'groundColor'], '#8fb8c8');
+    assignPath(next, ['lighting', 'ambient', 'intensity'], 1.05);
+  } else {
     throw new Error(`Unknown time of day: ${time}`);
   }
   return next;
+}
+
+/** Sky dome brightness and exposure. The water preset does not drive these. */
+export function lakePresentation(time) {
+  if (time === 'midday') {
+    return {skyBrightness: 1.4, exposure: 1.18};
+  }
+  if (time === 'sunset') {
+    return {skyBrightness: 0.95, exposure: 0.88};
+  }
+  throw new Error(`Unknown time of day: ${time}`);
 }
 
 export function hdriForTime(time) {
