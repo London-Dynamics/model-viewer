@@ -88,6 +88,8 @@ export declare interface LDWaterInterface {
   waterWaterline: number;
   waterSkySize: number|null;
   waterBuoyancy: boolean;
+  /** WASD helm. Off until the host sets `water-drive`. */
+  waterDrive: boolean;
 }
 
 type WaterModule = typeof import('threejs-water-pro');
@@ -273,6 +275,193 @@ export const registerLDWaterBuoyancy = (
   return waterSystem.buoyancy.addObject(model as Mesh, options);
 };
 
+const LD_WATER_DRIVE_KEYS = ['w', 'a', 's', 'd'] as const;
+type LDWaterDriveKey = typeof LD_WATER_DRIVE_KEYS[number];
+
+const isLDWaterDriveKey = (key: string): key is LDWaterDriveKey =>
+  (LD_WATER_DRIVE_KEYS as readonly string[]).includes(key);
+
+/**
+ * Vendor-style 3-DOF helm (surge, sway, yaw). WASD. The hull faces +Z at
+ * yaw 0. Off until `attach`. Heading is reported through `syncYaw` so
+ * buoyancy can keep `rotationOffset` instead of fighting the helm.
+ */
+export class LDWaterDrive {
+  thrust = 2;
+  drag = 0.5;
+  maxSpeed = 6;
+  reverseMaxSpeed = 2;
+  maxRudderAngle = Math.PI / 6;
+  rudderRate = 1.5;
+  rudderReturn = 2;
+  throttleRate = 0.8;
+  rudderTurn = 0.6;
+  yawDamping = 0.8;
+  swayDamping = 1.2;
+
+  speed = 0;
+  swaySpeed = 0;
+  yawRate = 0;
+  throttle = 0;
+  rudderAngle = 0;
+  yaw = 0;
+
+  private model: Object3D|null = null;
+  private keys: Record<LDWaterDriveKey, boolean> = {
+    w: false,
+    a: false,
+    s: false,
+    d: false,
+  };
+  private listening = false;
+  private listenTarget: EventTarget|null = null;
+  private readonly rotationOffset = new Euler(0, 0, 0, 'YXZ');
+
+  bind(model: Object3D) {
+    this.model = model;
+    this.yaw = new Euler().setFromQuaternion(model.quaternion, 'YXZ').y;
+    this.speed = 0;
+    this.swaySpeed = 0;
+    this.yawRate = 0;
+    this.throttle = 0;
+    this.rudderAngle = 0;
+  }
+
+  /** Test and input helper. Unknown keys are ignored. */
+  setKey(key: string, down: boolean) {
+    const name = key.toLowerCase();
+    if (isLDWaterDriveKey(name)) {
+      this.keys[name] = down;
+    }
+  }
+
+  attach(target: EventTarget = document) {
+    if (this.listening) {
+      return;
+    }
+    this.listening = true;
+    this.listenTarget = target;
+    target.addEventListener('keydown', this.onKeyDown as EventListener);
+    target.addEventListener('keyup', this.onKeyUp as EventListener);
+  }
+
+  detach() {
+    if (this.listening && this.listenTarget != null) {
+      this.listenTarget.removeEventListener(
+          'keydown', this.onKeyDown as EventListener);
+      this.listenTarget.removeEventListener(
+          'keyup', this.onKeyUp as EventListener);
+    }
+    this.listening = false;
+    this.listenTarget = null;
+    this.keys = {w: false, a: false, s: false, d: false};
+  }
+
+  update(dt: number, syncYaw?: (rotationOffset: Euler) => void) {
+    const model = this.model;
+    if (model == null) {
+      return;
+    }
+
+    const step = Math.min(Math.max(dt, 0), 0.1);
+    if (step === 0) {
+      return;
+    }
+
+    this.updateThrottle(step);
+    this.updateRudder(step);
+    this.updateDynamics(step);
+    this.rotationOffset.set(0, this.yaw, 0);
+    if (syncYaw != null) {
+      syncYaw(this.rotationOffset);
+      return;
+    }
+    model.quaternion.setFromEuler(this.rotationOffset);
+  }
+
+  private updateThrottle(dt: number) {
+    if (this.keys.w) {
+      this.throttle = Math.min(this.throttle + this.throttleRate * dt, 1);
+    } else if (this.keys.s) {
+      this.throttle = Math.max(this.throttle - this.throttleRate * dt, -1);
+    } else if (this.throttle > 0) {
+      this.throttle = Math.max(this.throttle - this.throttleRate * dt, 0);
+    } else if (this.throttle < 0) {
+      this.throttle = Math.min(this.throttle + this.throttleRate * dt, 0);
+    }
+  }
+
+  private updateRudder(dt: number) {
+    if (this.keys.a) {
+      this.rudderAngle = Math.min(
+          this.rudderAngle + this.rudderRate * dt, this.maxRudderAngle);
+    } else if (this.keys.d) {
+      this.rudderAngle = Math.max(
+          this.rudderAngle - this.rudderRate * dt, -this.maxRudderAngle);
+    } else if (this.rudderAngle > 0) {
+      this.rudderAngle = Math.max(this.rudderAngle - this.rudderReturn * dt, 0);
+    } else if (this.rudderAngle < 0) {
+      this.rudderAngle = Math.min(this.rudderAngle + this.rudderReturn * dt, 0);
+    }
+  }
+
+  private updateDynamics(dt: number) {
+    const model = this.model;
+    if (model == null) {
+      return;
+    }
+
+    const surgeAccel =
+      this.throttle * this.thrust - this.drag * this.speed +
+      this.swaySpeed * this.yawRate;
+    this.speed += surgeAccel * dt;
+    this.speed = this.speed > 0 ?
+      Math.min(this.speed, this.maxSpeed) :
+      Math.max(this.speed, -this.reverseMaxSpeed);
+
+    const flow = this.speed / this.maxSpeed;
+    const rudderMoment =
+      this.rudderTurn * flow * Math.abs(flow) * Math.sin(this.rudderAngle);
+    this.yawRate += (rudderMoment - this.yawDamping * this.yawRate) * dt;
+
+    const swayAccel =
+      -this.speed * this.yawRate - this.swayDamping * this.swaySpeed;
+    this.swaySpeed += swayAccel * dt;
+
+    this.yaw += this.yawRate * dt;
+    const forwardX = Math.sin(this.yaw);
+    const forwardZ = Math.cos(this.yaw);
+    const lateralX = Math.cos(this.yaw);
+    const lateralZ = -Math.sin(this.yaw);
+    model.position.x +=
+      (this.speed * forwardX + this.swaySpeed * lateralX) * dt;
+    model.position.z +=
+      (this.speed * forwardZ + this.swaySpeed * lateralZ) * dt;
+  }
+
+  private onKeyDown = (event: KeyboardEvent) => {
+    if (isEditableKeyTarget(event.target)) {
+      return;
+    }
+    this.setKey(event.key, true);
+  };
+
+  private onKeyUp = (event: KeyboardEvent) => {
+    if (isEditableKeyTarget(event.target)) {
+      return;
+    }
+    this.setKey(event.key, false);
+  };
+}
+
+const isEditableKeyTarget = (target: EventTarget|null) => {
+  if (target == null || !(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+};
+
 const configureLDWaterSkyTexture = (texture: Texture) => {
   texture.mapping = EquirectangularReflectionMapping;
   texture.wrapS = RepeatWrapping;
@@ -431,6 +620,10 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({type: Boolean, attribute: 'water-buoyancy'})
     waterBuoyancy = false;
 
+    /** Optional WASD helm. Off unless the attribute is set. */
+    @property({type: Boolean, attribute: 'water-drive'})
+    waterDrive = false;
+
     private waterSystem: WaterSystem|null = null;
     private waterLoadId = 0;
     private waterBuoyancyId: number|null = null;
@@ -441,10 +634,12 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       getEnvironmentTexture?(): Texture|null,
     }|null = null;
     private waterPlacement: LDWaterHullPlacement|null = null;
+    private waterDriveController: LDWaterDrive|null = null;
 
     connectedCallback() {
       super.connectedCallback();
       this.addEventListener('load', this.handleWaterModelLoad);
+      this.syncWaterDrive();
       this.updateComplete.then(() => {
         if (this.isConnected && this.water && this.waterSystem == null) {
           this.updateWater();
@@ -461,10 +656,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         } else {
           this.clearWater();
         }
-        return;
-      }
-
-      if (
+      } else if (
         this.water &&
         (changedProperties.has('waterPreset') ||
          changedProperties.has('waterQuality') ||
@@ -477,11 +669,17 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       ) {
         this.updateWater();
       }
+
+      if (changedProperties.has('waterDrive')) {
+        this.syncWaterDrive();
+      }
     }
 
     disconnectedCallback() {
       super.disconnectedCallback();
       this.removeEventListener('load', this.handleWaterModelLoad);
+      this.waterDriveController?.detach();
+      this.waterDriveController = null;
       this.clearWater();
     }
 
@@ -493,6 +691,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       applyLDWaterCameraRange(this.getWaterCamera());
+      this.updateWaterDrive(delta / 1000);
       const skyTexture = this.waterSky?.getEnvironmentTexture?.() ?? null;
       if (skyTexture != null && this[$scene].environment !== skyTexture) {
         this.waterSystem.setSky(this.waterSky as any);
@@ -603,6 +802,47 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.waterSky = null;
     }
 
+    private syncWaterDrive() {
+      if (this.waterDrive) {
+        if (this.waterDriveController == null) {
+          this.waterDriveController = new LDWaterDrive();
+        }
+        this.waterDriveController.attach();
+        const model = this[$scene].model;
+        if (model != null) {
+          this.waterDriveController.bind(model);
+        }
+      } else {
+        this.waterDriveController?.detach();
+      }
+    }
+
+    private bindWaterDrive(model: Object3D) {
+      if (!this.waterDrive) {
+        return;
+      }
+      if (this.waterDriveController == null) {
+        this.waterDriveController = new LDWaterDrive();
+        this.waterDriveController.attach();
+      }
+      this.waterDriveController.bind(model);
+    }
+
+    private updateWaterDrive(dtSeconds: number) {
+      if (!this.waterDrive || this.waterDriveController == null) {
+        return;
+      }
+      const buoyancyId = this.waterBuoyancyId;
+      const waterSystem = this.waterSystem;
+      const sync = buoyancyId != null && waterSystem != null ?
+        (offset: Euler) => {
+          waterSystem.buoyancy.updateObjectConfig(
+              buoyancyId, {rotationOffset: offset});
+        } :
+        undefined;
+      this.waterDriveController.update(dtSeconds, sync);
+    }
+
     private registerWaterBuoyancy() {
       const model = this[$scene].model;
       if (this.waterSystem == null || model == null) {
@@ -613,6 +853,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       ensureLDWaterModelNormals(model);
       this.waterPlacement = placeLDWaterHull(model, this.waterWaterline);
       separateLDWaterWindows(model);
+      this.bindWaterDrive(model);
       if (!this.waterBuoyancy) {
         this.waterSystem.masking.add(model);
         this.waterMaskObject = model;

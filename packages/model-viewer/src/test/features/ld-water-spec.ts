@@ -24,6 +24,7 @@ import {
   createLDWaterPreset,
   ensureLDWaterModelNormals,
   ldWaterHeightOffset,
+  LDWaterDrive,
   placeLDWaterHull,
   registerLDWaterBuoyancy,
   sunFromSkyProClock,
@@ -56,6 +57,84 @@ suite('LDWater', () => {
     expect(waterElement.waterSeed).to.equal(null);
     expect(waterElement.waterSkyImage).to.equal(null);
     expect(waterElement.waterBuoyancy).to.equal(false);
+    expect(waterElement.waterDrive).to.equal(false);
+  });
+
+  test('water-drive is the optional WASD helm', async () => {
+    const waterElement = element as any;
+    element.setAttribute('water-drive', '');
+    await waterElement.updateComplete;
+    expect(waterElement.waterDrive).to.equal(true);
+
+    element.removeAttribute('water-drive');
+    await waterElement.updateComplete;
+    expect(waterElement.waterDrive).to.equal(false);
+  });
+
+  test('drives along glTF +Z and yaws with A at speed', () => {
+    const model = new Object3D();
+    const drive = new LDWaterDrive();
+    drive.bind(model);
+    drive.setKey('w', true);
+    for (let i = 0; i < 40; i++) {
+      drive.update(0.05);
+    }
+
+    expect(model.position.z).to.be.greaterThan(0.5);
+    expect(Math.abs(model.position.x)).to.be.lessThan(0.05);
+    expect(drive.yaw).to.be.closeTo(0, 1e-6);
+    expect(model.quaternion.y).to.be.closeTo(0, 1e-6);
+
+    drive.speed = 6;
+    drive.setKey('w', false);
+    drive.setKey('a', true);
+    let synced = 0;
+    for (let i = 0; i < 40; i++) {
+      drive.update(0.05, (offset) => {
+        synced = offset.y;
+      });
+    }
+
+    expect(drive.yaw).to.be.greaterThan(0.01);
+    expect(synced).to.be.closeTo(drive.yaw, 1e-6);
+    expect(model.rotation.y).to.equal(0);
+
+    const heldZ = model.position.z;
+    drive.speed = 0;
+    drive.swaySpeed = 0;
+    drive.yawRate = 0;
+    drive.throttle = 0;
+    drive.rudderAngle = 0;
+    drive.setKey('a', false);
+    drive.setKey('w', false);
+    drive.update(0.05);
+    expect(model.position.z).to.equal(heldZ);
+  });
+
+  test('reads WASD from the document and ignores form fields', () => {
+    const model = new Object3D();
+    const drive = new LDWaterDrive();
+    drive.bind(model);
+    drive.attach(document);
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'W'}));
+    drive.update(0.1);
+    expect(drive.throttle).to.be.greaterThan(0);
+    document.dispatchEvent(new KeyboardEvent('keyup', {key: 'w'}));
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    drive.throttle = 0;
+    drive.speed = 0;
+    input.dispatchEvent(new KeyboardEvent('keydown', {key: 's'}));
+    drive.update(0.1);
+    expect(drive.throttle).to.equal(0);
+    input.remove();
+
+    drive.detach();
+    document.dispatchEvent(new KeyboardEvent('keydown', {key: 'w'}));
+    drive.update(0.1);
+    expect(drive.throttle).to.equal(0);
+    expect(model.position.z).to.be.greaterThan(0);
   });
 
   test('maps LD boat water onto the v3.5.1 hero', () => {
