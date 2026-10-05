@@ -3,9 +3,14 @@ import {readFile} from 'node:fs/promises';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+import {readFileSync} from 'node:fs';
+
 import {
   CENTURION_RI230_BOUNDS,
-  CENTURION_RI230_GLB,
+  CENTURION_RI245_BOUNDS,
+  CENTURION_RI245_GLB,
+  CENTURION_RI245_SKU,
+  CENTURION_RI245_WINDSHIELD,
   DEMO_BOAT_SCALE,
   boundsSize,
   centurionDemoPlacement,
@@ -17,6 +22,8 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = await readFile(
     resolve(__dirname, '../examples/ld_water_pro/index.html'), 'utf8');
+const demoJs = readFileSync(
+    resolve(__dirname, '../examples/ld_water_pro/water-pro-demo.js'), 'utf8');
 const examplesData = await readFile(
     resolve(__dirname, '../data/examples.json'), 'utf8');
 
@@ -96,10 +103,28 @@ assert.equal(hdriForTime('midday').includes('kloofendal_43d_clear'), true);
 
 assert.match(examplesData, /"htmlName": "ld_water_pro"/);
 assert.match(html, /id="water-pro-canvas"/);
+const ri245 = boundsSize(CENTURION_RI245_BOUNDS);
+assert.ok(Math.abs(ri245.length - 8.232) < 0.01, 'Ri245 length is about 8.23 m on X');
+assert.ok(Math.abs(ri245.beam - 3.882) < 0.01, 'Ri245 beam is about 3.88 m on Z');
+assert.ok(ri245.length > size.length, 'Ri245 is longer than the Ri230 fixture');
+const ri245Placement = centurionDemoPlacement(CENTURION_RI245_BOUNDS);
+assert.equal(ri245Placement.scale, 15);
+assert.equal(ri245Placement.buoyancy.heightOffset, 0);
+assert.ok(ri245Placement.worldLength > 120 && ri245Placement.worldLength < 125);
+assert.equal(CENTURION_RI245_SKU, 'ri245-my-2027');
+assert.ok(CENTURION_RI245_WINDSHIELD[0] > 1, 'windshield sits forward of the origin');
+const ri245Bow = demoParentPoint(
+    [CENTURION_RI245_BOUNDS.max[0], 0, 0], ri245Placement);
+const ri245Stern = demoParentPoint(
+    [CENTURION_RI245_BOUNDS.min[0], 0, 0], ri245Placement);
+assert.ok(ri245Bow[2] > ri245Stern[2], 'Ri245 bow +X maps to +Z');
+assert.match(demoJs, /DRACOLoader/);
+assert.match(demoJs, /CENTURION_RI245_GLB/);
+assert.match(demoJs, /CENTURION_RI245_BOUNDS/);
 assert.match(
-    CENTURION_RI230_GLB,
-    /8561d8b0-f8a3-6ef4-241a-3f90abe64dc5\.glb$/,
-    'the demo loads the generated Ri230 puzzle GLB');
+    CENTURION_RI245_GLB,
+    /1df5840a-34fd-6d79-9112-42b65bcb9d37\.glb$/,
+    'the demo loads the published Ri245 puzzle GLB');
 assert.match(html, /three\/webgpu/);
 assert.match(html, /threejs-water-pro\/build\/index\.js/);
 assert.match(html, /water-pro-demo\.js/);

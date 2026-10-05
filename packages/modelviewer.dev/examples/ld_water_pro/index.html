@@ -21,7 +21,7 @@
     <meta charset="utf-8" />
     <meta
       name="description"
-      content="Centurion Ri230 in the threejs-water-pro demo world"
+      content="Centurion Ri245 in the threejs-water-pro demo world"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
@@ -80,7 +80,7 @@
                 <div class="ld-card-body">
                   <h3 class="ld-panel-title">LD Water Pro</h3>
                   <p id="water-pro-detail" class="ld-helper-text">
-                    Centurion Ri230, demo scale 15, bow on +Z.
+                    Centurion Ri245, demo scale 15, bow on +Z.
                   </p>
                   <div class="ld-sections">
                     <section>
@@ -143,15 +143,18 @@
                 <h4>
                   This page runs threejs-water-pro the way its own demo does:
                   one WebGPU renderer, sunset water units left intact, and the
-                  boat scaled by 15. The Ri230 puzzle GLB is 7.56 m long on +X.
-                  A −90° yaw puts the bow on +Z before that scale, so the hull
-                  is about 113 m in the same world as the demo ship. Calm
+                  boat scaled by 15. The Ri245 MY 2027 puzzle GLB is 8.23 m long
+                  on +X and 3.88 m of beam on Z. A −90° yaw puts the bow on +Z
+                  before that scale, so the hull is about 123 m in the same
+                  world as the demo ship. Calm
                   lowers wave height only. It does not divide the clipmap or
                   wavelengths by 15.
                 </h4>
                 <h4>
-                  Glass on this GLB is one BLEND material, "Glass", opacity
-                  0.1, depthWrite false. Decals are MASK. Hull only hides the
+                  Window glass is the BLEND material "Glass", opacity 0.1,
+                  depthWrite false. This GLB also has BLEND graphics (bow
+                  graphic, walkover, vented windscreen) and MASK decals. Hull
+                  only hides the
                   water mesh so the same materials can be compared without the
                   water shader. The windshield view looks through that glass
                   into the cockpit, and the side glass shows the water behind
@@ -164,9 +167,13 @@
                   there. A desktop GPU can omit it.
                 </h4>
                 <h4>
+                  This GLB requires KHR_draco_mesh_compression. The page
+                  attaches DRACOLoader before load. A newer Ri245 puzzle
+                  replaces CENTURION_RI245_GLB in boat-placement.js.
+                  Re-measure the AABB if the mesh changes.
                   Next boats: generate a Forest River and an Aquila puzzle GLB,
                   measure the AABB, confirm which axis is the bow, then call
-                  the same scale-15 placement. Do not reuse the Ri230 sample
+                  the same scale-15 placement. Do not reuse the Ri245 sample
                   metres. If their windows use KHR_materials_transmission
                   instead of alpha BLEND, the water depth pass will treat them
                   as opaque until that extension is handled.

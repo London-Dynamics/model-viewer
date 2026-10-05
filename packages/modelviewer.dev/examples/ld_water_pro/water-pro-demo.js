@@ -1,18 +1,21 @@
 import * as THREE from 'three/webgpu';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {UltraHDRLoader} from 'three/addons/loaders/UltraHDRLoader.js';
 import {Sky, WaterSystem, getPresetParams} from 'threejs-water-pro';
 
 import {
-  CENTURION_RI230_GLB,
+  CENTURION_RI245_BOUNDS,
+  CENTURION_RI245_GLB,
+  CENTURION_RI245_WINDSHIELD,
   centurionDemoPlacement,
   demoParentPoint,
   hdriForTime,
   lakeLook,
 } from './boat-placement.js';
 
-const placement = centurionDemoPlacement();
+const placement = centurionDemoPlacement(CENTURION_RI245_BOUNDS);
 const canvas = document.querySelector('#water-pro-canvas');
 const statusEl = document.querySelector('#water-pro-status');
 const detailEl = document.querySelector('#water-pro-detail');
@@ -104,7 +107,7 @@ const useSkyEnvironment = (scene, sky) => {
 };
 
 const frameCamera = (camera, controls) => {
-  const windshield = demoParentPoint([0.77, 1.6, 0], placement);
+  const windshield = demoParentPoint(CENTURION_RI245_WINDSHIELD, placement);
   if (state.view === 'glass') {
     controls.target.set(windshield[0], windshield[1], windshield[2]);
     camera.position.set(
@@ -190,8 +193,13 @@ const boot = async () => {
     scene.add(mesh);
   }
 
-  setStatus('water: loading Centurion Ri230');
-  const gltf = await new GLTFLoader().loadAsync(CENTURION_RI230_GLB);
+  setStatus('water: loading Centurion Ri245');
+  const draco = new DRACOLoader();
+  draco.setDecoderPath(
+      '/threejs-water-pro/node_modules/three/examples/jsm/libs/draco/gltf/');
+  const loader = new GLTFLoader();
+  loader.setDRACOLoader(draco);
+  const gltf = await loader.loadAsync(CENTURION_RI245_GLB);
   gltf.scene.traverse((obj) => {
     if (obj.isMesh !== true || obj.geometry == null) {
       return;
@@ -202,7 +210,7 @@ const boot = async () => {
     }
   });
   const boat = new THREE.Group();
-  boat.name = 'CenturionRi230';
+  boat.name = 'CenturionRi245';
   boat.userData.isBoat = true;
   const hull = gltf.scene;
   hull.rotation.y = placement.yaw;
@@ -258,7 +266,7 @@ const boot = async () => {
     const modeLabel = state.reference ? 'hull only' : 'water';
     setStatus(`${state.time} / ${seaLabel} / ${modeLabel}`);
     detailEl.textContent =
-        `Ri230 ${placement.worldLength.toFixed(1)} m world length ` +
+        `Ri245 ${placement.worldLength.toFixed(1)} m world length ` +
         `(${(placement.worldLength / placement.scale).toFixed(2)} m real × ${placement.scale}). ` +
         `Beam ${placement.worldBeam.toFixed(1)} m. ` +
         `Glass blend: ${transparency.blend.join(', ') || 'none'}. ` +

@@ -6,9 +6,15 @@
  * authored in that scaled world. Dividing those distances by 15 does not
  * reproduce the demo.
  *
- * Ri230 puzzle bounds (product 7b560764-6936-41ca-acc8-4cd86024f01c), meters.
- * Bow is +X (bow cushion / front deck). Beam is Z. The glTF origin sits
+ * Ri230 is the regression fixture (7.56 m on +X). The demo boat is Ri245
+ * MY 2027 (sku ri245-my-2027, product 6e5439be-9bf5-40a4-bd09-13d529639b38).
+ * Its published puzzle AABB is 8.23 m on +X and 3.88 m of beam on Z. Bow
+ * nose is +X, swim step is −X. The product ruler unit is millimetres; the
+ * glTF positions are metres (bow plate near +4 m). The glTF origin sits
  * about half a metre above the keel, which is a usable waterline.
+ *
+ * Swap a newer puzzle by replacing CENTURION_RI245_GLB and, if the AABB
+ * moved, CENTURION_RI245_BOUNDS. Scale stays 15.
  */
 
 export const DEMO_BOAT_SCALE = 15;
@@ -20,6 +26,20 @@ export const CENTURION_RI230_BOUNDS = {
   min: [-4.080442611, -0.49104356728503906, -1.485993053981708],
   max: [3.482599, 3.1320764625479978, 1.485283801134457],
 };
+
+export const CENTURION_RI245_SKU = 'ri245-my-2027';
+
+export const CENTURION_RI245_GLB =
+  'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/1df5840a-34fd-6d79-9112-42b65bcb9d37.glb';
+
+/** Metres. Bow +X (bow nose plate), beam Z, keel at min Y. */
+export const CENTURION_RI245_BOUNDS = {
+  min: [-4.14444285111618, -0.516443714513612, -2.1203018954619215],
+  max: [4.088056631242676, 2.9131391683349652, 1.7613145123184413],
+};
+
+/** dummy_windscreen / Dummy New Windscreen Vented, glTF metres. */
+export const CENTURION_RI245_WINDSHIELD = [1.23223591, 1.62456667, 0];
 
 export const HDRI = {
   sunset:
