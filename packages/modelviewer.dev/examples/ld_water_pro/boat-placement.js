@@ -52,9 +52,9 @@ export const CENTURION_RI245_BOUNDS = {
 export const CENTURION_RI245_WINDSHIELD = [1.23223591, 1.62456667, 0];
 
 /**
- * glTF Y that should sit on the lake. Rub rail bottom is 0.92 m; the
- * visible hull shell starts near y = 0, so the origin alone leaves the
- * boat on top of the water.
+ * glTF Y that should sit on the lake. The rub rail runs about
+ * 0.92–1.29 m. The visible hull shell starts near y = 0, so the origin
+ * alone leaves the boat on top of the water.
  */
 export const RI245_WATERLINE_Y = 1.05;
 
