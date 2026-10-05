@@ -19,6 +19,7 @@
  * about 0.41 m above the keel, which is below the black rub rail. Each
  * boat carries `waterlineLocalY`: the glTF height that should meet the
  * lake. Buoyancy sinks the wrapper by that many metres times the scale.
+ * The painted rail and side stripe stay above the lake.
  *
  * The vendored dutch ship (`boat=demo`) is the third hull. Its bow is
  * already +Z. It has no windshield, so the glass framing does not apply.
@@ -53,10 +54,10 @@ export const CENTURION_RI245_WINDSHIELD = [1.23223591, 1.62456667, 0];
 
 /**
  * glTF Y that should sit on the lake. The rub rail runs about
- * 0.92–1.29 m. The visible hull shell starts near y = 0, so the origin
- * alone leaves the boat on top of the water.
+ * 0.92–1.29 m. 0.50 m keeps that rail clear of the water and still
+ * wets the hull shell, which starts near y = 0.
  */
-export const RI245_WATERLINE_Y = 1.05;
+export const RI245_WATERLINE_Y = 0.5;
 
 export const AQUILA_45_SKU = '45-sport';
 
@@ -78,9 +79,9 @@ export const AQUILA_45_WINDSHIELD = [0, 2.8839784, 2.12949878];
 /**
  * glTF Y that should sit on the lake. The visible side stripe is the
  * upper BlackRubber band (about 1.53–1.92 m). A lower band near 1.0 m
- * is the chine. 1.50 m puts the lake just under that side stripe.
+ * is the chine. 0.95 m puts the lake on that chine, under the stripe.
  */
-export const AQUILA_WATERLINE_Y = 1.5;
+export const AQUILA_WATERLINE_Y = 0.95;
 
 export const DEMO_SHIP_GLB =
   '/threejs-water-pro/demo/public/models/dutch_ship_medium_2k.glb';
