@@ -12,6 +12,7 @@ import {
   centurionDemoPlacement,
   demoParentPoint,
   hdriForTime,
+  LAKE_REFLECTION_ROUGHNESS,
   lakeLook,
 } from './boat-placement.js';
 
@@ -184,7 +185,7 @@ const boot = async () => {
     brightness: 0.3,
     reflectionBlurDistance: 1500,
     reflectionDistanceBlur: 0.5,
-    reflectionRoughness: 0.02,
+    reflectionRoughness: LAKE_REFLECTION_ROUGHNESS,
     sunDirection: water.lighting.sun.direction,
   });
   water.setSky(sky);

@@ -104,6 +104,23 @@ export function demoParentPoint(local, placement) {
 }
 
 /**
+ * Grazing Fresnel on the sunset preset mirrors the sun and the white deck,
+ * so the near water goes grey. A lake look keeps the body blue: slightly
+ * lower IOR, a soft sky reflection, and little screen-space reflection.
+ */
+export const LAKE_REFLECTION_ROUGHNESS = 0.36;
+
+const assignPath = (root, path, value) => {
+  let current = root;
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const key = path[i];
+    current[key] = current[key] ?? {};
+    current = current[key];
+  }
+  current[path[path.length - 1]] = value;
+};
+
+/**
  * Lake looks keep the sunset preset's spatial units (clipmap, cascade tile
  * scale, gerstner wavelength). Calm only lowers wave height and wind.
  * Midday raises the sun and cools the fog without retuning the ocean grid.
@@ -117,13 +134,23 @@ export function lakeLook(preset, {time, sea}) {
   } else if (sea !== 'light') {
     throw new Error(`Unknown sea state: ${sea}`);
   }
+  assignPath(next, ['color', 'absorptionColor'], '#2a1008');
+  assignPath(next, ['color', 'waterColor'], '#0a8ec4');
+  assignPath(next, ['color', 'transmissionColor'], '#b5e6f7');
+  assignPath(next, ['fresnel', 'surface', 'iorRatio'], 1.08);
+  assignPath(next, ['ssr', 'strength'], 0.08);
+  assignPath(next, ['sparkle', 'intensity'], 0.12);
+  assignPath(next, ['foam', 'surface', 'opacity'], 0.08);
+  assignPath(next, ['foam', 'surface', 'coverage'], 0.04);
+  assignPath(next, ['foam', 'waves', 'opacity'], 0.06);
+  assignPath(next, ['sky', 'reflectionRoughness'], LAKE_REFLECTION_ROUGHNESS);
   if (time === 'midday') {
     next.sky.sun.elevation = 58;
     next.sky.sun.azimuth = 165;
     next.sky.sun.diskColor = '#fff4d2';
     next.fog.color = '#d7e6f0';
-    next.color.waterColor = '#0c4a62';
-    next.color.transmissionColor = '#7ec8c0';
+    next.color.waterColor = '#1a8fbe';
+    next.color.transmissionColor = '#b7e4f5';
   } else if (time !== 'sunset') {
     throw new Error(`Unknown time of day: ${time}`);
   }

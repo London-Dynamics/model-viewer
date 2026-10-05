@@ -83,6 +83,10 @@ assert.equal(light.clipmap.baseSize, 800);
 assert.equal(light.waves.fft.amplitude, 1.56);
 assert.equal(light.waves.gerstner.amplitude, 2.06);
 assert.equal(light.waves.fft.windSpeed, 17.9);
+assert.equal(light.color.waterColor, '#0a8ec4');
+assert.equal(light.fresnel.surface.iorRatio, 1.08);
+assert.equal(light.ssr.strength, 0.08);
+assert.equal(light.sky.reflectionRoughness, 0.36);
 
 const calm = lakeLook(sunset, {time: 'sunset', sea: 'calm'});
 assert.equal(calm.waves.gerstner.wavelength, 852);
@@ -96,7 +100,8 @@ const midday = lakeLook(sunset, {time: 'midday', sea: 'light'});
 assert.equal(midday.waves.gerstner.wavelength, 852);
 assert.equal(midday.sky.sun.elevation, 58);
 assert.equal(midday.fog.color, '#d7e6f0');
-assert.notEqual(midday.color.waterColor, sunset.color.waterColor);
+assert.equal(midday.color.waterColor, '#1a8fbe');
+assert.equal(midday.fresnel.surface.iorRatio, 1.08);
 
 assert.equal(hdriForTime('sunset').includes('industrial_sunset'), true);
 assert.equal(hdriForTime('midday').includes('kloofendal_43d_clear'), true);
