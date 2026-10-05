@@ -1,20 +1,25 @@
 /**
- * Place a meter-authored Centurion hull in the threejs-water-pro demo world.
+ * Place a meter-authored hull in the threejs-water-pro demo world.
  *
  * The vendored demo scales dutch_ship_medium_2k.glb by 15 and treats +Z as
  * forward. Water wavelengths, the clipmap, and the camera far plane are
  * authored in that scaled world. Dividing those distances by 15 does not
  * reproduce the demo.
  *
- * Ri230 is the regression fixture (7.56 m on +X). The demo boat is Ri245
- * MY 2027 (sku ri245-my-2027, product 6e5439be-9bf5-40a4-bd09-13d529639b38).
- * The ready puzzle AABB is 8.23 m on +X and 3.88 m of beam on Z. Bow
- * nose is +X, swim step is −X. The product ruler unit is millimetres; the
- * glTF positions are metres (bow plate near +4 m). The glTF origin sits
- * about half a metre above the keel, which is a usable waterline.
+ * Ri230 is the regression fixture (7.56 m on +X). The default demo boat is
+ * Ri245 MY 2027 (sku ri245-my-2027, product
+ * 6e5439be-9bf5-40a4-bd09-13d529639b38). The ready puzzle AABB is 8.23 m on
+ * +X and 3.88 m of beam on Z. Bow nose is +X, swim step is −X. A −90° yaw
+ * puts that bow on +Z.
  *
- * Swap a newer puzzle by replacing CENTURION_RI245_GLB and, if the AABB
- * moved, CENTURION_RI245_BOUNDS. Scale stays 15.
+ * Aquila 45 Sport (sku 45-sport, product
+ * 6f7c6465-0a86-4ea6-81c5-ac8856f7e6a0) is 14.18 m on +Z and 4.61 m of beam
+ * on X. Outdrives sit at −Z and the windshield mesh is forward of midships,
+ * so the bow already faces +Z and the yaw stays 0. The glTF origin sits
+ * about 0.41 m above the keel.
+ *
+ * Select a boat with ?boat=ri245 (default), ?boat=aquila, or ?boat=45-sport.
+ * Scale stays 15.
  */
 
 export const DEMO_BOAT_SCALE = 15;
@@ -41,6 +46,60 @@ export const CENTURION_RI245_BOUNDS = {
 /** dummy_windscreen / Dummy New Windscreen Vented, glTF metres. */
 export const CENTURION_RI245_WINDSHIELD = [1.23223591, 1.62456667, 0];
 
+export const AQUILA_45_SKU = '45-sport';
+
+export const AQUILA_45_GLB =
+  'https://assets.v2.londondynamics.com/019e4651-0c20-7aa0-a5f4-789b9df05fd0/puzzle/49cdcf76-f547-483d-ce9b-dee55109f95e.glb';
+
+/**
+ * Metres. Length on +Z (bow), beam on X, keel at min Y.
+ * Measured from the ready puzzle GLB, world-space mesh corners.
+ */
+export const AQUILA_45_BOUNDS = {
+  min: [-2.3033783566787505, -0.411751904, -6.948886279595587],
+  max: [2.303379119618076, 4.4675432399999995, 7.230014832557959],
+};
+
+/** windshield-glass mesh centre, glTF metres. Bow is +Z. */
+export const AQUILA_45_WINDSHIELD = [0, 2.8839784, 2.12949878];
+
+/**
+ * `bowAxis` is the glTF axis that points at the bow before yaw.
+ * `x` needs −90° so the bow lands on demo +Z. `z` is already forward.
+ */
+export const BOATS = {
+  ri245: {
+    id: 'ri245',
+    label: 'Centurion Ri245',
+    sku: CENTURION_RI245_SKU,
+    url: CENTURION_RI245_GLB,
+    bounds: CENTURION_RI245_BOUNDS,
+    windshield: CENTURION_RI245_WINDSHIELD,
+    bowAxis: 'x',
+  },
+  aquila: {
+    id: 'aquila',
+    label: 'Aquila 45 Sport',
+    sku: AQUILA_45_SKU,
+    url: AQUILA_45_GLB,
+    bounds: AQUILA_45_BOUNDS,
+    windshield: AQUILA_45_WINDSHIELD,
+    bowAxis: 'z',
+  },
+};
+
+const BOAT_PARAMS = {
+  ri245: 'ri245',
+  aquila: 'aquila',
+  '45-sport': 'aquila',
+};
+
+/** `boat` query param. Unknown values stay on Ri245. */
+export function boatFromParam(param) {
+  const key = param == null || param === '' ? 'ri245' : String(param).toLowerCase();
+  return BOATS[BOAT_PARAMS[key] ?? 'ri245'];
+}
+
 export const HDRI = {
   sunset:
     '/threejs-water-pro/demo/public/hdris/industrial_sunset_02_puresky_4k.jpg',
@@ -61,6 +120,76 @@ export function boundsSize(bounds) {
   };
 }
 
+/** Yaw that maps `bowAxis` onto the water-pro forward axis (+Z). */
+export function yawForBow(bowAxis) {
+  if (bowAxis === 'x' || bowAxis === '+x') {
+    return -Math.PI / 2;
+  }
+  if (bowAxis === '-x') {
+    return Math.PI / 2;
+  }
+  if (bowAxis === '-z') {
+    return Math.PI;
+  }
+  if (bowAxis === 'z' || bowAxis === '+z') {
+    return 0;
+  }
+  throw new Error(`Unknown bow axis: ${bowAxis}`);
+}
+
+/** Ry(yaw) on the XZ plane. −90° maps (x, z) to (−z, x). */
+export function rotateYawXZ(x, z, yaw) {
+  if (yaw === 0) {
+    return [x, z];
+  }
+  if (yaw === -Math.PI / 2) {
+    return [-z, x];
+  }
+  if (yaw === Math.PI / 2) {
+    return [z, -x];
+  }
+  if (yaw === Math.PI || yaw === -Math.PI) {
+    return [-x, -z];
+  }
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  return [x * cos + z * sin, -x * sin + z * cos];
+}
+
+/**
+ * Child matrix is T * Ry(yaw) * S. XZ of the hull centre moves to the parent
+ * origin. The glTF origin stays at parent y = 0 so the keel stays under the
+ * waterline after scaling. `bowAxis` `x` is length-on-X (Ri245). `z` is
+ * length-on-Z (Aquila).
+ */
+export function boatDemoPlacement(boat, scale = DEMO_BOAT_SCALE) {
+  const {bounds, bowAxis} = boat;
+  const cx = (bounds.min[0] + bounds.max[0]) / 2;
+  const cz = (bounds.min[2] + bounds.max[2]) / 2;
+  const spanX = bounds.max[0] - bounds.min[0];
+  const spanZ = bounds.max[2] - bounds.min[2];
+  const alongX = bowAxis === 'x' || bowAxis === '+x' || bowAxis === '-x';
+  const yaw = yawForBow(bowAxis);
+  const [rx, rz] = rotateYawXZ(scale * cx, scale * cz, yaw);
+  const length = alongX ? spanX : spanZ;
+  const beam = alongX ? spanZ : spanX;
+  return {
+    scale,
+    yaw,
+    meshPosition: [-rx, 0, -rz],
+    worldLength: length * scale,
+    worldBeam: beam * scale,
+    worldHeight: (bounds.max[1] - bounds.min[1]) * scale,
+    keelLocalY: bounds.min[1],
+    buoyancy: {
+      sampleLength: length * scale * 0.85,
+      sampleWidth: beam * scale * 0.8,
+      sampleOffset: [0, 0, 0],
+      heightOffset: 0,
+    },
+  };
+}
+
 /**
  * Child matrix is T * Ry(-90°) * S. Scaled local (x, y, z) lands on parent
  * (-z, y, x). XZ of the hull centre is moved to the parent origin. The glTF
@@ -71,35 +200,17 @@ export function centurionDemoPlacement(
   bounds = CENTURION_RI230_BOUNDS,
   scale = DEMO_BOAT_SCALE
 ) {
-  const size = boundsSize(bounds);
-  const [cx, , cz] = size.center;
-  return {
-    scale,
-    yaw: -Math.PI / 2,
-    meshPosition: [scale * cz, 0, -scale * cx],
-    worldLength: size.length * scale,
-    worldBeam: size.beam * scale,
-    worldHeight: size.height * scale,
-    keelLocalY: bounds.min[1],
-    buoyancy: {
-      sampleLength: size.length * scale * 0.85,
-      sampleWidth: size.beam * scale * 0.8,
-      sampleOffset: [0, 0, 0],
-      heightOffset: 0,
-    },
-  };
+  return boatDemoPlacement({bounds, bowAxis: 'x'}, scale);
 }
 
-/** Parent-space point for a glTF-local point under centurionDemoPlacement. */
+/** Parent-space point for a glTF-local point under boatDemoPlacement. */
 export function demoParentPoint(local, placement) {
   const s = placement.scale;
-  const x = local[0] * s;
-  const y = local[1] * s;
-  const z = local[2] * s;
+  const [x, z] = rotateYawXZ(local[0] * s, local[2] * s, placement.yaw);
   return [
-    -z + placement.meshPosition[0],
-    y + placement.meshPosition[1],
-    x + placement.meshPosition[2],
+    x + placement.meshPosition[0],
+    local[1] * s + placement.meshPosition[1],
+    z + placement.meshPosition[2],
   ];
 }
 

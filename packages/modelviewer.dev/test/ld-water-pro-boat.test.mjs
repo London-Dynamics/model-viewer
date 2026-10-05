@@ -6,12 +6,19 @@ import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 
 import {
+  AQUILA_45_BOUNDS,
+  AQUILA_45_GLB,
+  AQUILA_45_SKU,
+  AQUILA_45_WINDSHIELD,
+  BOATS,
   CENTURION_RI230_BOUNDS,
   CENTURION_RI245_BOUNDS,
   CENTURION_RI245_GLB,
   CENTURION_RI245_SKU,
   CENTURION_RI245_WINDSHIELD,
   DEMO_BOAT_SCALE,
+  boatDemoPlacement,
+  boatFromParam,
   boundsSize,
   centurionDemoPlacement,
   demoParentPoint,
@@ -124,12 +131,61 @@ const ri245Stern = demoParentPoint(
     [CENTURION_RI245_BOUNDS.min[0], 0, 0], ri245Placement);
 assert.ok(ri245Bow[2] > ri245Stern[2], 'Ri245 bow +X maps to +Z');
 assert.match(demoJs, /DRACOLoader/);
-assert.match(demoJs, /CENTURION_RI245_GLB/);
-assert.match(demoJs, /CENTURION_RI245_BOUNDS/);
+assert.match(demoJs, /boatFromParam/);
+assert.match(demoJs, /boat\.url/);
 assert.match(
     CENTURION_RI245_GLB,
     /17949ff9-26b2-7158-9112-42b65bcb9d37\.glb$/,
     'the demo loads the ready Ri245 puzzle GLB');
+assert.equal(boatFromParam(null).id, 'ri245');
+assert.equal(boatFromParam('').id, 'ri245');
+assert.equal(boatFromParam('ri245').id, 'ri245');
+assert.equal(boatFromParam('RI245'), BOATS.ri245);
+assert.equal(boatFromParam('nope').id, 'ri245');
+assert.equal(boatFromParam('aquila').id, 'aquila');
+assert.equal(boatFromParam('45-sport'), BOATS.aquila);
+assert.equal(AQUILA_45_SKU, '45-sport');
+assert.match(
+    AQUILA_45_GLB,
+    /49cdcf76-f547-483d-ce9b-dee55109f95e\.glb$/,
+    'Aquila loads the ready 45 Sport puzzle GLB');
+assert.match(html, /boat=ri245/);
+assert.match(html, /boat=aquila/);
+
+const aquilaSpanX = AQUILA_45_BOUNDS.max[0] - AQUILA_45_BOUNDS.min[0];
+const aquilaSpanZ = AQUILA_45_BOUNDS.max[2] - AQUILA_45_BOUNDS.min[2];
+assert.ok(Math.abs(aquilaSpanX - 4.607) < 0.01, 'Aquila beam is about 4.61 m on X');
+assert.ok(Math.abs(aquilaSpanZ - 14.179) < 0.01, 'Aquila length is about 14.18 m on Z');
+assert.ok(aquilaSpanZ > aquilaSpanX, 'Aquila length is the Z axis');
+const aquila = boatDemoPlacement(BOATS.aquila);
+assert.equal(aquila.scale, 15);
+assert.equal(aquila.yaw, 0);
+assert.equal(aquila.buoyancy.heightOffset, 0);
+assert.ok(Math.abs(aquila.worldLength - aquilaSpanZ * 15) < 1e-6);
+assert.ok(Math.abs(aquila.worldBeam - aquilaSpanX * 15) < 1e-6);
+assert.ok(aquila.worldLength > 210 && aquila.worldLength < 215);
+assert.ok(
+    aquila.buoyancy.sampleLength > aquila.worldLength * 0.8 &&
+        aquila.buoyancy.sampleLength < aquila.worldLength,
+    'Aquila buoyancy spans the scaled length, not the beam');
+assert.ok(aquila.buoyancy.sampleWidth < aquila.worldBeam);
+const aquilaCenter = [
+  (AQUILA_45_BOUNDS.min[0] + AQUILA_45_BOUNDS.max[0]) / 2,
+  (AQUILA_45_BOUNDS.min[1] + AQUILA_45_BOUNDS.max[1]) / 2,
+  (AQUILA_45_BOUNDS.min[2] + AQUILA_45_BOUNDS.max[2]) / 2,
+];
+const aquilaOrigin = demoParentPoint([0, 0, 0], aquila);
+assert.ok(Math.abs(aquilaOrigin[1]) < 1e-6, 'Aquila glTF origin stays on the waterline');
+const aquilaCentered = demoParentPoint(aquilaCenter, aquila);
+assert.ok(Math.abs(aquilaCentered[0]) < 1e-6, 'Aquila hull centre X is on the parent origin');
+assert.ok(Math.abs(aquilaCentered[2]) < 1e-6, 'Aquila hull centre Z is on the parent origin');
+const aquilaBow = demoParentPoint([0, 0, AQUILA_45_BOUNDS.max[2]], aquila);
+const aquilaStern = demoParentPoint([0, 0, AQUILA_45_BOUNDS.min[2]], aquila);
+assert.ok(aquilaBow[2] > aquilaStern[2], 'Aquila bow +Z stays on +Z');
+assert.ok(AQUILA_45_WINDSHIELD[2] > 1, 'Aquila windshield sits forward of the origin');
+const aquilaGlass = demoParentPoint(AQUILA_45_WINDSHIELD, aquila);
+assert.ok(aquilaGlass[2] > 0, 'Aquila windshield faces demo +Z');
+assert.ok(aquilaGlass[1] > 30, 'Aquila windshield is above the scaled waterline');
 assert.match(html, /three\/webgpu/);
 assert.match(html, /threejs-water-pro\/build\/index\.js/);
 assert.match(html, /water-pro-demo\.js/);

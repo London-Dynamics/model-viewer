@@ -6,32 +6,43 @@ import {UltraHDRLoader} from 'three/addons/loaders/UltraHDRLoader.js';
 import {Sky, WaterSystem, getPresetParams} from 'threejs-water-pro';
 
 import {
-  CENTURION_RI245_BOUNDS,
-  CENTURION_RI245_GLB,
-  CENTURION_RI245_WINDSHIELD,
-  centurionDemoPlacement,
+  boatDemoPlacement,
+  boatFromParam,
   demoParentPoint,
   hdriForTime,
   LAKE_REFLECTION_ROUGHNESS,
   lakeLook,
 } from './boat-placement.js';
 
-const placement = centurionDemoPlacement(CENTURION_RI245_BOUNDS);
+const params = new URLSearchParams(location.search);
+const boat = boatFromParam(params.get('boat'));
+const placement = boatDemoPlacement(boat);
+console.info('[ld_water_pro] boat', {
+  id: boat.id,
+  label: boat.label,
+  sku: boat.sku,
+  url: boat.url,
+  bowAxis: boat.bowAxis,
+  bounds: boat.bounds,
+  windshield: boat.windshield,
+  placement,
+});
 const canvas = document.querySelector('#water-pro-canvas');
 const statusEl = document.querySelector('#water-pro-status');
 const detailEl = document.querySelector('#water-pro-detail');
 
-const params = new URLSearchParams(location.search);
 const state = {
   time: params.get('time') === 'midday' ? 'midday' : 'sunset',
   sea: params.get('sea') === 'calm' ? 'calm' : 'light',
   reference: params.get('reference') === '1',
   view: params.get('view') === 'glass' ? 'glass' : 'hero',
+  boat: boat.id,
 };
 const pmremSize = Number(params.get('pmremsize'));
 
 const syncUrl = () => {
   const url = new URL(location.href);
+  url.searchParams.set('boat', state.boat);
   url.searchParams.set('time', state.time);
   url.searchParams.set('sea', state.sea);
   url.searchParams.set('view', state.view);
@@ -108,7 +119,7 @@ const useSkyEnvironment = (scene, sky) => {
 };
 
 const frameCamera = (camera, controls) => {
-  const windshield = demoParentPoint(CENTURION_RI245_WINDSHIELD, placement);
+  const windshield = demoParentPoint(boat.windshield, placement);
   if (state.view === 'glass') {
     controls.target.set(windshield[0], windshield[1], windshield[2]);
     camera.position.set(
@@ -194,13 +205,13 @@ const boot = async () => {
     scene.add(mesh);
   }
 
-  setStatus('water: loading Centurion Ri245');
+  setStatus(`water: loading ${boat.label}`);
   const draco = new DRACOLoader();
   draco.setDecoderPath(
       '/threejs-water-pro/node_modules/three/examples/jsm/libs/draco/gltf/');
   const loader = new GLTFLoader();
   loader.setDRACOLoader(draco);
-  const gltf = await loader.loadAsync(CENTURION_RI245_GLB);
+  const gltf = await loader.loadAsync(boat.url);
   gltf.scene.traverse((obj) => {
     if (obj.isMesh !== true || obj.geometry == null) {
       return;
@@ -210,9 +221,9 @@ const boot = async () => {
       obj.geometry.computeVertexNormals();
     }
   });
-  const boat = new THREE.Group();
-  boat.name = 'CenturionRi245';
-  boat.userData.isBoat = true;
+  const boatGroup = new THREE.Group();
+  boatGroup.name = boat.id;
+  boatGroup.userData.isBoat = true;
   const hull = gltf.scene;
   hull.rotation.y = placement.yaw;
   hull.scale.setScalar(placement.scale);
@@ -220,12 +231,12 @@ const boot = async () => {
       placement.meshPosition[0],
       placement.meshPosition[1],
       placement.meshPosition[2]);
-  boat.add(hull);
-  scene.add(boat);
+  boatGroup.add(hull);
+  scene.add(boatGroup);
 
   const transparency = countTransparency(hull);
-  water.masking.add(boat);
-  water.buoyancy.addObject(boat, {
+  water.masking.add(boatGroup);
+  water.buoyancy.addObject(boatGroup, {
     multiPoint: true,
     useBoundingBox: false,
     heightOffset: placement.buoyancy.heightOffset,
@@ -267,7 +278,7 @@ const boot = async () => {
     const modeLabel = state.reference ? 'hull only' : 'water';
     setStatus(`${state.time} / ${seaLabel} / ${modeLabel}`);
     detailEl.textContent =
-        `Ri245 ${placement.worldLength.toFixed(1)} m world length ` +
+        `${boat.label} ${placement.worldLength.toFixed(1)} m world length ` +
         `(${(placement.worldLength / placement.scale).toFixed(2)} m real × ${placement.scale}). ` +
         `Beam ${placement.worldBeam.toFixed(1)} m. ` +
         `Glass blend: ${transparency.blend.join(', ') || 'none'}. ` +
