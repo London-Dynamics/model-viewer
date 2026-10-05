@@ -70,11 +70,14 @@
               exposure="1.06"
               field-of-view="50deg"
               camera-target="0m 0m 0m"
+              camera-orbit="49.97deg 79.59deg 15.23m"
+              orientation="0deg 0deg -90deg"
               max-camera-orbit="auto auto 80m"
               shadow-intensity="0"
               water-preset="ld-boat"
               water-quality="high"
-              water-view="hero"
+              water-waterline="0.5"
+              water-drive
               water-sky-size="512"
               water-sky-image="/threejs-water-pro/demo/public/hdris/kloofendal_43d_clear_puresky_4k.jpg"
               alt="Boat on the LD water mixin"
@@ -100,12 +103,17 @@
               <div class="heading">
                 <h2 class="demo-title">Water mixin hero</h2>
                 <h4>
-                  This page is the model-viewer water mixin, not the
-                  threejs-water-pro demo. The preset is ld-boat: dusk colour,
-                  wind 6.7 m/s, peak wavelength 22 m, quality high, and the
-                  16:45 sun. Hulls stay at real-metre scale. boat=ri245,
-                  boat=aquila, or boat=demo. The mixin knows those waterlines
-                  (0.50 m, 0.95 m, and 0) and yaws the bow onto +Z.
+                  This page is the model-viewer water mixin. The preset is
+                  ld-boat: dusk colour, wind 6.7 m/s, peak wavelength 22 m,
+                  quality high, and the 16:45 sun. The mixin does not know
+                  which hull is loaded. boat=ri245 sets water-waterline 0.50
+                  and orientation yaw −90°. boat=aquila sets water-waterline
+                  0.95. boat=demo sets water-waterline 0. All three use
+                  camera-orbit 49.97° 79.59° at a radius that frames the hull
+                  from the shared starboard bow. The camera target stays at
+                  the origin so the lake is not pulled off y = 0.
+                  water-drive turns on the mixin helm. WASD, off unless that
+                  attribute is set. Forward is the hull's +Z axis.
                 </h4>
               </div>
             </div>
@@ -116,19 +124,42 @@
 
     <script type="module" src="../../examples/built/docs-and-examples.js"></script>
     <script type="module">
+      // Attribute switches only. Draft, bow, camera, and the helm are mixin
+      // behaviour. Orbit angles are the shared starboard-bow bearing
+      // (offset 1.25, 0.3, 1.05). Radius is 1.85 × the hull's longest side.
+      // The dutch ship is 50 m so the masts stay inside a 50° view aimed
+      // at the origin. water-drive stays on so WASD can be tested.
       const boats = {
-        ri245:
-            'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/17949ff9-26b2-7158-9112-42b65bcb9d37.glb',
-        aquila:
-            'https://assets.v2.londondynamics.com/019e4651-0c20-7aa0-a5f4-789b9df05fd0/puzzle/49cdcf76-f547-483d-ce9b-dee55109f95e.glb',
-        demo: '/threejs-water-pro/demo/public/models/dutch_ship_medium_2k.glb',
+        ri245: {
+          src: 'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/17949ff9-26b2-7158-9112-42b65bcb9d37.glb',
+          waterline: '0.5',
+          orientation: '0deg 0deg -90deg',
+          orbit: '49.97deg 79.59deg 15.23m',
+        },
+        aquila: {
+          src: 'https://assets.v2.londondynamics.com/019e4651-0c20-7aa0-a5f4-789b9df05fd0/puzzle/49cdcf76-f547-483d-ce9b-dee55109f95e.glb',
+          waterline: '0.95',
+          orientation: '0deg 0deg 0deg',
+          orbit: '49.97deg 79.59deg 26.23m',
+        },
+        demo: {
+          src: '/threejs-water-pro/demo/public/models/dutch_ship_medium_2k.glb',
+          waterline: '0',
+          orientation: '0deg 0deg 0deg',
+          orbit: '49.97deg 79.59deg 50m',
+        },
       };
       const params = new URLSearchParams(location.search);
       const requested = params.get('boat');
       const boat = requested === 'aquila' || requested === 'demo' ? requested : 'ri245';
+      const choice = boats[boat];
       const viewer = document.querySelector('#water-mixin-demo');
       const status = document.querySelector('#water-mixin-status');
-      viewer.src = boats[boat];
+      viewer.setAttribute('water-waterline', choice.waterline);
+      viewer.setAttribute('orientation', choice.orientation);
+      viewer.setAttribute('camera-orbit', choice.orbit);
+      viewer.setAttribute('camera-target', '0m 0m 0m');
+      viewer.src = choice.src;
       viewer.addEventListener('load', () => {
         status.textContent = `water: ${boat} loaded`;
       });
