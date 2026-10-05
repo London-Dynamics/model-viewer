@@ -123,8 +123,8 @@ assert.match(demoJs, /CENTURION_RI245_GLB/);
 assert.match(demoJs, /CENTURION_RI245_BOUNDS/);
 assert.match(
     CENTURION_RI245_GLB,
-    /1df5840a-34fd-6d79-9112-42b65bcb9d37\.glb$/,
-    'the demo loads the published Ri245 puzzle GLB');
+    /17949ff9-26b2-7158-9112-42b65bcb9d37\.glb$/,
+    'the demo loads the ready Ri245 puzzle GLB');
 assert.match(html, /three\/webgpu/);
 assert.match(html, /threejs-water-pro\/build\/index\.js/);
 assert.match(html, /water-pro-demo\.js/);

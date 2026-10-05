@@ -8,7 +8,7 @@
  *
  * Ri230 is the regression fixture (7.56 m on +X). The demo boat is Ri245
  * MY 2027 (sku ri245-my-2027, product 6e5439be-9bf5-40a4-bd09-13d529639b38).
- * Its published puzzle AABB is 8.23 m on +X and 3.88 m of beam on Z. Bow
+ * The ready puzzle AABB is 8.23 m on +X and 3.88 m of beam on Z. Bow
  * nose is +X, swim step is −X. The product ruler unit is millimetres; the
  * glTF positions are metres (bow plate near +4 m). The glTF origin sits
  * about half a metre above the keel, which is a usable waterline.
@@ -30,7 +30,7 @@ export const CENTURION_RI230_BOUNDS = {
 export const CENTURION_RI245_SKU = 'ri245-my-2027';
 
 export const CENTURION_RI245_GLB =
-  'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/1df5840a-34fd-6d79-9112-42b65bcb9d37.glb';
+  'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/17949ff9-26b2-7158-9112-42b65bcb9d37.glb';
 
 /** Metres. Bow +X (bow nose plate), beam Z, keel at min Y. */
 export const CENTURION_RI245_BOUNDS = {
