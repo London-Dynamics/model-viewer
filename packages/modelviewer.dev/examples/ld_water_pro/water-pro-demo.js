@@ -31,8 +31,11 @@ const canvas = document.querySelector('#water-pro-canvas');
 const statusEl = document.querySelector('#water-pro-status');
 const detailEl = document.querySelector('#water-pro-detail');
 
+const requestedTime = params.get('time');
 const state = {
-  time: params.get('time') === 'midday' ? 'midday' : 'sunset',
+  time: requestedTime === 'midday' || requestedTime === 'afternoon' ?
+    requestedTime :
+    'sunset',
   sea: params.get('sea') === 'calm' ? 'calm' : 'light',
   reference: params.get('reference') === '1',
   view: params.get('view') === 'glass' ? 'glass' : 'hero',

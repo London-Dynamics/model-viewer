@@ -89,6 +89,9 @@
                         <button type="button" class="ld-button" data-time="midday">
                           Midday
                         </button>
+                        <button type="button" class="ld-button" data-time="afternoon">
+                          Afternoon
+                        </button>
                         <button type="button" class="ld-button" data-time="sunset">
                           Sunset
                         </button>
@@ -145,13 +148,15 @@
                   one WebGPU renderer, sunset water units left intact, and the
                   boat scaled by 15. Pick a hull with boat=ri245 (default),
                   boat=aquila (alias 45-sport), or boat=demo (the vendored
-                  dutch ship). All three share one hero bearing, scaled by
-                  hull length, with the bow on +Z. Ri245 and Aquila sink so
-                  the rub rail meets the lake; the demo ship's origin is
-                  already its waterline. Sunset is a warm low sun and a
-                  deeper sea. Midday is a high sun and a bright calm lake.
-                  Calm lowers wave height only. It does not divide the
-                  clipmap or wavelengths by 15.
+                  dutch ship). All three share one high starboard-bow hero
+                  angle. Distance follows the larger of length and height
+                  so the ship's masts stay in frame, with the bow on +Z.
+                  Ri245 and Aquila sink so the rub rail meets the lake; the
+                  demo ship's origin is already its waterline. Afternoon is
+                  a clear late-day sky and a light lake chop (about 6.7 m/s,
+                  22 m peak). Sunset is a warm low sun and a deeper sea.
+                  Midday is a high sun and a bright lake. Calm lowers wave
+                  height only. It does not divide the clipmap by 15.
                 </h4>
                 <h4>
                   Aquila windshield glass is KHR_materials_transmission. The
@@ -159,7 +164,7 @@
                   leaves them out of the hull mask, so the lake shows
                   through the glass instead of the sand floor. The demo
                   ship has no windshield. Query params:
-                  boat=ri245|aquila|45-sport|demo, time=sunset|midday,
+                  boat=ri245|aquila|45-sport|demo, time=afternoon|sunset|midday,
                   sea=light|calm, view=hero|glass, reference=1. A full 4k
                   sky prefilter did not finish on a software WebGPU
                   adapter; add pmremsize=512 there. A desktop GPU can omit

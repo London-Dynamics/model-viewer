@@ -26,6 +26,11 @@ import {
   demoParentPoint,
   frameCameraPose,
   hdriForTime,
+  CALM_WAVE_GAIN,
+  CALM_WIND_SPEED,
+  LIGHT_PEAK_WAVELENGTH,
+  LIGHT_WAVE_GAIN,
+  LIGHT_WIND_SPEED,
   lakeLook,
   lakePresentation,
 } from '../examples/ld_water_pro/boat-placement.js';
@@ -87,13 +92,20 @@ const sunset = {
 };
 
 const light = lakeLook(sunset, {time: 'sunset', sea: 'light'});
-assert.equal(light.waves.gerstner.wavelength, 852);
+assert.equal(LIGHT_PEAK_WAVELENGTH, 22 * DEMO_BOAT_SCALE);
+assert.equal(light.waves.gerstner.wavelength, LIGHT_PEAK_WAVELENGTH);
+assert.equal(light.waves.fft.frequency, 2.4);
+assert.equal(light.waves.fft.choppiness, 0.9);
 assert.equal(light.waves.fft.cascades.ripples.scale, 379);
+assert.equal(light.waves.fft.cascades.ripples.amplitudeScale, 0.22);
 assert.equal(light.waves.fft.cascades.waves.scale, 2088);
 assert.equal(light.clipmap.baseSize, 800);
-assert.ok(Math.abs(light.waves.fft.amplitude - 1.56 * 3.2) < 1e-9);
-assert.ok(Math.abs(light.waves.gerstner.amplitude - 2.06 * 3.2) < 1e-9);
-assert.equal(light.waves.fft.windSpeed, 17.9);
+assert.equal(LIGHT_WAVE_GAIN, 0.85);
+assert.ok(LIGHT_WAVE_GAIN < 1, 'light chop stays under the ocean preset');
+assert.ok(Math.abs(light.waves.fft.amplitude - 1.56 * LIGHT_WAVE_GAIN) < 1e-9);
+assert.ok(Math.abs(light.waves.gerstner.amplitude - 2.06 * LIGHT_WAVE_GAIN) < 1e-9);
+assert.equal(light.waves.fft.windSpeed, LIGHT_WIND_SPEED);
+assert.equal(LIGHT_WIND_SPEED, 6.7);
 assert.equal(light.color.waterColor, '#14557a');
 assert.equal(light.color.absorptionColor, '#3a140c');
 assert.equal(light.oceanFloor.depth, 420);
@@ -106,11 +118,14 @@ assert.equal(light.fog.color, '#e08a55');
 const calm = lakeLook(sunset, {time: 'sunset', sea: 'calm'});
 assert.equal(calm.waves.gerstner.wavelength, 852);
 assert.equal(calm.clipmap.baseSize, 800);
-assert.ok(Math.abs(calm.waves.gerstner.amplitude - 2.06 * 0.12) < 1e-9);
-assert.ok(Math.abs(calm.waves.fft.amplitude - 1.56 * 0.12) < 1e-9);
-assert.equal(calm.waves.fft.windSpeed, 3);
+assert.equal(CALM_WAVE_GAIN, 0.45);
+assert.ok(Math.abs(calm.waves.gerstner.amplitude - 2.06 * CALM_WAVE_GAIN) < 1e-9);
+assert.ok(Math.abs(calm.waves.fft.amplitude - 1.56 * CALM_WAVE_GAIN) < 1e-9);
+assert.equal(calm.waves.fft.windSpeed, CALM_WIND_SPEED);
+assert.equal(CALM_WIND_SPEED, 4);
 assert.equal(calm.sky.sun.elevation, 11);
-assert.ok(calm.waves.gerstner.amplitude < light.waves.gerstner.amplitude * 0.1);
+assert.ok(calm.waves.gerstner.amplitude < light.waves.gerstner.amplitude);
+assert.ok(calm.waves.gerstner.amplitude > light.waves.gerstner.amplitude * 0.4);
 
 const midday = lakeLook(sunset, {time: 'midday', sea: 'calm'});
 assert.equal(midday.waves.gerstner.wavelength, 852);
@@ -119,9 +134,24 @@ assert.equal(midday.fog.color, '#c9e4f6');
 assert.equal(midday.color.waterColor, '#3ec8e6');
 assert.notEqual(midday.color.waterColor, light.color.waterColor);
 assert.equal(midday.fresnel.surface.iorRatio, 1.08);
-assert.ok(midday.waves.gerstner.amplitude < light.waves.gerstner.amplitude * 0.1);
-assert.ok(lakePresentation('midday').skyBrightness > lakePresentation('sunset').skyBrightness);
-assert.ok(lakePresentation('midday').exposure > lakePresentation('sunset').exposure);
+assert.ok(midday.waves.gerstner.amplitude < light.waves.gerstner.amplitude);
+assert.ok(midday.waves.gerstner.amplitude > light.waves.gerstner.amplitude * 0.4);
+assert.ok(lakePresentation('midday').skyBrightness > lakePresentation('afternoon').skyBrightness);
+assert.ok(lakePresentation('afternoon').skyBrightness > lakePresentation('sunset').skyBrightness);
+assert.ok(lakePresentation('midday').exposure > lakePresentation('afternoon').exposure);
+assert.ok(lakePresentation('afternoon').exposure > lakePresentation('sunset').exposure);
+
+const afternoon = lakeLook(sunset, {time: 'afternoon', sea: 'light'});
+assert.equal(afternoon.sky.sun.elevation, 26);
+assert.ok(afternoon.sky.sun.elevation > light.sky.sun.elevation);
+assert.ok(afternoon.sky.sun.elevation < midday.sky.sun.elevation);
+assert.equal(afternoon.color.waterColor, '#1f86b3');
+assert.notEqual(afternoon.color.waterColor, light.color.waterColor);
+assert.notEqual(afternoon.color.waterColor, midday.color.waterColor);
+assert.equal(afternoon.fog.color, '#b9d6ea');
+assert.equal(afternoon.waves.fft.windSpeed, LIGHT_WIND_SPEED);
+assert.equal(afternoon.waves.gerstner.wavelength, LIGHT_PEAK_WAVELENGTH);
+assert.equal(hdriForTime('afternoon').includes('kloofendal_43d_clear'), true);
 
 assert.equal(hdriForTime('sunset').includes('industrial_sunset'), true);
 assert.equal(hdriForTime('midday').includes('kloofendal_43d_clear'), true);
@@ -221,8 +251,21 @@ const heroDirection = (pose) => {
 };
 const riHero = heroDirection(frameCameraPose(ri245Registry, BOATS.ri245.windshield, 'hero'));
 const aqHero = heroDirection(frameCameraPose(aquila, BOATS.aquila.windshield, 'hero'));
-const demoHero = heroDirection(frameCameraPose(
-    boatDemoPlacement(BOATS.demo), null, 'hero'));
+const demoPlacement = boatDemoPlacement(BOATS.demo);
+const demoPose = frameCameraPose(demoPlacement, null, 'hero');
+const demoHero = heroDirection(demoPose);
+assert.equal(demoPose.target[1], demoPlacement.worldCenterY);
+assert.ok(
+    demoPose.position[1] < BOATS.demo.bounds.max[1] * DEMO_BOAT_SCALE,
+    'the hero eye stays under the demo ship mast so the rigging meets the sky');
+assert.ok(demoPose.position[1] > 100, 'the hero eye stays clear of the lake');
+const demoSpan = Math.max(
+    demoPlacement.worldLength, demoPlacement.worldHeight, demoPlacement.worldBeam);
+const demoDistance = Math.hypot(
+    demoPose.position[0] - demoPose.target[0],
+    demoPose.position[1] - demoPose.target[1],
+    demoPose.position[2] - demoPose.target[2]);
+assert.ok(Math.abs(demoDistance / demoSpan - 1.85) < 1e-9);
 for (let axis = 0; axis < 3; axis += 1) {
   assert.ok(Math.abs(riHero[axis] - aqHero[axis]) < 1e-9, 'Ri245 and Aquila share the hero bearing');
   assert.ok(Math.abs(riHero[axis] - demoHero[axis]) < 1e-9, 'the demo ship shares the hero bearing');
@@ -240,6 +283,7 @@ assert.match(html, /three\/webgpu/);
 assert.match(html, /threejs-water-pro\/build\/index\.js/);
 assert.match(html, /water-pro-demo\.js/);
 assert.match(html, /data-time="midday"/);
+assert.match(html, /data-time="afternoon"/);
 assert.match(html, /data-time="sunset"/);
 assert.match(html, /data-sea="calm"/);
 assert.match(html, /data-sea="light"/);

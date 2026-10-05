@@ -87,7 +87,8 @@ export const DEMO_SHIP_GLB =
 
 /**
  * Metres. Bowsprit is +Z, beam on X, keel at min Y. Masts make the
- * height large; the hero camera uses length, not this height.
+ * height about the same as the length, so the hero distance uses
+ * whichever of length and height is larger.
  */
 export const DEMO_SHIP_BOUNDS = {
   min: [-3.320786237716675, -1.9999947547912598, -10.325664520263672],
@@ -223,6 +224,8 @@ export function boatDemoPlacement(boat, scale = DEMO_BOAT_SCALE) {
   const length = alongX ? spanX : spanZ;
   const beam = alongX ? spanZ : spanX;
   const waterlineLocalY = boat.waterlineLocalY ?? 0;
+  const heightOffset = waterlineLocalY === 0 ? 0 : -waterlineLocalY * scale;
+  const midLocalY = (bounds.min[1] + bounds.max[1]) / 2;
   return {
     scale,
     yaw,
@@ -230,29 +233,33 @@ export function boatDemoPlacement(boat, scale = DEMO_BOAT_SCALE) {
     worldLength: length * scale,
     worldBeam: beam * scale,
     worldHeight: (bounds.max[1] - bounds.min[1]) * scale,
+    worldCenterY: midLocalY * scale + heightOffset,
     keelLocalY: bounds.min[1],
     waterlineLocalY,
     buoyancy: {
       sampleLength: length * scale * 0.85,
       sampleWidth: beam * scale * 0.8,
       sampleOffset: [0, 0, 0],
-      heightOffset: waterlineLocalY === 0 ? 0 : -waterlineLocalY * scale,
+      heightOffset,
     },
   };
 }
 
 /**
- * One hero bearing for every hull: starboard-bow quarter, in fractions
- * of world length, bow toward +Z. Distance follows length so a longer
- * boat is not framed from a different angle.
+ * One hero bearing for every hull: starboard-bow quarter, about 10°
+ * above the hull centre, bow toward +Z. `offset` is the camera direction
+ * before it is normalised. `distance` multiplies the larger of world
+ * length and world height. The eye stays under the dutch ship's mast
+ * tips and clear of the water, so the rigging reads against the sky
+ * and a crest cannot fill the lens. Powerboats share that angle.
  *
  * Glass eye sits just aft of the windshield and looks forward and down
  * at the lake. Offsets are metres, then multiplied by the shared scale.
  * Returns null when the boat has no windshield.
  */
 export const HERO_FRAMING = {
-  position: [0.7, 0.28, 1.15],
-  target: [0, 0.02, 0],
+  offset: [1.25, 0.3, 1.05],
+  distance: 1.85,
 };
 
 export const GLASS_FRAMING = {
@@ -283,10 +290,18 @@ export function frameCameraPose(placement, windshield, view) {
       ],
     };
   }
-  const length = placement.worldLength;
+  const span = Math.max(placement.worldLength, placement.worldHeight, placement.worldBeam);
+  const offset = HERO_FRAMING.offset;
+  const offsetLength = Math.hypot(offset[0], offset[1], offset[2]);
+  const distance = HERO_FRAMING.distance * span;
+  const target = [0, placement.worldCenterY, 0];
   return {
-    position: HERO_FRAMING.position.map((component) => component * length),
-    target: HERO_FRAMING.target.map((component) => component * length),
+    position: [
+      target[0] + offset[0] / offsetLength * distance,
+      target[1] + offset[1] / offsetLength * distance,
+      target[2] + offset[2] / offsetLength * distance,
+    ],
+    target,
   };
 }
 
@@ -325,27 +340,37 @@ const assignPath = (root, path, value) => {
 };
 
 /**
- * Lake looks keep the sunset preset's spatial units (clipmap, cascade tile
- * scale, gerstner wavelength). Light seas raise wave height enough to read
- * at ship scale. Calm flattens it. Sunset and midday use different body
- * colours, sun height, and fog so the frames do not match.
+ * Lake looks keep the sunset preset's clipmap and cascade tile size.
+ * Light chop uses a 6.7 m/s breeze and a 22 m peak, scaled into the
+ * demo world (×15), with the ocean preset's height cut back. Calm is
+ * lower still. A 3.2× light gain put a crest across the lens. Sunset,
+ * afternoon, and midday use different body colours, sun height, and fog.
  *
  * Absorption is strong enough that a view through the windshield dies
  * out before the sand floor (depth 420). IOR stays low so the near water
  * does not mirror the white deck.
  */
-export const LIGHT_WAVE_GAIN = 3.2;
-export const CALM_WAVE_GAIN = 0.12;
+export const LIGHT_WAVE_GAIN = 0.85;
+export const CALM_WAVE_GAIN = 0.45;
+export const LIGHT_WIND_SPEED = 6.7;
+export const CALM_WIND_SPEED = 4;
+/** 22 m lake chop, in the scaled demo world. */
+export const LIGHT_PEAK_WAVELENGTH = 22 * DEMO_BOAT_SCALE;
 
 export function lakeLook(preset, {time, sea}) {
   const next = structuredClone(preset);
   if (sea === 'light') {
     next.waves.fft.amplitude *= LIGHT_WAVE_GAIN;
     next.waves.gerstner.amplitude *= LIGHT_WAVE_GAIN;
+    next.waves.gerstner.wavelength = LIGHT_PEAK_WAVELENGTH;
+    next.waves.fft.windSpeed = LIGHT_WIND_SPEED;
+    next.waves.fft.frequency = 2.4;
+    next.waves.fft.choppiness = 0.9;
+    next.waves.fft.cascades.ripples.amplitudeScale = 0.22;
   } else if (sea === 'calm') {
     next.waves.fft.amplitude *= CALM_WAVE_GAIN;
     next.waves.gerstner.amplitude *= CALM_WAVE_GAIN;
-    next.waves.fft.windSpeed = 3;
+    next.waves.fft.windSpeed = CALM_WIND_SPEED;
   } else {
     throw new Error(`Unknown sea state: ${sea}`);
   }
@@ -364,12 +389,30 @@ export function lakeLook(preset, {time, sea}) {
     assignPath(next, ['sky', 'reflectionRoughness'], 0.2);
     assignPath(next, ['ssr', 'strength'], 0.14);
     assignPath(next, ['sparkle', 'intensity'], 0.35);
-    assignPath(next, ['foam', 'surface', 'opacity'], 0.22);
-    assignPath(next, ['foam', 'surface', 'coverage'], 0.1);
-    assignPath(next, ['foam', 'waves', 'opacity'], 0.12);
+    assignPath(next, ['foam', 'surface', 'opacity'], 0.08);
+    assignPath(next, ['foam', 'surface', 'coverage'], 0.05);
+    assignPath(next, ['foam', 'waves', 'opacity'], 0.05);
     assignPath(next, ['lighting', 'ambient', 'skyColor'], '#e0a080');
     assignPath(next, ['lighting', 'ambient', 'groundColor'], '#6a4030');
     assignPath(next, ['lighting', 'ambient', 'intensity'], 0.55);
+  } else if (time === 'afternoon') {
+    assignPath(next, ['color', 'waterColor'], '#1f86b3');
+    assignPath(next, ['color', 'transmissionColor'], '#d5eef8');
+    assignPath(next, ['fog', 'color'], '#b9d6ea');
+    assignPath(next, ['sky', 'sun', 'elevation'], 26);
+    assignPath(next, ['sky', 'sun', 'azimuth'], 48);
+    assignPath(next, ['sky', 'sun', 'diskColor'], '#ffe2b0');
+    assignPath(next, ['sky', 'sun', 'diskEnabled'], true);
+    assignPath(next, ['sky', 'sun', 'intensity'], 1.65);
+    assignPath(next, ['sky', 'reflectionRoughness'], 0.14);
+    assignPath(next, ['ssr', 'strength'], 0.16);
+    assignPath(next, ['sparkle', 'intensity'], 0.32);
+    assignPath(next, ['foam', 'surface', 'opacity'], 0.05);
+    assignPath(next, ['foam', 'surface', 'coverage'], 0.04);
+    assignPath(next, ['foam', 'waves', 'opacity'], 0.04);
+    assignPath(next, ['lighting', 'ambient', 'skyColor'], '#d7e8f6');
+    assignPath(next, ['lighting', 'ambient', 'groundColor'], '#7d9aab');
+    assignPath(next, ['lighting', 'ambient', 'intensity'], 0.85);
   } else if (time === 'midday') {
     assignPath(next, ['color', 'waterColor'], '#3ec8e6');
     assignPath(next, ['color', 'transmissionColor'], '#e7f7ff');
@@ -399,6 +442,9 @@ export function lakePresentation(time) {
   if (time === 'midday') {
     return {skyBrightness: 1.4, exposure: 1.18};
   }
+  if (time === 'afternoon') {
+    return {skyBrightness: 1.18, exposure: 1.06};
+  }
   if (time === 'sunset') {
     return {skyBrightness: 1.05, exposure: 1.0};
   }
@@ -406,7 +452,7 @@ export function lakePresentation(time) {
 }
 
 export function hdriForTime(time) {
-  if (time === 'midday') {
+  if (time === 'midday' || time === 'afternoon') {
     return HDRI.midday;
   }
   if (time === 'sunset') {
