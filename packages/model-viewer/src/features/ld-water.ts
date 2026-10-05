@@ -49,6 +49,11 @@ const WATER_PRESETS = new Set<string>([
 ]);
 
 const WATER_QUALITIES = new Set<string>(['low', 'medium', 'high', 'ultra']);
+// Unscaled Centurion hull, meters. The Ri230 puzzle AABB is 7.563 x 2.971
+// (length on +X, beam on Z). These samples stay on the object's local Z/X
+// axes and are not multiplied by `scale`, and buoyancy writes parent-local Y.
+// That does not match the water-pro demo. Use examples/ld_water_pro, which
+// scales the GLB by LD_WATER_REFERENCE_SCALE and yaws the bow onto +Z.
 const LD_BOAT_SAMPLE_LENGTH_METERS = 7.627;
 const LD_BOAT_SAMPLE_WIDTH_METERS = 2.971;
 const LD_WATER_REFERENCE_SCALE = 15;

@@ -1,0 +1,203 @@
+<!--
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Water Pro</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="Centurion Ri230 in the threejs-water-pro demo world"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style type="text/tailwindcss"></style>
+    <script
+      src="../../styles/ld-ui-loader.js"
+      data-href="../../styles/ld-ui.css"
+    ></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+      #water-pro example-snippet,
+      #water-pro example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-water-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      #water-pro-canvas {
+        display: block;
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="water-pro" class="ld-water-stage">
+            <canvas id="water-pro-canvas"></canvas>
+            <div
+              id="water-pro-status"
+              class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow"
+            >
+              water: initializing
+            </div>
+            <div class="ld-panel">
+              <div class="ld-card">
+                <div class="ld-card-body">
+                  <h3 class="ld-panel-title">LD Water Pro</h3>
+                  <p id="water-pro-detail" class="ld-helper-text">
+                    Centurion Ri230, demo scale 15, bow on +Z.
+                  </p>
+                  <div class="ld-sections">
+                    <section>
+                      <h4 class="ld-section-title">Time of day</h4>
+                      <div class="ld-axis-grid">
+                        <button type="button" class="ld-button" data-time="midday">
+                          Midday
+                        </button>
+                        <button type="button" class="ld-button" data-time="sunset">
+                          Sunset
+                        </button>
+                      </div>
+                    </section>
+                    <section>
+                      <h4 class="ld-section-title">Waves</h4>
+                      <div class="ld-axis-grid">
+                        <button type="button" class="ld-button" data-sea="calm">
+                          Calm
+                        </button>
+                        <button type="button" class="ld-button" data-sea="light">
+                          Light
+                        </button>
+                      </div>
+                    </section>
+                    <section>
+                      <h4 class="ld-section-title">Camera</h4>
+                      <div class="ld-axis-grid">
+                        <button type="button" class="ld-button" data-view="hero">
+                          Hero
+                        </button>
+                        <button type="button" class="ld-button" data-view="glass">
+                          Windshield
+                        </button>
+                        <button
+                          id="water-pro-reference"
+                          type="button"
+                          class="ld-button"
+                        >
+                          Hull only
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="water-pro-content"
+            >
+              Info & code
+            </button>
+            <div id="water-pro-content" class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Centurion in the water-pro demo</h2>
+                <h4>
+                  This page runs threejs-water-pro the way its own demo does:
+                  one WebGPU renderer, sunset water units left intact, and the
+                  boat scaled by 15. The Ri230 puzzle GLB is 7.56 m long on +X.
+                  A −90° yaw puts the bow on +Z before that scale, so the hull
+                  is about 113 m in the same world as the demo ship. Calm
+                  lowers wave height only. It does not divide the clipmap or
+                  wavelengths by 15.
+                </h4>
+                <h4>
+                  Glass on this GLB is one BLEND material, "Glass", opacity
+                  0.1, depthWrite false. Decals are MASK. Hull only hides the
+                  water mesh so the same materials can be compared without the
+                  water shader. The windshield view looks through that glass
+                  into the cockpit, and the side glass shows the water behind
+                  it. model-viewer ld_water still writes buoyancy in
+                  parent-local Y and samples a 7.6 m box on the beam axis; use
+                  this page until that mixin matches the wrapper used here.
+                  Query params: time=sunset|midday, sea=light|calm,
+                  view=hero|glass, reference=1. A full 4k sky prefilter did
+                  not finish on a software WebGPU adapter; add pmremsize=512
+                  there. A desktop GPU can omit it.
+                </h4>
+                <h4>
+                  Next boats: generate a Forest River and an Aquila puzzle GLB,
+                  measure the AABB, confirm which axis is the bow, then call
+                  the same scale-15 placement. Do not reuse the Ri230 sample
+                  metres. If their windows use KHR_materials_transmission
+                  instead of alpha BLEND, the water depth pass will treat them
+                  as opaque until that extension is handled.
+                </h4>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2026 London Dynamics. Licensed under the Apache License
+            2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../../threejs-water-pro/node_modules/three/build/three.core.js",
+          "three/webgpu": "../../../../threejs-water-pro/node_modules/three/build/three.webgpu.js",
+          "three/tsl": "../../../../threejs-water-pro/node_modules/three/build/three.tsl.js",
+          "three/addons/": "../../../../threejs-water-pro/node_modules/three/examples/jsm/",
+          "threejs-water-pro": "../../../../threejs-water-pro/build/index.js"
+        }
+      }
+    </script>
+    <script type="module" src="./water-pro-demo.js"></script>
+  </body>
+</html>

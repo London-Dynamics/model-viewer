@@ -133,8 +133,8 @@ assert.match(
     'water demo should label the Centurion model');
 assert.match(
     html,
-    /http:\/\/assets\.v2\.londondynamics\.com\/daa34851-84b3-4c29-8823-fc258ccd9049\/puzzle\/1b8c7427-600c-ae8d-1cc0-70d9757aebfd\.glb/,
-    'water demo should include the reachable Centurion boat URL');
+    /https:\/\/assets\.v2\.londondynamics\.com\/daa34851-84b3-4c29-8823-fc258ccd9049\/puzzle\/8561d8b0-f8a3-6ef4-241a-3f90abe64dc5\.glb/,
+    'water demo should include the reachable Centurion Ri230 puzzle URL');
 assert.doesNotMatch(
     html,
     /data-model=/,

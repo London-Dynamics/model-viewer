@@ -398,6 +398,16 @@
     ]
   },
   {
+    "name": "LD Water Pro",
+    "htmlName": "ld_water_pro",
+    "examples": [
+      {
+        "htmlId": "water-pro",
+        "name": "Water Pro Boat"
+      }
+    ]
+  },
+  {
     "name": "LD Water Real Scale",
     "htmlName": "ld_water_real_scale",
     "examples": [
