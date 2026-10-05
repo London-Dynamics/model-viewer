@@ -398,6 +398,16 @@
     ]
   },
   {
+    "name": "LD Water Mixin",
+    "htmlName": "ld_water_mixin",
+    "examples": [
+      {
+        "htmlId": "water-mixin",
+        "name": "Mixin hero"
+      }
+    ]
+  },
+  {
     "name": "LD Water Pro",
     "htmlName": "ld_water_pro",
     "examples": [

@@ -623,8 +623,12 @@ export class Renderer extends
       // Need to set the render target in order to prevent
       // clearing the depth from a different buffer
       this.threeRenderer.setRenderTarget(null);
-      this.threeRenderer.setViewport(
-          0, Math.ceil(this.height * this.dpr) - height, width, height);
+      // WebGL's viewport origin is the bottom. WebGPU's is the top, so the
+      // same offset paints a scaled frame below the overflow window.
+      const viewportY = (this.threeRenderer as any).isWebGPURenderer === true ?
+        0 :
+        Math.ceil(this.height * this.dpr) - height;
+      this.threeRenderer.setViewport(0, viewportY, width, height);
       if (scene.effectRenderer != null) {
         scene.effectRenderer.render(delta);
       } else {

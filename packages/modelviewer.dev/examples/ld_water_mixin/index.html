@@ -1,0 +1,161 @@
+<!--
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Water Mixin</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="model-viewer water mixin on the v3.5.1 hero recipe"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      #water-mixin example-snippet,
+      #water-mixin example-snippet > template ~ * {
+        display: block;
+      }
+
+      .ld-water-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .ld-water-stage > model-viewer {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+        background: #9ec3dd;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="water-mixin" class="ld-water-stage">
+            <model-viewer
+              id="water-mixin-demo"
+              camera-controls
+              touch-action="pan-y"
+              interaction-prompt="none"
+              tone-mapping="aces"
+              exposure="1.06"
+              field-of-view="50deg"
+              camera-target="0m 0m 0m"
+              max-camera-orbit="auto auto 80m"
+              shadow-intensity="0"
+              water-preset="ld-boat"
+              water-quality="high"
+              water-view="hero"
+              water-sky-size="512"
+              water-sky-image="/threejs-water-pro/demo/public/hdris/kloofendal_43d_clear_puresky_4k.jpg"
+              alt="Boat on the LD water mixin"
+            >
+            </model-viewer>
+            <div
+              id="water-mixin-status"
+              class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow"
+            >
+              water: initializing
+            </div>
+          </div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="water-mixin-content"
+            >
+              Info & code
+            </button>
+            <div id="water-mixin-content" class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Water mixin hero</h2>
+                <h4>
+                  This page is the model-viewer water mixin, not the
+                  threejs-water-pro demo. The preset is ld-boat: dusk colour,
+                  wind 6.7 m/s, peak wavelength 22 m, quality high, and the
+                  16:45 sun. Hulls stay at real-metre scale. boat=ri245,
+                  boat=aquila, or boat=demo. The mixin knows those waterlines
+                  (0.50 m, 0.95 m, and 0) and yaws the bow onto +Z.
+                </h4>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="../../examples/built/docs-and-examples.js"></script>
+    <script type="module">
+      const boats = {
+        ri245:
+            'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/17949ff9-26b2-7158-9112-42b65bcb9d37.glb',
+        aquila:
+            'https://assets.v2.londondynamics.com/019e4651-0c20-7aa0-a5f4-789b9df05fd0/puzzle/49cdcf76-f547-483d-ce9b-dee55109f95e.glb',
+        demo: '/threejs-water-pro/demo/public/models/dutch_ship_medium_2k.glb',
+      };
+      const params = new URLSearchParams(location.search);
+      const requested = params.get('boat');
+      const boat = requested === 'aquila' || requested === 'demo' ? requested : 'ri245';
+      const viewer = document.querySelector('#water-mixin-demo');
+      const status = document.querySelector('#water-mixin-status');
+      viewer.src = boats[boat];
+      viewer.addEventListener('load', () => {
+        status.textContent = `water: ${boat} loaded`;
+      });
+      viewer.addEventListener('water-load', () => {
+        status.textContent = `water: ${boat} / hero`;
+      });
+      viewer.addEventListener('water-error', (event) => {
+        status.textContent = `water: ${event.detail.error.message}`;
+        console.error(event.detail.error);
+      });
+      viewer.toggleAttribute('water', true);
+      viewer.toggleAttribute('water-buoyancy', true);
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../../threejs-water-pro/node_modules/three/build/three.module.js",
+          "three/webgpu": "../../../../threejs-water-pro/node_modules/three/build/three.webgpu.js",
+          "three/tsl": "../../../../threejs-water-pro/node_modules/three/build/three.tsl.js",
+          "three/addons/": "../../../../threejs-water-pro/node_modules/three/examples/jsm/",
+          "threejs-water-pro": "../../../../threejs-water-pro/build/index.js"
+        }
+      }
+    </script>
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer-module.js"
+    ></script>
+  </body>
+</html>

@@ -20,10 +20,15 @@ import {
   applyLDWaterCameraRange,
   applyLDWaterClipPlaneDistance,
   applyLDWaterElevation,
+  applyLDWaterHeroCamera,
   attachLDWaterSky,
   createLDWaterPreset,
   ensureLDWaterModelNormals,
+  hullForSource,
+  ldWaterHeightOffset,
+  placeLDWaterHull,
   registerLDWaterBuoyancy,
+  sunFromSkyProClock,
 } from '../../features/ld-water.js';
 import {waitForEvent} from '../../utilities.js';
 import {rafPasses} from '../helpers.js';
@@ -45,53 +50,52 @@ suite('LDWater', () => {
 
     expect(waterElement.water).to.equal(false);
     expect(waterElement.waterPreset).to.equal('ld-boat');
-    expect(waterElement.waterQuality).to.equal('medium');
+    expect(waterElement.waterQuality).to.equal('high');
+    expect(waterElement.waterView).to.equal('orbit');
+    expect(waterElement.waterWaterline).to.equal(null);
     expect(waterElement.waterElevation).to.equal(0);
     expect(waterElement.waterSeed).to.equal(null);
     expect(waterElement.waterSkyImage).to.equal(null);
     expect(waterElement.waterBuoyancy).to.equal(false);
   });
 
-  test('keeps LD boat water close to upstream sunset energy', () => {
-    const upstreamSunset = {
-      clipmap: {baseSize: 800, levels: 5},
+  test('maps LD boat water onto the v3.5.1 hero', () => {
+    const dusk = {
+      clipmap: {baseSize: 200, levels: 5},
       waves: {
         fft: {
-          amplitude: 1.56,
-          frequency: 1.04,
-          animationSpeed: 3.4,
-          windSpeed: 17.9,
-          choppiness: 2.63,
-          cascades: {
-            ripples: {scale: 379, amplitudeScale: 0.04},
-            waves: {scale: 2088, amplitudeScale: 0.33},
-          },
+          amplitude: 1,
+          windSpeed: 7,
+          peakWavelength: 140,
+          cascades: {maxScale: 1024},
         },
-        gerstner: {
-          wavelength: 852,
-          amplitude: 2.06,
-        },
+      },
+      sky: {
+        reflectionRoughness: 0.15,
+        sun: {elevation: 6, azimuth: 44, diskEnabled: false},
       },
     };
     const waterModule = {
       getPresetParams: (name: string) => {
-        expect(name).to.equal('sunset');
-        return upstreamSunset;
+        expect(name).to.equal('dusk');
+        return dusk;
       },
     };
 
     const preset = createLDWaterPreset('ld-boat', waterModule as any) as any;
+    const sun = sunFromSkyProClock(16, 45);
 
-    expect(preset).not.to.equal(upstreamSunset);
-    expect(preset.clipmap.baseSize).to.equal(800);
-    expect(preset.waves.fft.amplitude).to.equal(1.56);
-    expect(preset.waves.fft.windSpeed).to.equal(17.9);
-    expect(preset.waves.fft.choppiness).to.equal(2.63);
-    expect(preset.waves.fft.cascades.ripples.scale).to.equal(379);
-    expect(preset.waves.fft.cascades.waves.scale).to.equal(2088);
-    expect(preset.waves.gerstner.amplitude).to.equal(2.06);
-    expect(preset.waves.gerstner.wavelength).to.equal(852);
-    expect(upstreamSunset.waves.gerstner.wavelength).to.equal(852);
+    expect(preset).not.to.equal(dusk);
+    expect(preset.clipmap.baseSize).to.equal(200);
+    expect(preset.waves.fft.amplitude).to.equal(1);
+    expect(preset.waves.fft.windSpeed).to.equal(6.7);
+    expect(preset.waves.fft.peakWavelength).to.equal(22);
+    expect(preset.waves.fft.cascades.maxScale).to.equal(1024);
+    expect(preset.sky.sun.diskEnabled).to.equal(true);
+    expect(preset.sky.sun.elevation).to.be.closeTo(sun.elevation, 0.001);
+    expect(preset.sky.sun.azimuth).to.be.closeTo(sun.azimuth, 0.001);
+    expect(sun.elevation).to.be.closeTo(13.138, 0.01);
+    expect(dusk.waves.fft.peakWavelength).to.equal(140);
   });
 
   test('loads upstream demo water presets without changing their values', () => {
@@ -117,116 +121,33 @@ suite('LDWater', () => {
     expect(preset.waves.gerstner.wavelength).to.equal(640);
   });
 
-  test('creates a real-scale LD boat preset without scaling post effects into artifacts', () => {
-    const upstreamSunset = {
-      clipmap: {baseSize: 800, levels: 5},
-      foam: {
-        surface: {size: 261},
-        waves: {size: 481},
-        shoreline: {size: 101, range: 43},
-      },
-      fog: {
-        fadeEnd: 10000,
-        fadeStart: 2850,
-        skyBlendDistance: 2700,
-      },
-      fresnel: {
-        surface: {fadeStart: 2000},
-      },
-      oceanFloor: {
-        depth: 100,
-        displacementScale: 140,
-        displacementStrength: 8,
-        tileSize: 400,
-        caustics: {scale: 150},
-      },
-      postProcessing: {
-        rain: {
-          fadeDistance: 40,
-          rippleFadeEnd: 500,
-          rippleSize: 2.5,
-          streakLength: 1,
-          streakWidth: 0.01,
-        },
-        underwaterParticles: {
-          farDistance: 209,
-          maxSize: 0.5,
-          minSize: 0.1,
-          nearDistance: 9,
-        },
-      },
-      sky: {
-        reflectionBlurDistance: 1500,
-        source: {type: 'hdri', url: 'sky.jpg'},
-      },
-      sparkle: {
-        fadeDistance: 1440,
-        minDistance: 0,
-      },
-      spray: {
-        size: 49.9,
-        submersionDepth: 2,
-      },
-      waves: {
-        fft: {
-          amplitude: 1.56,
-          frequency: 1.04,
-          animationSpeed: 3.4,
-          windSpeed: 17.9,
-          choppiness: 2.63,
-          cascades: {
-            ripples: {scale: 379, amplitudeScale: 0.04},
-            waves: {scale: 2088, amplitudeScale: 0.33},
-          },
-        },
-        gerstner: {
-          wavelength: 852,
-          amplitude: 2.06,
-          wavelengthSpread: 1.61,
-          directionalSpread: 0.8,
-        },
-      },
+  test('uses the same hero recipe for the real-scale preset name', () => {
+    const dusk = {
+      waves: {fft: {amplitude: 1, windSpeed: 7, peakWavelength: 140}},
+      sky: {sun: {elevation: 6, azimuth: 44, diskEnabled: false}},
     };
     const waterModule = {
       getPresetParams: (name: string) => {
-        expect(name).to.equal('sunset');
-        return upstreamSunset;
+        expect(name).to.equal('dusk');
+        return structuredClone(dusk);
       },
     };
 
-    const preset =
-        createLDWaterPreset('ld-boat-real-scale' as any, waterModule as any) as
-        any;
+    const hero = createLDWaterPreset('ld-boat', waterModule as any) as any;
+    const real = createLDWaterPreset('ld-boat-real-scale' as any, waterModule as any) as any;
 
-    expect(preset.clipmap.baseSize).to.be.closeTo(53.333, 0.001);
-    expect(preset.foam.surface.size).to.be.closeTo(17.4, 0.001);
-    expect(preset.foam.waves.size).to.be.closeTo(32.067, 0.001);
-    expect(preset.foam.shoreline.range).to.be.closeTo(2.867, 0.001);
-    expect(preset.fog.fadeStart).to.equal(2850);
-    expect(preset.fresnel.surface.fadeStart).to.equal(2000);
-    expect(preset.oceanFloor.depth).to.be.closeTo(6.667, 0.001);
-    expect(preset.oceanFloor.displacementStrength).to.be.closeTo(0.533, 0.001);
-    expect(preset.oceanFloor.caustics.scale).to.equal(10);
-    expect(preset.postProcessing.rain.rippleSize).to.equal(2.5);
-    expect(preset.postProcessing.underwaterParticles.enabled).to.equal(false);
-    expect(preset.postProcessing.underwaterParticles.maxSize).to.equal(0.5);
-    expect(preset.sky.reflectionBlurDistance).to.equal(1500);
-    expect(preset.spray.submersionDepth).to.equal(2);
-    expect(preset.waves.fft.amplitude).to.be.closeTo(0.208, 0.001);
-    expect(preset.waves.fft.windSpeed).to.equal(17.9);
-    expect(preset.waves.fft.choppiness).to.equal(2.63);
-    expect(preset.waves.fft.cascades.ripples.scale)
-        .to.be.closeTo(25.267, 0.001);
-    expect(preset.waves.fft.cascades.waves.scale)
-        .to.be.closeTo(139.2, 0.001);
-    expect(preset.waves.gerstner.amplitude).to.be.closeTo(0.275, 0.001);
-    expect(preset.waves.gerstner.wavelength).to.be.closeTo(56.8, 0.001);
+    expect(real.waves.fft.windSpeed).to.equal(hero.waves.fft.windSpeed);
+    expect(real.waves.fft.peakWavelength).to.equal(22);
+    expect(real.waves.fft.amplitude).to.equal(1);
+    expect(real.sky.sun.elevation).to.equal(hero.sky.sun.elevation);
   });
 
-  test('registers a real-scale Centurion hull with buoyancy', () => {
-    const boat = new Mesh(new BoxGeometry(7.627, 1, 2.971), new MeshBasicMaterial());
+  test('registers a hull on its painted waterline', () => {
+    const boat = new Mesh(new BoxGeometry(8, 2, 4), new MeshBasicMaterial());
+    const root = new Object3D();
+    root.add(boat);
     const calls: Array<{object: Mesh, options: any}> = [];
-    const masks: Mesh[] = [];
+    const masks: Object3D[] = [];
     const waterSystem = {
       buoyancy: {
         addObject: (object: Mesh, options: any) => {
@@ -235,70 +156,45 @@ suite('LDWater', () => {
         },
       },
       masking: {
-        add: (object: Mesh) => {
+        add: (object: Object3D) => {
           masks.push(object);
         },
       },
     };
 
-    const id = registerLDWaterBuoyancy(waterSystem as any, boat);
+    const placement = placeLDWaterHull(boat, 0.5, 'x');
+    const id = registerLDWaterBuoyancy(waterSystem as any, boat, placement);
 
     expect(id).to.equal(42);
-    expect(calls).to.have.lengthOf(1);
-    expect(calls[0].object).to.equal(boat);
     expect(masks).to.deep.equal([boat]);
     expect(calls[0].options.multiPoint).to.equal(true);
     expect(calls[0].options.useBoundingBox).to.equal(false);
-    expect(calls[0].options.sampleLength).to.equal(7.627);
-    expect(calls[0].options.sampleWidth).to.equal(2.971);
-    expect(calls[0].options.sampleOffset).to.deep.equal(new Vector3(0, 0, 0));
-    expect(calls[0].options.heightOffset).to.equal(-5.9);
-    expect(calls[0].options.rotationInfluence).to.equal(0.45);
+    expect(calls[0].options.heightOffset).to.equal(-0.5);
+    expect(ldWaterHeightOffset(0)).to.equal(0);
+    expect(calls[0].options.rotationInfluence).to.equal(0.35);
+    expect(calls[0].options.sampleLength).to.be.closeTo(8 * 0.85, 0.02);
+    expect(calls[0].options.sampleWidth).to.be.closeTo(4 * 0.8, 0.02);
+    expect(placement.yaw).to.equal(-Math.PI / 2);
+    expect(hullForSource('puzzle/17949ff9-26b2-7158-9112-42b65bcb9d37.glb')!.waterline)
+        .to.equal(0.5);
+    expect(hullForSource('49cdcf76-f547-483d-ce9b-dee55109f95e.glb')!.waterline)
+        .to.equal(0.95);
+    expect(hullForSource('dutch_ship_medium_2k.glb')!.waterline).to.equal(0);
   });
 
-  test('registers a scale-equivalent Centurion hull with real-scale buoyancy', () => {
-    const boat = new Mesh(new BoxGeometry(7.627, 1, 2.971), new MeshBasicMaterial());
-    const calls: Array<{object: Mesh, options: any}> = [];
-    const masks: Mesh[] = [];
-    const waterSystem = {
-      buoyancy: {
-        addObject: (object: Mesh, options: any) => {
-          calls.push({object, options});
-          return 42;
-        },
-      },
-      masking: {
-        add: (object: Mesh) => {
-          masks.push(object);
-        },
-      },
-    };
-
-    const id =
-        registerLDWaterBuoyancy(waterSystem as any, boat, 'ld-boat-real-scale' as any);
-
-    expect(id).to.equal(42);
-    expect(calls).to.have.lengthOf(1);
-    expect(masks).to.deep.equal([boat]);
-    expect(calls[0].options.sampleLength).to.equal(7.627);
-    expect(calls[0].options.sampleWidth).to.equal(2.971);
-    expect(calls[0].options.heightOffset).to.be.closeTo(-0.393, 0.001);
-  });
-
-  test('attaches an opt-in water sky without changing environment attributes', () => {
+  test('attaches a v3.5.1 sky through setSky', () => {
     const texture = {};
-    const scene = new Object3D();
-    const skyMesh = new Object3D();
+    const renderer = {};
     const skyCalls: any[] = [];
     const setSkyCalls: any[] = [];
     const waterModule = {
       Sky: class {
-        constructor(params: any) {
-          skyCalls.push(params);
+        constructor(passedRenderer: unknown, params: any) {
+          skyCalls.push({renderer: passedRenderer, params});
         }
 
         getMeshes() {
-          return [skyMesh];
+          return [new Object3D()];
         }
       },
     };
@@ -312,27 +208,44 @@ suite('LDWater', () => {
     element.skyboxImage = 'legacy';
 
     const sky = attachLDWaterSky(
-        waterSystem as any, scene, waterModule as any, texture as any);
+        waterSystem as any, renderer, waterModule as any, texture as any, 0.15);
 
     expect(skyCalls).to.have.lengthOf(1);
-    expect(skyCalls[0].equirect).to.equal(texture);
-    expect(skyCalls[0].sunDirection).to.equal(waterSystem.lighting.sun.direction);
+    expect(skyCalls[0].renderer).to.equal(renderer);
+    expect(skyCalls[0].params.equirect).to.equal(texture);
+    expect(skyCalls[0].params.reflectionBlurDistance).to.equal(undefined);
+    expect(skyCalls[0].params.sunDirection).to.equal(waterSystem.lighting.sun.direction);
+    expect(skyCalls[0].params.brightness).to.equal(1.18);
     expect(setSkyCalls).to.deep.equal([sky]);
-    expect(skyMesh.parent).to.equal(scene);
+    expect(skyCalls[0].params).to.not.equal(undefined);
+    expect((sky as any).getMeshes()[0].parent).to.equal(null);
     expect(element.environmentImage).to.equal('neutral');
     expect(element.skyboxImage).to.equal('legacy');
   });
 
-  test('applies water elevation to the water system', () => {
-    let elevation: number|null = null;
+  test('leaves the water surface at y = 0', () => {
+    expect(() => applyLDWaterElevation({}, -0.8)).not.to.throw();
+  });
 
-    applyLDWaterElevation({
-      setElevation: (value: number) => {
-        elevation = value;
-      },
-    } as any, -0.8);
-
-    expect(elevation).to.equal(-0.8);
+  test('frames two hulls from the same hero bearing', () => {
+    const ri = new Mesh(new BoxGeometry(8, 3, 4), new MeshBasicMaterial());
+    const aq = new Mesh(new BoxGeometry(4, 4, 14), new MeshBasicMaterial());
+    new Object3D().add(ri);
+    new Object3D().add(aq);
+    const riPlacement = placeLDWaterHull(ri, 0.5, 'x');
+    const aqPlacement = placeLDWaterHull(aq, 0.95, 'z');
+    const camera = new PerspectiveCamera();
+    applyLDWaterHeroCamera(camera, riPlacement, ri);
+    const riDir = camera.position.clone().sub(riPlacement.worldCenter).normalize();
+    applyLDWaterHeroCamera(camera, aqPlacement, aq);
+    const aqDir = camera.position.clone().sub(
+        new Vector3(
+            aq.parent!.position.x,
+            aq.parent!.position.y + aq.position.y +
+                (aqPlacement.worldCenter.y - aqPlacement.heightOffset),
+            aq.parent!.position.z)).normalize();
+    expect(riDir.distanceTo(aqDir)).to.be.below(1e-6);
+    expect(camera.fov).to.equal(50);
   });
 
   test('scales the water clip plane distance for real-scale camera distance', () => {
