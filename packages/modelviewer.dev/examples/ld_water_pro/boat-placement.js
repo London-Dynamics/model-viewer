@@ -340,33 +340,66 @@ const assignPath = (root, path, value) => {
 };
 
 /**
- * Lake looks keep the sunset preset's clipmap and cascade tile size.
- * Light chop uses a 6.7 m/s breeze and a 22 m peak, scaled into the
- * demo world (×15), with the ocean preset's height cut back. Calm is
- * lower still. A 3.2× light gain put a crest across the lens. Sunset,
- * afternoon, and midday use different body colours, sun height, and fog.
+ * Reference shot from the threejs water-pro demo UI. This vendored
+ * 3.0.0 build has no Three.js Sky Pro preset, no cloud-coverage slider,
+ * and no `waves.peakWavelength` (that landed in 3.3). The fields below
+ * are the same numbers, written to the controls this API does have.
  *
- * Absorption is strong enough that a view through the windshield dies
+ * Sky Pro's clock is 0 at midnight and 0.75 at sunset, latitude default
+ * 45°, azimuth 0. 16:45 is that clock with the sun above the western
+ * horizon. `shape.coverage` 0.05 has nowhere to go: the HDRI sky cannot
+ * draw a 5% volumetric deck. Buoyancy and wake debug probes are not
+ * created. Quality is `high` on `WaterSystem.create`.
+ *
+ * Absorption stays strong enough that a view through the windshield dies
  * out before the sand floor (depth 420). IOR stays low so the near water
  * does not mirror the white deck.
  */
-export const LIGHT_WAVE_GAIN = 0.85;
+export const REFERENCE_QUALITY = 'high';
+export const REFERENCE_WIND_SPEED = 6.7;
+export const REFERENCE_PEAK_WAVELENGTH = 22;
+export const REFERENCE_CLOCK_HOURS = 16;
+export const REFERENCE_CLOCK_MINUTES = 45;
+export const REFERENCE_LATITUDE = 45;
+/** Sky Pro `clouds.shape.coverage`. This build cannot apply it. */
+export const REFERENCE_CLOUD_COVERAGE = 0.05;
+export const LIGHT_WIND_SPEED = REFERENCE_WIND_SPEED;
+export const LIGHT_PEAK_WAVELENGTH = REFERENCE_PEAK_WAVELENGTH;
+/** FFT amplitude default in this build. The screenshot does not set one. */
+export const REFERENCE_FFT_AMPLITUDE = 1;
 export const CALM_WAVE_GAIN = 0.45;
-export const LIGHT_WIND_SPEED = 6.7;
 export const CALM_WIND_SPEED = 4;
-/** 22 m lake chop, in the scaled demo world. */
-export const LIGHT_PEAK_WAVELENGTH = 22 * DEMO_BOAT_SCALE;
+
+/**
+ * Sun angles for Sky Pro's default clock. Latitude 45 peaks the sun at
+ * 45° at noon. Azimuth 0 is +Z and 90 is +X, matching water-pro. East is
+ * +X, so the afternoon sun sits west of south.
+ */
+export function sunFromSkyProClock(
+    hours,
+    minutes,
+    latitudeDeg = REFERENCE_LATITUDE,
+) {
+  const time = (hours + minutes / 60) / 24;
+  const hourAngle = (time - 0.5) * Math.PI * 2;
+  const latitude = latitudeDeg * Math.PI / 180;
+  const sinElevation = Math.cos(latitude) * Math.cos(hourAngle);
+  const elevation = Math.asin(sinElevation) * 180 / Math.PI;
+  const east = -Math.sin(hourAngle);
+  const north = -Math.sin(latitude) * Math.cos(hourAngle);
+  let azimuth = Math.atan2(east, north) * 180 / Math.PI;
+  if (azimuth < 0) {
+    azimuth += 360;
+  }
+  return {time, elevation, azimuth};
+}
 
 export function lakeLook(preset, {time, sea}) {
   const next = structuredClone(preset);
   if (sea === 'light') {
-    next.waves.fft.amplitude *= LIGHT_WAVE_GAIN;
-    next.waves.gerstner.amplitude *= LIGHT_WAVE_GAIN;
-    next.waves.gerstner.wavelength = LIGHT_PEAK_WAVELENGTH;
-    next.waves.fft.windSpeed = LIGHT_WIND_SPEED;
-    next.waves.fft.frequency = 2.4;
-    next.waves.fft.choppiness = 0.9;
-    next.waves.fft.cascades.ripples.amplitudeScale = 0.22;
+    next.waves.fft.amplitude = REFERENCE_FFT_AMPLITUDE;
+    next.waves.gerstner.wavelength = REFERENCE_PEAK_WAVELENGTH;
+    next.waves.fft.windSpeed = REFERENCE_WIND_SPEED;
   } else if (sea === 'calm') {
     next.waves.fft.amplitude *= CALM_WAVE_GAIN;
     next.waves.gerstner.amplitude *= CALM_WAVE_GAIN;
@@ -396,23 +429,13 @@ export function lakeLook(preset, {time, sea}) {
     assignPath(next, ['lighting', 'ambient', 'groundColor'], '#6a4030');
     assignPath(next, ['lighting', 'ambient', 'intensity'], 0.55);
   } else if (time === 'afternoon') {
-    assignPath(next, ['color', 'waterColor'], '#1f86b3');
-    assignPath(next, ['color', 'transmissionColor'], '#d5eef8');
-    assignPath(next, ['fog', 'color'], '#b9d6ea');
-    assignPath(next, ['sky', 'sun', 'elevation'], 26);
-    assignPath(next, ['sky', 'sun', 'azimuth'], 48);
-    assignPath(next, ['sky', 'sun', 'diskColor'], '#ffe2b0');
+    const sun = sunFromSkyProClock(
+        REFERENCE_CLOCK_HOURS,
+        REFERENCE_CLOCK_MINUTES,
+    );
+    assignPath(next, ['sky', 'sun', 'elevation'], sun.elevation);
+    assignPath(next, ['sky', 'sun', 'azimuth'], sun.azimuth);
     assignPath(next, ['sky', 'sun', 'diskEnabled'], true);
-    assignPath(next, ['sky', 'sun', 'intensity'], 1.65);
-    assignPath(next, ['sky', 'reflectionRoughness'], 0.14);
-    assignPath(next, ['ssr', 'strength'], 0.16);
-    assignPath(next, ['sparkle', 'intensity'], 0.32);
-    assignPath(next, ['foam', 'surface', 'opacity'], 0.05);
-    assignPath(next, ['foam', 'surface', 'coverage'], 0.04);
-    assignPath(next, ['foam', 'waves', 'opacity'], 0.04);
-    assignPath(next, ['lighting', 'ambient', 'skyColor'], '#d7e8f6');
-    assignPath(next, ['lighting', 'ambient', 'groundColor'], '#7d9aab');
-    assignPath(next, ['lighting', 'ambient', 'intensity'], 0.85);
   } else if (time === 'midday') {
     assignPath(next, ['color', 'waterColor'], '#3ec8e6');
     assignPath(next, ['color', 'transmissionColor'], '#e7f7ff');

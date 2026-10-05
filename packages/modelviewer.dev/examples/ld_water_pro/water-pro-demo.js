@@ -213,14 +213,14 @@ const boot = async () => {
   frameCamera(camera, controls);
 
   setStatus('water: creating water system');
-  const water = await WaterSystem.create(renderer, scene, camera, 'medium');
-  const sunset = getPresetParams('sunset');
-  water.loadPreset(lakeLook(sunset, state));
+  const water = await WaterSystem.create(renderer, scene, camera, 'high');
+  const preset = getPresetParams('dusk');
+  water.loadPreset(lakeLook(preset, state));
   water.setElevation(0);
 
   setStatus('water: loading sky');
   let skyTexture = await loadHdri(hdriForTime(state.time));
-  const openingLook = lakeLook(sunset, state);
+  const openingLook = lakeLook(preset, state);
   const sky = new Sky({
     equirect: skyTexture,
     brightness: lakePresentation(state.time).skyBrightness,
@@ -301,7 +301,7 @@ const boot = async () => {
   };
 
   const applyLook = async () => {
-    const look = lakeLook(sunset, state);
+    const look = lakeLook(preset, state);
     water.loadPreset(look);
     applyPresentation(renderer, sky, look);
     const nextUrl = hdriForTime(state.time);

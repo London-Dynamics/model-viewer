@@ -29,8 +29,12 @@ import {
   CALM_WAVE_GAIN,
   CALM_WIND_SPEED,
   LIGHT_PEAK_WAVELENGTH,
-  LIGHT_WAVE_GAIN,
   LIGHT_WIND_SPEED,
+  REFERENCE_CLOUD_COVERAGE,
+  REFERENCE_FFT_AMPLITUDE,
+  REFERENCE_PEAK_WAVELENGTH,
+  REFERENCE_QUALITY,
+  sunFromSkyProClock,
   lakeLook,
   lakePresentation,
 } from '../examples/ld_water_pro/boat-placement.js';
@@ -92,20 +96,19 @@ const sunset = {
 };
 
 const light = lakeLook(sunset, {time: 'sunset', sea: 'light'});
-assert.equal(LIGHT_PEAK_WAVELENGTH, 22 * DEMO_BOAT_SCALE);
-assert.equal(light.waves.gerstner.wavelength, LIGHT_PEAK_WAVELENGTH);
-assert.equal(light.waves.fft.frequency, 2.4);
-assert.equal(light.waves.fft.choppiness, 0.9);
+assert.equal(REFERENCE_QUALITY, 'high');
+assert.equal(REFERENCE_PEAK_WAVELENGTH, 22);
+assert.equal(LIGHT_PEAK_WAVELENGTH, 22);
+assert.equal(light.waves.gerstner.wavelength, 22);
+assert.equal(light.waves.gerstner.amplitude, 2.06);
+assert.equal(light.waves.fft.amplitude, REFERENCE_FFT_AMPLITUDE);
+assert.equal(REFERENCE_FFT_AMPLITUDE, 1);
 assert.equal(light.waves.fft.cascades.ripples.scale, 379);
-assert.equal(light.waves.fft.cascades.ripples.amplitudeScale, 0.22);
 assert.equal(light.waves.fft.cascades.waves.scale, 2088);
 assert.equal(light.clipmap.baseSize, 800);
-assert.equal(LIGHT_WAVE_GAIN, 0.85);
-assert.ok(LIGHT_WAVE_GAIN < 1, 'light chop stays under the ocean preset');
-assert.ok(Math.abs(light.waves.fft.amplitude - 1.56 * LIGHT_WAVE_GAIN) < 1e-9);
-assert.ok(Math.abs(light.waves.gerstner.amplitude - 2.06 * LIGHT_WAVE_GAIN) < 1e-9);
 assert.equal(light.waves.fft.windSpeed, LIGHT_WIND_SPEED);
 assert.equal(LIGHT_WIND_SPEED, 6.7);
+assert.equal(REFERENCE_CLOUD_COVERAGE, 0.05);
 assert.equal(light.color.waterColor, '#14557a');
 assert.equal(light.color.absorptionColor, '#3a140c');
 assert.equal(light.oceanFloor.depth, 420);
@@ -141,17 +144,22 @@ assert.ok(lakePresentation('afternoon').skyBrightness > lakePresentation('sunset
 assert.ok(lakePresentation('midday').exposure > lakePresentation('afternoon').exposure);
 assert.ok(lakePresentation('afternoon').exposure > lakePresentation('sunset').exposure);
 
+const clockSun = sunFromSkyProClock(16, 45);
+assert.ok(Math.abs(clockSun.time - (16 + 45 / 60) / 24) < 1e-12);
+assert.ok(Math.abs(clockSun.elevation - 13.138) < 0.01);
+assert.ok(clockSun.azimuth > 250 && clockSun.azimuth < 260);
 const afternoon = lakeLook(sunset, {time: 'afternoon', sea: 'light'});
-assert.equal(afternoon.sky.sun.elevation, 26);
+assert.equal(afternoon.sky.sun.elevation, clockSun.elevation);
+assert.equal(afternoon.sky.sun.azimuth, clockSun.azimuth);
+assert.equal(afternoon.sky.sun.diskEnabled, true);
 assert.ok(afternoon.sky.sun.elevation > light.sky.sun.elevation);
 assert.ok(afternoon.sky.sun.elevation < midday.sky.sun.elevation);
-assert.equal(afternoon.color.waterColor, '#1f86b3');
-assert.notEqual(afternoon.color.waterColor, light.color.waterColor);
-assert.notEqual(afternoon.color.waterColor, midday.color.waterColor);
-assert.equal(afternoon.fog.color, '#b9d6ea');
-assert.equal(afternoon.waves.fft.windSpeed, LIGHT_WIND_SPEED);
-assert.equal(afternoon.waves.gerstner.wavelength, LIGHT_PEAK_WAVELENGTH);
+assert.equal(afternoon.waves.fft.windSpeed, 6.7);
+assert.equal(afternoon.waves.gerstner.wavelength, 22);
+assert.equal(afternoon.waves.fft.amplitude, 1);
 assert.equal(hdriForTime('afternoon').includes('kloofendal_43d_clear'), true);
+assert.match(demoJs, /getPresetParams\('dusk'\)/);
+assert.match(demoJs, /'high'/);
 
 assert.equal(hdriForTime('sunset').includes('industrial_sunset'), true);
 assert.equal(hdriForTime('midday').includes('kloofendal_43d_clear'), true);
