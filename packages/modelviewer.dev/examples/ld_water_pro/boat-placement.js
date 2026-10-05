@@ -56,7 +56,7 @@ export const CENTURION_RI245_WINDSHIELD = [1.23223591, 1.62456667, 0];
  * visible hull shell starts near y = 0, so the origin alone leaves the
  * boat on top of the water.
  */
-export const RI245_WATERLINE_Y = 0.85;
+export const RI245_WATERLINE_Y = 1.05;
 
 export const AQUILA_45_SKU = '45-sport';
 
@@ -76,11 +76,11 @@ export const AQUILA_45_BOUNDS = {
 export const AQUILA_45_WINDSHIELD = [0, 2.8839784, 2.12949878];
 
 /**
- * glTF Y that should sit on the lake. The black rub rail
- * (BlackRubber) runs y = 0.97–1.92 along the hull. The origin is only
- * 0.41 m above the keel, so the pontoons were perched on the surface.
+ * glTF Y that should sit on the lake. The visible side stripe is the
+ * upper BlackRubber band (about 1.53–1.92 m). A lower band near 1.0 m
+ * is the chine. 1.50 m puts the lake just under that side stripe.
  */
-export const AQUILA_WATERLINE_Y = 0.88;
+export const AQUILA_WATERLINE_Y = 1.5;
 
 export const DEMO_SHIP_GLB =
   '/threejs-water-pro/demo/public/models/dutch_ship_medium_2k.glb';
@@ -314,13 +314,6 @@ export function demoParentPoint(local, placement) {
   ];
 }
 
-/**
- * Grazing Fresnel on the sunset preset mirrors the sun and the white deck,
- * so the near water goes grey. A lake look keeps the body blue: slightly
- * lower IOR, a soft sky reflection, and little screen-space reflection.
- */
-export const LAKE_REFLECTION_ROUGHNESS = 0.36;
-
 const assignPath = (root, path, value) => {
   let current = root;
   for (let i = 0; i < path.length - 1; i += 1) {
@@ -341,7 +334,7 @@ const assignPath = (root, path, value) => {
  * out before the sand floor (depth 420). IOR stays low so the near water
  * does not mirror the white deck.
  */
-export const LIGHT_WAVE_GAIN = 2.2;
+export const LIGHT_WAVE_GAIN = 3.2;
 export const CALM_WAVE_GAIN = 0.12;
 
 export function lakeLook(preset, {time, sea}) {
@@ -360,7 +353,7 @@ export function lakeLook(preset, {time, sea}) {
   assignPath(next, ['fresnel', 'surface', 'iorRatio'], 1.08);
   assignPath(next, ['oceanFloor', 'depth'], 420);
   if (time === 'sunset') {
-    assignPath(next, ['color', 'waterColor'], '#0c3d5c');
+    assignPath(next, ['color', 'waterColor'], '#14557a');
     assignPath(next, ['color', 'transmissionColor'], '#f0c09a');
     assignPath(next, ['fog', 'color'], '#e08a55');
     assignPath(next, ['sky', 'sun', 'elevation'], 11);
@@ -407,7 +400,7 @@ export function lakePresentation(time) {
     return {skyBrightness: 1.4, exposure: 1.18};
   }
   if (time === 'sunset') {
-    return {skyBrightness: 0.95, exposure: 0.88};
+    return {skyBrightness: 1.05, exposure: 1.0};
   }
   throw new Error(`Unknown time of day: ${time}`);
 }
