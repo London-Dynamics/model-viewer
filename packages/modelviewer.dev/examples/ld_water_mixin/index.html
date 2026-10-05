@@ -77,7 +77,6 @@
               water-preset="ld-boat"
               water-quality="high"
               water-waterline="0.5"
-              water-drive
               water-sky-size="512"
               water-sky-image="/threejs-water-pro/demo/public/hdris/kloofendal_43d_clear_puresky_4k.jpg"
               alt="Boat on the LD water mixin"
@@ -112,8 +111,6 @@
                   camera-orbit 49.97° 79.59° at a radius that frames the hull
                   from the shared starboard bow. The camera target stays at
                   the origin so the lake is not pulled off y = 0.
-                  water-drive turns on the mixin helm. WASD, off unless that
-                  attribute is set. Forward is the hull's +Z axis.
                 </h4>
               </div>
             </div>
@@ -124,11 +121,10 @@
 
     <script type="module" src="../../examples/built/docs-and-examples.js"></script>
     <script type="module">
-      // Attribute switches only. Draft, bow, camera, and the helm are mixin
-      // behaviour. Orbit angles are the shared starboard-bow bearing
-      // (offset 1.25, 0.3, 1.05). Radius is 1.85 × the hull's longest side.
-      // The dutch ship is 50 m so the masts stay inside a 50° view aimed
-      // at the origin. water-drive stays on so WASD can be tested.
+      // Attribute switches only. The mixin honours water-waterline.
+      // Orbit angles are the shared starboard-bow bearing (offset 1.25, 0.3, 1.05).
+      // Radius is 1.85 × the hull's longest side. The dutch ship is 50 m so the
+      // masts stay inside a 50° view aimed at the origin.
       const boats = {
         ri245: {
           src: 'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/17949ff9-26b2-7158-9112-42b65bcb9d37.glb',

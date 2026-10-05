@@ -5,6 +5,8 @@ import {fileURLToPath} from 'node:url';
 
 import {readFileSync} from 'node:fs';
 
+import {ShipController, driveFromParam, followShipCamera} from '../examples/ld_water_pro/ship-drive.js';
+
 import {
   AQUILA_45_BOUNDS,
   AQUILA_45_GLB,
@@ -304,3 +306,52 @@ assert.match(html, /data-time="sunset"/);
 assert.match(html, /data-sea="calm"/);
 assert.match(html, /data-sea="light"/);
 assert.match(html, /data-view="glass"/);
+assert.match(html, /id="water-pro-drive"/);
+assert.match(html, /drive=1/);
+assert.equal(driveFromParam(null), false);
+assert.equal(driveFromParam('0'), false);
+assert.equal(driveFromParam('1'), true);
+assert.equal(driveFromParam('true'), true);
+assert.match(demoJs, /driveFromParam/);
+assert.match(demoJs, /if \(state\.drive\)/);
+assert.match(demoJs, /ShipController/);
+assert.match(demoJs, /followShipCamera/);
+assert.match(demoJs, /if \(state\.drive\) \{\s*shipDrive\.enable\(\)/);
+
+const moored = new ShipController(
+    {position: {x: 0, y: 0, z: 0}, rotation: {y: 0}},
+    1,
+    {buoyancy: {updateObjectConfig() {}}});
+moored.setKey('w', true);
+moored.update(1);
+assert.equal(moored.ship.position.z, 0, 'drive stays moored until enable()');
+moored.enabled = true;
+for (let i = 0; i < 40; i += 1) {
+  moored.update(0.05);
+}
+assert.ok(moored.ship.position.z > 0.5, 'W moves the hull along +Z');
+assert.ok(Math.abs(moored.ship.position.x) < 0.05, 'straight ahead stays on X');
+const yawCalls = [];
+moored.waterSystem = {buoyancy: {updateObjectConfig(_id, options) {
+  yawCalls.push(options.rotationOffset.y);
+}}};
+moored.speed = 6;
+moored.setKey('w', false);
+moored.setKey('arrowleft', true);
+for (let i = 0; i < 40; i += 1) {
+  moored.update(0.05);
+}
+assert.ok(moored.yaw > 0.01, 'A / left arrow yaws toward +X at speed');
+assert.equal(yawCalls.at(-1), moored.yaw);
+
+const camera = {position: {x: 10, y: 4, z: 8}};
+const controls = {target: {x: 0, y: 2, z: 0}};
+const driven = {position: {x: 0, y: 2, z: 6}};
+followShipCamera(camera, controls, driven, 1);
+assert.ok(controls.target.z > 5, 'the orbit target catches the hull');
+assert.ok(camera.position.z > 8, 'the camera keeps its offset while following');
+
+const mixin = readFileSync(
+    resolve(__dirname, '../../model-viewer/src/features/ld-water.ts'), 'utf8');
+assert.doesNotMatch(mixin, /water-drive/);
+assert.doesNotMatch(mixin, /LDWaterDrive/);

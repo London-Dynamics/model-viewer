@@ -13,6 +13,7 @@ import {
   lakeLook,
   lakePresentation,
 } from './boat-placement.js';
+import {ShipController, driveFromParam, followShipCamera} from './ship-drive.js';
 
 const params = new URLSearchParams(location.search);
 const boat = boatFromParam(params.get('boat'));
@@ -39,6 +40,7 @@ const state = {
   sea: params.get('sea') === 'calm' ? 'calm' : 'light',
   reference: params.get('reference') === '1',
   view: params.get('view') === 'glass' ? 'glass' : 'hero',
+  drive: driveFromParam(params.get('drive')),
   boat: boat.id,
 };
 const pmremSize = Number(params.get('pmremsize'));
@@ -50,6 +52,7 @@ const syncUrl = () => {
   url.searchParams.set('sea', state.sea);
   url.searchParams.set('view', state.view);
   url.searchParams.set('reference', state.reference ? '1' : '0');
+  url.searchParams.set('drive', state.drive ? '1' : '0');
   history.replaceState(null, '', url);
 };
 
@@ -261,7 +264,7 @@ const boot = async () => {
   scene.add(boatGroup);
   const windowCount = separateWindows(hull, boatGroup);
   water.masking.add(hull);
-  water.buoyancy.addObject(boatGroup, {
+  const buoyancyId = water.buoyancy.addObject(boatGroup, {
     multiPoint: true,
     useBoundingBox: false,
     heightOffset: placement.buoyancy.heightOffset,
@@ -272,6 +275,10 @@ const boot = async () => {
     sampleWidth: placement.buoyancy.sampleWidth,
     sampleOffset: new THREE.Vector3(0, 0, 0),
   });
+  const shipDrive = new ShipController(boatGroup, buoyancyId, water);
+  if (state.drive) {
+    shipDrive.enable();
+  }
 
   scene.traverse((obj) => {
     if (obj !== scene && !isBoat(obj) && obj.isLight !== true) {
@@ -302,7 +309,8 @@ const boot = async () => {
     }
     const seaLabel = state.sea === 'calm' ? 'calm' : 'light';
     const modeLabel = state.reference ? 'hull only' : 'water';
-    setStatus(`${boat.label} / ${state.time} / ${seaLabel} / ${modeLabel}`);
+    const driveLabel = state.drive ? 'drive' : 'moored';
+    setStatus(`${boat.label} / ${state.time} / ${seaLabel} / ${modeLabel} / ${driveLabel}`);
     detailEl.textContent =
         `${boat.label} ${placement.worldLength.toFixed(1)} m world length ` +
         `(${(placement.worldLength / placement.scale).toFixed(2)} m real × ${placement.scale}). ` +
@@ -340,6 +348,19 @@ const boot = async () => {
     applyVisibility();
     applyLook();
   });
+  const driveInput = document.querySelector('#water-pro-drive');
+  driveInput.checked = state.drive;
+  driveInput.addEventListener('change', () => {
+    state.drive = driveInput.checked;
+    if (state.drive) {
+      shipDrive.enable();
+    } else {
+      shipDrive.disable();
+    }
+    driveInput.blur();
+    syncUrl();
+    applyLook();
+  });
   applyVisibility();
   syncUrl();
 
@@ -362,6 +383,10 @@ const boot = async () => {
     const delta = Math.min(0.05, (now - last) / 1000);
     last = now;
     controls.update();
+    if (state.drive) {
+      shipDrive.update(delta);
+      followShipCamera(camera, controls, boatGroup, delta);
+    }
     try {
       if (!state.reference) {
         await water.update(delta);
