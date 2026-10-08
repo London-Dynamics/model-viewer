@@ -18,6 +18,7 @@ import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {
   alignLDWaterCaptureViewport,
+  ldWaterCaptureMatchesBeautyFragment,
   applyLDWaterCameraRange,
   applyLDWaterClipPlaneDistance,
   applyLDWaterElevation,
@@ -68,6 +69,89 @@ suite('LDWater', () => {
     expect(changed).to.equal(true);
     expect(viewport.z).to.equal(846);
     expect(viewport.w).to.equal(600);
+  });
+
+  test('scales 0.79 and 0.5 sample the beauty fragment, not a zoomed copy', () => {
+    const renderer = element[$renderer] as unknown as {scaleStep: number, scaleFactor: number};
+    const frames = [
+      {step: 1, scale: 0.79, viewW: 846, viewH: 600},
+      {step: 3, scale: 0.5, viewW: 536, viewH: 380},
+    ];
+    const bufferW = 1071;
+    const bufferH = 759;
+
+    try {
+      for (const frame of frames) {
+        renderer.scaleStep = frame.step;
+        expect(renderer.scaleFactor).to.be.closeTo(frame.scale, 1e-6);
+
+        const viewport = {
+          x: 0,
+          y: 0,
+          z: bufferW,
+          w: bufferH,
+          set(x: number, y: number, width: number, height: number) {
+            this.x = x;
+            this.y = y;
+            this.z = width;
+            this.w = height;
+          },
+        };
+        const changed = alignLDWaterCaptureViewport(
+          {width: bufferW, height: bufferH, viewport},
+          {x: 0, y: 0, z: frame.viewW, w: frame.viewH},
+          bufferW,
+          bufferH
+        );
+        expect(changed).to.equal(true);
+        expect(viewport.z).to.equal(frame.viewW);
+        expect(viewport.w).to.equal(frame.viewH);
+
+        const fragX = frame.viewW * 0.5;
+        const fragY = frame.viewH * 0.5;
+        const center = ldWaterCaptureMatchesBeautyFragment(
+          fragX,
+          fragY,
+          bufferW,
+          bufferH,
+          viewport
+        );
+        const corner = ldWaterCaptureMatchesBeautyFragment(
+          frame.viewW - 0.5,
+          frame.viewH - 0.5,
+          bufferW,
+          bufferH,
+          viewport
+        );
+        const outside = ldWaterCaptureMatchesBeautyFragment(
+          frame.viewW + 8,
+          frame.viewH * 0.5,
+          bufferW,
+          bufferH,
+          viewport
+        );
+        expect(center).to.equal(true);
+        expect(corner).to.equal(true);
+        expect(outside).to.equal(false);
+
+        const zoomX = (fragX / frame.viewW) * bufferW;
+        const zoomY = (fragY / frame.viewH) * bufferH;
+        const offset = Math.hypot(zoomX - fragX, zoomY - fragY);
+        expect(offset).to.be.greaterThan(bufferW * 0.1);
+      }
+
+      const full = ldWaterCaptureMatchesBeautyFragment(
+        bufferW * 0.5,
+        bufferH * 0.5,
+        bufferW,
+        bufferH,
+        {x: 0, y: 0, z: bufferW, w: bufferH}
+      );
+      expect(full).to.equal(false);
+    } finally {
+      renderer.scaleStep = 0;
+      expect(renderer.scaleFactor).to.equal(1);
+    }
   });
 
   test('scaled water passes keep their viewport', () => {

@@ -635,6 +635,44 @@ export const alignLDWaterCaptureViewport = (
   return true;
 };
 
+/**
+ * `screenUV` is `fragCoord / bufferSize`. Once the capture viewport is the
+ * beauty viewport, that sample is the beauty fragment. A full-buffer
+ * capture stores the same fragment at a zoomed texel, which is the second
+ * boat. Returns true only when the sample stays on the fragment and the
+ * unaligned full-buffer texel would be a different pixel — the scales
+ * below 1.
+ */
+export const ldWaterCaptureMatchesBeautyFragment = (
+  fragX: number,
+  fragY: number,
+  bufferWidth: number,
+  bufferHeight: number,
+  viewport: {x: number, y: number, z: number, w: number},
+): boolean => {
+  const viewW = viewport.z;
+  const viewH = viewport.w;
+  if (
+    !(viewW > 0) || !(viewH > 0) ||
+    !(bufferWidth > 0) || !(bufferHeight > 0)
+  ) {
+    return false;
+  }
+
+  const sampleX = (fragX / bufferWidth) * bufferWidth;
+  const sampleY = (fragY / bufferHeight) * bufferHeight;
+  const inside =
+    sampleX >= viewport.x && sampleX < viewport.x + viewW &&
+    sampleY >= viewport.y && sampleY < viewport.y + viewH;
+  const aligned =
+    Math.abs(sampleX - fragX) < 1e-4 && Math.abs(sampleY - fragY) < 1e-4;
+  const fullX = viewport.x + ((fragX - viewport.x) / viewW) * bufferWidth;
+  const fullY = viewport.y + ((fragY - viewport.y) / viewH) * bufferHeight;
+  const fullFrameDiffers =
+    Math.abs(fullX - sampleX) > 0.5 || Math.abs(fullY - sampleY) > 0.5;
+  return inside && aligned && fullFrameDiffers;
+};
+
 export const ensureLDWaterModelNormals = (model: Object3D) => {
   model.traverse((object) => {
     const mesh = object as Mesh;
