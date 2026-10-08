@@ -18,6 +18,7 @@ import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {
   alignLDWaterCaptureViewport,
+  presentLDWaterBeautyFrame,
   resolveLDWaterCaptureViewport,
   applyWaterSunPolicy,
   directionFromSkySun,
@@ -231,6 +232,22 @@ suite('LDWater', () => {
         stale
       )).to.equal(false);
     }
+  });
+
+  test('a scaled water frame fills the element the way WebGL does', () => {
+    // rescaleCanvas sets CSS size to ceil(element / scale). Overflow then
+    // shows the beauty slice at the element's size. The WebGPU canvas has
+    // to use that same size or the lake sits in the top-left.
+    const canvas = {style: {width: '', height: ''}};
+    const elementW = 1069;
+    const elementH = 759;
+    for (const scale of [0.79, 0.5, 1]) {
+      presentLDWaterBeautyFrame(canvas, elementW, elementH, scale);
+      expect(canvas.style.width).to.equal(`${Math.ceil(elementW / scale)}px`);
+      expect(canvas.style.height).to.equal(`${Math.ceil(elementH / scale)}px`);
+    }
+    presentLDWaterBeautyFrame(canvas, 0, elementH, 0.79);
+    expect(canvas.style.width).to.equal(`${Math.ceil(elementW / 1)}px`);
   });
 
   test('scaled water passes keep their viewport', () => {

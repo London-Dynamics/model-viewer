@@ -253,6 +253,10 @@ export class Renderer extends
     const nextCanvas = document.createElement('canvas');
     nextCanvas.id = oldCanvas.id;
     nextCanvas.className = oldCanvas.className;
+    // Dynamic resolution enlarges this canvas so the beauty slice fills the
+    // element. A fresh canvas would otherwise show the slice at 1:1.
+    nextCanvas.style.width = oldCanvas.style.width;
+    nextCanvas.style.height = oldCanvas.style.height;
 
     // Chrome destroys a WebGPU device if the canvas is reparented after
     // getContext('webgpu'). Mount the canvas, then create the context.

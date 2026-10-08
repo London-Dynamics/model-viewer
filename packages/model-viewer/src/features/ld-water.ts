@@ -5,6 +5,7 @@
 import {property} from 'lit/decorators.js';
 import {
   Box3,
+  CubeUVReflectionMapping,
   DoubleSide,
   EquirectangularReflectionMapping,
   Euler,
@@ -634,11 +635,23 @@ export const attachLDWaterSky = (
 };
 
 /**
- * Water reflections with no vendor sky. No dome meshes, so the page skybox
- * stays. The caller restores `scene.environment` after `setSky`, because
- * `setSky` would otherwise take over image-based lighting.
+ * Reflections of the page environment, with no dome meshes, so the page
+ * skybox stays. The caller restores `scene.environment` after `setSky`.
+ *
+ * The dark column above the horizon is the equirect seam, not a sun shaft
+ * and not a sky dome. The reflection prefilter samples the page HDR through
+ * `atan2`. That texture is clamp-to-edge, so the wrap filters a near-black
+ * column into the sky. A clone used only for the reflection is repeat-wrapped
+ * and has no mip chain; `pmremTexture` then prefilters that clone on the
+ * renderer's own WebGPU path. Generating the PMREM here with `fromEquirectangular`
+ * nests a render and drops the device, and the `PMREMGenerator` exported from
+ * `three` is the WebGL class, which bakes a near-black environment. Lighting
+ * stays on the original page texture.
  */
-export const createPageEnvironmentSky = async (texture: Texture) => {
+export const createPageEnvironmentSky = async (
+  texture: Texture,
+  renderer: {initTexture?: (texture: Texture) => void},
+) => {
   const webgpu = await import('three/webgpu') as any;
   const {
     Fn,
@@ -649,12 +662,32 @@ export const createPageEnvironmentSky = async (texture: Texture) => {
     texture: textureNode,
     vec3,
   } = webgpu.TSL;
+  let reflectionSource = texture;
+  let disposePmrem = () => {};
+  if (texture.mapping !== CubeUVReflectionMapping) {
+    const source = texture.clone();
+    source.wrapS = RepeatWrapping;
+    source.generateMipmaps = false;
+    source.minFilter = LinearFilter;
+    source.magFilter = LinearFilter;
+    source.needsUpdate = true;
+    renderer.initTexture?.(source);
+    reflectionSource = source;
+    disposePmrem = () => {
+      source.dispose();
+    };
+  }
   return {
     followCamera() {},
-    dispose() {},
+    dispose() {
+      disposePmrem();
+    },
     getMeshes(): Object3D[] {
       return [];
     },
+    // Lighting stays on the page texture. The prefiltered map is only for
+    // the water reflection sampler; handing it to setSky replaces the
+    // environment and the hull goes black.
     getEnvironmentTexture(): Texture {
       return texture;
     },
@@ -667,11 +700,43 @@ export const createPageEnvironmentSky = async (texture: Texture) => {
     createReflectionSampler() {
       return Fn(([dir, extraRoughness]: [any, any]) => {
         const roughness = clamp(extraRoughness, 0, 1);
-        const sample = pmremTexture(texture, normalize(dir), roughness);
+        const sample = pmremTexture(reflectionSource, normalize(dir), roughness);
         return vec3(sample.x, sample.y, sample.z);
       });
     },
   };
+};
+
+/**
+ * model-viewer draws dynamic resolution into a slice of the drawing buffer,
+ * then sets the canvas CSS size to `element / scale` so overflow clips that
+ * slice to the element. WebGL does this in `rescaleCanvas`. The WebGPU canvas
+ * is a new element and does not inherit that size, so the slice sits in the
+ * top-left and the page colour shows in the rest. Same formula as
+ * `rescaleCanvas`.
+ */
+export const presentLDWaterBeautyFrame = (
+  canvas: {style: {width: string, height: string}}|null|undefined,
+  elementWidth: number,
+  elementHeight: number,
+  scale: number,
+) => {
+  if (
+    canvas == null ||
+    !(elementWidth > 0) ||
+    !(elementHeight > 0) ||
+    !(scale > 0)
+  ) {
+    return;
+  }
+  const width = `${Math.ceil(elementWidth / scale)}px`;
+  const height = `${Math.ceil(elementHeight / scale)}px`;
+  if (canvas.style.width !== width) {
+    canvas.style.width = width;
+  }
+  if (canvas.style.height !== height) {
+    canvas.style.height = height;
+  }
 };
 
 /**
@@ -891,6 +956,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     private pageSkyTexture: Texture|null = null;
     private pageSkyProvider: {
       getEnvironmentTexture(): Texture,
+      dispose?: () => void,
     }|null = null;
     private pageSkyRequest = 0;
     private pageSkyFailed: Texture|null = null;
@@ -987,6 +1053,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.waterSystem.dispose();
         this.waterSystem = null;
       }
+      this.pageSkyProvider?.dispose?.();
       this.pageSkyProvider = null;
       this.pageSkyTexture = null;
       this.pageSkyFailed = null;
@@ -1070,6 +1137,17 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         // screen draw (no target); put the page skybox back first.
         if (target == null) {
           this.holdPageBackdrop();
+          // WebGL stretches the beauty slice by enlarging the canvas. The
+          // WebGPU canvas is replaced on the backend switch and misses that
+          // size whenever the scale step does not change. Reapply it on the
+          // screen draw, which is the pass the page shows.
+          const scene = this[$scene];
+          presentLDWaterBeautyFrame(
+            (renderer as {domElement?: HTMLCanvasElement}).domElement,
+            scene.width,
+            scene.height,
+            this[$renderer].scaleFactor,
+          );
         }
         if (
           target != null &&
@@ -1309,13 +1387,16 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     private ensurePageSky(texture: Texture) {
       const request = ++this.pageSkyRequest;
       this.pageSkyTexture = texture;
-      createPageEnvironmentSky(texture).then((provider) => {
+      createPageEnvironmentSky(texture, this.getWaterRenderer()).then((provider) => {
         if (request !== this.pageSkyRequest || this.waterSystem == null) {
+          provider.dispose();
           return;
         }
         if (this.pageSkyTexture !== texture) {
+          provider.dispose();
           return;
         }
+        this.pageSkyProvider?.dispose?.();
         this.pageSkyProvider = provider;
         this.pageEnvironment = this.pageEnvironment ?? texture;
         this.waterSystem.setSky(provider as any);
