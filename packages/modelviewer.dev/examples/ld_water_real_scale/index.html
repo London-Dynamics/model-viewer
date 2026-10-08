@@ -96,8 +96,11 @@
                   <span class="attribute">water</span>
                 </h2>
                 <h4>
-                  This page keeps the Centurion GLB at scale 1 and uses an LD
-                  water preset scaled from the 15x upstream reference scene.
+                  This page keeps the Centurion GLB at scale 1. Water is real
+                  metres. The preset list is the vendor demo list and the
+                  default is blackFlag. water-waterline is the glTF height
+                  that meets the lake. Fine settings go through
+                  setWaterOptions.
                 </h4>
               </div>
               <example-snippet stamp-to="water-real-scale" highlight-as="html">
@@ -114,9 +117,9 @@
                       camera-target="0m 0.1m 0m"
                       shadow-intensity="0"
                       environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr"
-                      water-preset="ld-boat-real-scale"
+                      water-preset="blackFlag"
                       water-quality="medium"
-                      water-elevation="-0.053"
+                      water-waterline="0"
                       water-buoyancy
                       sky
                       sky-image="/threejs-water-pro/demo/public/hdris/industrial_sunset_02_puresky_4k.jpg"
@@ -171,12 +174,18 @@
                                   <span class="ld-label">Preset</span>
                                   <span class="ld-select-wrap">
                                     <select id="water-preset" class="ld-select">
-                                      <option
-                                        value="ld-boat-real-scale"
-                                        selected
-                                      >
-                                        ld-boat-real-scale
+                                      <option value="arctic">arctic</option>
+                                      <option value="blackFlag" selected>
+                                        blackFlag
                                       </option>
+                                      <option value="dusk">dusk</option>
+                                      <option value="foggy">foggy</option>
+                                      <option value="moonlit">moonlit</option>
+                                      <option value="seaOfThieves">
+                                        seaOfThieves
+                                      </option>
+                                      <option value="storm">storm</option>
+                                      <option value="sunset">sunset</option>
                                     </select>
                                     <span
                                       class="ld-select-chevron"
@@ -195,6 +204,7 @@
                                       </option>
                                       <option value="high">high</option>
                                       <option value="ultra">ultra</option>
+                                      <option value="max">max</option>
                                     </select>
                                     <span
                                       class="ld-select-chevron"
@@ -204,13 +214,13 @@
                                   </span>
                                 </label>
                                 <label class="ld-field">
-                                  <span class="ld-label">Elevation</span>
+                                  <span class="ld-label">Waterline (m)</span>
                                   <input
-                                    id="water-elevation"
+                                    id="water-waterline"
                                     class="ld-input-number"
                                     type="number"
                                     step="0.01"
-                                    value="-0.053"
+                                    value="0"
                                   />
                                 </label>
                               </div>
@@ -250,10 +260,10 @@
                           );
                         });
                       document
-                        .querySelector('#water-elevation')
+                        .querySelector('#water-waterline')
                         .addEventListener('input', (event) => {
                           modelViewer.setAttribute(
-                            'water-elevation',
+                            'water-waterline',
                             event.target.value
                           );
                         });

@@ -25,11 +25,15 @@ import {
   ldWaterCaptureMatchesBeautyFragment,
   parseSkySunTime,
   applyLDWaterCameraRange,
-  applyLDWaterClipPlaneDistance,
   applyLDWaterElevation,
   attachLDWaterSky,
-  createLDWaterPreset,
   ensureLDWaterModelNormals,
+  holdLDWaterGrade,
+  LD_WATER_DEFAULT_PRESET,
+  LD_WATER_PRESET_NAMES,
+  mergeLDWaterOptions,
+  readLDWaterOptions,
+  resolveLDWaterPreset,
   ldWaterHeightOffset,
   LDWaterDrive,
   placeLDWaterHull,
@@ -38,6 +42,7 @@ import {
 } from '../../features/ld-water.js';
 import {waitForEvent} from '../../utilities.js';
 import {rafPasses} from '../helpers.js';
+import {getPresetParams, PRESETS} from 'threejs-water-pro';
 
 suite('LDWater', () => {
   let element: ModelViewerElement;
@@ -275,13 +280,27 @@ suite('LDWater', () => {
     const waterElement = element as any;
 
     expect(waterElement.water).to.equal(false);
-    expect(waterElement.waterPreset).to.equal('ld-boat');
+    expect(waterElement.waterPreset).to.equal('blackFlag');
+    expect(waterElement.waterPreset).to.equal(LD_WATER_DEFAULT_PRESET);
+    expect(LD_WATER_PRESET_NAMES).to.deep.equal([
+      'arctic',
+      'blackFlag',
+      'dusk',
+      'foggy',
+      'moonlit',
+      'seaOfThieves',
+      'storm',
+      'sunset',
+    ]);
+    expect([...LD_WATER_PRESET_NAMES].sort()).to.deep.equal(
+        Object.keys(PRESETS).sort());
     expect(waterElement.waterQuality).to.equal('high');
     expect(waterElement.waterWaterline).to.equal(0);
     expect(waterElement.waterBow).to.equal(undefined);
     expect(waterElement.waterView).to.equal(undefined);
-    expect(waterElement.waterElevation).to.equal(0);
-    expect(waterElement.waterSeed).to.equal(null);
+    expect(waterElement.waterElevation).to.equal(undefined);
+    expect(waterElement.waterSeed).to.equal(undefined);
+    expect(waterElement.getWaterOptions().seed).to.equal(null);
     expect(waterElement.waterBuoyancy).to.equal(false);
     expect(waterElement.waterDrive).to.equal(false);
   });
@@ -363,40 +382,59 @@ suite('LDWater', () => {
     expect(model.position.z).to.be.greaterThan(0);
   });
 
-  test('maps LD boat water onto the v3.5.1 hero', () => {
-    const dusk = {
-      clipmap: {baseSize: 200, levels: 5},
-      waves: {
-        fft: {
-          amplitude: 1,
-          windSpeed: 7,
-          peakWavelength: 140,
-          cascades: {maxScale: 1024},
-        },
-      },
-      sky: {
-        reflectionRoughness: 0.15,
-        sun: {elevation: 6, azimuth: 44, diskEnabled: false},
-      },
-    };
-    const waterModule = {
-      getPresetParams: (name: string) => {
-        expect(name).to.equal('dusk');
-        return dusk;
-      },
-    };
+  test('uses the vendor preset values and keeps option overrides on preset change', () => {
+    const vendor = getPresetParams('blackFlag');
+    const resolved = resolveLDWaterPreset('blackFlag', null, {getPresetParams});
+    expect(resolved.preset).not.to.equal(vendor);
+    expect(resolved.preset.waves).to.deep.equal(vendor.waves);
+    expect(resolved.preset.color).to.deep.equal(vendor.color);
+    expect(resolved.preset.foam).to.deep.equal(vendor.foam);
+    expect(resolved.preset.fresnel).to.deep.equal(vendor.fresnel);
+    expect(resolved.preset.ssr).to.deep.equal(vendor.ssr);
+    expect(resolved.preset.environment.intensity).to.equal(
+        vendor.environment.intensity);
+    expect(resolved.ssrMaxDistance).to.equal(null);
+    expect(resolved.seed).to.equal(null);
 
-    const preset = createLDWaterPreset('ld-boat', waterModule as any) as any;
+    const viewed = readLDWaterOptions('blackFlag', null, {getPresetParams}) as any;
+    expect(viewed.sky).to.equal(undefined);
+    expect(viewed.environment).to.equal(undefined);
+    expect(viewed.fog.enabled).to.equal(false);
+    expect(viewed.waves.fft.windSpeed).to.equal(vendor.waves.fft.windSpeed);
+    expect(viewed.seed).to.equal(null);
 
-    expect(preset).not.to.equal(dusk);
-    expect(preset.clipmap.baseSize).to.equal(200);
-    expect(preset.waves.fft.amplitude).to.equal(1);
-    expect(preset.waves.fft.windSpeed).to.equal(6.7);
-    expect(preset.waves.fft.peakWavelength).to.equal(22);
-    expect(preset.waves.fft.cascades.maxScale).to.equal(1024);
-    expect(preset.sky.sun.diskEnabled).to.equal(false);
-    expect(preset.sky.sun.elevation).to.equal(6);
-    expect(preset.sky.sun.azimuth).to.equal(44);
+    const hero = {
+      waves: {fft: {windSpeed: 6.7, peakWavelength: 22, amplitude: 1}},
+      ssr: {maxDistance: 30},
+      environment: {intensity: 4},
+      sky: {sun: {intensity: 9}},
+      fog: {enabled: true},
+    };
+    const dusk = resolveLDWaterPreset('dusk', hero, {getPresetParams});
+    const duskVendor = getPresetParams('dusk');
+    expect(dusk.preset.waves.fft.windSpeed).to.equal(6.7);
+    expect(dusk.preset.waves.fft.peakWavelength).to.equal(22);
+    expect(dusk.preset.waves.fft.amplitude).to.equal(1);
+    expect(dusk.preset.color).to.deep.equal(duskVendor.color);
+    expect(dusk.preset.fresnel.surface.refractionStrength).to.equal(
+        duskVendor.fresnel.surface.refractionStrength);
+    expect(dusk.preset.environment.intensity).to.equal(
+        duskVendor.environment.intensity);
+    expect(dusk.preset.sky.sun.intensity).to.equal(duskVendor.sky.sun.intensity);
+    expect(dusk.ssrMaxDistance).to.equal(30);
+    expect(() => resolveLDWaterPreset('ld-boat', null, {getPresetParams}))
+        .to.throw(/Unknown water preset/);
+
+    const storm = resolveLDWaterPreset('storm', hero, {getPresetParams});
+    expect(storm.preset.waves.fft.windSpeed).to.equal(6.7);
+    expect(storm.preset.color).to.deep.equal(getPresetParams('storm').color);
+    expect(storm.ssrMaxDistance).to.equal(30);
+
+    const grade = {fog: {enabled: true}, environment: {intensity: 0.5}};
+    holdLDWaterGrade(grade);
+    expect(grade.fog.enabled).to.equal(false);
+    expect(grade.environment.intensity).to.equal(1);
+
     const sun = sunFromSkyProClock(16, 45);
     expect(sun.elevation).to.be.closeTo(13.138, 0.01);
     const aim = directionFromSkySun(sun.elevation, sun.azimuth);
@@ -405,52 +443,46 @@ suite('LDWater', () => {
     expect(parseSkySunTime('16:45')).to.deep.equal({hours: 16, minutes: 45});
     expect(parseSkySunTime('')).to.equal(null);
     expect(parseSkySunTime('24:00')).to.equal(null);
-    expect(dusk.waves.fft.peakWavelength).to.equal(140);
   });
 
-  test('loads upstream demo water presets without changing their values', () => {
-    const upstreamStorm = {
-      clipmap: {baseSize: 900, levels: 5},
-      waves: {
-        fft: {amplitude: 3.2},
-        gerstner: {wavelength: 640, amplitude: 4.5},
-      },
-    };
-    const waterModule = {
-      getPresetParams: (name: string) => {
-        expect(name).to.equal('storm');
-        return upstreamStorm;
-      },
-    };
+  test('queues water options and keeps them when the preset changes', async () => {
+    const waterElement = element as any;
+    const details: Array<{preset: string, options: any}> = [];
+    element.addEventListener('water-change', ((event: CustomEvent) => {
+      details.push(event.detail);
+    }) as EventListener);
 
-    const preset = createLDWaterPreset('storm' as any, waterModule as any) as any;
+    waterElement.setWaterOptions({
+      waves: {fft: {windSpeed: 6.7, peakWavelength: 22, amplitude: 1}},
+      seed: 4,
+    });
+    expect(waterElement.waterActive).to.equal(false);
+    expect(waterElement.getWaterOptions().waves.fft.windSpeed).to.equal(6.7);
+    expect(waterElement.getWaterOptions().seed).to.equal(4);
+    expect(details[0].preset).to.equal('blackFlag');
 
-    expect(preset).not.to.equal(upstreamStorm);
-    expect(preset.clipmap.baseSize).to.equal(900);
-    expect(preset.waves.fft.amplitude).to.equal(3.2);
-    expect(preset.waves.gerstner.wavelength).to.equal(640);
-  });
+    waterElement.setWaterOptions({ssr: {maxDistance: 30}});
+    expect(waterElement.getWaterOptions().waves.fft.windSpeed).to.equal(6.7);
+    expect(waterElement.getWaterOptions().ssr.maxDistance).to.equal(30);
+    expect(waterElement.getWaterOptions().seed).to.equal(4);
 
-  test('uses the same hero recipe for the real-scale preset name', () => {
-    const dusk = {
-      waves: {fft: {amplitude: 1, windSpeed: 7, peakWavelength: 140}},
-      sky: {sun: {elevation: 6, azimuth: 44, diskEnabled: false}},
-    };
-    const waterModule = {
-      getPresetParams: (name: string) => {
-        expect(name).to.equal('dusk');
-        return structuredClone(dusk);
-      },
-    };
+    const ignored = mergeLDWaterOptions(
+        {environment: {intensity: 1}, fog: {enabled: false}, waves: {fft: {windSpeed: 1}}},
+        {environment: {intensity: 8}, fog: {enabled: true}, waves: {fft: {amplitude: 2}}}
+    ) as any;
+    expect(ignored.environment.intensity).to.equal(1);
+    expect(ignored.fog.enabled).to.equal(false);
+    expect(ignored.waves.fft.windSpeed).to.equal(1);
+    expect(ignored.waves.fft.amplitude).to.equal(2);
 
-    const hero = createLDWaterPreset('ld-boat', waterModule as any) as any;
-    const real = createLDWaterPreset('ld-boat-real-scale' as any, waterModule as any) as any;
-
-    expect(real.waves.fft.windSpeed).to.equal(hero.waves.fft.windSpeed);
-    expect(real.waves.fft.peakWavelength).to.equal(22);
-    expect(real.waves.fft.amplitude).to.equal(1);
-    expect(real.sky.sun.elevation).to.equal(6);
-    expect(hero.sky.sun.elevation).to.equal(6);
+    await waterElement.updateComplete;
+    waterElement.waterPreset = 'dusk';
+    await waterElement.updateComplete;
+    expect(waterElement.waterPreset).to.equal('dusk');
+    expect(waterElement.getWaterOptions().waves.fft.windSpeed).to.equal(6.7);
+    expect(waterElement.getWaterOptions().ssr.maxDistance).to.equal(30);
+    expect(details[details.length - 1].preset).to.equal('dusk');
+    expect(waterElement.water).to.equal(false);
   });
 
   test('drops a hull by its waterline and keeps authored yaw', () => {
@@ -549,22 +581,6 @@ suite('LDWater', () => {
 
   test('leaves the water surface at y = 0', () => {
     expect(() => applyLDWaterElevation({}, -0.8)).not.to.throw();
-  });
-
-  test('scales the water clip plane distance for real-scale camera distance', () => {
-    const waterSystem = {clipPlaneDistance: 20};
-
-    applyLDWaterClipPlaneDistance(waterSystem as any, 'ld-boat-real-scale' as any);
-
-    expect(waterSystem.clipPlaneDistance).to.be.closeTo(1.333, 0.001);
-  });
-
-  test('keeps the reference water clip plane distance for the 15x page', () => {
-    const waterSystem = {clipPlaneDistance: 1};
-
-    applyLDWaterClipPlaneDistance(waterSystem as any, 'ld-boat');
-
-    expect(waterSystem.clipPlaneDistance).to.equal(20);
   });
 
   test('expands the camera far plane for ocean rendering', () => {
@@ -674,7 +690,7 @@ suite('LDWater', () => {
     element.environmentImage = 'neutral';
     element.skyboxImage = 'legacy';
 
-    waterElement.waterPreset = 'ld-boat';
+    waterElement.waterPreset = 'blackFlag';
     waterElement.water = true;
     await element.updateComplete;
 

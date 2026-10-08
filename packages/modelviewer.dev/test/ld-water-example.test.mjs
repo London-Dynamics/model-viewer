@@ -54,8 +54,8 @@ assert.match(
     'water demo should enable LD Water after event listeners are attached');
 assert.match(
     html,
-    /water-preset="ld-boat"/,
-    'water demo should default to the LD boat-scale water preset');
+    /water-preset="blackFlag"/,
+    'water demo should default to the vendor blackFlag preset');
 assert.match(
     html,
     /sky-image="\/threejs-water-pro\/demo\/public\/hdris\/industrial_sunset_02_puresky_4k\.jpg"/,
@@ -98,31 +98,36 @@ assert.match(
     'water demo should expose a water preset selector');
 assert.match(
     html,
-    /<option value="ld-boat" selected>/,
-    'water preset selector should expose the LD boat-scale preset');
+    /<option value="blackFlag" selected>/,
+    'water preset selector should select the vendor default');
 for (const preset of [
-  'sunset',
-  'seaOfThieves',
-  'storm',
   'arctic',
   'blackFlag',
   'dusk',
   'foggy',
   'moonlit',
+  'seaOfThieves',
+  'storm',
+  'sunset',
 ]) {
   assert.match(
       html,
-      new RegExp(`<option value="${preset}">\\s*${preset}\\s*</option>`),
+      new RegExp(`<option value="${preset}"`),
       `water preset selector should expose the ${preset} preset`);
 }
+assert.doesNotMatch(html, /ld-boat/, 'water demo should not offer LD presets');
 assert.match(
     html,
     /id="water-quality"/,
     'water demo should expose a water quality selector');
 assert.match(
     html,
-    /id="water-elevation"/,
-    'water demo should expose water elevation control');
+    /id="water-waterline"/,
+    'water demo should expose the waterline control');
+assert.doesNotMatch(
+    html,
+    /water-elevation/,
+    'water demo should not keep the dead elevation attribute');
 assert.match(
     html,
     /id="water-status-inline"/,
@@ -154,12 +159,30 @@ assert.match(
     'real-scale water example should include a real-scale water demo');
 assert.match(
     realScaleHtml,
-    /water-preset="ld-boat-real-scale"/,
-    'real-scale water example should use the scale-equivalent LD preset');
+    /water-preset="blackFlag"/,
+    'real-scale water example should use the vendor default preset');
 assert.match(
     realScaleHtml,
-    /<option\s+value="ld-boat-real-scale"\s+selected\s*>/,
-    'real-scale preset selector should expose only the real-scale preset');
+    /<option value="blackFlag" selected>/,
+    'real-scale preset selector should select the vendor default');
+for (const preset of [
+  'arctic',
+  'dusk',
+  'foggy',
+  'moonlit',
+  'seaOfThieves',
+  'storm',
+  'sunset',
+]) {
+  assert.match(
+      realScaleHtml,
+      new RegExp(`<option value="${preset}"`),
+      `real-scale preset selector should expose ${preset}`);
+}
+assert.doesNotMatch(
+    realScaleHtml,
+    /ld-boat/,
+    'real-scale water example should not offer LD presets');
 assert.match(
     realScaleHtml,
     /scale="1 1 1"/,
@@ -182,13 +205,13 @@ assert.match(
     'real-scale water example should divide the wide orbit limit by 15');
 assert.match(
     realScaleHtml,
-    /water-elevation="-0\.053"/,
-    'real-scale water example should divide the reference water elevation by 15');
+    /water-waterline="0"/,
+    'real-scale water example should place the glTF origin with water-waterline');
+assert.doesNotMatch(
+    realScaleHtml,
+    /water-elevation/,
+    'real-scale water example should not keep the dead elevation attribute');
 assert.match(
     realScaleHtml,
     /src="\.\.\/\.\.\/\.\.\/model-viewer\/dist\/model-viewer-module\.js(?:\?[^"]*)?"/,
     'real-scale water demo should import the module build');
-assert.doesNotMatch(
-    realScaleHtml,
-    /<option value="(?:sunset|seaOfThieves|storm|arctic|blackFlag|dusk|foggy|moonlit)"/,
-    'real-scale preset selector should not expose raw upstream ocean presets');

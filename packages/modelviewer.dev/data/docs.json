@@ -1579,12 +1579,12 @@
       {
         "name": "water-preset",
         "htmlName": "waterPreset",
-        "description": "Selects a built-in <code>threejs-water-pro</code> water preset. Water presets only affect water; they do not set <code>environment-image</code>, <code>skybox-image</code>, or environment models.",
+        "description": "Selects a threejs-water-pro v3.5.1 demo preset. The names and values match the vendor demo: arctic, blackFlag, dusk, foggy, moonlit, seaOfThieves, storm, sunset. The default is blackFlag, which is the demo's initial preset. A preset changes water only. It does not change tone mapping, exposure, the environment image, or the sky. Sky and sun stay on the sky mixin. Changing the preset keeps setWaterOptions overrides and reapplies them on top of the new preset.",
         "links": [
           "<a href=\"../examples/ld_water/#water\">Related examples</a>"
         ],
         "default": {
-          "default": "sunset",
+          "default": "blackFlag",
           "options": "arctic, blackFlag, dusk, foggy, moonlit, seaOfThieves, storm, sunset"
         }
       },
@@ -1596,32 +1596,38 @@
           "<a href=\"../examples/ld_water/#water\">Related examples</a>"
         ],
         "default": {
-          "default": "medium",
-          "options": "low, medium, high, ultra"
+          "default": "high",
+          "options": "low, medium, high, ultra, max"
         }
       },
       {
-        "name": "water-elevation",
-        "htmlName": "waterElevation",
-        "description": "Sets the LD Water elevation in meters relative to the model-viewer scene.",
+        "name": "water-waterline",
+        "htmlName": "waterWaterline",
+        "description": "glTF height in metres that meets the lake at world y = 0. <code>0</code> leaves the model root at local y = 0. Any other value shifts the root by the negation of this height and cancels a camera-target pivot already applied to the model's parent.",
         "links": [
           "<a href=\"../examples/ld_water/#water\">Related examples</a>"
         ],
         "default": {
           "default": 0,
-          "options": "any number"
+          "options": "any number (metres)"
         }
       },
       {
-        "name": "water-seed",
-        "htmlName": "waterSeed",
-        "description": "Sets an optional deterministic seed for LD Water waves. Remove the attribute to use the package default seed behavior.",
-        "links": [
-          "<a href=\"../examples/ld_water/#water\">Related examples</a>"
-        ],
+        "name": "water-buoyancy",
+        "htmlName": "waterBuoyancy",
+        "description": "Floats the loaded model on the lake. Off by default.",
         "default": {
-          "default": "empty",
-          "options": "any number"
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "water-drive",
+        "htmlName": "waterDrive",
+        "description": "Optional WASD helm. Off unless the attribute is set. Forward is glTF +Z at yaw 0.",
+        "default": {
+          "default": "false",
+          "options": "true, false"
         }
       },
       {
@@ -1635,6 +1641,23 @@
           "default": "0",
           "options": "any number (meters)"
         }
+      }
+    ],
+    "Methods": [
+      {
+        "name": "setWaterOptions(partial)",
+        "htmlName": "setWaterOptions",
+        "description": "Merges a partial of the vendor water settings onto the active preset. Later calls replace only the keys they carry. The override layer persists when <code>water-preset</code> changes and is reapplied on top of the new preset. Calls made before the lake exists are queued and applied on load. Ignored keys: <code>sky</code>, <code>environment</code>, <code>fog</code>, and post grade (bloom, film grain, vignette). <code>seed</code>, <code>clipPlaneDistance</code>, <code>ssr.maxDistance</code>, and <code>ssr.stepCount</code> are included; <code>seed</code> changes recreate the lake. Fires <code>water-change</code> with <code>{preset, options}</code>.",
+        "signature": "setWaterOptions(partial: LDWaterOptions): void",
+        "links": [
+          "<a href=\"../examples/ld_water_mixin/#water-mixin\">Water mixin hero</a>"
+        ]
+      },
+      {
+        "name": "getWaterOptions()",
+        "htmlName": "getWaterOptions",
+        "description": "Returns the effective water settings: the active vendor preset with the stored override layer applied. <code>fog.enabled</code> is always false. Sky and environment intensity are omitted. <code>seed</code> is <code>null</code> until set.",
+        "signature": "getWaterOptions(): LDWaterOptions"
       }
     ]
   },

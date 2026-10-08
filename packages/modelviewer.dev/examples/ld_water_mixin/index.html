@@ -74,7 +74,7 @@
               orientation="0deg 0deg -90deg"
               max-camera-orbit="auto auto 80m"
               shadow-intensity="0"
-              water-preset="ld-boat"
+              water-preset="dusk"
               water-quality="high"
               water-waterline="0.5"
               water-drive
@@ -108,9 +108,11 @@
                 <h2 class="demo-title">Water mixin hero</h2>
                 <h4>
                   This page is the model-viewer water mixin. The preset is
-                  ld-boat: dusk colour, wind 6.7 m/s, peak wavelength 22 m,
-                  quality high. The 16:45 sun, the vendor sky, and
-                  sky-environment are separate attributes on this page.
+                  the vendor <code>dusk</code> preset. setWaterOptions sets
+                  wind 6.7 m/s, peak wavelength 22 m, amplitude 1, and SSR
+                  max distance 30 m on top of it. Quality is high. The
+                  16:45 sun, the vendor sky, and sky-environment are
+                  separate attributes on this page.
                   The mixin does not know
                   which hull is loaded. boat=ri245 sets water-waterline 0.50
                   and orientation yaw −90°. boat=aquila sets water-waterline
@@ -175,6 +177,19 @@
       viewer.addEventListener('water-error', (event) => {
         status.textContent = `water: ${event.detail.error.message}`;
         console.error(event.detail.error);
+      });
+      // The hero look is dusk plus these overrides. Sky and sun stay on
+      // the sky attributes above. Options are queued before water turns on.
+      await customElements.whenDefined('model-viewer');
+      viewer.setWaterOptions({
+        waves: {
+          fft: {
+            amplitude: 1,
+            windSpeed: 6.7,
+            peakWavelength: 22,
+          },
+        },
+        ssr: {maxDistance: 30},
       });
       viewer.toggleAttribute('water', true);
       viewer.toggleAttribute('water-buoyancy', true);

@@ -32,18 +32,18 @@ import {Constructor} from '../utilities.js';
 
 import type {
   BuoyancyOptions,
-  PresetName as UpstreamWaterPresetName,
   QualityLevel as WaterQualityLevel,
   WaterPreset,
+  WaterSceneConfig,
   WaterSystem,
 } from 'threejs-water-pro';
 
-export type WaterPresetName =
-  'ld-boat'|'ld-boat-real-scale'|UpstreamWaterPresetName;
-
-const WATER_PRESETS = new Set<string>([
-  'ld-boat',
-  'ld-boat-real-scale',
+/**
+ * Preset names in the threejs-water-pro v3.5.1 demo select
+ * (`demo/ui/Controls.ts`). The demo boots on `blackFlag`
+ * (`demo/WaterApp.ts` `activePreset`).
+ */
+export const LD_WATER_PRESET_NAMES = [
   'arctic',
   'blackFlag',
   'dusk',
@@ -52,21 +52,17 @@ const WATER_PRESETS = new Set<string>([
   'seaOfThieves',
   'storm',
   'sunset',
-]);
+] as const;
+
+export type WaterPresetName = typeof LD_WATER_PRESET_NAMES[number];
+
+/** Vendor demo default. Not sunset, which is only the library constructor seed. */
+export const LD_WATER_DEFAULT_PRESET: WaterPresetName = 'blackFlag';
+
+const WATER_PRESETS = new Set<string>(LD_WATER_PRESET_NAMES);
 
 const WATER_QUALITIES = new Set<string>(['low', 'medium', 'high', 'ultra', 'max']);
-// v3.5.1 waves are real metres. These match the ld_water_pro hero:
-// dusk colour, quality high, wind 6.7 m/s, peak wavelength 22 m, 16:45 sun.
-const LD_WATER_HERO_WIND_SPEED = 6.7;
-const LD_WATER_HERO_PEAK_WAVELENGTH = 22;
-const LD_WATER_HERO_FFT_AMPLITUDE = 1;
-const LD_WATER_REFERENCE_CLIP_PLANE_DISTANCE_METERS = 20;
-const LD_WATER_REFERENCE_SCALE = 15;
 const LD_WATER_MIN_CAMERA_FAR_METERS = 50000;
-// Quality "high" marches SSR 150 m in 16 steps. From the live stern camera
-// that coarse march hits the hull from water that is not reflecting it and
-// draws a second upright copy. 30 m still reaches the hull and cabins.
-const LD_WATER_BOAT_SSR_MAX_METERS = 30;
 
 export interface LDWaterHullPlacement {
   waterline: number;
@@ -76,8 +72,51 @@ export interface LDWaterHullPlacement {
   rotationY: number;
 }
 
-const clonePreset = (preset: WaterPreset): WaterPreset =>
-  JSON.parse(JSON.stringify(preset)) as WaterPreset;
+const clonePreset = <T>(preset: T): T =>
+  JSON.parse(JSON.stringify(preset)) as T;
+
+const isPlainObject = (
+  value: unknown
+): value is Record<string, unknown> =>
+  value != null && typeof value === 'object' && !Array.isArray(value);
+
+type DeepPartial<T> = T extends object ? {
+  [K in keyof T]?: DeepPartial<T[K]>
+} : T;
+
+/**
+ * Vendor water settings the demo's Surface, Underwater, and Weather
+ * folders edit, minus sky, environment intensity, fog, and the grade
+ * post stack (bloom, film grain, vignette, tone mapping). Those stay off
+ * this API: sky and sun are the `sky` mixin, and a preset must not change
+ * tone mapping, exposure, or the page environment.
+ *
+ * `seed`, `clipPlaneDistance`, `ssr.maxDistance`, and `ssr.stepCount` are
+ * runtime controls the demo exposes and the preset object does not carry.
+ */
+export type LDWaterOptions = DeepPartial<
+  Omit<WaterSceneConfig, 'sky'|'environment'|'fog'>
+> & {
+  seed?: number|null,
+  clipPlaneDistance?: number,
+  ssr?: DeepPartial<WaterSceneConfig['ssr']> & {
+    maxDistance?: number,
+    stepCount?: number,
+  },
+};
+
+export interface LDWaterChangeDetail {
+  preset: WaterPresetName;
+  options: LDWaterOptions;
+}
+
+export interface LDWaterResolvedPreset {
+  preset: WaterPreset;
+  seed: number|null;
+  clipPlaneDistance: number|null;
+  ssrMaxDistance: number|null;
+  ssrStepCount: number|null;
+}
 
 export declare interface LDWaterInterface {
   /**
@@ -87,10 +126,9 @@ export declare interface LDWaterInterface {
    * mixin does not port them.
    */
   water: boolean;
+  /** One of {@link LD_WATER_PRESET_NAMES}. Default `blackFlag`. */
   waterPreset: WaterPresetName;
   waterQuality: WaterQualityLevel;
-  waterElevation: number;
-  waterSeed: number|null;
   /**
    * Metres. The model root is placed at y = 0 when this is 0, and at
    * `-water-waterline` otherwise, so that height meets the lake.
@@ -101,6 +139,19 @@ export declare interface LDWaterInterface {
   waterDrive: boolean;
   /** True after the lake has been created. */
   readonly waterActive: boolean;
+  /**
+   * Merge `partial` onto the stored override layer and reapply it on top
+   * of the active preset. Overrides persist across preset changes. A later
+   * call replaces only the keys it carries. Calls made before the lake
+   * exists are queued and applied on load. Fires `water-change`.
+   */
+  setWaterOptions(partial: LDWaterOptions): void;
+  /**
+   * Effective water settings: the active vendor preset with the stored
+   * override layer applied. `fog.enabled` is always false. Sky and
+   * environment intensity are not included.
+   */
+  getWaterOptions(): LDWaterOptions;
 }
 
 type WaterModule = typeof import('threejs-water-pro');
@@ -110,9 +161,6 @@ const isWaterPresetName = (value: string): value is WaterPresetName =>
 
 const isWaterQualityLevel = (value: string): value is WaterQualityLevel =>
   WATER_QUALITIES.has(value);
-
-const isLDWaterHeroPreset = (presetName: WaterPresetName) =>
-  presetName === 'ld-boat' || presetName === 'ld-boat-real-scale';
 
 /**
  * Sun angles for Sky Pro's default clock. Latitude 45 peaks the sun at
@@ -221,33 +269,150 @@ export const applyWaterSunPolicy = (
   return 'off';
 };
 
-const applyLDWaterHeroLook = (preset: WaterPreset): WaterPreset => {
-  const waves = (preset as any).waves?.fft;
-  if (waves != null) {
-    waves.amplitude = LD_WATER_HERO_FFT_AMPLITUDE;
-    waves.windSpeed = LD_WATER_HERO_WIND_SPEED;
-    waves.peakWavelength = LD_WATER_HERO_PEAK_WAVELENGTH;
+const GRADE_POST_KEYS = new Set(['bloom', 'filmGrain', 'vignette']);
+
+/**
+ * Deep-merge `partial` into `base`. Sky, environment intensity, and fog are
+ * ignored so a caller cannot turn a preset into a grade change. Nested
+ * objects merge. Arrays and leaves replace. `null` is a value (`seed`).
+ */
+export const mergeLDWaterOptions = (
+  base: Record<string, unknown>,
+  partial: Record<string, unknown>|null|undefined
+): Record<string, unknown> => {
+  if (partial == null) {
+    return base;
   }
-  return preset;
+  for (const key of Object.keys(partial)) {
+    if (key === 'sky' || key === 'environment' || key === 'fog') {
+      continue;
+    }
+    const value = partial[key];
+    if (value === undefined) {
+      continue;
+    }
+    const current = base[key];
+    if (key === 'postProcessing' && isPlainObject(value)) {
+      const rest = {...value};
+      for (const gradeKey of GRADE_POST_KEYS) {
+        delete rest[gradeKey];
+      }
+      if (isPlainObject(current)) {
+        mergeLDWaterOptions(current, rest);
+      } else {
+        base[key] = clonePreset(rest);
+      }
+      continue;
+    }
+    if (isPlainObject(value) && isPlainObject(current)) {
+      mergeLDWaterOptions(current, value);
+    } else {
+      base[key] = clonePreset(value);
+    }
+  }
+  return base;
 };
 
-export const createLDWaterPreset = (
-  presetName: WaterPresetName,
+/**
+ * Vendor preset plus the override layer. The returned preset still carries
+ * `sky` so `loadPreset` can feed the sun uniform; the mixin then hides that
+ * light unless `sky-sun-time` is set. `fog.enabled` is left for the caller
+ * to force off. Runtime fields that are not in the preset object are
+ * returned beside it.
+ */
+export const resolveLDWaterPreset = (
+  presetName: string,
+  options: LDWaterOptions|null|undefined,
   waterModule: Pick<WaterModule, 'getPresetParams'>
-): WaterPreset => {
+): LDWaterResolvedPreset => {
   if (!isWaterPresetName(presetName)) {
     throw new Error(`Unknown water preset: ${presetName}`);
   }
 
-  const upstreamPresetName =
-    isLDWaterHeroPreset(presetName) ? 'dusk' : presetName;
-  const preset = clonePreset(waterModule.getPresetParams(upstreamPresetName));
+  const preset = clonePreset(waterModule.getPresetParams(presetName));
+  const partial = clonePreset(options ?? {}) as Record<string, unknown>;
+  const seed = partial.seed === undefined ? null : partial.seed as number|null;
+  const clipPlaneDistance =
+    typeof partial.clipPlaneDistance === 'number' ?
+      partial.clipPlaneDistance :
+      null;
+  delete partial.seed;
+  delete partial.clipPlaneDistance;
 
-  if (isLDWaterHeroPreset(presetName)) {
-    return applyLDWaterHeroLook(preset);
+  let ssrMaxDistance: number|null = null;
+  let ssrStepCount: number|null = null;
+  if (isPlainObject(partial.ssr)) {
+    if (typeof partial.ssr.maxDistance === 'number') {
+      ssrMaxDistance = partial.ssr.maxDistance;
+    }
+    if (typeof partial.ssr.stepCount === 'number') {
+      ssrStepCount = partial.ssr.stepCount;
+    }
+    delete partial.ssr.maxDistance;
+    delete partial.ssr.stepCount;
   }
 
-  return preset;
+  mergeLDWaterOptions(preset as unknown as Record<string, unknown>, partial);
+  return {preset, seed, clipPlaneDistance, ssrMaxDistance, ssrStepCount};
+};
+
+/**
+ * What {@link LDWaterInterface.getWaterOptions} returns. Sky and environment
+ * intensity are dropped. Fog stays in the object with `enabled` forced off,
+ * which is the value the lake actually uses.
+ */
+export const readLDWaterOptions = (
+  presetName: string,
+  options: LDWaterOptions|null|undefined,
+  waterModule: Pick<WaterModule, 'getPresetParams'>|null
+): LDWaterOptions => {
+  if (waterModule == null || !isWaterPresetName(presetName)) {
+    const merged = mergeLDWaterOptions(
+      {},
+      clonePreset(options ?? {}) as unknown as Record<string, unknown>
+    ) as LDWaterOptions;
+    if (merged.seed === undefined) {
+      merged.seed = null;
+    }
+    return merged;
+  }
+
+  const resolved = resolveLDWaterPreset(presetName, options, waterModule);
+  const view = clonePreset(resolved.preset) as LDWaterOptions & {
+    sky?: unknown,
+    environment?: unknown,
+    fog?: {enabled: boolean},
+    ssr?: {maxDistance?: number, stepCount?: number},
+  };
+  delete view.sky;
+  delete view.environment;
+  if (view.fog != null) {
+    view.fog.enabled = false;
+  }
+  view.seed = resolved.seed;
+  if (resolved.clipPlaneDistance != null) {
+    view.clipPlaneDistance = resolved.clipPlaneDistance;
+  }
+  if (view.ssr != null) {
+    if (resolved.ssrMaxDistance != null) {
+      view.ssr.maxDistance = resolved.ssrMaxDistance;
+    }
+    if (resolved.ssrStepCount != null) {
+      view.ssr.stepCount = resolved.ssrStepCount;
+    }
+  }
+  return view;
+};
+
+/** A preset must not tint the boat or scale the page environment. */
+export const holdLDWaterGrade = (water: {
+  fog: {enabled: boolean},
+  environment?: {intensity: number},
+}) => {
+  water.fog.enabled = false;
+  if (water.environment != null) {
+    water.environment.intensity = 1;
+  }
 };
 
 /**
@@ -748,17 +913,6 @@ export const applyLDWaterElevation = (
   _elevation: number
 ) => {};
 
-export const applyLDWaterClipPlaneDistance = (
-  waterSystem: Pick<WaterSystem, 'clipPlaneDistance'>,
-  presetName: WaterPresetName
-) => {
-  waterSystem.clipPlaneDistance =
-    presetName === 'ld-boat-real-scale' ?
-    LD_WATER_REFERENCE_CLIP_PLANE_DISTANCE_METERS /
-        LD_WATER_REFERENCE_SCALE :
-    LD_WATER_REFERENCE_CLIP_PLANE_DISTANCE_METERS;
-};
-
 export const applyLDWaterCameraRange = (
   camera: PerspectiveCamera,
   minFar = LD_WATER_MIN_CAMERA_FAR_METERS
@@ -917,13 +1071,10 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     water = false;
 
     @property({type: String, attribute: 'water-preset'})
-    waterPreset: WaterPresetName = 'ld-boat';
+    waterPreset: WaterPresetName = LD_WATER_DEFAULT_PRESET;
 
     @property({type: String, attribute: 'water-quality'})
     waterQuality: WaterQualityLevel = 'high';
-
-    @property({type: Number, attribute: 'water-elevation'})
-    waterElevation = 0;
 
     /**
      * glTF height, in metres, that should meet the lake at world y = 0.
@@ -934,9 +1085,6 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({type: Number, attribute: 'water-waterline'})
     waterWaterline = 0;
 
-    @property({type: Number, attribute: 'water-seed'})
-    waterSeed: number|null = null;
-
     @property({type: Boolean, attribute: 'water-buoyancy'})
     waterBuoyancy = false;
 
@@ -945,6 +1093,10 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     waterDrive = false;
 
     private waterSystem: WaterSystem|null = null;
+    private waterModule: WaterModule|null = null;
+    private waterModulePromise: Promise<WaterModule>|null = null;
+    private waterOptionOverrides: LDWaterOptions = {};
+    private appliedWaterSeed: number|null = null;
     private waterLoadId = 0;
     private waterBuoyancyId: number|null = null;
     private waterMaskObject: Object3D|null = null;
@@ -990,14 +1142,21 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       } else if (
         this.water &&
-        (changedProperties.has('waterPreset') ||
-         changedProperties.has('waterQuality') ||
-         changedProperties.has('waterElevation') ||
+        (changedProperties.has('waterQuality') ||
          changedProperties.has('waterWaterline') ||
-         changedProperties.has('waterSeed') ||
          changedProperties.has('waterBuoyancy'))
       ) {
         this.updateWater();
+      }
+
+      if (changedProperties.has('waterPreset') && !changedProperties.has('water')) {
+        const hasOverrides = Object.keys(this.waterOptionOverrides).length > 0;
+        if (this.water || hasOverrides) {
+          this.dispatchWaterChange();
+        }
+        if (this.water && this.waterSystem != null) {
+          this.applyResolvedWater(this.waterModule);
+        }
       }
 
       if (changedProperties.has('waterDrive')) {
@@ -1070,6 +1229,93 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.dispatchEvent(
         new CustomEvent('water-error', {detail: {error}})
       );
+    }
+
+    private dispatchWaterChange() {
+      const detail: LDWaterChangeDetail = {
+        preset: this.waterPreset,
+        options: this.getWaterOptions(),
+      };
+      this.dispatchEvent(new CustomEvent('water-change', {detail}));
+    }
+
+    private loadWaterModule(): Promise<WaterModule> {
+      if (this.waterModule != null) {
+        return Promise.resolve(this.waterModule);
+      }
+      this.waterModulePromise ??=
+        (import('threejs-water-pro') as Promise<WaterModule>).then((mod) => {
+          this.waterModule = mod;
+          return mod;
+        });
+      return this.waterModulePromise;
+    }
+
+    /**
+     * Stored overrides persist across preset changes and are reapplied on
+     * top of the new preset. Keys omitted from `partial` stay as they were.
+     * Sky, environment intensity, and fog in `partial` are ignored.
+     */
+    setWaterOptions(partial: LDWaterOptions): void {
+      void this.loadWaterModule();
+      this.waterOptionOverrides = mergeLDWaterOptions(
+        clonePreset(this.waterOptionOverrides) as unknown as Record<string, unknown>,
+        partial as unknown as Record<string, unknown>
+      ) as LDWaterOptions;
+      this.dispatchWaterChange();
+      if (!this.water || this.waterSystem == null) {
+        return;
+      }
+      const nextSeed = this.waterOptionOverrides.seed ?? null;
+      if (
+        Object.prototype.hasOwnProperty.call(partial, 'seed') &&
+        nextSeed !== this.appliedWaterSeed
+      ) {
+        this.updateWater();
+        return;
+      }
+      this.applyResolvedWater(this.waterModule);
+    }
+
+    getWaterOptions(): LDWaterOptions {
+      if (this.waterModule == null) {
+        void this.loadWaterModule();
+      }
+      return readLDWaterOptions(
+        this.waterPreset,
+        this.waterOptionOverrides,
+        this.waterModule
+      );
+    }
+
+    private applyResolvedWater(waterModule: WaterModule|null) {
+      const water = this.waterSystem;
+      if (water == null || waterModule == null) {
+        return;
+      }
+      const resolved = resolveLDWaterPreset(
+        this.waterPreset,
+        this.waterOptionOverrides,
+        waterModule
+      );
+      water.loadPreset(resolved.preset);
+      if (resolved.clipPlaneDistance != null) {
+        water.clipPlaneDistance = resolved.clipPlaneDistance;
+      }
+      if (resolved.ssrMaxDistance != null) {
+        water.ssr.maxDistance = resolved.ssrMaxDistance;
+      }
+      if (resolved.ssrStepCount != null) {
+        water.ssr.stepCount = resolved.ssrStepCount;
+      }
+      holdLDWaterGrade(water);
+      const presetSun =
+        (resolved.preset as {sky?: {sun?: {intensity?: number}}}).sky?.sun;
+      this.waterAuthoredSunIntensity =
+        typeof presetSun?.intensity === 'number' ? presetSun.intensity : 0;
+      this.holdWaterLighting();
+      this.holdPageBackdrop();
+      this[$needsRender]();
     }
 
     private validateWaterSettings() {
@@ -1177,7 +1423,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     private createWaterMarker() {
       const marker = new Object3D();
       marker.name = 'LDWaterRoot';
-      marker.position.y = this.waterElevation;
+      marker.position.y = 0;
       marker.userData.noHit = true;
       marker.userData.selectable = false;
       return marker;
@@ -1535,35 +1781,40 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.rememberPageBackdrop();
         const camera = this.getWaterCamera();
         applyLDWaterCameraRange(camera);
-        const waterModule =
-          await import('threejs-water-pro') as WaterModule;
+        const waterModule = await this.loadWaterModule();
+        const resolved = resolveLDWaterPreset(
+          this.waterPreset,
+          this.waterOptionOverrides,
+          waterModule
+        );
 
         if (loadId !== this.waterLoadId || !this.water) {
           return;
         }
 
+        this.appliedWaterSeed = resolved.seed;
         this.waterSystem = await waterModule.WaterSystem.create(
           renderer,
           this[$scene] as any,
           camera as any,
           this.waterQuality,
           {
-            deterministic: this.waterSeed != null,
-            seed: this.waterSeed ?? undefined,
+            deterministic: resolved.seed != null,
+            seed: resolved.seed ?? undefined,
           }
         );
         ensureLDWaterModelNormals(this[$scene]);
-        const preset = createLDWaterPreset(this.waterPreset, waterModule);
-        this.waterSystem.loadPreset(preset);
-        applyLDWaterElevation(this.waterSystem, this.waterElevation);
-        this.waterSystem.fog.enabled = false;
-        const presetSun = (preset as {sky?: {sun?: {intensity?: number}}}).sky?.sun;
-        this.waterAuthoredSunIntensity =
-          typeof presetSun?.intensity === 'number' ? presetSun.intensity : 0;
-        this.holdWaterLighting();
-        if (isLDWaterHeroPreset(this.waterPreset)) {
-          this.waterSystem.ssr.maxDistance = LD_WATER_BOAT_SSR_MAX_METERS;
+        if (loadId !== this.waterLoadId || !this.water) {
+          this.waterSystem.dispose();
+          this.waterSystem = null;
+          return;
         }
+        const latestSeed = this.waterOptionOverrides.seed ?? null;
+        if (latestSeed !== resolved.seed) {
+          this.updateWater();
+          return;
+        }
+        this.applyResolvedWater(waterModule);
         this.bindWaterReflections();
         this.registerWaterBuoyancy();
         this[$scene].setWater(this.createWaterMarker());

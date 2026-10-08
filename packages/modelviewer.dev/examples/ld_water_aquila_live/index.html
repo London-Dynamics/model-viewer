@@ -154,8 +154,9 @@
                   is the published puzzle-default GLB. It is not authored with
                   the waterline at y = 0. Add water with the button or
                   <code>?water=1</code>. That only sets
-                  <code>water</code>, <code>water-preset="ld-boat"</code>, and
-                  <code>water-waterline="0.95"</code>.
+                  <code>water</code> and
+                  <code>water-waterline="0.95"</code>. The preset stays the
+                  vendor default, <code>blackFlag</code>.
                   <code>?buoyancy=1</code> also sets <code>water-buoyancy</code>.
                   Override the draft with <code>?waterline=</code> metres.
                 </h4>
@@ -194,7 +195,6 @@
       const applyWater = (on) => {
         waterOn = on;
         if (on) {
-          viewer.setAttribute('water-preset', 'ld-boat');
           viewer.setAttribute('water-waterline', waterline);
           viewer.toggleAttribute('water-buoyancy', params.get('buoyancy') === '1');
           viewer.toggleAttribute('water', true);
