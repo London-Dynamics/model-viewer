@@ -148,17 +148,21 @@ export class MaskPass {
       }
     });
 
-    // Show mask objects, their descendants, and their ancestors
+    // Show mask objects that were already visible. Hidden variants (folded
+    // terraces, inactive options) stay out of the mask so they cannot cut a
+    // boat-shaped hole offset from the hull the camera actually draws.
     for (const maskObj of this.maskObjects) {
-      // Show the mask object and all its descendants
       maskObj.traverse((child) => {
-        child.visible = true;
+        if (this.originalVisibility.get(child) !== false) {
+          child.visible = true;
+        }
       });
 
-      // Show all ancestors so the object can be rendered
       let parent = maskObj.parent;
       while (parent && parent !== this.scene) {
-        parent.visible = true;
+        if (this.originalVisibility.get(parent) !== false) {
+          parent.visible = true;
+        }
         parent = parent.parent;
       }
     }

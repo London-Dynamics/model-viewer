@@ -24,6 +24,7 @@
  */
 
 import type * as THREE from "three/webgpu";
+import { LinearSRGBColorSpace, NoToneMapping } from "three/webgpu";
 import type { Node, PassNode } from "three/webgpu";
 import { convertToTexture } from "three/tsl";
 import type { Underwater } from "../rendering/postprocessing";
@@ -139,27 +140,41 @@ export class PostProcessingPipeline implements WaterSubsystem {
     const underwaterEnabled = refs.underwater.enabled;
     const ssrEnabled = refs.ssr.enabled;
 
+    // These targets store reflection directions, view-Z, mask distance, and
+    // scene color. model-viewer copies the host grade onto the renderer, and
+    // WebGPU would blit that grade into the data targets. Keep the passes
+    // linear; the beauty pass restores the grade below.
+    const previousToneMapping = renderer.toneMapping;
+    const previousColorSpace = renderer.outputColorSpace;
+    renderer.toneMapping = NoToneMapping;
+    renderer.outputColorSpace = LinearSRGBColorSpace;
+
     // The transparent-capture sub-passes only feed the underwater fog
     // decomposition; above water, transparency fogs itself per material.
-    refs.rpm.renderCapturePass(renderer, underwaterEnabled);
+    try {
+      refs.rpm.renderCapturePass(renderer, underwaterEnabled);
 
-    if (refs.rpm.getMaskObjectCount() > 0) {
-      refs.rpm.renderMaskPass(renderer);
-    }
+      if (refs.rpm.getMaskObjectCount() > 0) {
+        refs.rpm.renderMaskPass(renderer);
+      }
 
-    refs.rpm.renderWaterDepthPass(renderer);
+      refs.rpm.renderWaterDepthPass(renderer);
 
-    // SunShafts self-gates on its own `enabled` flag plus the
-    // underwater controller's `underwaterEnabled` (sun shafts are an
-    // underwater-only effect). The pipeline only needs to invoke the
-    // hook in the right position in the pass order.
-    refs.sunShafts.renderPass(renderer);
+      // SunShafts self-gates on its own `enabled` flag plus the
+      // underwater controller's `underwaterEnabled` (sun shafts are an
+      // underwater-only effect). The pipeline only needs to invoke the
+      // hook in the right position in the pass order.
+      refs.sunShafts.renderPass(renderer);
 
-    if (ssrEnabled) {
-      refs.rpm.renderSSRGBufferPass(renderer);
-      refs.rpm.renderSSRPass(renderer);
-    } else {
-      refs.rpm.clearSSRPassIfNeeded(renderer);
+      if (ssrEnabled) {
+        refs.rpm.renderSSRGBufferPass(renderer);
+        refs.rpm.renderSSRPass(renderer);
+      } else {
+        refs.rpm.clearSSRPassIfNeeded(renderer);
+      }
+    } finally {
+      renderer.toneMapping = previousToneMapping;
+      renderer.outputColorSpace = previousColorSpace;
     }
   }
 

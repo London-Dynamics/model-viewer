@@ -62,6 +62,10 @@ const LD_WATER_HERO_EXPOSURE = 1.06;
 const LD_WATER_REFERENCE_CLIP_PLANE_DISTANCE_METERS = 20;
 const LD_WATER_REFERENCE_SCALE = 15;
 const LD_WATER_MIN_CAMERA_FAR_METERS = 50000;
+// Quality "high" marches SSR 150 m in 16 steps. From the live stern camera
+// that coarse march hits the hull from water that is not reflecting it and
+// draws a second upright copy. 30 m still reaches the hull and cabins.
+const LD_WATER_BOAT_SSR_MAX_METERS = 30;
 
 export interface LDWaterHullPlacement {
   waterline: number;
@@ -696,12 +700,21 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$tick](time: number, delta: number) {
       super[$tick](time, delta);
 
-      if (this.waterSystem == null || delta <= 0) {
+      if (this.waterSystem == null) {
         return;
       }
 
+      // setCameraView snaps the target outside the damper. A zero-delta frame
+      // still has to drop the hull with that new parent, or the lake and the
+      // reflection keep the previous pivot.
       applyLDWaterCameraRange(this.getWaterCamera());
-      this.holdWaterline();
+      const waterlineMoved = this.holdWaterline();
+      if (delta <= 0) {
+        if (waterlineMoved) {
+          this[$needsRender]();
+        }
+        return;
+      }
       this.updateWaterDrive(delta / 1000);
       const skyTexture = this.waterSky?.getEnvironmentTexture?.() ?? null;
       if (skyTexture != null && this[$scene].environment !== skyTexture) {
@@ -859,30 +872,31 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
      * on the lake when that pivot changes. Glass was reparented beside the
      * hull, so it has to take the same step.
      */
-    private holdWaterline() {
+    private holdWaterline(): boolean {
       if (this.waterBuoyancy) {
-        return;
+        return false;
       }
       const model = this[$scene].model;
       if (model == null) {
-        return;
+        return false;
       }
       const parentY = model.parent?.position.y ?? 0;
       const next = ldWaterHeightOffset(this.waterWaterline, parentY);
       const delta = next - model.position.y;
       if (delta === 0) {
-        return;
+        return false;
       }
       model.position.y = next;
       const parent = model.parent;
       if (parent == null) {
-        return;
+        return true;
       }
       for (const child of parent.children) {
         if (child.userData?.ldWaterGlass === true) {
           child.position.y += delta;
         }
       }
+      return true;
     }
 
     /** SSAO's composer is WebGL. Drop it before the WebGPU renderer replaces the canvas. */
@@ -960,6 +974,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (isLDWaterHeroPreset(this.waterPreset)) {
           (this as any).toneMapping = 'aces';
           (this as any).exposure = LD_WATER_HERO_EXPOSURE;
+          this.waterSystem.ssr.maxDistance = LD_WATER_BOAT_SSR_MAX_METERS;
         }
         if (this.waterSkyImage != null) {
           const skyTexture = await loadLDWaterSkyTexture(

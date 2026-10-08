@@ -11398,11 +11398,11 @@ class ua {
     });
     for (const q of this.maskObjects) {
       q.traverse((j) => {
-        j.visible = !0;
+        this.originalVisibility.get(j) !== !1 && (j.visible = !0);
       });
       let n = q.parent;
       for (; n && n !== this.scene; )
-        n.visible = !0, n = n.parent;
+        this.originalVisibility.get(n) !== !1 && (n.visible = !0), n = n.parent;
     }
     const t = A.getRenderTarget(), p = this.scene.background;
     this.scene.overrideMaterial = this.maskMaterial, this.scene.background = new S.Color(0, 0, 0), A.setRenderTarget(this.renderTarget), A.clear(), A.render(this.scene, this.camera), A.setRenderTarget(t), this.scene.overrideMaterial = null, this.scene.background = p;
@@ -12343,7 +12343,16 @@ class Ia {
    */
   async renderPass(A) {
     const t = this._refs, p = t.underwater.enabled, q = t.ssr.enabled;
-    t.rpm.renderCapturePass(A, p), t.rpm.getMaskObjectCount() > 0 && t.rpm.renderMaskPass(A), t.rpm.renderWaterDepthPass(A), t.sunShafts.renderPass(A), q ? (t.rpm.renderSSRGBufferPass(A), t.rpm.renderSSRPass(A)) : t.rpm.clearSSRPassIfNeeded(A);
+    const previousToneMapping = A.toneMapping;
+    const previousColorSpace = A.outputColorSpace;
+    A.toneMapping = 0;
+    A.outputColorSpace = "srgb-linear";
+    try {
+      t.rpm.renderCapturePass(A, p), t.rpm.getMaskObjectCount() > 0 && t.rpm.renderMaskPass(A), t.rpm.renderWaterDepthPass(A), t.sunShafts.renderPass(A), q ? (t.rpm.renderSSRGBufferPass(A), t.rpm.renderSSRPass(A)) : t.rpm.clearSSRPassIfNeeded(A);
+    } finally {
+      A.toneMapping = previousToneMapping;
+      A.outputColorSpace = previousColorSpace;
+    }
   }
   dispose() {
   }
