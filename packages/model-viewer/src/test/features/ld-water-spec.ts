@@ -18,6 +18,7 @@ import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {
   alignLDWaterCaptureViewport,
+  resolveLDWaterCaptureViewport,
   applyWaterSunPolicy,
   directionFromSkySun,
   ldWaterCaptureMatchesBeautyFragment,
@@ -154,6 +155,81 @@ suite('LDWater', () => {
     } finally {
       renderer.scaleStep = 0;
       expect(renderer.scaleFactor).to.equal(1);
+    }
+  });
+
+  test('a full-buffer canvas viewport still samples the beauty slice', () => {
+    // Page-environment PMREM calls setSize and resets the canvas viewport
+    // to the drawing buffer. The old hook copied that viewport, so scales
+    // 0.79 and 0.5 captured the full buffer and the lake showed a second
+    // boat. The saved beauty rect has to win. Dilation is not a boat count.
+    const bufferW = 1071;
+    const bufferH = 759;
+    const frames = [
+      {viewW: 846, viewH: 600},
+      {viewW: 536, viewH: 380},
+    ];
+    const clobbered = {x: 0, y: 0, z: bufferW, w: bufferH};
+
+    for (const frame of frames) {
+      const beauty = {x: 0, y: 0, z: frame.viewW, w: frame.viewH};
+      const viewport = {
+        x: 0,
+        y: 0,
+        z: bufferW,
+        w: bufferH,
+        set(x: number, y: number, width: number, height: number) {
+          this.x = x;
+          this.y = y;
+          this.z = width;
+          this.w = height;
+        },
+      };
+      const resolved = resolveLDWaterCaptureViewport(beauty, clobbered);
+      const changed = alignLDWaterCaptureViewport(
+        {width: bufferW, height: bufferH, viewport},
+        resolved,
+        bufferW,
+        bufferH
+      );
+      expect(changed).to.equal(true);
+      expect(viewport.z).to.equal(frame.viewW);
+      expect(viewport.w).to.equal(frame.viewH);
+      expect(ldWaterCaptureMatchesBeautyFragment(
+        frame.viewW * 0.5,
+        frame.viewH * 0.5,
+        bufferW,
+        bufferH,
+        viewport
+      )).to.equal(true);
+
+      const stale = {
+        x: 0,
+        y: 0,
+        z: bufferW,
+        w: bufferH,
+        set(x: number, y: number, width: number, height: number) {
+          this.x = x;
+          this.y = y;
+          this.z = width;
+          this.w = height;
+        },
+      };
+      const ignored = alignLDWaterCaptureViewport(
+        {width: bufferW, height: bufferH, viewport: stale},
+        resolveLDWaterCaptureViewport(null, clobbered),
+        bufferW,
+        bufferH
+      );
+      expect(ignored).to.equal(false);
+      expect(stale.z).to.equal(bufferW);
+      expect(ldWaterCaptureMatchesBeautyFragment(
+        frame.viewW * 0.5,
+        frame.viewH * 0.5,
+        bufferW,
+        bufferH,
+        stale
+      )).to.equal(false);
     }
   });
 

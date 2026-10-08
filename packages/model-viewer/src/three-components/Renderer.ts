@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Event, EventDispatcher, NeutralToneMapping, Vector2, WebGLRenderer} from 'three';
+import {Event, EventDispatcher, NeutralToneMapping, Vector2, Vector4, WebGLRenderer} from 'three';
 import {WebGPURenderer} from 'three/webgpu';
 
 import {$updateEnvironment} from '../features/environment.js';
@@ -530,6 +530,28 @@ export class Renderer extends
     return {width, height};
   }
 
+  /**
+   * Dynamic resolution draws into a top-left slice of the drawing buffer.
+   * Water captures run inside preRender, before the beauty setViewport, and
+   * a PMREM setSize during those captures resets the canvas viewport to the
+   * full buffer. getViewport() is that canvas viewport, so the capture hook
+   * reads ldBeautyViewport instead. Published again immediately before the
+   * beauty draw so a clobber during the tick cannot zoom the real boat.
+   */
+  private publishBeautyViewport(scene: ModelScene) {
+    const {width, height} = this.sceneSize(scene);
+    const viewportY = (this.threeRenderer as any).isWebGPURenderer === true ?
+      0 :
+      Math.ceil(this.height * this.dpr) - height;
+    const renderer = this.threeRenderer as any;
+    const box: Vector4 = renderer.ldBeautyViewport instanceof Vector4 ?
+      renderer.ldBeautyViewport :
+      new Vector4();
+    box.set(0, viewportY, width, height);
+    renderer.ldBeautyViewport = box;
+    this.threeRenderer.setViewport(0, viewportY, width, height);
+  }
+
   private copyPixels(scene: ModelScene, width: number, height: number) {
     const context2D = scene.context;
     if (context2D == null) {
@@ -612,6 +634,9 @@ export class Renderer extends
         continue;
       }
 
+      // Water captures sample this rect during preRender. Scale changes
+      // inside shouldRender() are published again before the beauty draw.
+      this.publishBeautyViewport(scene);
       this.preRender(scene, t, delta);
 
       if (!this.shouldRender(scene)) {
@@ -652,12 +677,9 @@ export class Renderer extends
       // Need to set the render target in order to prevent
       // clearing the depth from a different buffer
       this.threeRenderer.setRenderTarget(null);
-      // WebGL's viewport origin is the bottom. WebGPU's is the top, so the
-      // same offset paints a scaled frame below the overflow window.
-      const viewportY = (this.threeRenderer as any).isWebGPURenderer === true ?
-        0 :
-        Math.ceil(this.height * this.dpr) - height;
-      this.threeRenderer.setViewport(0, viewportY, width, height);
+      // Republish after the tick. Shadow and PMREM passes reset the canvas
+      // viewport to the drawing buffer; the beauty boat has to stay in the slice.
+      this.publishBeautyViewport(scene);
       // SSAO and the other post composers are WebGL. A WebGPU frame (LD Water)
       // has to go through the WebGPU renderer or the canvas stays blank.
       if (scene.effectRenderer != null &&

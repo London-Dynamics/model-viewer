@@ -707,6 +707,29 @@ export const applyLDWaterCameraRange = (
 };
 
 /**
+ * The canvas viewport is not the beauty slice. `getViewport()` reads the
+ * canvas target, and a PMREM `setSize` during the page-environment path
+ * resets that target to the full drawing buffer. The ghost hull is that
+ * full-buffer capture sampled with `fragCoord / bufferSize`. Prefer the
+ * beauty rect model-viewer published on the renderer. A missing rect falls
+ * back to the canvas viewport, which is the full buffer after the reset
+ * and is the second boat.
+ */
+export const resolveLDWaterCaptureViewport = (
+  savedBeauty: {x: number, y: number, z: number, w: number}|null|undefined,
+  canvasViewport: {x: number, y: number, z: number, w: number},
+): {x: number, y: number, z: number, w: number} => {
+  if (
+    savedBeauty != null &&
+    savedBeauty.z > 0 &&
+    savedBeauty.w > 0
+  ) {
+    return savedBeauty;
+  }
+  return canvasViewport;
+};
+
+/**
  * Beauty draws into model-viewer's dynamic-resolution viewport, which can
  * be a top-left slice of the drawing buffer. The water captures allocate
  * full-buffer targets, and the surface shader addresses them with
@@ -871,6 +894,9 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     }|null = null;
     private pageSkyRequest = 0;
     private pageSkyFailed: Texture|null = null;
+    private pageBackground: unknown = null;
+    private pageBackgroundNode: unknown = null;
+    private pageBackdropReady = false;
 
     get waterActive(): boolean {
       return this.waterSystem != null;
@@ -934,6 +960,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       applyLDWaterCameraRange(this.getWaterCamera());
       this.holdWaterLighting();
       this.bindWaterReflections();
+      this.holdPageBackdrop();
       const waterlineMoved = this.holdWaterline();
       if (delta <= 0) {
         if (waterlineMoved) {
@@ -964,6 +991,9 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.pageSkyTexture = null;
       this.pageSkyFailed = null;
       this.pageSkyRequest++;
+      this.pageBackground = null;
+      this.pageBackgroundNode = null;
+      this.pageBackdropReady = false;
 
       this[$scene].clearWater();
       this[$needsRender]();
@@ -1036,16 +1066,25 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       const buffer = new Vector2();
       renderer.render = (scene: unknown, camera: unknown) => {
         const target = renderer.getRenderTarget?.() ?? null;
+        // Captures null the background themselves. The beauty pass is the
+        // screen draw (no target); put the page skybox back first.
+        if (target == null) {
+          this.holdPageBackdrop();
+        }
         if (
           target != null &&
-          renderer.getViewport != null &&
           renderer.getDrawingBufferSize != null
         ) {
-          renderer.getViewport(viewport);
+          const canvasViewport = renderer.getViewport != null ?
+            renderer.getViewport(viewport) :
+            viewport.set(0, 0, 0, 0);
           renderer.getDrawingBufferSize(buffer);
           alignLDWaterCaptureViewport(
             target,
-            viewport,
+            resolveLDWaterCaptureViewport(
+              (renderer as {ldBeautyViewport?: Vector4|null}).ldBeautyViewport,
+              canvasViewport
+            ),
             buffer.x,
             buffer.y
           );
@@ -1163,6 +1202,44 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       const disk = host.activeSky?.sunEnabledUniform;
       if (disk != null) {
         disk.value = mode === 'sun' && host.sky === true ? 1 : 0;
+      }
+    }
+
+    /**
+     * The page skybox stays when `sky` is off. Remember it before the water
+     * system builds, then put it back every tick. A vendor sky dome is the
+     * sky mixin's backdrop and is left alone.
+     */
+    private rememberPageBackdrop() {
+      if (this.pageBackdropReady) {
+        return;
+      }
+      const scene = this[$scene] as {background: unknown, backgroundNode?: unknown};
+      this.pageBackground = scene.background ?? null;
+      this.pageBackgroundNode = scene.backgroundNode ?? null;
+      this.pageBackdropReady = true;
+      const renderer = this[$renderer].threeRenderer as {setClearAlpha?: (alpha: number) => void};
+      if (this.pageBackground == null && renderer.setClearAlpha != null) {
+        renderer.setClearAlpha(0);
+      }
+    }
+
+    private holdPageBackdrop() {
+      if (this.skyHost().sky === true || !this.pageBackdropReady) {
+        return;
+      }
+      const scene = this[$scene] as {
+        background: unknown,
+        backgroundNode?: unknown,
+        environmentNode?: unknown,
+      };
+      scene.background = this.pageBackground;
+      scene.backgroundNode = this.pageBackgroundNode;
+      // setSky installs a PMREM node after the page environment is restored.
+      // WebGPU lights from that node instead of the page environment. Leave
+      // the node in place only for the sky-environment opt-in.
+      if (this.skyHost().skyEnvironment !== true) {
+        scene.environmentNode = null;
       }
     }
 
@@ -1374,6 +1451,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.releaseWebGLPostStack();
         const renderer = this.getWaterRenderer();
         this.installWaterViewportSync(renderer);
+        this.rememberPageBackdrop();
         const camera = this.getWaterCamera();
         applyLDWaterCameraRange(camera);
         const waterModule =
