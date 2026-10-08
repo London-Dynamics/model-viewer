@@ -38,6 +38,7 @@ import { LDPathTracerMixin } from './features/ld-path-tracer.js';
 import { LDRenderPipelineMixin } from './features/ld-render-pipeline.js';
 import { LDSelectionMixin } from './features/ld-selection/index.js';
 import { LDServerAIDenoiseMixin } from './features/ld-server-ai-denoise.js';
+import { LDSkyMixin } from './features/ld-sky.js';
 import { LDSkyboxRotationMixin } from './features/ld-skybox-rotation.js';
 import { LDWaterMixin } from './features/ld-water.js';
 
@@ -64,7 +65,8 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
                       LDImageCaptureMixin(
                         LDCameraMixin(
                           LDSkyboxRotationMixin(
-                            LDWaterMixin(
+                            LDSkyMixin(
+                              LDWaterMixin(
                               LDEnvironmentMixin(
                                 LDAnimationMixin(
                                   LDDebugMixin(
@@ -85,6 +87,7 @@ const ModelViewerElementImpl = LDMaterialManagerMixin(
                                     )
                                   )
                                 )
+                              )
                               )
                             )
                           )

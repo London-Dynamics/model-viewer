@@ -18,7 +18,10 @@ import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {
   alignLDWaterCaptureViewport,
+  applyWaterSunPolicy,
+  directionFromSkySun,
   ldWaterCaptureMatchesBeautyFragment,
+  parseSkySunTime,
   applyLDWaterCameraRange,
   applyLDWaterClipPlaneDistance,
   applyLDWaterElevation,
@@ -186,7 +189,6 @@ suite('LDWater', () => {
     expect(waterElement.waterView).to.equal(undefined);
     expect(waterElement.waterElevation).to.equal(0);
     expect(waterElement.waterSeed).to.equal(null);
-    expect(waterElement.waterSkyImage).to.equal(null);
     expect(waterElement.waterBuoyancy).to.equal(false);
     expect(waterElement.waterDrive).to.equal(false);
   });
@@ -292,7 +294,6 @@ suite('LDWater', () => {
     };
 
     const preset = createLDWaterPreset('ld-boat', waterModule as any) as any;
-    const sun = sunFromSkyProClock(16, 45);
 
     expect(preset).not.to.equal(dusk);
     expect(preset.clipmap.baseSize).to.equal(200);
@@ -300,10 +301,17 @@ suite('LDWater', () => {
     expect(preset.waves.fft.windSpeed).to.equal(6.7);
     expect(preset.waves.fft.peakWavelength).to.equal(22);
     expect(preset.waves.fft.cascades.maxScale).to.equal(1024);
-    expect(preset.sky.sun.diskEnabled).to.equal(true);
-    expect(preset.sky.sun.elevation).to.be.closeTo(sun.elevation, 0.001);
-    expect(preset.sky.sun.azimuth).to.be.closeTo(sun.azimuth, 0.001);
+    expect(preset.sky.sun.diskEnabled).to.equal(false);
+    expect(preset.sky.sun.elevation).to.equal(6);
+    expect(preset.sky.sun.azimuth).to.equal(44);
+    const sun = sunFromSkyProClock(16, 45);
     expect(sun.elevation).to.be.closeTo(13.138, 0.01);
+    const aim = directionFromSkySun(sun.elevation, sun.azimuth);
+    expect(aim.y).to.be.closeTo(Math.sin(sun.elevation * Math.PI / 180), 1e-6);
+    expect(aim.length()).to.be.closeTo(1, 1e-6);
+    expect(parseSkySunTime('16:45')).to.deep.equal({hours: 16, minutes: 45});
+    expect(parseSkySunTime('')).to.equal(null);
+    expect(parseSkySunTime('24:00')).to.equal(null);
     expect(dusk.waves.fft.peakWavelength).to.equal(140);
   });
 
@@ -348,7 +356,8 @@ suite('LDWater', () => {
     expect(real.waves.fft.windSpeed).to.equal(hero.waves.fft.windSpeed);
     expect(real.waves.fft.peakWavelength).to.equal(22);
     expect(real.waves.fft.amplitude).to.equal(1);
-    expect(real.sky.sun.elevation).to.equal(hero.sky.sun.elevation);
+    expect(real.sky.sun.elevation).to.equal(6);
+    expect(hero.sky.sun.elevation).to.equal(6);
   });
 
   test('drops a hull by its waterline and keeps authored yaw', () => {
@@ -401,7 +410,7 @@ suite('LDWater', () => {
     expect(boat.position.y).to.equal(0);
   });
 
-  test('attaches a v3.5.1 sky through setSky', () => {
+  test('builds a vendor sky without taking over the environment', () => {
     const texture = {};
     const renderer = {};
     const skyCalls: any[] = [];
@@ -434,7 +443,10 @@ suite('LDWater', () => {
     expect(skyCalls[0].params.equirect).to.equal(texture);
     expect(skyCalls[0].params.reflectionBlurDistance).to.equal(undefined);
     expect(skyCalls[0].params.sunDirection).to.equal(waterSystem.lighting.sun.direction);
-    expect(skyCalls[0].params.brightness).to.equal(1.18);
+    expect(skyCalls[0].params.brightness).to.equal(1);
+    expect(skyCalls[0].params.sunOverlay.enabled).to.equal(false);
+    expect(setSkyCalls).to.have.lengthOf(0);
+    waterSystem.setSky(sky);
     expect(setSkyCalls).to.deep.equal([sky]);
     expect(skyCalls[0].params).to.not.equal(undefined);
     expect((sky as any).getMeshes()[0].parent).to.equal(null);
@@ -514,6 +526,54 @@ suite('LDWater', () => {
     expect(scene.waterRoot.children).to.have.lengthOf(0);
     expect(water.parent).to.equal(null);
     expect(disposed).to.equal(true);
+  });
+
+  test('keeps the page grade when water turns on', async () => {
+    (element as any).toneMapping = 'neutral';
+    element.exposure = 1;
+    const originalRequestBackend = element[$renderer].requestBackend;
+    element[$renderer].requestBackend = async () => {
+      throw new Error('WebGPU is not available in this browser.');
+    };
+    const waterError = waitForEvent<CustomEvent>(element, 'water-error');
+
+    try {
+      (element as any).water = true;
+      await element.updateComplete;
+      await rafPasses();
+      await waterError;
+
+      expect((element as any).toneMapping).to.equal('neutral');
+      expect(element.exposure).to.equal(1);
+    } finally {
+      element[$renderer].requestBackend = originalRequestBackend;
+    }
+  });
+
+  test('hides the vendor sun unless sky-sun-time is set', () => {
+    const direction = new Vector3(0, 1, 0);
+    const lighting = {
+      sun: {direction: {value: direction}, intensity: {value: 2}},
+      sunLight: {visible: true, intensity: 2, castShadow: true},
+    };
+    const off = applyWaterSunPolicy(lighting, null, 2, null);
+    expect(off).to.equal('off');
+    expect(lighting.sun.intensity.value).to.equal(0);
+    expect(lighting.sunLight.visible).to.equal(false);
+    expect(lighting.sunLight.castShadow).to.equal(false);
+
+    const key = applyWaterSunPolicy(
+      lighting, null, 2, {intensity: 3, direction: new Vector3(0, 0, 1)});
+    expect(key).to.equal('key');
+    expect(lighting.sunLight.visible).to.equal(false);
+    expect(lighting.sun.intensity.value).to.equal(3);
+    expect(lighting.sun.direction.value.z).to.be.closeTo(1, 1e-6);
+
+    const sun = applyWaterSunPolicy(lighting, '16:45', 2, null);
+    expect(sun).to.equal('sun');
+    expect(lighting.sunLight.visible).to.equal(true);
+    expect(lighting.sun.intensity.value).to.equal(2);
+    expect(lighting.sunLight.castShadow).to.equal(false);
   });
 
   test('does not let water presets mutate environment attributes', async () => {

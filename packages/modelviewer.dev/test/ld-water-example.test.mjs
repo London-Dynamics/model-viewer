@@ -58,8 +58,8 @@ assert.match(
     'water demo should default to the LD boat-scale water preset');
 assert.match(
     html,
-    /water-sky-image="\/threejs-water-pro\/demo\/public\/hdris\/industrial_sunset_02_puresky_4k\.jpg"/,
-    'water demo should opt into a water sky source matching the upstream demo');
+    /sky-image="\/threejs-water-pro\/demo\/public\/hdris\/industrial_sunset_02_puresky_4k\.jpg"/,
+    'water demo should opt into a vendor sky image matching the upstream demo');
 assert.match(
     html,
     /\swater-buoyancy(?:\s|>)/,

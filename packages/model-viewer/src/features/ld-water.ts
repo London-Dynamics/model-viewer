@@ -59,8 +59,6 @@ const WATER_QUALITIES = new Set<string>(['low', 'medium', 'high', 'ultra', 'max'
 const LD_WATER_HERO_WIND_SPEED = 6.7;
 const LD_WATER_HERO_PEAK_WAVELENGTH = 22;
 const LD_WATER_HERO_FFT_AMPLITUDE = 1;
-const LD_WATER_HERO_SKY_BRIGHTNESS = 1.18;
-const LD_WATER_HERO_EXPOSURE = 1.06;
 const LD_WATER_REFERENCE_CLIP_PLANE_DISTANCE_METERS = 20;
 const LD_WATER_REFERENCE_SCALE = 15;
 const LD_WATER_MIN_CAMERA_FAR_METERS = 50000;
@@ -81,21 +79,27 @@ const clonePreset = (preset: WaterPreset): WaterPreset =>
   JSON.parse(JSON.stringify(preset)) as WaterPreset;
 
 export declare interface LDWaterInterface {
+  /**
+   * Adds the lake. Off by default. Does not change tone mapping, exposure,
+   * the environment image, the skybox, or scene lights. `shadow-intensity`
+   * is ignored while water is on: soft shadows are a WebGL pass, and this
+   * mixin does not port them.
+   */
   water: boolean;
   waterPreset: WaterPresetName;
   waterQuality: WaterQualityLevel;
   waterElevation: number;
   waterSeed: number|null;
-  waterSkyImage: string|null;
   /**
    * Metres. The model root is placed at y = 0 when this is 0, and at
    * `-water-waterline` otherwise, so that height meets the lake.
    */
   waterWaterline: number;
-  waterSkySize: number|null;
   waterBuoyancy: boolean;
   /** WASD helm. Off until the host sets `water-drive`. */
   waterDrive: boolean;
+  /** True after the lake has been created. */
+  readonly waterActive: boolean;
 }
 
 type WaterModule = typeof import('threejs-water-pro');
@@ -111,7 +115,7 @@ const isLDWaterHeroPreset = (presetName: WaterPresetName) =>
 
 /**
  * Sun angles for Sky Pro's default clock. Latitude 45 peaks the sun at
- * 45° at noon. Azimuth 0 is +Z and 90 is +X. 16:45 is the hero sun.
+ * 45° at noon. Azimuth 0 is +Z and 90 is +X.
  */
 export const sunFromSkyProClock = (
   hours: number,
@@ -132,19 +136,96 @@ export const sunFromSkyProClock = (
   return {time, elevation, azimuth};
 };
 
+/** `sky-sun-time` as `H:MM` or `HH:MM`. Empty and out-of-range values are off. */
+export const parseSkySunTime = (
+  value: string|null|undefined
+): {hours: number, minutes: number}|null => {
+  if (value == null) {
+    return null;
+  }
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (match == null) {
+    return null;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) {
+    return null;
+  }
+  return {hours, minutes};
+};
+
+/**
+ * Direction toward the sun. Azimuth 0 is +Z and 90 is +X, matching
+ * `sunFromSkyProClock`.
+ */
+export const directionFromSkySun = (
+  elevationDeg: number,
+  azimuthDeg: number,
+  target = new Vector3()
+): Vector3 => {
+  const elevation = elevationDeg * Math.PI / 180;
+  const azimuth = azimuthDeg * Math.PI / 180;
+  const cosElevation = Math.cos(elevation);
+  return target.set(
+    Math.sin(azimuth) * cosElevation,
+    Math.sin(elevation),
+    Math.cos(azimuth) * cosElevation
+  ).normalize();
+};
+
+export interface WaterSunLighting {
+  sun: {
+    direction: {value: Vector3},
+    intensity: {value: number},
+  };
+  sunLight: {
+    visible: boolean,
+    intensity: number,
+    castShadow: boolean,
+  };
+}
+
+/**
+ * The vendor sun light is invisible unless `sky-sun-time` is set, so the
+ * lake does not add a light of its own. A page key light still feeds the
+ * water highlight through the sun uniform.
+ */
+export const applyWaterSunPolicy = (
+  lighting: WaterSunLighting,
+  sunTime: string|null|undefined,
+  authoredIntensity: number,
+  keyLight: {intensity: number, direction: Vector3}|null
+): 'sun'|'key'|'off' => {
+  lighting.sunLight.castShadow = false;
+  const parsed = parseSkySunTime(sunTime);
+  if (parsed != null) {
+    const angles = sunFromSkyProClock(parsed.hours, parsed.minutes);
+    directionFromSkySun(
+      angles.elevation, angles.azimuth, lighting.sun.direction.value);
+    lighting.sun.intensity.value = authoredIntensity;
+    lighting.sunLight.visible = true;
+    return 'sun';
+  }
+
+  lighting.sunLight.visible = false;
+  if (keyLight != null && keyLight.intensity > 0) {
+    lighting.sun.direction.value.copy(keyLight.direction);
+    lighting.sun.intensity.value = keyLight.intensity;
+    return 'key';
+  }
+
+  lighting.sun.intensity.value = 0;
+  lighting.sunLight.intensity = 0;
+  return 'off';
+};
+
 const applyLDWaterHeroLook = (preset: WaterPreset): WaterPreset => {
   const waves = (preset as any).waves?.fft;
   if (waves != null) {
     waves.amplitude = LD_WATER_HERO_FFT_AMPLITUDE;
     waves.windSpeed = LD_WATER_HERO_WIND_SPEED;
     waves.peakWavelength = LD_WATER_HERO_PEAK_WAVELENGTH;
-  }
-  const sun = sunFromSkyProClock(16, 45);
-  const skySun = (preset as any).sky?.sun;
-  if (skySun != null) {
-    skySun.elevation = sun.elevation;
-    skySun.azimuth = sun.azimuth;
-    skySun.diskEnabled = true;
   }
   return preset;
 };
@@ -531,25 +612,66 @@ export const attachLDWaterSky = (
   renderer: unknown,
   waterModule: Pick<WaterModule, 'Sky'>,
   texture: Texture,
-  reflectionRoughness = 0.15
+  reflectionRoughness = 0.15,
+  brightness = 1
 ) => {
   const Sky = (waterModule as any).Sky;
-  const sky = new Sky(renderer, {
+  // Construction does not call setSky. setSky also replaces
+  // scene.environment, which is the separate `sky-environment` opt-in.
+  return new Sky(renderer, {
     equirect: texture,
-    brightness: LD_WATER_HERO_SKY_BRIGHTNESS,
+    brightness,
     reflectionRoughness,
     sunDirection: waterSystem.lighting.sun.direction,
     sunOverlay: {
-      enabled: true,
+      enabled: false,
       color: '#fdc4c9',
       emissiveColor: '#fff8e0',
       emissiveIntensity: 5,
       radius: 0.02,
     },
   });
-  // setSky adds the backdrop and owns scene.environment.
-  waterSystem.setSky(sky);
-  return sky;
+};
+
+/**
+ * Water reflections with no vendor sky. No dome meshes, so the page skybox
+ * stays. The caller restores `scene.environment` after `setSky`, because
+ * `setSky` would otherwise take over image-based lighting.
+ */
+export const createPageEnvironmentSky = async (texture: Texture) => {
+  const webgpu = await import('three/webgpu') as any;
+  const {
+    Fn,
+    clamp,
+    equirectUV,
+    normalize,
+    pmremTexture,
+    texture: textureNode,
+    vec3,
+  } = webgpu.TSL;
+  return {
+    followCamera() {},
+    dispose() {},
+    getMeshes(): Object3D[] {
+      return [];
+    },
+    getEnvironmentTexture(): Texture {
+      return texture;
+    },
+    createFogSampler() {
+      return Fn(([dir]: [any]) => {
+        const sample = textureNode(texture).sample(equirectUV(normalize(dir)));
+        return vec3(sample.x, sample.y, sample.z);
+      });
+    },
+    createReflectionSampler() {
+      return Fn(([dir, extraRoughness]: [any, any]) => {
+        const roughness = clamp(extraRoughness, 0, 1);
+        const sample = pmremTexture(texture, normalize(dir), roughness);
+        return vec3(sample.x, sample.y, sample.z);
+      });
+    },
+  };
 };
 
 /**
@@ -691,6 +813,18 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
   ModelViewerElement: T
 ): Constructor<LDWaterInterface> & T => {
   class LDWaterModelViewerElement extends ModelViewerElement {
+    /**
+     * Adds the lake. Off by default.
+     *
+     * Does not change tone mapping, exposure, the environment image, the
+     * skybox, or scene lights. Reflections follow the page environment. A
+     * visible directional light on the page, when there is one, drives the
+     * water highlight. Vendor sky and sun are the `sky` mixin, not water
+     * attributes.
+     *
+     * `shadow-intensity` is ignored while water is on. Soft shadows are a
+     * WebGL pass, and this mixin does not port them or raise an error.
+     */
     @property({type: Boolean, attribute: 'water'})
     water = false;
 
@@ -712,15 +846,8 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({type: Number, attribute: 'water-waterline'})
     waterWaterline = 0;
 
-    /** Downsample the sky equirect to this width. Null keeps the file. */
-    @property({type: Number, attribute: 'water-sky-size'})
-    waterSkySize: number|null = null;
-
     @property({type: Number, attribute: 'water-seed'})
     waterSeed: number|null = null;
-
-    @property({type: String, attribute: 'water-sky-image'})
-    waterSkyImage: string|null = null;
 
     @property({type: Boolean, attribute: 'water-buoyancy'})
     waterBuoyancy = false;
@@ -733,14 +860,21 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     private waterLoadId = 0;
     private waterBuoyancyId: number|null = null;
     private waterMaskObject: Object3D|null = null;
-    private waterSky: {
-      dispose(): void,
-      getMeshes(): Object3D[],
-      getEnvironmentTexture?(): Texture|null,
-    }|null = null;
     private waterPlacement: LDWaterHullPlacement|null = null;
     private waterDriveController: LDWaterDrive|null = null;
     private waterViewportRestore: (() => void)|null = null;
+    private waterAuthoredSunIntensity = 0;
+    private pageEnvironment: Texture|null = null;
+    private pageSkyTexture: Texture|null = null;
+    private pageSkyProvider: {
+      getEnvironmentTexture(): Texture,
+    }|null = null;
+    private pageSkyRequest = 0;
+    private pageSkyFailed: Texture|null = null;
+
+    get waterActive(): boolean {
+      return this.waterSystem != null;
+    }
 
     connectedCallback() {
       super.connectedCallback();
@@ -769,8 +903,6 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
          changedProperties.has('waterElevation') ||
          changedProperties.has('waterWaterline') ||
          changedProperties.has('waterSeed') ||
-         changedProperties.has('waterSkyImage') ||
-         changedProperties.has('waterSkySize') ||
          changedProperties.has('waterBuoyancy'))
       ) {
         this.updateWater();
@@ -800,6 +932,8 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       // still has to drop the hull with that new parent, or the lake and the
       // reflection keep the previous pivot.
       applyLDWaterCameraRange(this.getWaterCamera());
+      this.holdWaterLighting();
+      this.bindWaterReflections();
       const waterlineMoved = this.holdWaterline();
       if (delta <= 0) {
         if (waterlineMoved) {
@@ -808,10 +942,6 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
       this.updateWaterDrive(delta / 1000);
-      const skyTexture = this.waterSky?.getEnvironmentTexture?.() ?? null;
-      if (skyTexture != null && this[$scene].environment !== skyTexture) {
-        this.waterSystem.setSky(this.waterSky as any);
-      }
       this.waterSystem.update(delta / 1000).catch((error) => {
         this.dispatchWaterError(error);
       });
@@ -826,11 +956,14 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.releaseWaterViewportSync();
 
       if (this.waterSystem != null) {
-        this.clearWaterSky();
         this.unregisterWaterBuoyancy();
         this.waterSystem.dispose();
         this.waterSystem = null;
       }
+      this.pageSkyProvider = null;
+      this.pageSkyTexture = null;
+      this.pageSkyFailed = null;
+      this.pageSkyRequest++;
 
       this[$scene].clearWater();
       this[$needsRender]();
@@ -961,16 +1094,161 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.waterPlacement = null;
     }
 
-    private clearWaterSky() {
-      if (this.waterSky == null) {
+    private skyHost(): {
+      sky?: boolean,
+      skyEnvironment?: boolean,
+      skySunTime?: string|null,
+      activeSky?: {
+        getEnvironmentTexture?: () => Texture|null,
+        sunEnabledUniform?: {value: number},
+      }|null,
+    } {
+      return this as unknown as {
+        sky?: boolean,
+        skyEnvironment?: boolean,
+        skySunTime?: string|null,
+        activeSky?: {
+          getEnvironmentTexture?: () => Texture|null,
+          sunEnabledUniform?: {value: number},
+        }|null,
+      };
+    }
+
+    private pageKeyLight(ownLight: object|null): {intensity: number, direction: Vector3}|null {
+      let found: {intensity: number, direction: Vector3}|null = null;
+      this[$scene].traverse((object) => {
+        const light = object as {
+          isDirectionalLight?: boolean,
+          visible?: boolean,
+          name?: string,
+          intensity?: number,
+          position: Vector3,
+          target?: {getWorldPosition: (out: Vector3) => Vector3},
+          getWorldPosition: (out: Vector3) => Vector3,
+        };
+        if (light.isDirectionalLight !== true || light === ownLight || light.visible === false) {
+          return;
+        }
+        if (light.name === 'LDSkySun') {
+          return;
+        }
+        const intensity = light.intensity ?? 0;
+        if (found != null && intensity <= found.intensity) {
+          return;
+        }
+        const origin = light.getWorldPosition(new Vector3());
+        const target = light.target?.getWorldPosition(new Vector3()) ?? new Vector3();
+        const direction = origin.sub(target);
+        if (direction.lengthSq() < 1e-8) {
+          return;
+        }
+        found = {intensity, direction: direction.normalize()};
+      });
+      return found;
+    }
+
+    /** Vendor sun stays off unless `sky-sun-time` is set. */
+    private holdWaterLighting() {
+      const water = this.waterSystem;
+      if (water == null) {
+        return;
+      }
+      const host = this.skyHost();
+      const mode = applyWaterSunPolicy(
+        water.lighting,
+        host.skySunTime,
+        this.waterAuthoredSunIntensity,
+        this.pageKeyLight(water.lighting.sunLight)
+      );
+      const disk = host.activeSky?.sunEnabledUniform;
+      if (disk != null) {
+        disk.value = mode === 'sun' && host.sky === true ? 1 : 0;
+      }
+    }
+
+    private restorePageEnvironment() {
+      const scene = this[$scene] as {environment: Texture|null, environmentNode?: unknown};
+      if (this.pageEnvironment == null) {
+        return;
+      }
+      scene.environment = this.pageEnvironment;
+      scene.environmentNode = null;
+    }
+
+    private rememberPageEnvironment(vendorTexture: Texture|null) {
+      const environment = this[$scene].environment;
+      if (environment == null || environment === vendorTexture) {
+        return;
+      }
+      if (environment === this.pageSkyTexture) {
+        return;
+      }
+      this.pageEnvironment = environment;
+    }
+
+    /**
+     * Vendor `sky` feeds water reflections. Without it, reflections sample
+     * the page environment. `sky-environment` is the only path that replaces
+     * that environment map.
+     */
+    private bindWaterReflections() {
+      const water = this.waterSystem;
+      if (water == null) {
+        return;
+      }
+      const host = this.skyHost();
+      const vendor = host.sky === true ? host.activeSky ?? null : null;
+      const vendorTexture = vendor?.getEnvironmentTexture?.() ?? null;
+      this.rememberPageEnvironment(vendorTexture);
+      const current = water.rendering.getCurrentSky();
+
+      if (vendor != null) {
+        if (current !== vendor) {
+          water.setSky(vendor as any);
+        }
+        if (host.skyEnvironment !== true) {
+          this.restorePageEnvironment();
+        }
         return;
       }
 
-      for (const mesh of this.waterSky.getMeshes()) {
-        mesh.removeFromParent();
+      const pageTexture = this.pageEnvironment ?? this[$scene].environment;
+      if (pageTexture == null) {
+        return;
       }
-      this.waterSky.dispose();
-      this.waterSky = null;
+      if (this.pageSkyFailed === pageTexture) {
+        return;
+      }
+      if (this.pageSkyTexture !== pageTexture || this.pageSkyProvider == null) {
+        this.ensurePageSky(pageTexture);
+        return;
+      }
+      if (current !== this.pageSkyProvider) {
+        water.setSky(this.pageSkyProvider as any);
+      }
+      this.restorePageEnvironment();
+    }
+
+    private ensurePageSky(texture: Texture) {
+      const request = ++this.pageSkyRequest;
+      this.pageSkyTexture = texture;
+      createPageEnvironmentSky(texture).then((provider) => {
+        if (request !== this.pageSkyRequest || this.waterSystem == null) {
+          return;
+        }
+        if (this.pageSkyTexture !== texture) {
+          return;
+        }
+        this.pageSkyProvider = provider;
+        this.pageEnvironment = this.pageEnvironment ?? texture;
+        this.waterSystem.setSky(provider as any);
+        this.restorePageEnvironment();
+      }).catch((error) => {
+        if (request === this.pageSkyRequest) {
+          this.pageSkyFailed = texture;
+        }
+        this.dispatchWaterError(error);
+      });
     }
 
     private syncWaterDrive() {
@@ -1119,27 +1397,15 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         const preset = createLDWaterPreset(this.waterPreset, waterModule);
         this.waterSystem.loadPreset(preset);
         applyLDWaterElevation(this.waterSystem, this.waterElevation);
+        this.waterSystem.fog.enabled = false;
+        const presetSun = (preset as {sky?: {sun?: {intensity?: number}}}).sky?.sun;
+        this.waterAuthoredSunIntensity =
+          typeof presetSun?.intensity === 'number' ? presetSun.intensity : 0;
+        this.holdWaterLighting();
         if (isLDWaterHeroPreset(this.waterPreset)) {
-          (this as any).toneMapping = 'aces';
-          (this as any).exposure = LD_WATER_HERO_EXPOSURE;
           this.waterSystem.ssr.maxDistance = LD_WATER_BOAT_SSR_MAX_METERS;
         }
-        if (this.waterSkyImage != null) {
-          const skyTexture = await loadLDWaterSkyTexture(
-            this.waterSkyImage,
-            this.waterSkySize
-          );
-          if (loadId !== this.waterLoadId || !this.water) {
-            return;
-          }
-          this.waterSky = attachLDWaterSky(
-            this.waterSystem,
-            renderer,
-            waterModule,
-            skyTexture,
-            (preset as any).sky?.reflectionRoughness ?? 0.15
-          );
-        }
+        this.bindWaterReflections();
         this.registerWaterBuoyancy();
         this[$scene].setWater(this.createWaterMarker());
         this.dispatchEvent(new CustomEvent('water-load'));

@@ -78,8 +78,12 @@
               water-quality="high"
               water-waterline="0.5"
               water-drive
-              water-sky-size="512"
-              water-sky-image="/threejs-water-pro/demo/public/hdris/kloofendal_43d_clear_puresky_4k.jpg"
+              sky
+              sky-image="/threejs-water-pro/demo/public/hdris/kloofendal_43d_clear_puresky_4k.jpg"
+              sky-size="512"
+              sky-brightness="1.18"
+              sky-sun-time="16:45"
+              sky-environment
               alt="Boat on the LD water mixin"
             >
             </model-viewer>
@@ -105,7 +109,9 @@
                 <h4>
                   This page is the model-viewer water mixin. The preset is
                   ld-boat: dusk colour, wind 6.7 m/s, peak wavelength 22 m,
-                  quality high, and the 16:45 sun. The mixin does not know
+                  quality high. The 16:45 sun, the vendor sky, and
+                  sky-environment are separate attributes on this page.
+                  The mixin does not know
                   which hull is loaded. boat=ri245 sets water-waterline 0.50
                   and orientation yaw −90°. boat=aquila sets water-waterline
                   0.95. boat=demo sets water-waterline 0. All three use
