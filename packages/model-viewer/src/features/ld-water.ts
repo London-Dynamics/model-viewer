@@ -162,8 +162,15 @@ export const createLDWaterPreset = (
   return preset;
 };
 
-export const ldWaterHeightOffset = (waterline: number): number =>
-  waterline === 0 ? 0 : -waterline;
+/**
+ * Local Y for the model root. A waterline of 0 leaves the root at y = 0.
+ * Any other value puts that glTF height on world y = 0, cancelling a
+ * camera-target pivot that has already shifted the model's parent.
+ */
+export const ldWaterHeightOffset = (
+  waterline: number,
+  parentY = 0
+): number => waterline === 0 ? 0 : -waterline - parentY;
 
 const isWindowMaterial = (material: {transmission?: number, name?: string}|null) => {
   if (material == null) {
@@ -230,14 +237,16 @@ export const separateLDWaterWindows = (model: Object3D): number => {
 };
 
 /**
- * Drop the model so `waterline` (a glTF height in metres) meets the lake.
- * Authored XZ and yaw stay put. A waterline of 0 leaves the root at y = 0.
+ * Drop the model so `waterline` (a glTF height in metres) meets the lake
+ * at world y = 0. Authored XZ and yaw stay put. A waterline of 0 leaves
+ * the root at local y = 0.
  */
 export const placeLDWaterHull = (
   model: Object3D,
   waterline: number
 ): LDWaterHullPlacement => {
-  const heightOffset = ldWaterHeightOffset(waterline);
+  const parentY = model.parent?.position.y ?? 0;
+  const heightOffset = ldWaterHeightOffset(waterline, parentY);
   model.position.y = heightOffset;
   model.updateMatrixWorld(true);
   const size = new Box3().setFromObject(model).getSize(new Vector3());
@@ -600,9 +609,10 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     waterElevation = 0;
 
     /**
-     * glTF height, in metres, that should meet the lake. The model root
-     * is placed at y = 0 when this is 0, and at `-water-waterline`
-     * otherwise.
+     * glTF height, in metres, that should meet the lake at world y = 0.
+     * The model root stays at local y = 0 when this is 0. Any other value
+     * shifts the root by `-water-waterline`, and also cancels a
+     * camera-target pivot already applied to the model's parent.
      */
     @property({type: Number, attribute: 'water-waterline'})
     waterWaterline = 0;
@@ -691,6 +701,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       applyLDWaterCameraRange(this.getWaterCamera());
+      this.holdWaterline();
       this.updateWaterDrive(delta / 1000);
       const skyTexture = this.waterSky?.getEnvironmentTexture?.() ?? null;
       if (skyTexture != null && this[$scene].environment !== skyTexture) {
@@ -843,6 +854,48 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.waterDriveController.update(dtSeconds, sync);
     }
 
+    /**
+     * camera-target moves the model's parent. Keep the chosen glTF height
+     * on the lake when that pivot changes. Glass was reparented beside the
+     * hull, so it has to take the same step.
+     */
+    private holdWaterline() {
+      if (this.waterBuoyancy) {
+        return;
+      }
+      const model = this[$scene].model;
+      if (model == null) {
+        return;
+      }
+      const parentY = model.parent?.position.y ?? 0;
+      const next = ldWaterHeightOffset(this.waterWaterline, parentY);
+      const delta = next - model.position.y;
+      if (delta === 0) {
+        return;
+      }
+      model.position.y = next;
+      const parent = model.parent;
+      if (parent == null) {
+        return;
+      }
+      for (const child of parent.children) {
+        if (child.userData?.ldWaterGlass === true) {
+          child.position.y += delta;
+        }
+      }
+    }
+
+    /** SSAO's composer is WebGL. Drop it before the WebGPU renderer replaces the canvas. */
+    private releaseWebGLPostStack() {
+      if (this[$scene].effectRenderer == null) {
+        return;
+      }
+      const host = this as unknown as {unregisterEffectComposer?: () => void};
+      if (typeof host.unregisterEffectComposer === 'function') {
+        host.unregisterEffectComposer();
+      }
+    }
+
     private registerWaterBuoyancy() {
       const model = this[$scene].model;
       if (this.waterSystem == null || model == null) {
@@ -877,7 +930,9 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.validateWaterSettings();
         this[$scene].setShadowMode('none');
         this.prepareWaterModel();
+        this.releaseWebGLPostStack();
         await this[$renderer].requestBackend('webgpu');
+        this.releaseWebGLPostStack();
         const renderer = this.getWaterRenderer();
         const camera = this.getWaterCamera();
         applyLDWaterCameraRange(camera);

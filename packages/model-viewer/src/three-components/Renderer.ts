@@ -224,6 +224,22 @@ export class Renderer extends
     }
   }
 
+  /**
+   * Where the visible canvas lives. The WebGL canvas may not be mounted yet
+   * when water asks for WebGPU before the first frame.
+   */
+  private canvasHost(): HTMLElement|null {
+    if (this.canvas3D.parentElement != null) {
+      return this.canvas3D.parentElement;
+    }
+    for (const scene of this.scenes) {
+      if (scene.canvas.parentElement != null) {
+        return scene.canvas.parentElement;
+      }
+    }
+    return null;
+  }
+
   private async enableWebGPU(options: RendererOptions): Promise<void> {
     if ((navigator as any).gpu == null) {
       throw new Error(
@@ -233,10 +249,31 @@ export class Renderer extends
 
     const oldRenderer = this.threeRenderer;
     const oldCanvas = this.canvas3D;
-    const parent = oldCanvas.parentElement;
+    const parent = this.canvasHost();
     const nextCanvas = document.createElement('canvas');
     nextCanvas.id = oldCanvas.id;
     nextCanvas.className = oldCanvas.className;
+
+    // Chrome destroys a WebGPU device if the canvas is reparented after
+    // getContext('webgpu'). Mount the canvas, then create the context.
+    oldRenderer?.setAnimationLoop(null);
+    if (parent != null) {
+      parent.appendChild(nextCanvas);
+    }
+    this.canvas3D = nextCanvas;
+
+    oldCanvas.removeEventListener('webglcontextlost', this.onWebGLContextLost);
+    oldCanvas.removeEventListener(
+        'webglcontextrestored', this.onWebGLContextRestored);
+    if (oldRenderer != null) {
+      oldRenderer.dispose();
+    }
+    if (oldCanvas.isConnected) {
+      oldCanvas.remove();
+    }
+    for (const scene of this.scenes) {
+      scene.effectRenderer = null;
+    }
 
     const nextRenderer = new WebGPURenderer({
       canvas: nextCanvas,
@@ -253,21 +290,8 @@ export class Renderer extends
     };
     nextRenderer.toneMapping = NeutralToneMapping;
 
-    oldCanvas.removeEventListener('webglcontextlost', this.onWebGLContextLost);
-    oldCanvas.removeEventListener(
-        'webglcontextrestored', this.onWebGLContextRestored);
-    if (oldRenderer != null) {
-      oldRenderer.setAnimationLoop(null);
-      oldRenderer.dispose();
-    }
-
-    this.canvas3D = nextCanvas;
     this.threeRenderer = nextRenderer as unknown as WebGLRenderer;
     this.backend = 'webgpu';
-    if (parent != null) {
-      parent.appendChild(nextCanvas);
-      oldCanvas.remove();
-    }
 
     this.canvas3D.addEventListener(
         'webglcontextlost', this.onWebGLContextLost);
@@ -287,7 +311,9 @@ export class Renderer extends
     this.updateRendererSize();
     for (const scene of this.scenes) {
       scene.forceRescale();
-      scene.effectRenderer?.setRenderer(this.threeRenderer);
+      // A WebGL composer must not bind this canvas. getContext('webgl')
+      // would replace the WebGPU context and destroy the device.
+      scene.effectRenderer = null;
       (scene.element as any)[$updateEnvironment]();
       scene.queueRender();
     }
@@ -357,7 +383,8 @@ export class Renderer extends
       const newlyMultiple =
           multipleScenesVisible && !this.multipleScenesVisible;
       const disappearing = !canvas3DScene.element.modelIsVisible;
-      if (newlyMultiple || disappearing) {
+      if ((newlyMultiple || disappearing) &&
+          (this.threeRenderer as any).isWebGPURenderer !== true) {
         const {width, height} = this.sceneSize(canvas3DScene);
         this.copyPixels(canvas3DScene, width, height);
         canvas3D.parentElement!.removeChild(canvas3D);
@@ -418,7 +445,9 @@ export class Renderer extends
       canvas.width = width;
       canvas.height = height;
       scene.forceRescale();
-      scene.effectRenderer?.setSize(width, height);
+      if ((this.threeRenderer as any).isWebGPURenderer !== true) {
+        scene.effectRenderer?.setSize(width, height);
+      }
     }
   }
 
@@ -629,7 +658,10 @@ export class Renderer extends
         0 :
         Math.ceil(this.height * this.dpr) - height;
       this.threeRenderer.setViewport(0, viewportY, width, height);
-      if (scene.effectRenderer != null) {
+      // SSAO and the other post composers are WebGL. A WebGPU frame (LD Water)
+      // has to go through the WebGPU renderer or the canvas stays blank.
+      if (scene.effectRenderer != null &&
+          (this.threeRenderer as any).isWebGPURenderer !== true) {
         scene.effectRenderer.render(delta);
       } else {
         this.threeRenderer.autoClear =

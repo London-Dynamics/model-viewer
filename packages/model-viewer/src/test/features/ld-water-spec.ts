@@ -255,6 +255,13 @@ suite('LDWater', () => {
     expect(calls[0].options.useBoundingBox).to.equal(false);
     expect(calls[0].options.heightOffset).to.equal(-0.5);
     expect(ldWaterHeightOffset(0)).to.equal(0);
+    expect(ldWaterHeightOffset(0, -0.3)).to.equal(0);
+    root.position.y = -0.3;
+    const shifted = placeLDWaterHull(boat, 0.95);
+    expect(shifted.heightOffset).to.be.closeTo(-0.65, 1e-6);
+    expect(boat.position.y).to.be.closeTo(-0.65, 1e-6);
+    expect(root.position.y + boat.position.y + 0.95).to.be.closeTo(0, 1e-6);
+    root.position.y = 0;
     expect(calls[0].options.rotationInfluence).to.equal(0.35);
     expect(calls[0].options.rotationOffset.y).to.be.closeTo(-Math.PI / 2, 1e-6);
     expect(calls[0].options.sampleLength).to.be.closeTo(4 * 0.85, 0.05);

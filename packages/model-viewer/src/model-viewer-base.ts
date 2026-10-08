@@ -480,6 +480,13 @@ export default class ModelViewerElementBase extends ReactiveElement {
    * @param effectComposer An EffectComposer from `pmndrs/postprocessing`
    */
   registerEffectComposer(effectComposer: EffectComposerInterface) {
+    const renderer = this[$renderer].threeRenderer as {isWebGPURenderer?: boolean};
+    if (renderer?.isWebGPURenderer === true) {
+      // SSAO stays a WebGL composer. Binding it to the WebGPU canvas
+      // destroys the device water is rendering with.
+      this[$scene].effectRenderer = null;
+      return;
+    }
     effectComposer.setRenderer(this[$renderer].threeRenderer);
     effectComposer.setMainCamera(this[$scene].getCamera());
     effectComposer.setMainScene(this[$scene]);
