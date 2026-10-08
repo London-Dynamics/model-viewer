@@ -975,6 +975,10 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
           (this as any).toneMapping = 'aces';
           (this as any).exposure = LD_WATER_HERO_EXPOSURE;
           this.waterSystem.ssr.maxDistance = LD_WATER_BOAT_SSR_MAX_METERS;
+          // Dusk refraction strength 0.1 shifts the scene-capture sample onto
+          // the hull and paints that upright view onto the water. Strength 0
+          // samples the fragment's own pixel, so the lake stays and the copy goes.
+          this.waterSystem.fresnel.refractionStrength = 0;
         }
         if (this.waterSkyImage != null) {
           const skyTexture = await loadLDWaterSkyTexture(
