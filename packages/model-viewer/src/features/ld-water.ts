@@ -14,7 +14,9 @@ import {
   PerspectiveCamera,
   RepeatWrapping,
   Texture,
+  Vector2,
   Vector3,
+  Vector4,
 } from 'three';
 import {RGBELoader} from 'three/addons/loaders/RGBELoader.js';
 import {UltraHDRLoader} from 'three/addons/loaders/UltraHDRLoader.js';
@@ -582,6 +584,57 @@ export const applyLDWaterCameraRange = (
   camera.updateProjectionMatrix();
 };
 
+/**
+ * Beauty draws into model-viewer's dynamic-resolution viewport, which can
+ * be a top-left slice of the drawing buffer. The water captures allocate
+ * full-buffer targets, and the surface shader addresses them with
+ * `fragCoord / bufferSize`. A full-buffer viewport puts the hull at a
+ * different texel than the beauty fragment, so the lake shows a second,
+ * larger boat shifted down-right. Copy the beauty viewport onto each
+ * full-buffer target. Quarter-resolution passes keep their own viewport.
+ */
+export const alignLDWaterCaptureViewport = (
+  target: {
+    width: number,
+    height: number,
+    viewport: {
+      x: number,
+      y: number,
+      z: number,
+      w: number,
+      set: (x: number, y: number, width: number, height: number) => void,
+    },
+  }|null,
+  canvasViewport: {x: number, y: number, z: number, w: number},
+  drawingBufferWidth: number,
+  drawingBufferHeight: number,
+): boolean => {
+  if (target == null) {
+    return false;
+  }
+  const viewW = canvasViewport.z;
+  const viewH = canvasViewport.w;
+  if (!(viewW > 0) || !(viewH > 0)) {
+    return false;
+  }
+  if (
+    target.width < drawingBufferWidth - 2 ||
+    target.height < drawingBufferHeight - 2
+  ) {
+    return false;
+  }
+  if (
+    target.viewport.x === canvasViewport.x &&
+    target.viewport.y === canvasViewport.y &&
+    target.viewport.z === viewW &&
+    target.viewport.w === viewH
+  ) {
+    return false;
+  }
+  target.viewport.set(canvasViewport.x, canvasViewport.y, viewW, viewH);
+  return true;
+};
+
 export const ensureLDWaterModelNormals = (model: Object3D) => {
   model.traverse((object) => {
     const mesh = object as Mesh;
@@ -649,6 +702,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     }|null = null;
     private waterPlacement: LDWaterHullPlacement|null = null;
     private waterDriveController: LDWaterDrive|null = null;
+    private waterViewportRestore: (() => void)|null = null;
 
     connectedCallback() {
       super.connectedCallback();
@@ -731,6 +785,8 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         this.waterLoadId++;
       }
 
+      this.releaseWaterViewportSync();
+
       if (this.waterSystem != null) {
         this.clearWaterSky();
         this.unregisterWaterBuoyancy();
@@ -775,6 +831,59 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         throw new Error('LD Water requires a perspective camera.');
       }
       return camera;
+    }
+
+    private releaseWaterViewportSync() {
+      this.waterViewportRestore?.();
+      this.waterViewportRestore = null;
+    }
+
+    /**
+     * Scene capture renders through the same WebGPURenderer.render the beauty
+     * pass uses. Full-buffer targets would otherwise ignore the viewport
+     * model-viewer set for dynamic resolution.
+     */
+    private installWaterViewportSync(renderer: {
+      render: (scene: unknown, camera: unknown) => unknown,
+      getRenderTarget?: () => {
+        width: number,
+        height: number,
+        viewport: {
+          x: number,
+          y: number,
+          z: number,
+          w: number,
+          set: (x: number, y: number, width: number, height: number) => void,
+        },
+      }|null,
+      getViewport?: (target: Vector4) => Vector4,
+      getDrawingBufferSize?: (target: Vector2) => Vector2,
+    }) {
+      this.releaseWaterViewportSync();
+      const original = renderer.render.bind(renderer);
+      const viewport = new Vector4();
+      const buffer = new Vector2();
+      renderer.render = (scene: unknown, camera: unknown) => {
+        const target = renderer.getRenderTarget?.() ?? null;
+        if (
+          target != null &&
+          renderer.getViewport != null &&
+          renderer.getDrawingBufferSize != null
+        ) {
+          renderer.getViewport(viewport);
+          renderer.getDrawingBufferSize(buffer);
+          alignLDWaterCaptureViewport(
+            target,
+            viewport,
+            buffer.x,
+            buffer.y
+          );
+        }
+        return original(scene, camera);
+      };
+      this.waterViewportRestore = () => {
+        renderer.render = original;
+      };
     }
 
     private createWaterMarker() {
@@ -948,6 +1057,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         await this[$renderer].requestBackend('webgpu');
         this.releaseWebGLPostStack();
         const renderer = this.getWaterRenderer();
+        this.installWaterViewportSync(renderer);
         const camera = this.getWaterCamera();
         applyLDWaterCameraRange(camera);
         const waterModule =
@@ -975,10 +1085,6 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
           (this as any).toneMapping = 'aces';
           (this as any).exposure = LD_WATER_HERO_EXPOSURE;
           this.waterSystem.ssr.maxDistance = LD_WATER_BOAT_SSR_MAX_METERS;
-          // Dusk refraction strength 0.1 shifts the scene-capture sample onto
-          // the hull and paints that upright view onto the water. Strength 0
-          // samples the fragment's own pixel, so the lake stays and the copy goes.
-          this.waterSystem.fresnel.refractionStrength = 0;
         }
         if (this.waterSkyImage != null) {
           const skyTexture = await loadLDWaterSkyTexture(

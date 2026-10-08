@@ -17,6 +17,7 @@ import {
 import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {
+  alignLDWaterCaptureViewport,
   applyLDWaterCameraRange,
   applyLDWaterClipPlaneDistance,
   applyLDWaterElevation,
@@ -42,6 +43,52 @@ suite('LDWater', () => {
 
   teardown(() => {
     element.remove();
+  });
+
+  test('full-buffer captures use the beauty viewport', () => {
+    const viewport = {
+      x: 0,
+      y: 0,
+      z: 1071,
+      w: 759,
+      set(x: number, y: number, width: number, height: number) {
+        this.x = x;
+        this.y = y;
+        this.z = width;
+        this.w = height;
+      },
+    };
+    const changed = alignLDWaterCaptureViewport(
+      {width: 1071, height: 759, viewport},
+      {x: 0, y: 0, z: 846, w: 600},
+      1071,
+      759
+    );
+
+    expect(changed).to.equal(true);
+    expect(viewport.z).to.equal(846);
+    expect(viewport.w).to.equal(600);
+  });
+
+  test('scaled water passes keep their viewport', () => {
+    const viewport = {
+      x: 0,
+      y: 0,
+      z: 267,
+      w: 189,
+      set() {
+        throw new Error('scaled pass viewport should stay put');
+      },
+    };
+    const changed = alignLDWaterCaptureViewport(
+      {width: 267, height: 189, viewport},
+      {x: 0, y: 0, z: 846, w: 600},
+      1071,
+      759
+    );
+
+    expect(changed).to.equal(false);
+    expect(viewport.z).to.equal(267);
   });
 
   test('has disabled water defaults', () => {
