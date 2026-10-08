@@ -7,6 +7,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   BoxGeometry,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
@@ -18,7 +19,12 @@ import {$renderer, $scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {
   alignLDWaterCaptureViewport,
+  clampLDWaterViewport,
+  holdLDWaterFrameAfterPreset,
+  patchLDWaterSsrProjection,
+  planLDWaterFrame,
   presentLDWaterBeautyFrame,
+  projectLDWaterSsrUv,
   resolveLDWaterCaptureViewport,
   applyWaterSunPolicy,
   directionFromSkySun,
@@ -253,6 +259,144 @@ suite('LDWater', () => {
     }
     presentLDWaterBeautyFrame(canvas, 0, elementH, 0.79);
     expect(canvas.style.width).to.equal(`${Math.ceil(elementW / 1)}px`);
+  });
+
+  test('preset load after a PMREM viewport reset keeps the scale 0.5 slice', () => {
+    // PMREM setSize snaps the canvas CSS and viewport to the full element
+    // buffer. loadPreset runs after that snap. The drawing buffer stays the
+    // full element — shrinking it drops the WebGPU device — and the preset
+    // path has to put CSS back to element/scale and the viewport back to
+    // the slice. The SSR march still maps NDC 0 to UV 0.5 of that buffer,
+    // which is the second hull, unless the projection moves it onto the slice.
+    const elementW = 1069;
+    const elementH = 759;
+    const scale = 0.5;
+    const frame = planLDWaterFrame(elementW, elementH, scale, 1);
+    expect(frame).to.not.equal(null);
+    const sliceW = frame!.sliceWidth;
+    const sliceH = frame!.sliceHeight;
+    expect(sliceW).to.equal(Math.ceil(elementW * scale));
+    expect(sliceH).to.equal(Math.ceil(elementH * scale));
+    expect(frame!.cssWidth).to.equal(Math.ceil(elementW / scale));
+    expect(frame!.cssHeight).to.equal(Math.ceil(elementH / scale));
+
+    const canvas = {style: {width: `${elementW}px`, height: `${elementH}px`}};
+    const reset = clampLDWaterViewport(
+      {x: 0, y: 0, z: elementW, w: elementH},
+      sliceW,
+      sliceH,
+    );
+    const held = holdLDWaterFrameAfterPreset(
+      canvas, elementW, elementH, scale, 1,
+    );
+    expect(reset).to.deep.equal({x: 0, y: 0, z: sliceW, w: sliceH});
+    expect(clampLDWaterViewport(
+      {x: 0, y: NaN, z: NaN, w: NaN},
+      sliceW,
+      sliceH,
+    )).to.deep.equal(reset);
+    expect(held).to.deep.equal(reset);
+    expect(canvas.style.width).to.equal(`${Math.ceil(elementW / scale)}px`);
+    expect(canvas.style.height).to.equal(`${Math.ceil(elementH / scale)}px`);
+
+    const capture = {
+      width: elementW,
+      height: elementH,
+      viewport: {
+        x: 0,
+        y: 0,
+        z: elementW,
+        w: elementH,
+        set(x: number, y: number, width: number, height: number) {
+          this.x = x;
+          this.y = y;
+          this.z = width;
+          this.w = height;
+        },
+      },
+    };
+    const changed = alignLDWaterCaptureViewport(
+      capture,
+      held,
+      elementW,
+      elementH,
+    );
+    expect(changed).to.equal(true);
+    expect(capture.viewport.z).to.equal(sliceW);
+    expect(capture.viewport.w).to.equal(sliceH);
+    const fragX = sliceW * 0.5;
+    const fragY = sliceH * 0.5;
+    expect(ldWaterCaptureMatchesBeautyFragment(
+      fragX,
+      fragY,
+      elementW,
+      elementH,
+      capture.viewport,
+    )).to.equal(true);
+
+    const unpatched = {x: 0.5, y: 0.5};
+    const patched = projectLDWaterSsrUv(0, 0, held, elementW, elementH);
+    expect(patched.x).to.be.closeTo((held.x + held.z * 0.5) / elementW, 1e-6);
+    expect(patched.y).to.be.closeTo((held.y + held.w * 0.5) / elementH, 1e-6);
+    expect(Math.abs(patched.x - unpatched.x)).to.be.greaterThan(0.2);
+    expect(Math.abs(patched.y - unpatched.y)).to.be.greaterThan(0.2);
+
+    const camera = new PerspectiveCamera(45, elementW / elementH, 0.1, 2000);
+    const projection = camera.projectionMatrix.clone();
+    const inverse = camera.projectionMatrixInverse.clone();
+    const before = projection.clone();
+    expect(patchLDWaterSsrProjection(
+      projection, inverse, held, elementW, elementH,
+    )).to.not.equal(null);
+    const roundTrip = new Matrix4().multiplyMatrices(projection, inverse);
+    roundTrip.elements.forEach((value, index) => {
+      expect(Math.abs(value - new Matrix4().elements[index])).to.be.lessThan(1e-5);
+    });
+    expect(projection.equals(before)).to.equal(false);
+
+    const quad = {
+      width: elementW,
+      height: elementH,
+      viewport: {
+        x: 0,
+        y: 0,
+        z: elementW,
+        w: elementH,
+        set() {
+          throw new Error('SSR quad viewport should stay on the full buffer');
+        },
+      },
+    };
+    expect(alignLDWaterCaptureViewport(
+      quad,
+      held,
+      elementW,
+      elementH,
+      true,
+    )).to.equal(false);
+    expect(quad.viewport.z).to.equal(elementW);
+    expect(quad.viewport.w).to.equal(elementH);
+
+    const full = holdLDWaterFrameAfterPreset(
+      canvas, elementW, elementH, 1, 1,
+    );
+    expect(full).to.deep.equal({x: 0, y: 0, z: elementW, w: elementH});
+    expect(canvas.style.width).to.equal(`${elementW}px`);
+    expect(canvas.style.height).to.equal(`${elementH}px`);
+    expect(clampLDWaterViewport(
+      {x: 0, y: 0, z: elementW, w: elementH},
+      full.z,
+      full.w,
+    )).to.deep.equal(full);
+    const identityUv = projectLDWaterSsrUv(0, 0, full, elementW, elementH);
+    expect(identityUv.x).to.be.closeTo(0.5, 1e-6);
+    expect(identityUv.y).to.be.closeTo(0.5, 1e-6);
+    const fullProjection = before.clone();
+    const fullInverse = camera.projectionMatrixInverse.clone();
+    expect(patchLDWaterSsrProjection(
+      fullProjection, fullInverse, full, elementW, elementH,
+    )).to.equal(null);
+    expect(fullProjection.equals(before)).to.equal(true);
   });
 
   test('scaled water passes keep their viewport', () => {

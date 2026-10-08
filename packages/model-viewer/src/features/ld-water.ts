@@ -10,6 +10,7 @@ import {
   EquirectangularReflectionMapping,
   Euler,
   LinearFilter,
+  Matrix4,
   Mesh,
   Object3D,
   PerspectiveCamera,
@@ -873,12 +874,90 @@ export const createPageEnvironmentSky = async (
 };
 
 /**
+ * Pixel size of the beauty slice, and the CSS size that stretches it across
+ * the element.
+ *
+ * The drawing buffer stays the full element. Shrinking it with `setSize`
+ * drops the WebGPU device. WebGL shows the slice by setting the canvas CSS
+ * to `element / scale` (`rescaleCanvas`). The same CSS size is what the
+ * water path has to put back after a preset load: PMREM `setSize` stamps
+ * the canvas style to the buffer size and leaves the slice in the corner.
+ */
+export const planLDWaterFrame = (
+  elementWidth: number,
+  elementHeight: number,
+  scale: number,
+  dpr = 1,
+): {sliceWidth: number, sliceHeight: number, cssWidth: number, cssHeight: number}|null => {
+  if (!(elementWidth > 0) || !(elementHeight > 0)) {
+    return null;
+  }
+  const safeScale = scale > 0 ? scale : 1;
+  const safeDpr = dpr > 0 ? dpr : 1;
+  return {
+    sliceWidth: Math.max(1, Math.ceil(elementWidth * safeScale * safeDpr)),
+    sliceHeight: Math.max(1, Math.ceil(elementHeight * safeScale * safeDpr)),
+    cssWidth: Math.ceil(elementWidth / safeScale),
+    cssHeight: Math.ceil(elementHeight / safeScale),
+  };
+};
+
+/**
+ * PMREM `setSize` / `setViewport` snaps the canvas back to the full element
+ * buffer. A preset load after that snap has to keep the scale's slice, or
+ * the next capture paints the offset hull.
+ */
+export const clampLDWaterViewport = (
+  requested: {x: number, y: number, z: number, w: number},
+  sliceWidth: number,
+  sliceHeight: number,
+): {x: number, y: number, z: number, w: number} => {
+  if (!(sliceWidth > 0) || !(sliceHeight > 0)) {
+    return {x: requested.x, y: requested.y, z: requested.z, w: requested.w};
+  }
+  // A non-finite viewport is the scale step forceRescale writes before the
+  // scene catches up. A viewport larger than the slice is PMREM setSize.
+  // Both have to come back to the slice or the next capture paints the ghost.
+  if (
+    !Number.isFinite(requested.x) ||
+    !Number.isFinite(requested.y) ||
+    !Number.isFinite(requested.z) ||
+    !Number.isFinite(requested.w) ||
+    requested.z > sliceWidth + 1 ||
+    requested.w > sliceHeight + 1
+  ) {
+    return {x: 0, y: 0, z: sliceWidth, w: sliceHeight};
+  }
+  return {x: requested.x, y: requested.y, z: requested.z, w: requested.w};
+};
+
+/**
+ * What a preset reload must leave behind after a PMREM viewport reset.
+ * CSS is `element / scale`, the same stretch WebGL uses. The viewport is
+ * the slice. The drawing buffer stays the full element.
+ */
+export const holdLDWaterFrameAfterPreset = (
+  canvas: {style: {width: string, height: string}}|null|undefined,
+  elementWidth: number,
+  elementHeight: number,
+  scale: number,
+  dpr: number,
+): {x: number, y: number, z: number, w: number} => {
+  const frame = planLDWaterFrame(elementWidth, elementHeight, scale, dpr);
+  if (frame == null) {
+    return {x: 0, y: 0, z: 0, w: 0};
+  }
+  presentLDWaterBeautyFrame(canvas, elementWidth, elementHeight, scale);
+  return {x: 0, y: 0, z: frame.sliceWidth, w: frame.sliceHeight};
+};
+
+/**
  * model-viewer draws dynamic resolution into a slice of the drawing buffer,
  * then sets the canvas CSS size to `element / scale` so overflow clips that
- * slice to the element. WebGL does this in `rescaleCanvas`. The WebGPU canvas
- * is a new element and does not inherit that size, so the slice sits in the
- * top-left and the page colour shows in the rest. Same formula as
- * `rescaleCanvas`.
+ * slice to the element. WebGL does this in `rescaleCanvas`. The WebGPU
+ * canvas is a new element, and a preset load's PMREM `setSize` stamps it
+ * back to the buffer size, so the water path reapplies this on every screen
+ * draw and after `loadPreset`.
  */
 export const presentLDWaterBeautyFrame = (
   canvas: {style: {width: string, height: string}}|null|undefined,
@@ -955,7 +1034,10 @@ export const resolveLDWaterCaptureViewport = (
  * `fragCoord / bufferSize`. A full-buffer viewport puts the hull at a
  * different texel than the beauty fragment, so the lake shows a second,
  * larger boat shifted down-right. Copy the beauty viewport onto each
- * full-buffer target. Quarter-resolution passes keep their own viewport.
+ * full-buffer scene target. Quarter-resolution passes keep their own
+ * viewport. A fullscreen quad (SSR) also keeps its viewport: its shader
+ * samples `uv()` across the viewport, and shrinking it after a PMREM
+ * reset reads the hull from the full-frame texel.
  */
 export const alignLDWaterCaptureViewport = (
   target: {
@@ -972,8 +1054,9 @@ export const alignLDWaterCaptureViewport = (
   canvasViewport: {x: number, y: number, z: number, w: number},
   drawingBufferWidth: number,
   drawingBufferHeight: number,
+  fullscreenQuad = false,
 ): boolean => {
-  if (target == null) {
+  if (target == null || fullscreenQuad) {
     return false;
   }
   const viewW = canvasViewport.z;
@@ -1035,6 +1118,97 @@ export const ldWaterCaptureMatchesBeautyFragment = (
   const fullFrameDiffers =
     Math.abs(fullX - sampleX) > 0.5 || Math.abs(fullY - sampleY) > 0.5;
   return inside && aligned && fullFrameDiffers;
+};
+
+/**
+ * Scale and offset that make the SSR march land on the beauty slice.
+ *
+ * `viewPosToScreenUV` maps NDC through `uv * 0.5 + 0.5` of the whole
+ * target. The scene capture stores the same view in the slice, so at
+ * scale 0.5 the view center is UV 0.25 and the unpatched march reads UV
+ * 0.5. That sample is the second hull. Returns null when the slice already
+ * covers the buffer (scale 1): the correction is the identity.
+ *
+ * Viewport y is the beauty rect's y (0 on WebGPU, the top of the buffer).
+ */
+export const ldWaterSsrUvScale = (
+  viewport: {x: number, y: number, z: number, w: number},
+  bufferWidth: number,
+  bufferHeight: number,
+): {sx: number, sy: number, tx: number, ty: number}|null => {
+  if (
+    !(bufferWidth > 0) || !(bufferHeight > 0) ||
+    !(viewport.z > 0) || !(viewport.w > 0)
+  ) {
+    return null;
+  }
+  const sx = viewport.z / bufferWidth;
+  const sy = viewport.w / bufferHeight;
+  const tx = 2 * (viewport.x / bufferWidth) - 1 + sx;
+  const ty = -2 * (viewport.y / bufferHeight) + 1 - sy;
+  if (
+    Math.abs(sx - 1) < 1e-4 &&
+    Math.abs(sy - 1) < 1e-4 &&
+    Math.abs(tx) < 1e-4 &&
+    Math.abs(ty) < 1e-4
+  ) {
+    return null;
+  }
+  return {sx, sy, tx, ty};
+};
+
+/**
+ * Where the SSR march looks up after the slice correction. Same remap as
+ * `viewPosToScreenUV`: `uv.x = ndc.x * 0.5 + 0.5`, `uv.y` flipped.
+ */
+export const projectLDWaterSsrUv = (
+  ndcX: number,
+  ndcY: number,
+  viewport: {x: number, y: number, z: number, w: number},
+  bufferWidth: number,
+  bufferHeight: number,
+): {x: number, y: number} => {
+  const scale = ldWaterSsrUvScale(viewport, bufferWidth, bufferHeight);
+  const ndcXp = scale == null ? ndcX : scale.sx * ndcX + scale.tx;
+  const ndcYp = scale == null ? ndcY : scale.sy * ndcY + scale.ty;
+  return {
+    x: ndcXp * 0.5 + 0.5,
+    y: 1 - (ndcYp * 0.5 + 0.5),
+  };
+};
+
+/**
+ * Premultiply the SSR projection by the slice correction and post-multiply
+ * its inverse. The pass copies both uniforms before the quad draws, so the
+ * hook mutates them for that draw only. Returns null when no change is
+ * needed. Leaves the matrices untouched in that case.
+ */
+export const patchLDWaterSsrProjection = (
+  projection: Matrix4,
+  inverse: Matrix4,
+  viewport: {x: number, y: number, z: number, w: number},
+  bufferWidth: number,
+  bufferHeight: number,
+): {sx: number, sy: number, tx: number, ty: number}|null => {
+  const scale = ldWaterSsrUvScale(viewport, bufferWidth, bufferHeight);
+  if (scale == null || !(scale.sx > 0) || !(scale.sy > 0)) {
+    return null;
+  }
+  const correction = new Matrix4().set(
+    scale.sx, 0, 0, scale.tx,
+    0, scale.sy, 0, scale.ty,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  );
+  const inverseCorrection = new Matrix4().set(
+    1 / scale.sx, 0, 0, -scale.tx / scale.sx,
+    0, 1 / scale.sy, 0, -scale.ty / scale.sy,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  );
+  projection.premultiply(correction);
+  inverse.multiply(inverseCorrection);
+  return scale;
 };
 
 export const ensureLDWaterModelNormals = (model: Object3D) => {
@@ -1183,6 +1357,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       // still has to drop the hull with that new parent, or the lake and the
       // reflection keep the previous pivot.
       applyLDWaterCameraRange(this.getWaterCamera());
+      this.reassertWaterPresentation();
       this.holdWaterLighting();
       this.bindWaterReflections();
       this.holdPageBackdrop();
@@ -1315,6 +1490,10 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         typeof presetSun?.intensity === 'number' ? presetSun.intensity : 0;
       this.holdWaterLighting();
       this.holdPageBackdrop();
+      // loadPreset's environment pass can setSize the canvas back to the
+      // full buffer after the beauty frame was presented. Put the stretch
+      // and the slice viewport back before the next capture.
+      this.reassertWaterPresentation();
       this[$needsRender]();
     }
 
@@ -1352,13 +1531,90 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.waterViewportRestore = null;
     }
 
+    private waterSliceFrame() {
+      return planLDWaterFrame(
+        this[$scene].width,
+        this[$scene].height,
+        this[$renderer].scaleFactor,
+        this[$renderer].dpr,
+      );
+    }
+
     /**
-     * Scene capture renders through the same WebGPURenderer.render the beauty
-     * pass uses. Full-buffer targets would otherwise ignore the viewport
-     * model-viewer set for dynamic resolution.
+     * CSS stretch and the canvas viewport, without touching the drawing
+     * buffer. `setSize` to the slice drops the WebGPU device, so a preset
+     * load only puts back what PMREM reset: the element/scale style and,
+     * when the canvas viewport has grown past the slice, that slice.
+     */
+    private reassertWaterPresentation() {
+      const scene = this[$scene];
+      const host = this[$renderer].threeRenderer as {
+        isWebGPURenderer?: boolean,
+        domElement?: {style: {width: string, height: string}},
+        ldBeautyViewport?: Vector4|null,
+        getRenderTarget?: () => unknown,
+        getViewport?: (target: Vector4) => Vector4,
+        setViewport?: (
+          x: number,
+          y: number,
+          width: number,
+          height: number,
+        ) => void,
+      };
+      if (host?.isWebGPURenderer !== true) {
+        return;
+      }
+      presentLDWaterBeautyFrame(
+        host.domElement,
+        scene.width,
+        scene.height,
+        this[$renderer].scaleFactor,
+      );
+      if (host.getRenderTarget?.() != null || host.getViewport == null || host.setViewport == null) {
+        return;
+      }
+      const frame = this.waterSliceFrame();
+      if (frame == null) {
+        return;
+      }
+      const current = host.getViewport(new Vector4());
+      const clamped = clampLDWaterViewport(
+        current,
+        frame.sliceWidth,
+        frame.sliceHeight,
+      );
+      const drifted =
+        clamped.x !== current.x ||
+        clamped.y !== current.y ||
+        clamped.z !== current.z ||
+        clamped.w !== current.w;
+      if (!drifted) {
+        return;
+      }
+      const savedY = host.ldBeautyViewport instanceof Vector4 ?
+        host.ldBeautyViewport.y :
+        0;
+      host.setViewport(0, savedY, frame.sliceWidth, frame.sliceHeight);
+      const box = host.ldBeautyViewport instanceof Vector4 ?
+        host.ldBeautyViewport :
+        new Vector4();
+      box.set(0, savedY, frame.sliceWidth, frame.sliceHeight);
+      host.ldBeautyViewport = box;
+    }
+
+    /**
+     * Scene captures share WebGPURenderer.render with the beauty pass.
+     * Full-buffer targets take the beauty slice so `screenUV` names the
+     * beauty fragment. The SSR quad does not: its `uv()` spans the
+     * viewport, and the march is corrected with the projection instead.
+     * `setSize` keeps the requested buffer and never writes the buffer
+     * size into the canvas style.
      */
     private installWaterViewportSync(renderer: {
       render: (scene: unknown, camera: unknown) => unknown,
+      setSize?: (width: number, height: number, updateStyle?: boolean) => void,
+      domElement?: {style: {width: string, height: string}},
+      ldBeautyViewport?: Vector4|null,
       getRenderTarget?: () => {
         width: number,
         height: number,
@@ -1375,26 +1631,29 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
     }) {
       this.releaseWaterViewportSync();
       const original = renderer.render.bind(renderer);
+      const originalSetSize = renderer.setSize?.bind(renderer);
       const viewport = new Vector4();
       const buffer = new Vector2();
+      if (originalSetSize != null) {
+        renderer.setSize = (width: number, height: number) => {
+          if (renderer.getDrawingBufferSize != null) {
+            renderer.getDrawingBufferSize(buffer);
+          }
+          if (buffer.x !== width || buffer.y !== height) {
+            originalSetSize(width, height, false);
+          }
+          this.reassertWaterPresentation();
+        };
+      }
       renderer.render = (scene: unknown, camera: unknown) => {
         const target = renderer.getRenderTarget?.() ?? null;
-        // Captures null the background themselves. The beauty pass is the
-        // screen draw (no target); put the page skybox back first.
+        const fullscreenQuad =
+          (scene as {isQuadMesh?: boolean}|null)?.isQuadMesh === true;
         if (target == null) {
           this.holdPageBackdrop();
-          // WebGL stretches the beauty slice by enlarging the canvas. The
-          // WebGPU canvas is replaced on the backend switch and misses that
-          // size whenever the scale step does not change. Reapply it on the
-          // screen draw, which is the pass the page shows.
-          const scene = this[$scene];
-          presentLDWaterBeautyFrame(
-            (renderer as {domElement?: HTMLCanvasElement}).domElement,
-            scene.width,
-            scene.height,
-            this[$renderer].scaleFactor,
-          );
+          this.reassertWaterPresentation();
         }
+        let restoreSsr: (() => void)|null = null;
         if (
           target != null &&
           renderer.getDrawingBufferSize != null
@@ -1403,20 +1662,88 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
             renderer.getViewport(viewport) :
             viewport.set(0, 0, 0, 0);
           renderer.getDrawingBufferSize(buffer);
-          alignLDWaterCaptureViewport(
-            target,
-            resolveLDWaterCaptureViewport(
-              (renderer as {ldBeautyViewport?: Vector4|null}).ldBeautyViewport,
-              canvasViewport
-            ),
-            buffer.x,
-            buffer.y
+          const frame = this.waterSliceFrame();
+          const resolved = resolveLDWaterCaptureViewport(
+            renderer.ldBeautyViewport,
+            canvasViewport
           );
+          const beauty = frame == null ?
+            resolved :
+            clampLDWaterViewport(resolved, frame.sliceWidth, frame.sliceHeight);
+          if (!fullscreenQuad) {
+            alignLDWaterCaptureViewport(
+              target,
+              beauty,
+              buffer.x,
+              buffer.y,
+              false,
+            );
+          } else {
+            const saved = renderer.ldBeautyViewport;
+            const box = saved instanceof Vector4 && saved.z > 0 && saved.w > 0 ?
+              saved :
+              beauty;
+            restoreSsr = this.patchWaterSsrProjection(box, buffer.x, buffer.y);
+          }
         }
-        return original(scene, camera);
+        try {
+          return original(scene, camera);
+        } finally {
+          restoreSsr?.();
+          if (target == null) {
+            presentLDWaterBeautyFrame(
+              renderer.domElement,
+              this[$scene].width,
+              this[$scene].height,
+              this[$renderer].scaleFactor,
+            );
+          }
+        }
       };
       this.waterViewportRestore = () => {
         renderer.render = original;
+        if (originalSetSize != null) {
+          renderer.setSize = originalSetSize;
+        }
+      };
+    }
+
+    /**
+     * The SSR pass copies the camera projection into its uniforms before
+     * this hook runs. Correct those copies for the beauty slice, then put
+     * the camera matrices back so the next pass sees the real camera.
+     */
+    private patchWaterSsrProjection(
+      viewport: {x: number, y: number, z: number, w: number},
+      bufferWidth: number,
+      bufferHeight: number,
+    ): (() => void)|null {
+      const pass = (this.waterSystem?.rendering as {
+        ssrPass?: {
+          projectionMatrixUniform?: {value?: Matrix4},
+          projectionMatrixInverseUniform?: {value?: Matrix4},
+        },
+      }|undefined)?.ssrPass;
+      const projection = pass?.projectionMatrixUniform?.value;
+      const inverse = pass?.projectionMatrixInverseUniform?.value;
+      if (!(projection instanceof Matrix4) || !(inverse instanceof Matrix4)) {
+        return null;
+      }
+      const beforeProjection = projection.clone();
+      const beforeInverse = inverse.clone();
+      const applied = patchLDWaterSsrProjection(
+        projection,
+        inverse,
+        viewport,
+        bufferWidth,
+        bufferHeight,
+      );
+      if (applied == null) {
+        return null;
+      }
+      return () => {
+        projection.copy(beforeProjection);
+        inverse.copy(beforeInverse);
       };
     }
 
@@ -1793,6 +2120,7 @@ export const LDWaterMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
 
         this.appliedWaterSeed = resolved.seed;
+        this.reassertWaterPresentation();
         this.waterSystem = await waterModule.WaterSystem.create(
           renderer,
           this[$scene] as any,
