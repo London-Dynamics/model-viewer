@@ -1,0 +1,268 @@
+<!--
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; Aquila live water</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="Aquila 45 Sport with the live Agora model-viewer attributes, plus optional mixin water"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/ld-examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      .ld-water-stage {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .ld-water-stage > model-viewer {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        width: 100%;
+        background: #d5dde3;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+      <div class="examples-container">
+        <div class="sample minimized-content">
+          <div id="aquila-live" class="ld-water-stage">
+            <!--
+              Attribute set copied from the live Agora 2.1.5 exterior preset
+              for Aquila 45 Sport. This page does not implement water, draft,
+              or lighting. water=1 only sets mixin attributes.
+            -->
+            <model-viewer
+              id="aquila-live-viewer"
+              src="https://assets.v2.londondynamics.com/019e4651-0c20-7aa0-a5f4-789b9df05fd0/puzzledefault/6f7c6_49cdcf76-f547-483d-b804-7fd1fc3b9f65.glb"
+              shadow-intensity="1"
+              shadow-softness="1"
+              ar
+              ar-scale="auto"
+              ar-modes="webxr scene-viewer quick-look"
+              quick-look-browsers="safari chrome"
+              ar-placement="floor"
+              interaction-prompt="none"
+              interaction-prompt-style="basic"
+              bounds="tight"
+              tone-mapping="neutral"
+              measurement-unit="mm"
+              measurement-precision="0"
+              camera-controls
+              orbit-sensitivity="1"
+              zoom-sensitivity="1"
+              pan-sensitivity="1"
+              touch-action="pan-y"
+              preserve-animation-state
+              environment-image="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/photo_studio_01_1k.hdr"
+              ambient-occlusion
+              ao-algorithm="ssao"
+              ao-radius="7.4"
+              ao-intensity="1"
+              ao-bias="0.01"
+              ao-thickness="50"
+              ao-samples="24"
+              ao-noise="magic-square"
+              ao-output="default"
+              ao-distance-exponent="0.5"
+              ao-distance-falloff="0.5"
+              ao-denoise-radius="4"
+              ao-denoise-rings="2"
+              ao-denoise-samples="16"
+              ao-denoise-luma-phi="10"
+              ao-denoise-depth-phi="2"
+              ao-denoise-normal-phi="3"
+              ao-denoise-radius-exponent="1"
+              camera-control-mode="orbit"
+              interaction-mode="rotate"
+              alt="Aquila 45 Sport, live configurator attributes"
+            >
+            </model-viewer>
+            <div
+              id="aquila-live-status"
+              class="ld-hud ld-hud-top-left ld-hud-passive ld-hud-narrow"
+            >
+              aquila: initializing
+            </div>
+            <div class="ld-panel">
+              <div class="ld-card">
+                <div class="ld-card-body">
+                  <h3 class="ld-panel-title">Aquila live</h3>
+                  <p class="ld-helper-text">
+                    Exterior camera from the published configurator.
+                    Water is a mixin attribute.
+                  </p>
+                  <div class="ld-sections">
+                    <section>
+                      <h4 class="ld-section-title">Mixin</h4>
+                      <div class="ld-axis-grid">
+                        <button id="aquila-live-water" type="button" class="ld-button">
+                          Water off
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="content">
+            <button
+              type="button"
+              class="content-toggle"
+              aria-expanded="false"
+              aria-controls="aquila-live-content"
+            >
+              Info &amp; code
+            </button>
+            <div id="aquila-live-content" class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Aquila 45 Sport, live attributes</h2>
+                <h4>
+                  This page sets the same attributes the live Agora exterior
+                  preset sets on model-viewer, then calls setCameraControlsMode,
+                  setCameraView, and toggleLights(false) after load. The hull
+                  is the published puzzle-default GLB. It is not authored with
+                  the waterline at y = 0. Add water with the button or
+                  <code>?water=1</code>. That only sets
+                  <code>water</code>, <code>water-preset="ld-boat"</code>, and
+                  <code>water-waterline="0.95"</code>.
+                  <code>?buoyancy=1</code> also sets <code>water-buoyancy</code>.
+                  Override the draft with <code>?waterline=</code> metres.
+                </h4>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="../../examples/built/docs-and-examples.js"></script>
+    <script type="module">
+      // Agora's after-load exterior camera. Strings are the live call.
+      const EXTERIOR_VIEW = {
+        cameraOrbit: '0.6503468063646036rad 1.2467046763680913rad 14.725606916893865m',
+        cameraTarget: '-0.02472647152503387m 0.3m -0.08125509455546603m',
+        fieldOfView: '45deg',
+      };
+      const WATERLINE = '0.95';
+
+      const params = new URLSearchParams(location.search);
+      const viewer = document.querySelector('#aquila-live-viewer');
+      const statusEl = document.querySelector('#aquila-live-status');
+      const waterButton = document.querySelector('#aquila-live-water');
+      const waterline = params.get('waterline') || WATERLINE;
+      let waterOn = params.get('water') === '1';
+
+      const setStatus = (text) => {
+        statusEl.textContent = text;
+      };
+
+      const gradeLabel = () =>
+        `${viewer.toneMapping || 'default'} exp ${viewer.exposure}`;
+
+      // Sets mixin attributes only. No placement or lighting math here.
+      const applyWater = (on) => {
+        waterOn = on;
+        if (on) {
+          viewer.setAttribute('water-preset', 'ld-boat');
+          viewer.setAttribute('water-waterline', waterline);
+          viewer.toggleAttribute('water-buoyancy', params.get('buoyancy') === '1');
+          viewer.toggleAttribute('water', true);
+        } else {
+          viewer.toggleAttribute('water', false);
+          viewer.toggleAttribute('water-buoyancy', false);
+        }
+        waterButton.textContent = on ? 'Water on' : 'Water off';
+      };
+
+      const syncUrl = () => {
+        const url = new URL(location.href);
+        url.searchParams.set('water', waterOn ? '1' : '0');
+        url.searchParams.set('waterline', waterline);
+        if (params.get('buoyancy') === '1') {
+          url.searchParams.set('buoyancy', '1');
+        }
+        history.replaceState(null, '', url);
+      };
+
+      viewer.addEventListener('load', async () => {
+        setStatus('aquila: loaded, framing exterior');
+        viewer.minCameraOrbit = 'auto 0deg 5m';
+        viewer.maxCameraOrbit = 'auto 180deg 20m';
+        viewer.minFieldOfView = '10deg';
+        viewer.maxFieldOfView = '45deg';
+        viewer.setCameraControlsMode('orbit', {
+          enableKeyboardMove: false,
+          enableFlyMode: false,
+        });
+        await viewer.setCameraView(EXTERIOR_VIEW);
+        viewer.toggleLights(false);
+        applyWater(waterOn);
+        syncUrl();
+        if (!waterOn) {
+          setStatus(`aquila: exterior / ${gradeLabel()} / no water`);
+        }
+      });
+      viewer.addEventListener('water-load', () => {
+        setStatus(
+            `aquila: water / line ${waterline} m / ${gradeLabel()}`);
+      });
+      viewer.addEventListener('water-error', (event) => {
+        setStatus(`aquila: ${event.detail.error.message}`);
+        console.error(event.detail.error);
+      });
+      waterButton.addEventListener('click', () => {
+        applyWater(!waterOn);
+        syncUrl();
+        if (!waterOn) {
+          setStatus(`aquila: exterior / ${gradeLabel()} / no water`);
+        }
+      });
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "../../../../threejs-water-pro/node_modules/three/build/three.module.js",
+          "three/webgpu": "../../../../threejs-water-pro/node_modules/three/build/three.webgpu.js",
+          "three/tsl": "../../../../threejs-water-pro/node_modules/three/build/three.tsl.js",
+          "three/addons/": "../../../../threejs-water-pro/node_modules/three/examples/jsm/",
+          "threejs-water-pro": "../../../../threejs-water-pro/build/index.js"
+        }
+      }
+    </script>
+    <script
+      type="module"
+      src="../../../model-viewer/dist/model-viewer-module.js"
+    ></script>
+  </body>
+</html>

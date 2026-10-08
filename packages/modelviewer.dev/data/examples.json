@@ -398,6 +398,16 @@
     ]
   },
   {
+    "name": "LD Water Aquila Live",
+    "htmlName": "ld_water_aquila_live",
+    "examples": [
+      {
+        "htmlId": "aquila-live",
+        "name": "Aquila live attrs"
+      }
+    ]
+  },
+  {
     "name": "LD Water Mixin",
     "htmlName": "ld_water_mixin",
     "examples": [
