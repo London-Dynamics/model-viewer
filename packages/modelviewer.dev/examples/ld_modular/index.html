@@ -1865,7 +1865,7 @@
               <example-snippet stamp-to="load-scanned-room" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="https://api.dev.d.londondynamics.com/user-files/files/fe8d9f74df7e4c1e8bb3e37917a6391e.glb"
+                    src="https://api.dev.d.londondynamics.com/user-files/files/4e6eb9e4c2c64009bc52fd57c9c57382.glb"
                     id="scanned-room-demo"
                     camera-controls
                     touch-action="pan-y"
@@ -1873,6 +1873,7 @@
                     min-camera-orbit="auto auto 0.5m"
                     max-camera-orbit="auto auto auto"
                     shadow-intensity="1"
+                    rotation-controls
                     snapping-enabled
                     edit
                     selection-scope="part"
@@ -1914,6 +1915,14 @@
                               data-name="window"
                             >
                               Place Window
+                            </button>
+                            <button
+                              type="button"
+                              class="place-scanned-room-part ld-button-sm"
+                              data-src="../../shared-assets/models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb"
+                              data-name="duck"
+                            >
+                              Place Duck
                             </button>
                             <div
                               id="scanned-room-status"
@@ -2020,11 +2029,35 @@
                         max: [0.6118, 1.4524, 0.119],
                       };
 
+                      const partConfigs = {
+                        window: {
+                          snapPoints: windowSnapPoints,
+                          bounds: windowBounds,
+                        },
+                        duck: { snapPoints: [] },
+                      };
+
+                      const duckSrc = modelViewer.querySelector(
+                        '.place-scanned-room-part[data-name="duck"]'
+                      ).dataset.src;
+                      modelViewer
+                        .getGlbBounds(duckSrc)
+                        .then(({ min, max }) => {
+                          partConfigs.duck.bounds = { min, max };
+                        })
+                        .catch((error) => {
+                          console.warn(
+                            '[Load Scanned Room] duck bounds unavailable',
+                            error
+                          );
+                        });
+
                       document
                         .querySelectorAll('.place-scanned-room-part')
                         .forEach((button) => {
                           button.addEventListener('mousedown', (event) => {
                             const { src, name } = event.currentTarget.dataset;
+                            const { snapPoints, bounds } = partConfigs[name];
                             modelViewer.beginPlacement(
                               undefined,
                               undefined,
@@ -2033,8 +2066,8 @@
                                 part: {
                                   type: 'scene',
                                   editable: true,
-                                  snapPoints: windowSnapPoints,
-                                  bounds: windowBounds,
+                                  snapPoints,
+                                  bounds,
                                 },
                                 getHighResUrl: async () => src,
                               },
