@@ -27,6 +27,8 @@ export type PlacementPoseHost = {
   ): SurfaceSnapHit | null;
   _getCursorWorldPosition?(): {x: number; y: number; z: number} | null;
   _updateCursorFromPointer?(clientX: number, clientY: number): void;
+  _getRoomLevelObject?(): Object3D | null;
+  _restObjectOnRoomLevel?(object: Object3D, levelY?: number): boolean;
 };
 
 /**
@@ -49,7 +51,8 @@ export function applyPointerPlacementPose(
     host as unknown as HTMLElement,
     scene as Parameters<typeof getMouseWorldPointOnPlacementPlane>[1],
     clientX,
-    clientY
+    clientY,
+    host._getRoomLevelObject?.()
   );
 
   if (!world) {
@@ -122,6 +125,13 @@ export function applyPointerPlacementPose(
     .subVectors(cursorWorld, targetWorldPos)
     .sub(bottomCenterLocal);
   object.position.copy(objectLocalPos);
+
+  if (
+    !requiresSurfaceSnap(object) &&
+    host._restObjectOnRoomLevel?.(object, cursorWorld.y)
+  ) {
+    targetBottomCenter.y = getObjectBottomCenterWorld(object).y;
+  }
 
   if (requiresSurfaceSnap(object) && host.applySurfaceSnapForPlacement) {
     surfaceHit = host.applySurfaceSnapForPlacement(object, clientX, clientY);
@@ -223,6 +233,9 @@ export function applySelectionPointerPlacementPose(
         item.object,
         leaderBottom.clone().add(item.anchorOffset)
       );
+      if (!item.requiresSurfaceSnap) {
+        host._restObjectOnRoomLevel?.(item.object, leaderBottom.y);
+      }
       try {
         item.object.visible = true;
       } catch (_e) {}

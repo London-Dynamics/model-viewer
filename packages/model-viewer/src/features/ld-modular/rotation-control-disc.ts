@@ -4,6 +4,7 @@ import {
   CircleGeometry,
   Color,
   DoubleSide,
+  GreaterDepth,
   Material,
   Mesh,
   Object3D,
@@ -28,6 +29,9 @@ const ROTATION_DISC_MIN_RADIUS_PX = 96;
 
 /** Maximum on-screen disc width in CSS pixels (diameter). */
 const ROTATION_DISC_MAX_WIDTH_PX = 320;
+
+/** Opacity of the parts of the disc hidden behind the object or scenery. */
+const ROTATION_DISC_OCCLUDED_OPACITY = 0.3;
 
 /** Fill behind the full disc annulus (the “frisbee” background). */
 const ROTATION_DISC_BASE_ARC_COLOR = '#ffffff';
@@ -157,6 +161,8 @@ export type RotationDiscUpdateArgs = {
   viewportWidth: number;
   viewportHeight: number;
   floorY: number;
+  /** World Y of the surface under the selection; overrides `floorY` when set. */
+  surfaceWorldY?: number | null;
   highlightColor: string;
   majorStepDegrees: number;
   fineStepDegrees: number;
@@ -229,6 +235,9 @@ export function resolveRotationDiscMaxRadiusPx(viewportWidth: number): number {
 export class RotationControlDisc extends Object3D {
   private readonly _mesh: Mesh;
   private readonly _material: ShaderMaterial;
+  /** Faded pass drawn only where the disc is hidden behind other geometry. */
+  private readonly _occludedMesh: Mesh;
+  private readonly _occludedMaterial: ShaderMaterial;
   private readonly _plane: Plane = new Plane(planeNormal.clone(), 0);
   private readonly _centerWorld: Vector3 = new Vector3();
   private readonly _lockedCenterWorld: Vector3 = new Vector3();
@@ -413,17 +422,58 @@ export class RotationControlDisc extends Object3D {
     });
     applyRotationDiscAppearanceUniforms(this._material.uniforms, '#3b82f6');
 
-    this._mesh = new Mesh(geometry, this._material);
-    this._mesh.renderOrder = rotationDiscRenderOrder;
-    this._mesh.frustumCulled = false;
-    this._mesh.castShadow = false;
-    this._mesh.receiveShadow = false;
-    this._mesh.userData.noHit = true;
-    this._mesh.userData.selectable = false;
-    this._mesh.userData.rotationControl = true;
-    this._mesh.userData.skipShadow = true;
+    // Uniform objects are shared so every update reaches both passes; only
+    // uOpacity is separate.
+    this._occludedMaterial = new ShaderMaterial({
+      uniforms: {
+        ...this._material.uniforms,
+        uOpacity: { value: ROTATION_DISC_OCCLUDED_OPACITY },
+      },
+      vertexShader: this._material.vertexShader,
+      fragmentShader: this._material.fragmentShader,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      depthFunc: GreaterDepth,
+      // Pulls the depth slightly towards the camera so the floor the disc
+      // sits on does not depth-fight into faded speckles.
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
+      side: DoubleSide,
+      toneMapped: false,
+    });
+
+    this._occludedMesh = this._createDiscMesh(
+      geometry,
+      this._occludedMaterial,
+      rotationDiscRenderOrder - 1
+    );
+    this._mesh = this._createDiscMesh(
+      geometry,
+      this._material,
+      rotationDiscRenderOrder
+    );
+    this.add(this._occludedMesh);
     this.add(this._mesh);
     this.visible = false;
+  }
+
+  private _createDiscMesh(
+    geometry: CircleGeometry,
+    material: ShaderMaterial,
+    renderOrder: number
+  ): Mesh {
+    const mesh = new Mesh(geometry, material);
+    mesh.renderOrder = renderOrder;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.userData.noHit = true;
+    mesh.userData.selectable = false;
+    mesh.userData.rotationControl = true;
+    mesh.userData.skipShadow = true;
+    return mesh;
   }
 
   private _resolveFloorWorldY(
@@ -487,6 +537,7 @@ export class RotationControlDisc extends Object3D {
       viewportWidth,
       viewportHeight,
       floorY,
+      surfaceWorldY,
       highlightColor,
       majorStepDegrees,
       fineStepDegrees,
@@ -508,10 +559,10 @@ export class RotationControlDisc extends Object3D {
 
     tmpObjectWorldDelta.copy(pivotWorld).sub(this._lockedPivotWorldPosition);
     this._centerWorld.copy(this._lockedCenterWorld).add(tmpObjectWorldDelta);
-    const floorWorldY = this._resolveFloorWorldY(
-      this._floorYLocal,
-      selectedObjects
-    );
+    const floorWorldY =
+      surfaceWorldY != null && Number.isFinite(surfaceWorldY)
+        ? surfaceWorldY
+        : this._resolveFloorWorldY(this._floorYLocal, selectedObjects);
     this._centerWorld.y = floorWorldY + discSurfaceOffsetM;
     this._plane.constant = -this._centerWorld.y;
 
@@ -642,6 +693,7 @@ export class RotationControlDisc extends Object3D {
     this.parent?.remove(this);
     this._mesh.geometry.dispose();
     this._disposeMaterial(this._mesh.material);
+    this._disposeMaterial(this._occludedMesh.material);
   }
 
   private _disposeMaterial(material: Material | Material[]): void {

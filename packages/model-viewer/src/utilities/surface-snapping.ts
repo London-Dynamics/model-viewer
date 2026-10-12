@@ -5,6 +5,7 @@ import {
   Mesh,
   Object3D,
   Quaternion,
+  Ray,
   Raycaster,
   Vector2,
   Vector3,
@@ -76,6 +77,7 @@ export function invalidateRoomSurfaceIndexCache(
 ): void {
   if (!roomObject) return;
   ROOM_SURFACE_INDEX_CACHE.delete(roomObject);
+  ROOM_LEVEL_SURFACES_CACHE.delete(roomObject);
 }
 
 function getSnapPointLocalPosition(snapPoint: SnapPoint): Vector3 {
@@ -310,6 +312,120 @@ export function findRoomSurfaceHitForNdc(
   }
 
   return null;
+}
+
+/** Minimum world-up component for a face to count as a standable level. */
+const LEVEL_SURFACE_MIN_UP = 0.5;
+/** Footprint corners are pulled inwards so samples do not graze edges. */
+const SUPPORT_FOOTPRINT_INSET = 0.02;
+const SUPPORT_RAY_START_EPSILON = 1e-3;
+const DOWN = new Vector3(0, -1, 0);
+const TMP_SUPPORT_ORIGIN = new Vector3();
+
+const ROOM_LEVEL_SURFACES_CACHE = new WeakMap<Object3D, Object3D[]>();
+
+/**
+ * Surfaces objects can stand on: floor shell meshes (`floor` / `floor_*` by
+ * node name) when the room has any, otherwise untagged geometry (filtered by
+ * face orientation at hit time). Material names are deliberately ignored so
+ * furniture baked into a room (e.g. a car's "interior_floor") is not a level.
+ */
+function getRoomLevelSurfaces(roomObject: Object3D): Object3D[] {
+  const cached = ROOM_LEVEL_SURFACES_CACHE.get(roomObject);
+  if (cached) return cached;
+  const shellFloors = collectRoomFloorMeshes(roomObject, []);
+  let surfaces: Object3D[] = shellFloors;
+  if (surfaces.length === 0) {
+    const index = getRoomSurfaceIndex(roomObject);
+    surfaces = [...index.floorTagged, ...index.untagged];
+  }
+  ROOM_LEVEL_SURFACES_CACHE.set(roomObject, surfaces);
+  return surfaces;
+}
+
+function firstLevelSurfaceHit(
+  raycaster: Raycaster,
+  surfaces: Object3D[]
+): SurfaceSnapHit | null {
+  if (surfaces.length === 0) return null;
+  const direction = raycaster.ray.direction;
+  const intersections = raycaster.intersectObjects(surfaces, false);
+  for (const intersection of intersections) {
+    if (!intersection.face) continue;
+    TMP_WORLD_NORMAL.copy(intersection.face.normal)
+      .transformDirection(intersection.object.matrixWorld)
+      .normalize();
+    if (TMP_WORLD_NORMAL.y < LEVEL_SURFACE_MIN_UP) continue;
+    if (TMP_WORLD_NORMAL.dot(direction) >= 0) continue;
+    return {
+      point: intersection.point.clone(),
+      normal: TMP_WORLD_NORMAL.clone(),
+      surfaceType: 'floor',
+      object: intersection.object,
+    };
+  }
+  return null;
+}
+
+/** First standable room surface along a world-space ray (e.g. the camera ray at the cursor). */
+export function findRoomFloorHitForRay(
+  ray: Ray,
+  roomObject: Object3D
+): SurfaceSnapHit | null {
+  roomObject.updateMatrixWorld(true);
+  SHARED_RAYCASTER.ray.copy(ray);
+  SHARED_RAYCASTER.near = 0;
+  SHARED_RAYCASTER.far = Infinity;
+  return firstLevelSurfaceHit(SHARED_RAYCASTER, getRoomLevelSurfaces(roomObject));
+}
+
+/**
+ * World Y of the highest standable room surface under a world-space footprint.
+ * Rays start at `fromY` (defaults to the footprint top) so a level above the
+ * object, such as a mezzanine, is ignored. Returns null when nothing is hit.
+ */
+export function findRoomSupportY(
+  roomObject: Object3D,
+  footprint: Box3,
+  fromY: number = footprint.max.y
+): number | null {
+  if (
+    !Number.isFinite(footprint.min.x) ||
+    !Number.isFinite(footprint.max.x) ||
+    !Number.isFinite(fromY)
+  ) {
+    return null;
+  }
+  const surfaces = getRoomLevelSurfaces(roomObject);
+  if (surfaces.length === 0) return null;
+  roomObject.updateMatrixWorld(true);
+
+  const insetX = (footprint.max.x - footprint.min.x) * SUPPORT_FOOTPRINT_INSET;
+  const insetZ = (footprint.max.z - footprint.min.z) * SUPPORT_FOOTPRINT_INSET;
+  const minX = footprint.min.x + insetX;
+  const maxX = footprint.max.x - insetX;
+  const minZ = footprint.min.z + insetZ;
+  const maxZ = footprint.max.z - insetZ;
+  const samples: Array<[number, number]> = [
+    [(minX + maxX) * 0.5, (minZ + maxZ) * 0.5],
+    [minX, minZ],
+    [minX, maxZ],
+    [maxX, minZ],
+    [maxX, maxZ],
+  ];
+
+  let best: number | null = null;
+  SHARED_RAYCASTER.near = 0;
+  SHARED_RAYCASTER.far = Infinity;
+  for (const [x, z] of samples) {
+    TMP_SUPPORT_ORIGIN.set(x, fromY + SUPPORT_RAY_START_EPSILON, z);
+    SHARED_RAYCASTER.set(TMP_SUPPORT_ORIGIN, DOWN);
+    const hit = firstLevelSurfaceHit(SHARED_RAYCASTER, surfaces);
+    if (hit && (best == null || hit.point.y > best)) {
+      best = hit.point.y;
+    }
+  }
+  return best;
 }
 
 function getGeometryBounds(object: Object3D): Box3 | null {

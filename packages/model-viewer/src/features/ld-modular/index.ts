@@ -38,6 +38,8 @@ import {
   clientToNdc,
   countRoomShellNodes,
   findSurfaceSnapHitForNdc,
+  findRoomFloorHitForRay,
+  findRoomSupportY,
   findRoomSurfaceHitForNdc,
   findSurfaceSnapHitOnWall,
   getBaseModelObject,
@@ -65,6 +67,7 @@ import {
   commitPasteTargets,
   getSelectionClipboardItems,
   getSelectionLeaderIndex,
+  getObjectBottomCenterWorld,
 } from './clipboard.js';
 import {
   attachGltfLifecycle,
@@ -3377,7 +3380,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this as unknown as HTMLElement,
         (this as any)[$scene],
         clientX,
-        clientY
+        clientY,
+        this._getRoomLevelObject()
       );
 
       if (!floorWorld) {
@@ -3565,6 +3569,8 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       ObjectAnchorSphereCacheEntry
     >();
     private _rotationControlDisc: RotationControlDisc | null = null;
+    private _rotationDiscSurfaceCache: { key: string; y: number | null } | null =
+      null;
     private _rotationGestureActive = false;
     private _rotationGesturePointerId: number | null = null;
     private _rotationGestureStartAngleRad = 0;
@@ -4632,6 +4638,45 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return getBaseModelObject(scene);
     }
 
+    /** Room model whose floor levels objects rest on; null outside `src-is-room`. */
+    _getRoomLevelObject(): Object3D | null {
+      if (!this.srcIsRoom) return null;
+      return this._findRoomSurfaceObject();
+    }
+
+    /**
+     * Moves `object` vertically so its bounding-box bottom rests on the highest
+     * room level under its footprint. With `levelY` (the level under the
+     * cursor), support rays start one object-height above that level so the
+     * object can step up or down to it; otherwise they start at the object top.
+     */
+    _restObjectOnRoomLevel(object: Object3D, levelY?: number): boolean {
+      const room = this._getRoomLevelObject();
+      if (!room) return false;
+      object.updateMatrixWorld(true);
+      const box = new Box3().setFromObject(object);
+      if (!Number.isFinite(box.min.y) || !Number.isFinite(box.max.y)) {
+        return false;
+      }
+      const fromY =
+        levelY != null && Number.isFinite(levelY)
+          ? levelY + (box.max.y - box.min.y)
+          : box.max.y;
+      const supportY = findRoomSupportY(room, box, fromY);
+      if (supportY == null) return false;
+      const deltaY = supportY - box.min.y;
+      if (Math.abs(deltaY) < 1e-6) return true;
+      const worldPos = object.getWorldPosition(new Vector3());
+      worldPos.y += deltaY;
+      if (object.parent) {
+        object.parent.updateMatrixWorld(true);
+        object.parent.worldToLocal(worldPos);
+      }
+      object.position.copy(worldPos);
+      object.updateMatrixWorld(true);
+      return true;
+    }
+
     private _markRoomWallVisibilityCacheDirty() {
       this._roomWallVisibilityCacheDirty = true;
     }
@@ -5034,6 +5079,39 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return target.userData?.isSnappedGroup === true ? target.position.y : 0;
     }
 
+    /**
+     * World Y of the room level under the selection footprint, or null outside
+     * `src-is-room`. Cached per footprint because the disc updates every frame.
+     */
+    private _getRotationDiscSurfaceWorldY(targets: Object3D[]): number | null {
+      const room = this._getRoomLevelObject();
+      if (!room || targets.length === 0) {
+        this._rotationDiscSurfaceCache = null;
+        return null;
+      }
+      const box = new Box3();
+      for (const target of targets) {
+        target.updateMatrixWorld(true);
+        box.expandByObject(target);
+      }
+      if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) {
+        return null;
+      }
+      const key = [
+        room.uuid,
+        ...box.min.toArray(),
+        ...box.max.toArray(),
+      ]
+        .map((v) => (typeof v === 'number' ? v.toFixed(4) : v))
+        .join('|');
+      if (this._rotationDiscSurfaceCache?.key === key) {
+        return this._rotationDiscSurfaceCache.y;
+      }
+      const y = findRoomSupportY(room, box);
+      this._rotationDiscSurfaceCache = { key, y };
+      return y;
+    }
+
     private _syncRotationControlDiscLifecycle() {
       if (!this._canShowYRotationControl()) {
         this._stopRotationGesture();
@@ -5063,6 +5141,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportWidth: (this as any)[$scene].width,
         viewportHeight: (this as any)[$scene].height,
         floorY,
+        surfaceWorldY: this._getRotationDiscSurfaceWorldY(targets),
         highlightColor: this.highlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
@@ -5109,6 +5188,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         viewportWidth: scene.width,
         viewportHeight: scene.height,
         floorY: this._getRotationDiscFloorY(targets[0]),
+        surfaceWorldY: this._getRotationDiscSurfaceWorldY(targets),
         highlightColor: this.highlightColor,
         majorStepDegrees: this.rotationControlsMajorStep,
         fineStepDegrees: this.rotationControlsFineStep,
@@ -5260,10 +5340,11 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
       if (!discHit) return null;
 
-      const targetObject = (this as any)._findTargetObject();
-      if (!targetObject) return null;
-      const allHits = (this as any).raycaster.intersectObject(
-        targetObject,
+      // Only the selection can block the disc, so clicking the object still
+      // drags it while the room and other objects never hide the control.
+      const selectionTargets = this._getRotationDiscTargets();
+      const allHits = (this as any).raycaster.intersectObjects(
+        selectionTargets,
         true
       );
       const nearestModelDistance = allHits.find(
@@ -5887,9 +5968,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       (this as any).isDragging = true;
 
       const anySurfaceSnap = roots.some((obj) => requiresSurfaceSnap(obj));
-      const positionAxes: TransformAxis[] = anySurfaceSnap
-        ? ['x', 'y', 'z']
-        : ['x', 'z'];
+      const positionAxes: TransformAxis[] =
+        anySurfaceSnap || this._getRoomLevelObject()
+          ? ['x', 'y', 'z']
+          : ['x', 'z'];
 
       if (roots.length > 1) {
         this._beginSelectionTransformSession(roots, {
@@ -5918,10 +6000,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       const clickPoint = new Vector3();
-      const hasFloorHit = (this as any).raycaster.ray.intersectPlane(
-        this.floorPlane,
-        clickPoint
-      );
+      const hasFloorHit = this._intersectDragFloor(clickPoint) != null;
 
       for (const target of roots) {
         this._dragStartPositions.set(target.uuid, target.position.clone());
@@ -6016,6 +6095,25 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this._emitSelectionTransformUpdate();
     }
 
+    /**
+     * Intersects the current pointer ray with the drag floor: the room level
+     * under the cursor in `src-is-room` mode, else the flat floor plane.
+     */
+    private _intersectDragFloor(
+      out: Vector3
+    ): 'room-level' | 'plane' | null {
+      const ray = (this as any).raycaster.ray;
+      const room = this._getRoomLevelObject();
+      if (room) {
+        const levelHit = findRoomFloorHitForRay(ray, room);
+        if (levelHit) {
+          out.copy(levelHit.point);
+          return 'room-level';
+        }
+      }
+      return ray.intersectPlane(this.floorPlane, out) ? 'plane' : null;
+    }
+
     private updateDragPosition() {
       if (
         !(this as any).isDragging ||
@@ -6030,10 +6128,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       );
 
       const intersectionPoint = new Vector3();
-      const hasFloorHit = (this as any).raycaster.ray.intersectPlane(
-        this.floorPlane,
-        intersectionPoint
-      );
+      const floorHitKind = this._intersectDragFloor(intersectionPoint);
+      const hasFloorHit = floorHitKind != null;
+      const cursorLevelY =
+        floorHitKind === 'room-level' ? intersectionPoint.y : undefined;
 
       let allSurfaceSnapValid = true;
 
@@ -6087,6 +6185,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           desiredY,
           this._tmpDragDesiredLocal.z
         );
+        this._restObjectOnRoomLevel(object, cursorLevelY);
 
         this._setPendingSnapConnection(null);
         if (this.snappingEnabled) {
@@ -8625,7 +8724,8 @@ class PlacementSession extends EventTarget {
         this._element as unknown as HTMLElement,
         (this._element as any)[$scene],
         clientX,
-        clientY
+        clientY,
+        (this._element as any)._getRoomLevelObject?.()
       );
       if (!world) {
         this._hasValidSurfaceSnap = false;
@@ -8740,6 +8840,18 @@ class PlacementSession extends EventTarget {
         .sub(bottomCenterLocal);
 
       this.placeholder.position.copy(objectLocalPos);
+
+      if (
+        !requiresSurfaceSnap(this.placeholder) &&
+        element._restObjectOnRoomLevel?.(this.placeholder, world.y)
+      ) {
+        const restedBottom = getObjectBottomCenterWorld(this.placeholder);
+        this._targetBottomCenter = {
+          x: world.x,
+          y: restedBottom.y,
+          z: world.z,
+        };
+      }
 
       // Check for snapping during interactive placement.
       // Surface snap has priority and runs whenever required by the part,
