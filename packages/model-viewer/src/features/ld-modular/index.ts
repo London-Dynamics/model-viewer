@@ -16,6 +16,7 @@ import type { Part, SnapPoint } from '@london-dynamics/types/planner';
 import { Constructor } from '../../utilities.js';
 import { SelectionChangeDetail } from '../ld-selection/index.js';
 import ModelViewerElementBase, {
+  $collectLoadWarnings,
   $needsRender,
   $scene,
   $renderer,
@@ -35,15 +36,20 @@ import {
 import {
   applySurfaceSnapTransform,
   clientToNdc,
+  countRoomShellNodes,
   findSurfaceSnapHitForNdc,
   findRoomSurfaceHitForNdc,
   findSurfaceSnapHitOnWall,
   getBaseModelObject,
   getRoomFloorY,
   invalidateRoomSurfaceIndexCache,
+  isRoomFloorShellNode,
+  isRoomWallNode,
+  isRoomWallShellNode,
   tryResnapToNearestWall,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
+import type { ModelLoadIssue } from '../../three-components/load-issues.js';
 import {PlacementCursor} from './placement-cursor.js';
 import {
   type ClipboardChangeDetail,
@@ -1200,20 +1206,44 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
     }
 
-    private _roomShellNameLower(name: string | undefined): string {
-      return (name || '').toLowerCase();
-    }
-
     /** Wall shell: `wall_*` meshes or a `walls` group (e.g. Babylon exports). */
     private _isRoomWallShellNode(name: string | undefined): boolean {
-      const n = this._roomShellNameLower(name);
-      return n === 'walls' || n.startsWith('wall_');
+      return isRoomWallShellNode(name);
     }
 
     /** Floor shell: `floor_*` meshes or a node named `floor` (e.g. Babylon exports). */
     private _isRoomFloorShellNode(name: string | undefined): boolean {
-      const n = this._roomShellNameLower(name);
-      return n === 'floor' || n.startsWith('floor_');
+      return isRoomFloorShellNode(name);
+    }
+
+    private _countRoomShellNodes(): { walls: number; floors: number } {
+      const scene = (this as any)[$scene];
+      return countRoomShellNodes(scene ? getBaseModelObject(scene) : null);
+    }
+
+    [$collectLoadWarnings](): ModelLoadIssue[] {
+      const inheritedCollect = (ModelViewerElement.prototype as any)[
+        $collectLoadWarnings
+      ];
+      const inherited: ModelLoadIssue[] =
+        typeof inheritedCollect === 'function' ? inheritedCollect.call(this) : [];
+      if (!this.srcIsRoom) return inherited;
+      const { walls, floors } = this._countRoomShellNodes();
+      if (walls > 0 && floors > 0) return inherited;
+      const missing = [walls === 0 ? 'walls' : null, floors === 0 ? 'floor' : null]
+        .filter(Boolean)
+        .join(' and ');
+      return [
+        ...inherited,
+        {
+          code: 'no-room-surfaces',
+          severity: 'warning',
+          message:
+            `No tagged ${missing} found (expected \`wall_*\` / \`floor_*\` names); ` +
+            'snapping will rely on surface orientation.',
+          details: { walls, floors },
+        },
+      ];
     }
 
     /**
@@ -1267,8 +1297,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         return;
       }
       if (typeof host.log === 'function') {
+        const counts = this._countRoomShellNodes();
         host.log(
-          `[src-is-room] Room tagged surfaces (${source}): walls=${this.walls}, floor=${this.floor}. ` +
+          `[src-is-room] Room tagged surfaces (${source}): walls=${this.walls}, floor=${this.floor}; ` +
+            `matched ${counts.walls} wall node(s), ${counts.floors} floor node(s)` +
+            (counts.walls === 0 || counts.floors === 0
+              ? ' (untagged surfaces snap by face orientation)'
+              : '') +
+            '. ' +
             'Wall shell: `walls` or `wall_*`; floor shell: `floor` or `floor_*`. ' +
             'Wall attachments follow `walls` and camera backface; floor-surface attachments follow `floor`.'
         );
@@ -4601,7 +4637,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     private _getWallIndexFromName(name: string): string | null {
-      if (!name || !name.startsWith('wall_')) return null;
+      if (!isRoomWallNode(name)) return null;
       return name.slice('wall_'.length);
     }
 
@@ -4641,7 +4677,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       roomObject.traverse((child) => {
         const wallName = child.name || '';
-        if (!wallName.startsWith('wall_')) return;
+        if (!isRoomWallNode(wallName)) return;
         const wallIndex = this._getWallIndexFromName(wallName);
         const skirtingName = wallIndex != null ? `skirting_${wallIndex}` : '';
         const skirting =

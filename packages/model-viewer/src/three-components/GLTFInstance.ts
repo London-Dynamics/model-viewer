@@ -130,6 +130,9 @@ export class GLTFInstance implements GLTF {
    * this instance is done being used.
    */
   dispose(): void {
+    if (this[$preparedGLTF] == null) {
+      return;
+    }
     this.scenes.forEach((scene: Group) => {
       scene.traverse((object: Object3D) => {
         const mesh = object as Mesh;

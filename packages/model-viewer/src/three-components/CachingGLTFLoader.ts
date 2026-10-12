@@ -24,8 +24,35 @@ import {CacheEvictionPolicy} from '../utilities/cache-eviction-policy.js';
 
 import GLTFMaterialsVariantsExtension from './gltf-instance/VariantMaterialLoaderPlugin.js';
 import {GLTFInstance, GLTFInstanceConstructor} from './GLTFInstance.js';
+import {collectLoadIssues, hasLoadErrors, ModelLoadError, toModelLoadError} from './load-issues.js';
 
 export type ProgressCallback = (progress: number) => void;
+
+/**
+ * GLTFLoader that validates the raw file before parsing, so failures such as
+ * an empty response are reported as structured issues instead of opaque
+ * RangeErrors.
+ */
+export class DiagnosingGLTFLoader extends GLTFLoader {
+  parse(
+      data: ArrayBuffer|string, path: string, onLoad: (gltf: GLTF) => void,
+      onError?: (error: any) => void) {
+    const issues = collectLoadIssues({
+      data,
+      hasMeshoptDecoder: (this as any).meshoptDecoder != null,
+    });
+    if (hasLoadErrors(issues)) {
+      const error = new ModelLoadError(issues);
+      if (onError) {
+        onError(error);
+      } else {
+        console.error(error);
+      }
+      return;
+    }
+    super.parse(data, path, onLoad, onError);
+  }
+}
 
 (Texture as any).DEFAULT_ANISOTROPY = 4;
 
@@ -142,10 +169,13 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
     preloaded.delete(url);
     cache.delete(url);
 
-    const gltf = await gltfLoads;
-    // Dispose of the cached glTF's materials and geometries:
-
-    gltf!.dispose();
+    try {
+      const gltf = await gltfLoads;
+      // Dispose of the cached glTF's materials and geometries:
+      gltf!.dispose();
+    } catch {
+      // Failed loads have nothing to dispose.
+    }
   }
 
   /**
@@ -163,7 +193,7 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
     this[$loader].setKTX2Loader(ktx2Loader);
   }
 
-  protected[$loader]: GLTFLoader = new GLTFLoader().register(
+  protected[$loader]: GLTFLoader = new DiagnosingGLTFLoader().register(
       parser => new GLTFMaterialsVariantsExtension(parser));
   protected[$GLTFInstance]: T;
 
@@ -199,10 +229,15 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
                                       progressCallback(0.9);
                                       return new GLTFInstance(preparedGLTF);
                                     })
-                                    .catch((reason => {
-                                      console.error(reason);
-                                      return new GLTFInstance();
-                                    }));
+                                    .catch((reason: unknown) => {
+                                      const error = toModelLoadError(reason);
+                                      console.error(error);
+                                      if (cache.get(url) === gltfInstanceLoads) {
+                                        cache.delete(url);
+                                        preloaded.delete(url);
+                                      }
+                                      throw error;
+                                    });
       cache.set(url, gltfInstanceLoads);
     }
 

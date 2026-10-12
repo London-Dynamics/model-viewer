@@ -111,8 +111,7 @@ function getSurfaceTypeFromMetadata(object: Object3D): SurfaceType | null {
 function getWallAttachmentTarget(object: Object3D): Object3D | null {
   let current: Object3D | null = object;
   while (current) {
-    const name = (current.name || '').toLowerCase();
-    if (name.startsWith('wall_')) return current;
+    if (isRoomWallNode(current.name)) return current;
     current = current.parent || null;
   }
   return null;
@@ -148,10 +147,34 @@ export function getRoomFloorY(baseModel: Object3D | null): number | null {
   return bbox.min.y;
 }
 
+/** A single wall: any `wall_*` node (case-insensitive). */
+export function isRoomWallNode(name: string | undefined): boolean {
+  return (name || '').toLowerCase().startsWith('wall_');
+}
+
+/** Wall shell naming: a `walls` group or any `wall_*` node. */
+export function isRoomWallShellNode(name: string | undefined): boolean {
+  const n = (name || '').toLowerCase();
+  return n === 'walls' || n.startsWith('wall_');
+}
+
 /** Floor shell naming: `floor` group/mesh or any `floor_*` node. */
 export function isRoomFloorShellNode(name: string | undefined): boolean {
   const n = (name || '').toLowerCase();
   return n === 'floor' || n.startsWith('floor_');
+}
+
+/** Counts wall and floor shell nodes in a room model. */
+export function countRoomShellNodes(baseModel: Object3D | null | undefined): {
+  walls: number;
+  floors: number;
+} {
+  const counts = {walls: 0, floors: 0};
+  baseModel?.traverse((child) => {
+    if (isRoomWallShellNode(child.name)) counts.walls += 1;
+    else if (isRoomFloorShellNode(child.name)) counts.floors += 1;
+  });
+  return counts;
 }
 
 /**
@@ -872,8 +895,7 @@ export function tryResnapToNearestWall(
   let bestDistanceSq = Infinity;
 
   roomObject.traverse((child) => {
-    const wallName = child.name || '';
-    if (!wallName.startsWith('wall_')) {
+    if (!isRoomWallNode(child.name)) {
       return;
     }
 

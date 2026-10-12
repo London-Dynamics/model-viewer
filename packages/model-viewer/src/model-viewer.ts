@@ -103,6 +103,12 @@ export const ModelViewerElement = ModelViewerElementImpl;
 export type ModelViewerElement = InstanceType<typeof ModelViewerElementImpl>;
 
 export type { RGB, RGBA } from './three-components/gltf-instance/gltf-2.0';
+export { ModelLoadError } from './three-components/load-issues.js';
+export type {
+  ModelLoadIssue,
+  ModelLoadIssueCode,
+  ModelLoadIssueSeverity
+} from './three-components/load-issues.js';
 
 customElements.define('model-viewer', ModelViewerElement);
 

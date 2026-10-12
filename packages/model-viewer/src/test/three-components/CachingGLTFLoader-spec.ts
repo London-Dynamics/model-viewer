@@ -18,6 +18,7 @@ import {expect} from 'chai';
 import ModelViewerElementBase from '../../model-viewer-base.js';
 import {$evictionPolicy, CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
 import {ModelViewerGLTFInstance} from '../../three-components/gltf-instance/ModelViewerGLTFInstance.js';
+import {ModelLoadError} from '../../three-components/load-issues.js';
 import {assetPath} from '../helpers.js';
 
 const ModelViewerElement = class extends ModelViewerElementBase {
@@ -77,6 +78,50 @@ suite('CachingGLTFLoader', () => {
       const {scene} = await loader.load(ASTRONAUT_GLB_PATH, element);
       expect(scene).to.be.ok;
       expect(scene!.type).to.be.equal('Group');
+    });
+
+    suite('when the file is invalid', () => {
+      const blobUrls: string[] = [];
+      const blobUrlFor = (parts: BlobPart[]) => {
+        const url = URL.createObjectURL(new Blob(parts));
+        blobUrls.push(url);
+        return url;
+      };
+
+      teardown(() => {
+        blobUrls.splice(0).forEach((url) => URL.revokeObjectURL(url));
+      });
+
+      const loadError = async (url: string) => {
+        try {
+          await loader.load(url, element);
+        } catch (error) {
+          return error;
+        }
+        throw new Error('Expected load to fail');
+      };
+
+      test('rejects an empty file with an empty-response issue', async () => {
+        const url = blobUrlFor([]);
+        const error = await loadError(url);
+        expect(error).to.be.instanceOf(ModelLoadError);
+        expect((error as ModelLoadError).issues.map((issue) => issue.code))
+            .to.deep.equal(['empty-response']);
+      });
+
+      test('rejects a non-GLB file with an invalid-glb-header issue', async () => {
+        const url = blobUrlFor(['this is not a glb file']);
+        const error = await loadError(url) as ModelLoadError;
+        expect(error.issues.map((issue) => issue.code))
+            .to.deep.equal(['invalid-glb-header']);
+      });
+
+      test('does not keep failed loads in the cache', async () => {
+        const url = blobUrlFor([]);
+        await loadError(url);
+        expect(CachingGLTFLoader.has(url)).to.be.false;
+        expect(CachingGLTFLoader.hasFinishedLoading(url)).to.be.false;
+      });
     });
 
     suite('with items outside of the eviction threshold', () => {

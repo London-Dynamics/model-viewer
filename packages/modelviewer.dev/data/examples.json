@@ -554,6 +554,10 @@
         "name": "Room surface snap (walls)"
       },
       {
+        "htmlId": "load-scanned-room",
+        "name": "Load Scanned Room"
+      },
+      {
         "htmlId": "transforms",
         "name": "Dynamic transforms"
       },

@@ -21,6 +21,7 @@ import {HAS_INTERSECTION_OBSERVER, HAS_RESIZE_OBSERVER} from './constants.js';
 import {$updateEnvironment} from './features/environment.js';
 import {makeTemplate} from './template.js';
 import {$evictionPolicy, CachingGLTFLoader} from './three-components/CachingGLTFLoader.js';
+import {classifyLoadError, ModelLoadIssue} from './three-components/load-issues.js';
 import {ModelScene} from './three-components/ModelScene.js';
 import {ContextLostEvent, Renderer} from './three-components/Renderer.js';
 import {clamp, debounce} from './utilities.js';
@@ -70,6 +71,7 @@ export const $getLoaded = Symbol('getLoaded');
 export const $getModelIsVisible = Symbol('getModelIsVisible');
 export const $shouldAttemptPreload = Symbol('shouldAttemptPreload');
 export const $updateLDEnvironment = Symbol('updateLDEnvironment');
+export const $collectLoadWarnings = Symbol('collectLoadWarnings');
 
 export interface Vector3D {
   x: number
@@ -633,8 +635,13 @@ export default class ModelViewerElementBase extends ReactiveElement {
       await new Promise<void>(resolve => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
+            const collectLoadWarnings = (this as any)[$collectLoadWarnings];
+            const issues: ModelLoadIssue[] =
+                typeof collectLoadWarnings === 'function' ?
+                collectLoadWarnings.call(this) :
+                [];
             this.dispatchEvent(
-                new CustomEvent('load', {detail: {url: source}}));
+                new CustomEvent('load', {detail: {url: source, issues}}));
             resolve();
           });
         });
@@ -645,8 +652,9 @@ export default class ModelViewerElementBase extends ReactiveElement {
         updateLDEnvironment.call(this);
       }
     } catch (error) {
+      const issues = classifyLoadError(error);
       this.dispatchEvent(new CustomEvent(
-          'error', {detail: {type: 'loadfailure', sourceError: error}}));
+          'error', {detail: {type: 'loadfailure', sourceError: error, issues}}));
     } finally {
       updateSourceProgress(1.0);
     }

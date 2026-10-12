@@ -1841,6 +1841,216 @@
         </div>
 
         <div class="sample">
+          <div id="load-scanned-room" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Load Scanned Room</h2>
+                <h4>
+                  Load an arbitrary room GLB (e.g. a converted room scan) with
+                  <span class="attribute">src-is-room</span> and inspect the
+                  structured <code>detail.issues</code> reported on
+                  <code>load</code> and <code>error</code>.
+                </h4>
+                <p>
+                  Enter a URL or pick a local <code>.glb</code> file (loaded via
+                  <span class="attribute">setSrcFromBuffer()</span>). Load
+                  failures list every detected issue (empty file, invalid GLB
+                  header, missing decoder, ...). Successful loads may report
+                  warnings, such as a scan without <code>wall_*</code> /
+                  <code>floor_*</code> names. Place a window to test wall
+                  snapping on untagged geometry.
+                </p>
+              </div>
+              <example-snippet stamp-to="load-scanned-room" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="https://api.dev.d.londondynamics.com/user-files/files/fe8d9f74df7e4c1e8bb3e37917a6391e.glb"
+                    id="scanned-room-demo"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    min-camera-orbit="auto auto 0.5m"
+                    max-camera-orbit="auto auto auto"
+                    shadow-intensity="1"
+                    snapping-enabled
+                    edit
+                    selection-scope="part"
+                    highlight-selected
+                    src-is-room
+                    walls
+                    floor
+                    debug
+                  >
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">Scanned Room</h3>
+                          <div class="ld-sections-loose">
+                            <form id="scanned-room-url-form" class="flex gap-2">
+                              <input
+                                id="scanned-room-url"
+                                type="url"
+                                class="text-xs border rounded px-2 py-1 flex-1 min-w-0"
+                                placeholder="https://.../room.glb"
+                                value="https://api.dev.d.londondynamics.com/user-files/files/fe8d9f74df7e4c1e8bb3e37917a6391e.glb"
+                              />
+                              <button type="submit" class="ld-button-sm">
+                                Load URL
+                              </button>
+                            </form>
+                            <label class="text-xs flex items-center gap-2">
+                              Local file
+                              <input
+                                id="scanned-room-file"
+                                type="file"
+                                accept=".glb,.gltf,model/gltf-binary"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              class="place-scanned-room-part ld-button-sm"
+                              data-src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/8189a62c-6567-407a-a9a3-9164426a9f12/Window.glb"
+                              data-name="window"
+                            >
+                              Place Window
+                            </button>
+                            <div
+                              id="scanned-room-status"
+                              class="text-xs font-medium text-gray-900"
+                            >
+                              Loading...
+                            </div>
+                            <ul
+                              id="scanned-room-issues"
+                              class="text-xs text-gray-700 m-0 pl-4 list-disc"
+                            ></ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#scanned-room-demo');
+                      const status = document.getElementById(
+                        'scanned-room-status'
+                      );
+                      const issueList = document.getElementById(
+                        'scanned-room-issues'
+                      );
+
+                      const renderIssues = (issues = []) => {
+                        issueList.replaceChildren(
+                          ...issues.map((issue) => {
+                            const item = document.createElement('li');
+                            item.textContent = `[${issue.severity}] ${issue.code}: ${issue.message}`;
+                            item.style.color =
+                              issue.severity === 'error' ? '#b91c1c' : '#a16207';
+                            return item;
+                          })
+                        );
+                      };
+
+                      const setLoading = (label) => {
+                        status.textContent = `Loading ${label}...`;
+                        renderIssues([]);
+                      };
+
+                      modelViewer.addEventListener('load', (event) => {
+                        const issues = event.detail?.issues ?? [];
+                        status.textContent = issues.length
+                          ? `Loaded with ${issues.length} warning(s)`
+                          : 'Loaded';
+                        renderIssues(issues);
+                        console.log('[Load Scanned Room] load', event.detail);
+                      });
+
+                      modelViewer.addEventListener('error', (event) => {
+                        if (event.detail?.type !== 'loadfailure') return;
+                        const issues = event.detail.issues ?? [];
+                        status.textContent = `Failed to load (${issues.length} issue(s))`;
+                        renderIssues(issues);
+                        console.error(
+                          '[Load Scanned Room] loadfailure',
+                          event.detail
+                        );
+                      });
+
+                      document
+                        .getElementById('scanned-room-url-form')
+                        .addEventListener('submit', (event) => {
+                          event.preventDefault();
+                          const url = document
+                            .getElementById('scanned-room-url')
+                            .value.trim();
+                          if (!url) return;
+                          setLoading(url);
+                          modelViewer.src = url;
+                        });
+
+                      document
+                        .getElementById('scanned-room-file')
+                        .addEventListener('change', async (event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          setLoading(file.name);
+                          modelViewer.setSrcFromBuffer(await file.arrayBuffer());
+                        });
+
+                      const windowSnapPoints = [
+                        {
+                          id: 'wall-anchor-window',
+                          transform: { position: [0, 0, 0], rotation: [0, 0, 0] },
+                          allowedSurfaces: ['wall'],
+                          surfaceSnap: {
+                            offset: 0.02,
+                            normal: 'inward',
+                            align: 'keep-upright',
+                          },
+                          verticalConstraint: {
+                            reference: 'bottom',
+                            minFromFloor: 0.8,
+                          },
+                        },
+                      ];
+                      const windowBounds = {
+                        min: [-0.6118, 0, -0.0553],
+                        max: [0.6118, 1.4524, 0.119],
+                      };
+
+                      document
+                        .querySelectorAll('.place-scanned-room-part')
+                        .forEach((button) => {
+                          button.addEventListener('mousedown', (event) => {
+                            const { src, name } = event.currentTarget.dataset;
+                            modelViewer.beginPlacement(
+                              undefined,
+                              undefined,
+                              {
+                                name,
+                                part: {
+                                  type: 'scene',
+                                  editable: true,
+                                  snapPoints: windowSnapPoints,
+                                  bounds: windowBounds,
+                                },
+                                getHighResUrl: async () => src,
+                              },
+                              { clientX: event.clientX, clientY: event.clientY }
+                            );
+                          });
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div id="transforms" class="demo"></div>
           <div class="content">
             <div class="wrapper">
