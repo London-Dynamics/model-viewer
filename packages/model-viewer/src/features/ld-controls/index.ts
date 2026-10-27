@@ -1692,6 +1692,9 @@ const $lastSpherical = Symbol('lastSpherical');
 const $jumpCamera = Symbol('jumpCamera');
 const $initialized = Symbol('initialized');
 const $maintainThetaPhi = Symbol('maintainThetaPhi');
+const $preserveLiveCameraPose = Symbol('preserveLiveCameraPose');
+const $lastSyncedCameraOrbit = Symbol('lastSyncedCameraOrbit');
+const $lastSyncedCameraTarget = Symbol('lastSyncedCameraTarget');
 
 const $syncCameraOrbit = Symbol('syncCameraOrbit');
 const $syncFieldOfView = Symbol('syncFieldOfView');
@@ -1893,6 +1896,13 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     protected[$jumpCamera] = false;
     protected[$initialized] = false;
     protected[$maintainThetaPhi] = false;
+    /**
+     * Set for a model swap after the first load. Orbit and target syncs that
+     * re-request the same property strings must not rebuild the live pose.
+     */
+    protected[$preserveLiveCameraPose] = false;
+    protected[$lastSyncedCameraOrbit]: string|null = null;
+    protected[$lastSyncedCameraTarget]: string|null = null;
     protected[$a11y] = {} as A11yTranslationsInterface;
 
     get inputSensitivity(): number {
@@ -2038,7 +2048,37 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
     }
 
+    /**
+     * Drop the post-swap pose hold. Success clears it from $onModelLoad; a
+     * failed src load never gets that far, so the error event clears it too.
+     */
+    private clearPreservedCameraPose = (event?: Event) => {
+      if (event?.type === 'error') {
+        const type = (event as CustomEvent).detail?.type;
+        if (type !== 'loadfailure') {
+          return;
+        }
+      }
+      this.removeEventListener('load', this.clearPreservedCameraPose);
+      this.removeEventListener('error', this.clearPreservedCameraPose);
+      this[$preserveLiveCameraPose] = false;
+    };
+
     updated(changedProperties: Map<string|number|symbol, unknown>) {
+      // Set this before super.updated(): that starts $updateSource, and
+      // setSource reframes before $onModelLoad. Overriding $updateSource and
+      // calling super[$updateSource] never settles, so the model never loads.
+      // Only after the user has moved. An untouched auto camera must still
+      // reframe when a bigger or smaller model replaces src.
+      if (changedProperties.has('src') && this[$initialized] &&
+          this[$userHasInteracted] && this.src != null &&
+          this.src !== this[$scene].url) {
+        this[$preserveLiveCameraPose] = true;
+        this[$maintainThetaPhi] = false;
+        this.addEventListener('load', this.clearPreservedCameraPose);
+        this.addEventListener('error', this.clearPreservedCameraPose);
+      }
+
       super.updated(changedProperties);
 
       const controls = this[$controls];
@@ -2306,6 +2346,16 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$syncCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
       const controls = this[$controls];
       if (this[$programmaticCameraAnimation]) {
+        // landCameraOnCurrentPose writes the pose it finished on. Remember
+        // that string so a later model swap does not treat it as stale.
+        this[$lastSyncedCameraOrbit] = this.cameraOrbit;
+        this[$cancelPrompts]();
+        return;
+      }
+      const sameOrbitGoal = this[$lastSyncedCameraOrbit] != null &&
+          this.cameraOrbit === this[$lastSyncedCameraOrbit];
+      if (this[$preserveLiveCameraPose] && sameOrbitGoal) {
+        this[$maintainThetaPhi] = false;
         this[$cancelPrompts]();
         return;
       }
@@ -2320,6 +2370,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this[$userHasInteracted]) {
         controls.saveState();
       }
+      this[$lastSyncedCameraOrbit] = this.cameraOrbit;
       this[$cancelPrompts]();
     }
 
@@ -2368,8 +2419,18 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       // The pivot stays at the origin (see below), so framing needs the
       // target explicitly or the bounding sphere is centred on the origin.
       this[$scene].framingTarget = new THREE.Vector3(x, y, z);
-      if (!this[$programmaticCameraAnimation] &&
-          !this[$renderer].arRenderer.isPresenting) {
+      if (this[$programmaticCameraAnimation]) {
+        this[$lastSyncedCameraTarget] = this.cameraTarget;
+        this[$controls].changeSource = ChangeSource.NONE;
+        this[$renderer].arRenderer.updateTarget();
+        this[$cancelPrompts]();
+        return;
+      }
+      const sameTargetGoal = this[$lastSyncedCameraTarget] != null &&
+          this.cameraTarget === this[$lastSyncedCameraTarget];
+      const keepLiveTarget =
+          this[$preserveLiveCameraPose] && sameTargetGoal;
+      if (!keepLiveTarget && !this[$renderer].arRenderer.isPresenting) {
         const cc = (this[$controls] as any)?.thirdPartyControls;
         if (cc && typeof cc.setLookAt === 'function') {
           // Orbit around the new look-at in world space. Do not
@@ -2397,6 +2458,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         } else {
           this[$scene].setTarget(x, y, z);
         }
+        this[$lastSyncedCameraTarget] = this.cameraTarget;
       }
       this[$controls].changeSource = ChangeSource.NONE;
       this[$renderer].arRenderer.updateTarget();
@@ -2594,8 +2656,15 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$onModelLoad]() {
       super[$onModelLoad]();
 
+      // After the user has moved, a model swap must not rebuild the camera
+      // from the property strings. Those stay on the last explicit goal while
+      // FPS and orbit input only update CameraControls, so reapplying them
+      // throws the camera below Y=0. An untouched camera still reframes.
+      // An explicit camera-orbit / camera-target assignment still applies,
+      // including the same string set again.
+      const preserveLivePose = this[$preserveLiveCameraPose];
       if (this[$initialized]) {
-        this[$maintainThetaPhi] = true;
+        this[$maintainThetaPhi] = false;
       } else {
         this[$initialized] = true;
       }
@@ -2603,8 +2672,11 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.requestUpdate('fieldOfView', this.fieldOfView);
       this.requestUpdate('minCameraOrbit', this.minCameraOrbit);
       this.requestUpdate('maxCameraOrbit', this.maxCameraOrbit);
-      this.requestUpdate('cameraOrbit', this.cameraOrbit);
-      this.requestUpdate('cameraTarget', this.cameraTarget);
+      if (!preserveLivePose) {
+        this.requestUpdate('cameraOrbit', this.cameraOrbit);
+        this.requestUpdate('cameraTarget', this.cameraTarget);
+      }
+      this.clearPreservedCameraPose();
       this.jumpCameraToGoal();
 
       if (this.showViewportGizmo) {

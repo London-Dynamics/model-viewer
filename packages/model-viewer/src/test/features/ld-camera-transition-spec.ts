@@ -216,6 +216,42 @@ suite('LD camera transitions', () => {
     });
   });
 
+  test('resolves auto and percent orbit tokens like the attribute', async () => {
+    const DEG = Math.PI / 180;
+    const cc = ((element as any)[$controls] as any).thirdPartyControls;
+    await cc.setLookAt(0.2, -0.4, 0.6, 0, 0, 0, false);
+    cc.update(0);
+    expect(element.getCameraOrbit().radius).to.be.lessThan(2);
+
+    const framed = 1.05 * element[$scene].idealCameraDistance();
+    await (element as any).animateCameraTo(
+        {cameraOrbit: '20deg 75deg auto', cameraTarget: '0m 0m 0m'},
+        {duration: 0});
+
+    let orbit = element.getCameraOrbit();
+    expect(orbit.radius).to.be.closeTo(framed, 0.15);
+    expect(orbit.phi).to.be.closeTo(75 * DEG, 0.03);
+    expect(orbit.radius).to.be.lessThan(20);
+
+    await cc.setLookAt(0.2, -0.4, 0.6, 0, 0, 0, false);
+    cc.update(0);
+    await (element as any).animateCameraTo(
+        {cameraOrbit: '20deg 75deg 105%', cameraTarget: '0m 0m 0m'},
+        {duration: 0});
+
+    orbit = element.getCameraOrbit();
+    expect(orbit.radius).to.be.closeTo(framed, 0.15);
+    expect(orbit.radius).to.be.lessThan(20);
+
+    await (element as any).animateCameraTo(
+        {cameraOrbit: 'auto auto auto', cameraTarget: '0m 0m 0m'},
+        {duration: 0});
+    orbit = element.getCameraOrbit();
+    expect(orbit.theta).to.be.closeTo(0, 0.03);
+    expect(orbit.phi).to.be.closeTo(75 * DEG, 0.03);
+    expect(orbit.radius).to.be.closeTo(framed, 0.15);
+  });
+
   test('allows pointer interaction to cancel a transition', async () => {
     const animation = (element as any)
                           .animateCameraTo(

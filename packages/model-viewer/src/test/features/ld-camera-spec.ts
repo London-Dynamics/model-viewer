@@ -660,12 +660,18 @@ suite('LD Camera JSON', () => {
     const full = scene.camera.position.clone();
     expect(full.length()).to.be.closeTo(3, 0.05);
 
-    // Only azimuth given: polar and radius come from the current pose.
+    // `auto` matches the camera-orbit attribute: phi falls back to 75deg
+    // and radius to 105% of the ideal distance, not the pose already on
+    // screen.
     expect(
       (element as any).setCameraPose({cameraOrbit: '1.5708rad auto auto'})
     ).to.equal(true);
     await timePasses();
-    expect(scene.camera.position.length()).to.be.closeTo(3, 0.05);
+    const orbit = element.getCameraOrbit();
+    expect(orbit.theta).to.be.closeTo(Math.PI / 2, 0.03);
+    expect(orbit.phi).to.be.closeTo((75 * Math.PI) / 180, 0.03);
+    expect(orbit.radius)
+        .to.be.closeTo(1.05 * scene.idealCameraDistance(), 0.15);
     expect(scene.camera.position.distanceTo(full)).to.be.greaterThan(0.5);
 
     // Nothing usable to work from.

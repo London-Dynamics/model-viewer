@@ -20,7 +20,11 @@ import {
   $cancelPrompts,
   $controls,
   $programmaticCameraAnimation,
+  cameraOrbitIntrinsics,
+  cameraTargetIntrinsics,
 } from './controls.js';
+import {StyleEvaluator} from '../styles/evaluators.js';
+import {parseExpressions} from '../styles/parsers.js';
 import {
   modelTargetToWorldSpace,
   worldTargetToModelSpace,
@@ -250,26 +254,6 @@ function hasAttributeStyleCameraView(data: any): boolean {
   );
 }
 
-function parseCssNumeric(
-  token: string,
-  kind: 'angle' | 'length'
-): number | null {
-  const raw = String(token || '')
-    .trim()
-    .toLowerCase();
-  if (!raw || raw === 'auto') {
-    return null;
-  }
-  const value = parseFloat(raw);
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  if (kind === 'angle' && raw.endsWith('deg')) {
-    return (value * Math.PI) / 180;
-  }
-  return value;
-}
-
 function parseFovDegrees(fieldOfView?: string): number | null {
   const raw = String(fieldOfView || '')
     .trim()
@@ -281,9 +265,27 @@ function parseFovDegrees(fieldOfView?: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function cssTokens(value?: string): string[] {
-  const raw = String(value || '').trim();
-  return raw === '' ? [] : raw.split(/\s+/);
+/**
+ * Evaluate a camera-orbit or camera-target string with the same intrinsics
+ * the attributes use. `auto` and `%` are not raw numbers: radius `auto` is
+ * 105% of the ideal distance, and `105%` is that fraction of the basis, not
+ * 105 metres. An omitted string returns null so the caller keeps the live
+ * channel.
+ */
+function evaluateCameraStyle(
+  value: string | undefined,
+  intrinsics: ReturnType<typeof cameraOrbitIntrinsics>
+): number[] | null {
+  if (value == null) {
+    return null;
+  }
+  const raw = String(value).trim();
+  if (raw === '') {
+    return null;
+  }
+  return Array.from(
+    new StyleEvaluator(parseExpressions(raw), intrinsics).evaluate()
+  );
 }
 
 /**
@@ -291,8 +293,9 @@ function cssTokens(value?: string): string[] {
  * camera-target is the look-at and camera-orbit is spherical around it, which
  * is the pair getCameraTarget / getCameraOrbit report back.
  *
- * Missing and `auto` tokens fall back to the current pose so a partially
- * specified view resolves instead of being discarded.
+ * A provided string is evaluated like the attribute, including `auto` and
+ * `%`. Omitting the string keeps that part of the current pose so a
+ * target-only animateCameraTo does not jump back to the framing orbit.
  */
 function poseFromOrbitTargetStrings(
   scene: any,
@@ -306,27 +309,36 @@ function poseFromOrbitTargetStrings(
     return null;
   }
 
+  const sceneHolder = {[$scene]: scene};
   const currentModelTarget = worldTargetToModelSpace(scene, current.target);
-  const targetParts = cssTokens(cameraTarget);
-  const modelTarget = new Vector3(
-    parseCssNumeric(targetParts[0], 'length') ?? currentModelTarget.x,
-    parseCssNumeric(targetParts[1], 'length') ?? currentModelTarget.y,
-    parseCssNumeric(targetParts[2], 'length') ?? currentModelTarget.z
+  const targetEvaluated = evaluateCameraStyle(
+    cameraTarget,
+    cameraTargetIntrinsics(sceneHolder as any)
   );
+  const modelTarget = targetEvaluated
+    ? new Vector3(
+        targetEvaluated[0],
+        targetEvaluated[1],
+        targetEvaluated[2]
+      )
+    : currentModelTarget.clone();
   if (!isFiniteVector3(modelTarget)) {
     return null;
   }
   const target = modelTargetToWorldSpace(scene, modelTarget);
 
+  const orbitEvaluated = evaluateCameraStyle(
+    cameraOrbit,
+    cameraOrbitIntrinsics(sceneHolder as any)
+  );
   const currentSpherical = new Spherical().setFromVector3(
     current.position.clone().sub(target)
   );
-  const orbitParts = cssTokens(cameraOrbit);
-  const theta =
-    parseCssNumeric(orbitParts[0], 'angle') ?? currentSpherical.theta;
-  const phi = parseCssNumeric(orbitParts[1], 'angle') ?? currentSpherical.phi;
-  const radius =
-    parseCssNumeric(orbitParts[2], 'length') ?? currentSpherical.radius;
+  const theta = orbitEvaluated ? orbitEvaluated[0] : currentSpherical.theta;
+  const phi = orbitEvaluated ? orbitEvaluated[1] : currentSpherical.phi;
+  const radius = orbitEvaluated
+    ? orbitEvaluated[2]
+    : currentSpherical.radius;
 
   if (
     !Number.isFinite(theta) ||
