@@ -282,7 +282,13 @@
                 <span class="font-medium">LD Path Tracer</span> by
                 <a href="https://londondynamics.com" target="_blank"
                   >London Dynamics</a
-                >. This page shows the path tracing mixin powered by
+                >. Listen for <span class="attribute">path-tracer-ready</span> or
+                read <span class="attribute">isPathTracerReady</span> after the
+                BVH has been built and the first sample is drawn.
+                <span class="attribute">setPathTracerOptions()</span> sets the
+                BVH strategy (<code>sah</code>, <code>center</code>,
+                <code>average</code>) and <code>maxLeafTris</code> without extra
+                attributes. This page shows the path tracing mixin powered by
                 <a
                   href="https://gkjohnson.github.io/three-gpu-pathtracer"
                   target="_blank"

@@ -16,20 +16,12 @@
 import {property} from 'lit/decorators.js';
 import {Vector2} from 'three';
 
-import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
-import {
-  $needsRender,
-  $onModelLoad,
-  $scene,
-  EffectComposerInterface,
-} from '../model-viewer-base.js';
+import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
-import {
-  DEFAULT_PATH_TRACER_OPTIONS,
-  LDPathTracerComposer,
-  PathTracerOptions,
-} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
 import {Constructor} from '../utilities.js';
+
+import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
 
 const $pathTracerComposer = Symbol('pathTracerComposer');
 const PATH_TRACER_BACKEND_CHANGE_EVENT = 'ld-path-tracer-backend-change';
@@ -53,7 +45,10 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseThreshold: number;
   pathTracerDenoiseKSigma: number;
   readonly pathTracerRenderedSamples: number;
+  readonly isPathTracerReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
+  setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
+  getPathTracerOptions(): PathTracerBuildOptions;
 }
 
 const parseTiles = (value: string): Vector2 => {
@@ -67,13 +62,9 @@ const parseTiles = (value: string): Vector2 => {
 };
 
 export const LDPathTracerMixin = <
-  T extends Constructor<ModelViewerElementBase>
->(
-  ModelViewerElement: T
-) => {
+    T extends Constructor<ModelViewerElementBase>>(ModelViewerElement: T) => {
   class LDPathTracerModelViewerElement extends ModelViewerElement {
-    @property({type: Boolean, attribute: 'path-tracer'})
-    pathTracer = false;
+    @property({type: Boolean, attribute: 'path-tracer'}) pathTracer = false;
 
     @property({type: Number, attribute: 'path-tracer-samples'})
     pathTracerSamples = DEFAULT_PATH_TRACER_OPTIONS.samples;
@@ -88,7 +79,8 @@ export const LDPathTracerMixin = <
     pathTracerRenderScale = DEFAULT_PATH_TRACER_OPTIONS.renderScale;
 
     @property({type: String, attribute: 'path-tracer-tiles'})
-    pathTracerTiles = `${DEFAULT_PATH_TRACER_OPTIONS.tiles.x} ${DEFAULT_PATH_TRACER_OPTIONS.tiles.y}`;
+    pathTracerTiles = `${DEFAULT_PATH_TRACER_OPTIONS.tiles.x} ${
+        DEFAULT_PATH_TRACER_OPTIONS.tiles.y}`;
 
     @property({type: Boolean, attribute: 'path-tracer-depth-of-field'})
     pathTracerDepthOfField = DEFAULT_PATH_TRACER_OPTIONS.depthOfField;
@@ -118,13 +110,15 @@ export const LDPathTracerMixin = <
     pathTracerDenoiseSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseSigma;
 
     @property({type: Number, attribute: 'path-tracer-denoise-threshold'})
-    pathTracerDenoiseThreshold =
-        DEFAULT_PATH_TRACER_OPTIONS.denoiseThreshold;
+    pathTracerDenoiseThreshold = DEFAULT_PATH_TRACER_OPTIONS.denoiseThreshold;
 
     @property({type: Number, attribute: 'path-tracer-denoise-k-sigma'})
     pathTracerDenoiseKSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseKSigma;
 
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
+    private pathTracerBuildOptions: PathTracerBuildOptions = {
+      ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
+    };
 
     get pathTracerRenderedSamples() {
       if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
@@ -134,10 +128,26 @@ export const LDPathTracerMixin = <
       return 0;
     }
 
+    get isPathTracerReady() {
+      return this.getPathTracerComposer()?.isReady === true;
+    }
+
     getPathTracerComposer(): LDPathTracerComposer|null {
       return this[$pathTracerComposer] instanceof LDPathTracerComposer ?
-        this[$pathTracerComposer] :
-        null;
+          this[$pathTracerComposer] :
+          null;
+    }
+
+    setPathTracerOptions(options: Partial<PathTracerBuildOptions>) {
+      this.pathTracerBuildOptions =
+          resolvePathTracerBuildOptions(this.pathTracerBuildOptions, options);
+      this.getPathTracerComposer()?.setBuildOptions(
+          this.pathTracerBuildOptions);
+    }
+
+    getPathTracerOptions(): PathTracerBuildOptions {
+      return this.getPathTracerComposer()?.getBuildOptions() ??
+          {...this.pathTracerBuildOptions};
     }
 
     override connectedCallback() {
@@ -202,7 +212,7 @@ export const LDPathTracerMixin = <
       ];
 
       if (knobs.some((prop) => changedProperties.has(prop))) {
-        const options = this.getPathTracerOptions();
+        const options = this.readAttributePathTracerOptions();
         if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
           this[$pathTracerComposer].updateOptions(options);
           (this as any)[$needsRender]();
@@ -232,8 +242,10 @@ export const LDPathTracerMixin = <
       }
 
       if (!this[$pathTracerComposer]) {
-        this[$pathTracerComposer] =
-            new LDPathTracerComposer(this.getPathTracerOptions());
+        const composer =
+            new LDPathTracerComposer(this.readAttributePathTracerOptions());
+        composer.setBuildOptions(this.pathTracerBuildOptions);
+        this[$pathTracerComposer] = composer;
       }
       if (!this.isRenderPipeline(currentEffect)) {
         this.registerEffectComposer(this[$pathTracerComposer]!);
@@ -255,7 +267,7 @@ export const LDPathTracerMixin = <
       }
     }
 
-    private getPathTracerOptions(): PathTracerOptions {
+    private readAttributePathTracerOptions(): PathTracerOptions {
       return {
         samples: Math.max(1, Math.floor(this.pathTracerSamples)),
         samplesThreshold:
@@ -290,14 +302,14 @@ export const LDPathTracerMixin = <
     }
 
     private isRenderPipeline(effect: unknown): boolean {
-      return typeof (effect as {hasAmbientOcclusion?: unknown})
-          ?.hasAmbientOcclusion === 'function' &&
+      return typeof (effect as {
+               hasAmbientOcclusion?: unknown
+             })?.hasAmbientOcclusion === 'function' &&
           typeof (effect as {hasPathTracer?: unknown})?.hasPathTracer ===
           'function';
     }
   }
 
-  return LDPathTracerModelViewerElement as Constructor<
-      LDPathTracerInterface> &
+  return LDPathTracerModelViewerElement as Constructor<LDPathTracerInterface>&
       T;
 };

@@ -2573,6 +2573,52 @@
     ]
   },
   {
+    "Title": "LD Path Tracer",
+    "htmlName": "ld_path_tracer",
+    "Properties": [
+      {
+        "name": "isPathTracerReady",
+        "htmlName": "isPathTracerReady",
+        "description": "Read-only. True after the path tracer has finished building the scene BVH and has drawn at least one sample. Becomes false when the model or scene contents change, when BVH build options change, and while path tracing is disabled.",
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        },
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ]
+      }
+    ],
+    "Methods": [
+      {
+        "name": "setPathTracerOptions({ strategy, maxLeafTris })",
+        "htmlName": "setPathTracerOptions",
+        "description": "Sets BVH construction options used the next time the path tracer builds the scene. <code>strategy</code> is <code>sah</code> (default, slowest build, tightest tree), <code>center</code>, or <code>average</code>. <code>maxLeafTris</code> is the maximum triangles stored in a leaf (default <code>1</code>); larger leaves build faster and can trace slower. Passing the current values does not rebuild. Unknown strategy names are ignored. Values are not HTML attributes.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getPathTracerOptions()",
+        "htmlName": "getPathTracerOptions",
+        "description": "Returns the current BVH build options: <code>{ strategy, maxLeafTris }</code>.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ]
+      }
+    ],
+    "Events": [
+      {
+        "name": "path-tracer-ready",
+        "htmlName": "pathTracerReady",
+        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the path tracer finishes building the scene BVH and draws its first sample. <code>event.detail.samples</code> is the sample count at that frame. The event fires again after the model changes or BVH options change, once the new build has produced a sample. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the path-tracer backend is registered and can happen while the BVH build is still running.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ]
+      }
+    ]
+  },
+  {
     "Title": "LD Selection",
     "htmlName": "ld_selection",
     "Attributes": [
