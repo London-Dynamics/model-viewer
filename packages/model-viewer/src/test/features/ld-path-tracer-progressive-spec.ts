@@ -19,7 +19,7 @@ import {MeshBVH} from 'three-mesh-bvh';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
-import {expandPenumbra, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
+import {contactGroundY, expandPenumbra, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
@@ -234,6 +234,14 @@ suite('progressive contact shadow rays', () => {
     expect(skirt).to.be.greaterThan(0.02);
     expect(skirt).to.be.lessThan(core * 0.5);
     expect(far).to.equal(0);
+  });
+
+  test('ground height ignores a dangling outlier below the hull', () => {
+    const positions = new Float32Array(300);
+    for (let i = 0; i < 100; i++) {
+      positions[i * 3 + 1] = i === 0 ? -4 : 1;
+    }
+    expect(contactGroundY(positions, 0.04)).to.equal(1);
   });
 
   test('the penumbra spread stays lighter than the core', () => {

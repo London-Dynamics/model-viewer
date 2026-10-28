@@ -20,6 +20,30 @@ const ray = new Ray();
 const origin = new Vector3();
 const up = new Vector3(0, 1, 0);
 
+/**
+ * Ground height for the contact plane. The absolute minimum is often a
+ * fitting or antenna, which drops the plane below the hull and leaves a gap.
+ * A low percentile of the vertex heights sits on the bottom instead.
+ */
+export const contactGroundY = (
+    positions: ArrayLike<number>,
+    percentile = 0.04,
+    ): number => {
+  const count = Math.floor(positions.length / 3);
+  if (count === 0) {
+    return 0;
+  }
+  const step = Math.max(1, Math.floor(count / 8000));
+  const ys: number[] = [];
+  for (let i = 0; i < count; i += step) {
+    ys.push(positions[i * 3 + 1]);
+  }
+  ys.sort((a, b) => a - b);
+  const index = Math.min(
+      ys.length - 1, Math.max(0, Math.floor((ys.length - 1) * percentile)));
+  return ys[index];
+};
+
 export const halton = (index: number, base: number): number => {
   let f = 1;
   let result = 0;
@@ -125,9 +149,7 @@ export const stepContactRays = (
         continue;
       }
       const t = Math.min(1, hit.distance / far);
-      // Milder than a square so the rising chine stays in the dark core.
-      // The keel, at t near 0, is still the darkest.
-      const weight = Math.pow(1 - t, 0.75);
+      const weight = (1 - t) * (1 - t);
       if (s === 0) {
         core = weight;
       } else {

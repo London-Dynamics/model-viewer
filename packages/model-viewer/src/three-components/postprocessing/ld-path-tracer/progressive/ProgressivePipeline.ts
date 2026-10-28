@@ -21,7 +21,7 @@ import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 import {ModelScene} from '../../../ModelScene.js';
 import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 
-import {blurOcclusion, ContactJob, expandPenumbra, stepContactRays} from './contact-shadow.js';
+import {blurOcclusion, contactGroundY, ContactJob, expandPenumbra, stepContactRays} from './contact-shadow.js';
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, occlusionAtPoint, PunctualSample} from './lighting.js';
@@ -631,18 +631,21 @@ export class ProgressivePipeline {
       // Core is the band near the ground (the bottom, not the cabin). The
       // skirt has to clear the hull side, which hides the keel from a
       // typical orbit, so it is wider than the core and always lighter.
-      const falloff = Math.max(size.y * 0.4, span * 0.32, 0.05);
-      const penumbraDistance = Math.max(falloff * 1.4, size.y * 0.5);
-      const softnessRadius = Math.max(span * softness * 2.2, size.y * 0.18);
+      const falloff = Math.max(size.y * 0.12, span * 0.1, 0.05);
+      const penumbraDistance = Math.max(falloff * 2, size.y * 0.28);
+      const softnessRadius = Math.max(span * softness * 2.4, size.y * 0.12);
       const width = Math.max(size.x, 0.05) + softnessRadius * 2;
       const depth = Math.max(size.z, 0.05) + softnessRadius * 2;
+      const groundY = this.positions != null ?
+          contactGroundY(this.positions) :
+          box.min.y;
       this.contact = {
         resolution,
         centerX: center.x,
         centerZ: center.z,
         width,
         depth,
-        y: box.min.y,
+        y: groundY,
         softnessRadius,
         samples: softness > 0 ? 12 : 1,
         maxDistance: falloff,
