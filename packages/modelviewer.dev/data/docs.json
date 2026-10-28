@@ -2611,7 +2611,7 @@
       {
         "name": "path-tracer-ready",
         "htmlName": "pathTracerReady",
-        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the path tracer finishes building the scene BVH and draws its first sample. <code>event.detail.samples</code> is the sample count at that frame. The event fires again after the model changes or BVH options change, once the new build has produced a sample. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the path-tracer backend is registered and can happen while the BVH build is still running.",
+        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the path tracer finishes building the scene BVH and draws its first sample. <code>event.detail.samples</code> is the sample count at that frame. The event fires again after the model changes or BVH options change, once the new build has produced a sample. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the path-tracer backend is registered and can happen while the BVH build is still running. BVH construction runs in <code>path-tracer-bvh.worker.js</code> (one worker, no cross-origin isolation). Geometry merging stays on the main thread. If that file cannot be loaded, the build falls back to the main thread.",
         "links": [
           "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
         ]

@@ -288,7 +288,10 @@
                 <span class="attribute">setPathTracerOptions()</span> sets the
                 BVH strategy (<code>sah</code>, <code>center</code>,
                 <code>average</code>) and <code>maxLeafTris</code> without extra
-                attributes. This page shows the path tracing mixin powered by
+                attributes. The BVH is built in
+                <code>path-tracer-bvh.worker.js</code> when that file is served
+                beside the bundle; otherwise it builds on the main thread. This
+                page shows the path tracing mixin powered by
                 <a
                   href="https://gkjohnson.github.io/three-gpu-pathtracer"
                   target="_blank"
