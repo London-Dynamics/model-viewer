@@ -19,6 +19,8 @@ import {Vector2} from 'three';
 import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
 import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveOptionsPatch, ProgressiveSettings, resolveProgressiveSettings,} from '../three-components/postprocessing/ld-path-tracer/progressive/options.js';
+import {ProgressiveReadout} from '../three-components/postprocessing/ld-path-tracer/progressive/ProgressivePipeline.js';
 import {Constructor} from '../utilities.js';
 
 import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
@@ -46,9 +48,15 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseKSigma: number;
   readonly pathTracerRenderedSamples: number;
   readonly isPathTracerReady: boolean;
+  readonly isContactShadowReady: boolean;
+  readonly isTextureAoReady: boolean;
+  readonly isLightLayersReady: boolean;
+  readonly isProbesReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
-  setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
-  getPathTracerOptions(): PathTracerBuildOptions;
+  setPathTracerOptions(options: Partial<PathTracerBuildOptions>&
+                       ProgressiveOptionsPatch): void;
+  getPathTracerOptions(): PathTracerBuildOptions&ProgressiveSettings;
+  getPathTracerProgressiveState(): ProgressiveReadout|null;
 }
 
 const parseTiles = (value: string): Vector2 => {
@@ -119,6 +127,8 @@ export const LDPathTracerMixin = <
     private pathTracerBuildOptions: PathTracerBuildOptions = {
       ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
     };
+    private progressiveSettings: ProgressiveSettings =
+        cloneProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS);
 
     get pathTracerRenderedSamples() {
       if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
@@ -132,22 +142,48 @@ export const LDPathTracerMixin = <
       return this.getPathTracerComposer()?.isReady === true;
     }
 
+    get isContactShadowReady() {
+      return this.getPathTracerComposer()?.isContactShadowReady() === true;
+    }
+
+    get isTextureAoReady() {
+      return this.getPathTracerComposer()?.isTextureAoReady() === true;
+    }
+
+    get isLightLayersReady() {
+      return this.getPathTracerComposer()?.isLightLayersReady() === true;
+    }
+
+    get isProbesReady() {
+      return this.getPathTracerComposer()?.isProbesReady() === true;
+    }
+
     getPathTracerComposer(): LDPathTracerComposer|null {
       return this[$pathTracerComposer] instanceof LDPathTracerComposer ?
           this[$pathTracerComposer] :
           null;
     }
 
-    setPathTracerOptions(options: Partial<PathTracerBuildOptions>) {
+    setPathTracerOptions(options: Partial<PathTracerBuildOptions>&
+                         ProgressiveOptionsPatch) {
       this.pathTracerBuildOptions =
           resolvePathTracerBuildOptions(this.pathTracerBuildOptions, options);
-      this.getPathTracerComposer()?.setBuildOptions(
-          this.pathTracerBuildOptions);
+      this.progressiveSettings =
+          resolveProgressiveSettings(this.progressiveSettings, options);
+      const composer = this.getPathTracerComposer();
+      composer?.setBuildOptions(this.pathTracerBuildOptions);
+      composer?.setProgressiveSettings(this.progressiveSettings);
     }
 
-    getPathTracerOptions(): PathTracerBuildOptions {
-      return this.getPathTracerComposer()?.getBuildOptions() ??
-          {...this.pathTracerBuildOptions};
+    getPathTracerOptions(): PathTracerBuildOptions&ProgressiveSettings {
+      return this.getPathTracerComposer()?.getRuntimeOptions() ?? {
+        ...this.pathTracerBuildOptions,
+        ...cloneProgressiveSettings(this.progressiveSettings),
+      };
+    }
+
+    getPathTracerProgressiveState(): ProgressiveReadout|null {
+      return this.getPathTracerComposer()?.getProgressiveReadout() ?? null;
     }
 
     override connectedCallback() {
@@ -245,6 +281,7 @@ export const LDPathTracerMixin = <
         const composer =
             new LDPathTracerComposer(this.readAttributePathTracerOptions());
         composer.setBuildOptions(this.pathTracerBuildOptions);
+        composer.setProgressiveSettings(this.progressiveSettings);
         this[$pathTracerComposer] = composer;
       }
       if (!this.isRenderPipeline(currentEffect)) {

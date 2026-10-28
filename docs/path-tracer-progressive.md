@@ -353,10 +353,10 @@ handful of emissive materials), AO resolution 192:
 | Probe cubemaps + 2 PMREMs | a few MB at 64² |
 | Trace target | viewport × `path-tracer-render-scale` |
 
-The non-indexed UV clone is the spike. Seam-only duplication keeps it near
-the source vertex count instead of 3× the triangle count. Montana's
-stand-in is one mesh of about 560k triangles and is the chart-job stress
-case; Aquila is many smaller meshes.
+The UV clone is the spike. Seam-only duplication keeps it near the source
+vertex count instead of 3× the triangle count. Montana 001112 (2027) is two
+Draco meshes and about 675k triangles and is the chart-job stress case;
+Aquila is many smaller meshes.
 
 ## Phase 1 (this work) and later
 
@@ -414,7 +414,9 @@ Presets are the default configurator attributes (see the scene README):
 - Aquila 45 Sport, published default, plus the lights-on GLB for layers and
   a toggle
 - Triton Master Scene V3, Draco, interior, almost no lights
-- Montana qa-001112 shelf, labelled stand-in, not the 2027 draft
+- Montana 001112 (2027), the published shelf on castors (Draco, two meshes,
+  about 675k triangles, no lights). The earlier qa-001112 stand-in is not
+  used.
 
 Images are a fixed-camera progression: realtime, contact, AO, lights
 (Aquila on/off), probes (trace not revealed), full trace revealed.

@@ -332,6 +332,10 @@
       {
         "htmlId": "ld-path-tracer",
         "name": "Progressive Path Tracing"
+      },
+      {
+        "htmlId": "ld-path-tracer-quality",
+        "name": "Quality Pipeline"
       }
     ]
   },

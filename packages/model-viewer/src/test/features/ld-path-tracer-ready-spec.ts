@@ -33,7 +33,8 @@ type PathTracerHost = ModelViewerElement&{
   isPathTracerReady: boolean;
   setPathTracerOptions(options: {strategy?: string; maxLeafTris?: number;}):
       void;
-  getPathTracerOptions(): {strategy: string; maxLeafTris: number;};
+  getPathTracerOptions():
+      {strategy: string; maxLeafTris: number; mode: string;};
 };
 
 const asHost = (element: ModelViewerElement): PathTracerHost =>
@@ -181,10 +182,10 @@ suite('LD path tracer ready signal', function() {
   test(
       'exposes BVH build options without rebuilding when they are unchanged',
       async () => {
-        expect(asHost(element).getPathTracerOptions()).to.deep.equal({
-          strategy: 'sah',
-          maxLeafTris: 1,
-        });
+        expect(asHost(element).getPathTracerOptions().strategy).to.equal('sah');
+        expect(asHost(element).getPathTracerOptions().maxLeafTris).to.equal(1);
+        expect(asHost(element).getPathTracerOptions().mode)
+            .to.equal('immediate');
 
         const buildsBefore = sceneBuilds;
         asHost(element).setPathTracerOptions({strategy: 'sah', maxLeafTris: 1});
@@ -195,10 +196,9 @@ suite('LD path tracer ready signal', function() {
         asHost(element).setPathTracerOptions(
             {strategy: 'center', maxLeafTris: 10});
         expect(asHost(element).isPathTracerReady).to.equal(false);
-        expect(asHost(element).getPathTracerOptions()).to.deep.equal({
-          strategy: 'center',
-          maxLeafTris: 10,
-        });
+        expect(asHost(element).getPathTracerOptions().strategy)
+            .to.equal('center');
+        expect(asHost(element).getPathTracerOptions().maxLeafTris).to.equal(10);
         await waitUntil(
             () => asHost(element).isPathTracerReady === true,
             'path tracer did not become ready after build options changed');

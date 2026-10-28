@@ -1,19 +1,12 @@
 import {Camera, Object3D, WebGLRenderer} from 'three';
 
-import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {LDBloomComposer, LDBloomOptions} from '../../../features/ld-bloom.js';
+import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
-import {
-  AmbientOcclusionOptions,
-  LDAmbientOcclusionComposer,
-} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
+import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 import {LDPathTracerComposer} from '../ld-path-tracer/LDPathTracerComposer.js';
 import {LDSelectionOutlineComposer} from '../ld-selection/LDSelectionOutlineComposer.js';
-import {
-  DEFAULT_SELECTION_OUTLINE_STYLE,
-  isSelectionOutlineCapable,
-  SelectionOutlineStyle,
-} from '../ld-selection/selection-outline-pass.js';
+import {DEFAULT_SELECTION_OUTLINE_STYLE, isSelectionOutlineCapable, SelectionOutlineStyle,} from '../ld-selection/selection-outline-pass.js';
 
 export interface SelectionOutlineOptions extends SelectionOutlineStyle {
   enabled: boolean;
@@ -23,9 +16,8 @@ export interface LDRenderPipelineOptions {
   ambientOcclusion: AmbientOcclusionOptions|null;
   bloom: LDBloomOptions;
   pathTracer: {
-    enabled: boolean;
-    samplesThreshold: number;
-    composer: LDPathTracerComposer|null;
+    enabled: boolean; samplesThreshold: number;
+    composer: LDPathTracerComposer | null;
   };
   selectionOutline: SelectionOutlineOptions|null;
 }
@@ -41,9 +33,8 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   private outlineSelection: Object3D[] = [];
 
   constructor(
-    private readonly host: BloomPipelineHost,
-    options: LDRenderPipelineOptions
-  ) {
+      private readonly host: BloomPipelineHost,
+      options: LDRenderPipelineOptions) {
     this.options = cloneOptions(options);
     this.rebuildRasterDelegate();
   }
@@ -82,7 +73,8 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
         this.rasterDelegate.setTargets(this.options.bloom.targets);
         this.rasterDelegate.setActiveMsaa(this.effectiveBloomMsaa());
         this.rasterDelegate.updatePass();
-      } else if (this.rasterDelegate instanceof LDAmbientOcclusionComposer &&
+      } else if (
+          this.rasterDelegate instanceof LDAmbientOcclusionComposer &&
           this.options.ambientOcclusion != null) {
         this.rasterDelegate.updateOptions(this.options.ambientOcclusion);
       }
@@ -128,6 +120,19 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   }
 
   render(deltaTime?: DOMHighResTimeStamp): void {
+    const composer = this.options.pathTracer.composer;
+    if (composer?.isProgressiveMode()) {
+      const started = performance.now();
+      if (this.rasterDelegate != null) {
+        this.rasterDelegate.render(deltaTime);
+        composer.compositeProgressiveTrace();
+        composer.noteProgressiveFrame(performance.now() - started);
+        return;
+      }
+      composer.render(deltaTime);
+      return;
+    }
+
     if (this.shouldShowPathTracer()) {
       this.options.pathTracer.composer?.render(deltaTime);
       return;
@@ -147,14 +152,14 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   }
 
   setActiveMsaa(msaa: number): void {
-    (this.rasterDelegate as unknown as {setActiveMsaa?: (msaa: number) => void})
-        ?.setActiveMsaa?.(msaa);
+    (this.rasterDelegate as unknown as {
+      setActiveMsaa?: (msaa: number) => void
+    })?.setActiveMsaa?.(msaa);
   }
 
   runWithShadowBloomState(callback: () => void): void {
-    const delegate = this.rasterDelegate as unknown as {
-      runWithShadowBloomState?: (callback: () => void) => void
-    };
+    const delegate = this.rasterDelegate as unknown as
+        {runWithShadowBloomState?: (callback: () => void) => void};
     if (typeof delegate.runWithShadowBloomState === 'function') {
       delegate.runWithShadowBloomState(callback);
       return;
@@ -163,13 +168,15 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   }
 
   darkenNonTargeted(): void {
-    (this.rasterDelegate as unknown as {darkenNonTargeted?: () => void})
-        ?.darkenNonTargeted?.();
+    (this.rasterDelegate as unknown as {
+      darkenNonTargeted?: () => void
+    })?.darkenNonTargeted?.();
   }
 
   restoreNonTargeted(): void {
-    (this.rasterDelegate as unknown as {restoreNonTargeted?: () => void})
-        ?.restoreNonTargeted?.();
+    (this.rasterDelegate as unknown as {
+      restoreNonTargeted?: () => void
+    })?.restoreNonTargeted?.();
   }
 
   get activeMsaa(): number|undefined {
@@ -268,7 +275,8 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
     return this.options.bloom.msaa;
   }
 
-  private canUpdateRasterDelegate(nextOptions: LDRenderPipelineOptions): boolean {
+  private canUpdateRasterDelegate(nextOptions: LDRenderPipelineOptions):
+      boolean {
     if (this.rasterDelegate instanceof LDBloomComposer) {
       return shouldUseBloomDelegate(nextOptions);
     }
@@ -281,7 +289,8 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
           nextOptions.ambientOcclusion == null &&
           nextOptions.selectionOutline?.enabled === true;
     }
-    return this.rasterDelegate == null && !shouldUseBloomDelegate(nextOptions) &&
+    return this.rasterDelegate == null &&
+        !shouldUseBloomDelegate(nextOptions) &&
         nextOptions.ambientOcclusion == null &&
         nextOptions.selectionOutline?.enabled !== true;
   }
@@ -314,25 +323,24 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   }
 }
 
-const cloneOptions = (
-  options: LDRenderPipelineOptions
-): LDRenderPipelineOptions => ({
-  ambientOcclusion: options.ambientOcclusion == null ?
-    null :
-    {...options.ambientOcclusion},
-  bloom: {
-    ...options.bloom,
-    targets: options.bloom.targets.map((target) => ({...target})),
-  },
-  pathTracer: {...options.pathTracer},
-  selectionOutline: options.selectionOutline == null ?
-    null :
-    {...options.selectionOutline},
-});
+const cloneOptions =
+    (options: LDRenderPipelineOptions): LDRenderPipelineOptions => ({
+      ambientOcclusion: options.ambientOcclusion == null ?
+          null :
+          {...options.ambientOcclusion},
+      bloom: {
+        ...options.bloom,
+        targets: options.bloom.targets.map((target) => ({...target})),
+      },
+      pathTracer: {...options.pathTracer},
+      selectionOutline: options.selectionOutline == null ?
+          null :
+          {...options.selectionOutline},
+    });
 
 const disposeDelegate = (delegate: EffectComposerInterface|null): void => {
-  (delegate as unknown as {dispose?: () => void}|null)?.dispose?.();
+  (delegate as unknown as {dispose?: () => void} | null)?.dispose?.();
 };
 
 const shouldUseBloomDelegate = (options: LDRenderPipelineOptions): boolean =>
-  options.bloom.enabled && options.bloom.strength > 0;
+    options.bloom.enabled && options.bloom.strength > 0;

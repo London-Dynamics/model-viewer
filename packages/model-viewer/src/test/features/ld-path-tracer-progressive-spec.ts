@@ -1,0 +1,207 @@
+/* @license
+ * Copyright 2026 London Dynamics. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the 'License');
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import {expect} from 'chai';
+import {BufferGeometry, Float32BufferAttribute} from 'three';
+import {MeshBVH} from 'three-mesh-bvh';
+
+import {ModelViewerElement} from '../../model-viewer.js';
+import {stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
+import {createFade, fadeSettled, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
+import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
+import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
+import {waitForEvent} from '../../utilities.js';
+import {assetPath, rafPasses} from '../helpers.js';
+
+const ASTRONAUT = assetPath('models/Astronaut.glb');
+
+suite('progressive path tracer options', () => {
+  test('merges nested bake settings and ignores an unknown mode', () => {
+    const next = resolveProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS, {
+      mode: 'nope' as 'immediate',
+      fadeMs: 120,
+      bake: {contactShadow: {resolution: 64}},
+    });
+
+    expect(next.mode).to.equal('immediate');
+    expect(next.fadeMs).to.equal(120);
+    expect(next.bake.contactShadow.resolution).to.equal(64);
+    expect(next.bake.contactShadow.softness)
+        .to.equal(DEFAULT_PROGRESSIVE_SETTINGS.bake.contactShadow.softness);
+    expect(next.bake.textureAO.samples).to.equal(16);
+  });
+
+  test('clamps probe count and keeps a null environment', () => {
+    const next = resolveProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS, {
+      probes: {count: 99, resolution: 2},
+      environment: '',
+    });
+
+    expect(next.probes.count).to.equal(4);
+    expect(next.probes.resolution).to.equal(8);
+    expect(next.environment).to.equal(null);
+  });
+});
+
+suite('progressive path tracer fades', () => {
+  test('reaches the target in fadeMs and does not overshoot', () => {
+    let state = createFade(0, 1);
+    state = stepFade(state, 300, 600);
+    expect(state.value).to.be.closeTo(0.5, 1e-6);
+    state = stepFade(state, 300, 600);
+    expect(state.value).to.equal(1);
+    expect(fadeSettled(state)).to.equal(true);
+    state = stepFade({value: 1, target: 0}, 300, 600);
+    expect(state.value).to.be.closeTo(0.5, 1e-6);
+    state = stepFade(state, 1000, 600);
+    expect(state.value).to.equal(0);
+  });
+
+  test('a zero duration fade snaps to the target', () => {
+    const state = stepFade(createFade(0, 1), 16, 0);
+    expect(state.value).to.equal(1);
+  });
+});
+
+suite('progressive path tracer invalidation', () => {
+  test('a geometry change restarts every layer', () => {
+    const plan = planInvalidation('geometry');
+    expect(plan.restartBakes).to.equal(true);
+    expect(plan.restartProbes).to.equal(true);
+    expect(plan.restartFullTrace).to.equal(true);
+    expect(plan.rebakeLights).to.equal(true);
+    expect(plan.fadeOut).to.include.members([
+      'contactShadow',
+      'textureAO',
+      'lightLayers',
+      'probes',
+      'fullTrace',
+    ]);
+  });
+
+  test('a material change keeps the bakes', () => {
+    const plan = planInvalidation('material');
+    expect(plan.restartBakes).to.equal(false);
+    expect(plan.rebakeLights).to.equal(false);
+    expect(plan.restartProbes).to.equal(true);
+    expect(plan.restartFullTrace).to.equal(true);
+    expect(plan.fadeOut).to.deep.equal(['probes', 'fullTrace']);
+  });
+
+  test(
+      'a light toggle fades probes and the trace and does not rebake lights',
+      () => {
+        const plan = planInvalidation('light');
+        expect(plan.rebakeLights).to.equal(false);
+        expect(plan.restartBakes).to.equal(false);
+        expect(plan.fadeOut).to.deep.equal(['probes', 'fullTrace']);
+      });
+
+  test('camera motion fades only the full trace', () => {
+    const plan = planInvalidation('camera');
+    expect(plan.fadeOut).to.deep.equal(['fullTrace']);
+    expect(plan.restartProbes).to.equal(false);
+    expect(plan.restartBakes).to.equal(false);
+  });
+});
+
+suite('progressive contact shadow rays', () => {
+  test('occludes texels under a triangle and leaves the corners open', () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+        'position',
+        new Float32BufferAttribute(
+            [-0.25, 0.5, -0.25, 0.25, 0.5, -0.25, 0, 0.5, 0.25], 3));
+    const bvh = new MeshBVH(geometry);
+    const resolution = 16;
+    const grid = new Float32Array(resolution * resolution);
+    const done = stepContactRays(
+        {
+          resolution,
+          centerX: 0,
+          centerZ: 0,
+          width: 2,
+          depth: 2,
+          y: 0,
+          softnessRadius: 0,
+          samples: 1,
+          maxDistance: 2,
+          grid,
+          cursor: 0,
+        },
+        bvh,
+        1000);
+    expect(done).to.equal(true);
+    const center = grid[8 * resolution + 8];
+    expect(center).to.be.greaterThan(0.5);
+    expect(grid[0]).to.equal(0);
+  });
+});
+
+suite('progressive path tracer integration', function() {
+  this.timeout(60000);
+
+  test('contact shadow becomes ready without enabling texture AO', async () => {
+    const element = new ModelViewerElement();
+    element.style.width = '96px';
+    element.style.height = '96px';
+    element.interactionPrompt = 'none';
+    document.body.appendChild(element);
+    try {
+      const loaded = waitForEvent(element, 'load');
+      element.src = ASTRONAUT;
+      await loaded;
+      let ready = false;
+      element.addEventListener('contact-shadow-ready', (event) => {
+        const detail = (event as CustomEvent).detail;
+        if (detail?.ready === true) {
+          ready = true;
+        }
+      });
+      element.pathTracer = true;
+      element.setPathTracerOptions({
+        mode: 'progressive',
+        fadeMs: 0,
+        budgetMs: 12,
+        idleDelayMs: 1e9,
+        bake: {
+          contactShadow: {enabled: true, resolution: 24, softness: 0},
+          textureAO: {enabled: false},
+        },
+        lights: {include: false},
+        probes: {enabled: false},
+      });
+      const start = performance.now();
+      while (!element.isContactShadowReady) {
+        if (performance.now() - start > 30000) {
+          throw new Error('contact shadow did not become ready');
+        }
+        await rafPasses();
+      }
+      expect(ready).to.equal(true);
+      expect(element.isTextureAoReady).to.equal(false);
+      const state = element.getPathTracerProgressiveState();
+      expect(state).to.not.equal(null);
+      expect(state!.cpuSliceMs.max).to.be.lessThan(80);
+      element.setPathTracerOptions({
+        bake: {contactShadow: {enabled: false}},
+      });
+      await rafPasses();
+      expect(element.isContactShadowReady).to.equal(false);
+    } finally {
+      element.remove();
+    }
+  });
+});

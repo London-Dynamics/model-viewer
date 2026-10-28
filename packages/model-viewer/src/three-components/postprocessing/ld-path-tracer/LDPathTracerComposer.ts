@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, DoubleSide, Matrix4, Mesh, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {Camera, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
 import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
 import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -23,6 +23,8 @@ import {ModelScene} from '../../ModelScene.js';
 import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
+import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
+import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
 
 const PATH_TRACER_FADE_DURATION_MS = 600;
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -159,6 +161,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private sceneBuildQueued = false;
   private sceneBuildGeneration = 0;
   private disposed = false;
+  private progressiveSettings: ProgressiveSettings =
+      cloneProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS);
+  private pipeline: ProgressivePipeline|null = null;
+  private traceSceneReady = false;
+  private denoisedSample = -1;
+  private traceHoldTarget: WebGLRenderTarget|null = null;
+  private traceBlit: FullScreenQuad|null = null;
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -207,6 +216,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   beforeRender(_time: DOMHighResTimeStamp, _delta: DOMHighResTimeStamp) {
+    if (this.isProgressiveMode()) {
+      this.beforeRenderProgressive();
+      return;
+    }
     if (this.scene == null || this.pathTracer == null) {
       return;
     }
@@ -228,6 +241,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   render(_deltaTime?: DOMHighResTimeStamp) {
+    if (this.isProgressiveMode()) {
+      this.renderProgressive();
+      return;
+    }
     if (this.sceneBuildInFlight || this.pathTracer == null ||
         this.renderer == null || this.scene == null) {
       return;
@@ -290,6 +307,93 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return {...this.buildOptions};
   }
 
+  isProgressiveMode(): boolean {
+    return this.progressiveSettings.mode === 'progressive' && !this.disposed;
+  }
+
+  getRuntimeOptions(): PathTracerBuildOptions&ProgressiveSettings {
+    return {
+      ...this.buildOptions,
+      ...cloneProgressiveSettings(this.progressiveSettings),
+    };
+  }
+
+  setProgressiveSettings(settings: ProgressiveSettings) {
+    this.progressiveSettings = cloneProgressiveSettings(settings);
+    if (settings.mode !== 'progressive') {
+      this.pipeline?.dispose();
+      this.pipeline = null;
+      this.requestRender();
+      return;
+    }
+    if (this.pipeline == null) {
+      this.pipeline = new ProgressivePipeline(
+          this.progressiveHost(), this.progressiveSettings);
+    } else {
+      this.pipeline.setSettings(this.progressiveSettings);
+    }
+    this.requestRender();
+  }
+
+  getProgressiveReadout() {
+    return this.pipeline?.readout() ?? null;
+  }
+
+  isContactShadowReady(): boolean {
+    return this.pipeline?.contactReadyFlag === true;
+  }
+
+  isTextureAoReady(): boolean {
+    return this.pipeline?.aoReadyFlag === true;
+  }
+
+  isLightLayersReady(): boolean {
+    return this.pipeline?.lightsReadyFlag === true;
+  }
+
+  isProbesReady(): boolean {
+    return this.pipeline?.probesReadyFlag === true;
+  }
+
+  noteProgressiveFrame(ms: number) {
+    this.pipeline?.noteFrame(ms);
+  }
+
+  compositeProgressiveTrace() {
+    const fade = this.pipeline?.traceFadeValue ?? 0;
+    if (fade <= 0.001 || this.pathTracer == null || this.renderer == null ||
+        this.pathTracer.target == null) {
+      return;
+    }
+    const reveal = this.progressiveSettings.traceRevealSamples;
+    const live = this.pathTracer.samples >= reveal;
+    if (!live && this.traceHoldTarget == null &&
+        this.pipeline?.traceHoldImage !== true) {
+      return;
+    }
+    if (live && this.options.denoise &&
+        this.denoisedSample !== this.pathTracer.samples) {
+      this.blitTrace(this.pathTracer.target, true);
+      this.denoisedSample = this.pathTracer.samples;
+    } else if (!live && this.traceHoldTarget == null) {
+      this.blitTrace(this.pathTracer.target, false);
+    }
+    const map = this.traceHoldTarget?.texture ?? this.pathTracer.target.texture;
+    const blit = this.ensureTraceBlit();
+    const material = blit.material as MeshBasicMaterial;
+    material.map = map;
+    material.opacity = fade;
+    material.transparent = fade < 0.999;
+    material.blending = fade < 0.999 ? NormalBlending : NoBlending;
+    material.depthTest = false;
+    material.depthWrite = false;
+    const previousClear = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+    blit.render(this.renderer);
+    this.renderer.autoClear = previousClear;
+    material.blending = NoBlending;
+  }
+
   setBuildOptions(partial: Partial<PathTracerBuildOptions>) {
     const next = resolvePathTracerBuildOptions(this.buildOptions, partial);
     if (next.strategy === this.buildOptions.strategy &&
@@ -334,6 +438,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.ambientOcclusionPreviewComposer = null;
     this.currentAmbientOcclusionPreviewOptions = null;
     this.denoiseQuad.dispose();
+    this.pipeline?.dispose();
+    this.pipeline = null;
+    this.traceBlit?.dispose();
+    this.traceBlit = null;
+    this.traceHoldTarget?.dispose();
+    this.traceHoldTarget = null;
     this.disposeShadowCatcher();
     this.renderer = null;
     this.scene = null;
@@ -346,6 +456,178 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.cameraStateInitialized = false;
     this.needsSceneUpdate = true;
     this.ready = false;
+  }
+
+  private beforeRenderProgressive() {
+    if (this.scene == null) {
+      return;
+    }
+    this.camera = this.scene.getCamera();
+    if (this.pipeline == null) {
+      this.pipeline = new ProgressivePipeline(
+          this.progressiveHost(), this.progressiveSettings);
+    }
+    this.pipeline.tick(performance.now());
+  }
+
+  private renderProgressive() {
+    const started = performance.now();
+    if (this.renderer == null || this.scene == null) {
+      return;
+    }
+    this.applyOutputState();
+    this.renderer.autoClear = true;
+    this.renderer.render(this.scene, this.scene.getCamera());
+    this.renderSoftShadowOverlay();
+    this.compositeProgressiveTrace();
+    this.pipeline?.noteFrame(performance.now() - started);
+    if (this.pipeline?.keepRendering()) {
+      this.queueNextProgressiveRender();
+    }
+  }
+
+  private applyOutputState() {
+    if (this.renderer == null || this.scene == null) {
+      return;
+    }
+    this.renderer.toneMapping = this.scene.toneMapping;
+    this.renderer.outputColorSpace = SRGBColorSpace;
+    const {element, exposure} = this.scene;
+    const exposureIsNumber =
+        typeof exposure === 'number' && !Number.isNaN(exposure);
+    const env = element.environmentImage;
+    const sky = element.skyboxImage;
+    const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
+        (env === 'neutral' || env === 'legacy' || (!env && !sky));
+    this.renderer.toneMappingExposure =
+        (exposureIsNumber ? exposure : 1.0) * (compensateExposure ? 1.3 : 1.0);
+  }
+
+  private progressiveHost() {
+    return {
+      renderer: () => this.renderer,
+      scene: () => this.scene,
+      camera: () => this.scene?.getCamera() ?? this.camera,
+      requestRender: () => this.requestRender(),
+      dispatch: (name: string, detail: Record<string, unknown>) => {
+        this.scene?.element.dispatchEvent(new CustomEvent(name, {detail}));
+      },
+      buildTrace: () => {
+        this.needsSceneUpdate = true;
+        this.syncScene();
+      },
+      traceReady: () => this.traceSceneReady && !this.sceneBuildInFlight,
+      resetTrace: () => {
+        if (this.pathTracer != null && this.pathTracer.samples > 0) {
+          this.blitTrace(this.pathTracer.target, this.options.denoise);
+        }
+        this.pathTracer?.reset();
+        this.denoisedSample = -1;
+      },
+      sampleTrace: () => {
+        if (this.pathTracer == null || !this.traceSceneReady ||
+            this.sceneBuildInFlight) {
+          return -1;
+        }
+        this.pathTracer.renderToCanvas = false;
+        this.pathTracer.pausePathTracing = false;
+        const started = performance.now();
+        try {
+          this.pathTracer.renderSample();
+        } catch (error) {
+          console.warn(
+              '[model-viewer] Progressive trace sample failed.', error);
+          return -1;
+        }
+        const elapsed = performance.now() - started;
+        this.maybeMarkReady();
+        return elapsed;
+      },
+      traceSamples: () => this.pathTracer?.samples ?? 0,
+      maxSamples: () => Math.max(1, this.options.samples),
+      invalidateTrace: () => {
+        this.traceSceneReady = false;
+        this.invalidateReady();
+      },
+    };
+  }
+
+  private ensureTraceBlit(): FullScreenQuad {
+    if (this.traceBlit == null) {
+      this.traceBlit = new FullScreenQuad(new MeshBasicMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      }));
+    }
+    return this.traceBlit;
+  }
+
+  private blitTrace(source: WebGLRenderTarget|null, denoise: boolean) {
+    if (source == null || this.renderer == null) {
+      return;
+    }
+    if (this.traceHoldTarget == null ||
+        this.traceHoldTarget.width !== source.width ||
+        this.traceHoldTarget.height !== source.height) {
+      this.traceHoldTarget?.dispose();
+      this.traceHoldTarget =
+          new WebGLRenderTarget(source.width, source.height, {
+            type: source.texture.type,
+            format: RGBAFormat,
+            depthBuffer: false,
+          });
+    }
+    const previous = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.traceHoldTarget);
+    if (denoise) {
+      this.denoiseMaterial.map = source.texture;
+      this.denoiseMaterial.opacity = 1;
+      this.denoiseMaterial.transparent = false;
+      this.denoiseQuad.render(this.renderer);
+    } else {
+      const blit = this.ensureTraceBlit();
+      const material = blit.material as MeshBasicMaterial;
+      material.map = source.texture;
+      material.opacity = 1;
+      material.transparent = false;
+      blit.render(this.renderer);
+    }
+    this.renderer.setRenderTarget(previous);
+  }
+
+  private withBakeEnvironment(fn: () => void) {
+    const scene = this.scene;
+    const environment = this.pipeline?.bakeEnvironment() ?? null;
+    if (scene == null || environment == null) {
+      fn();
+      return;
+    }
+    const previous = scene.environment;
+    scene.environment = environment;
+    try {
+      fn();
+    } finally {
+      scene.environment = previous;
+    }
+  }
+
+  private concealOverlays() {
+    this.scene?.traverse((object) => {
+      if (object.userData?.progressiveOverlay === true && object.visible) {
+        object.userData.progressiveOverlayWasVisible = true;
+        object.visible = false;
+      }
+    });
+  }
+
+  private revealOverlays() {
+    this.scene?.traverse((object) => {
+      if (object.userData?.progressiveOverlayWasVisible === true) {
+        object.visible = true;
+        object.userData.progressiveOverlayWasVisible = false;
+      }
+    });
   }
 
   private rebuildPathTracer() {
@@ -406,6 +688,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   private invalidateReady() {
     this.ready = false;
+    this.traceSceneReady = false;
   }
 
   private maybeMarkReady() {
@@ -506,6 +789,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.invalidateReady();
     this.sceneBuildInFlight = true;
     this.needsSceneUpdate = false;
+    this.concealOverlays();
 
     const settle = () => {
       if (this.disposed || generation !== this.sceneBuildGeneration) {
@@ -522,6 +806,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.rememberGeometryState();
       this.rememberCameraState(pathTracerCamera);
       this.sceneBuildInFlight = false;
+      this.traceSceneReady = true;
+      this.withBakeEnvironment(() => {
+        this.pathTracer?.updateEnvironment();
+      });
       if (this.needsSceneUpdate || this.sceneBuildQueued) {
         this.sceneBuildQueued = false;
         this.needsSceneUpdate = true;
@@ -534,7 +822,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const worker = this.ensureBvhWorker();
     if (worker != null) {
       pathTracer.setBVHWorker(worker);
-      pathTracer.setSceneAsync(scene, pathTracerCamera)
+      const pending = pathTracer.setSceneAsync(scene, pathTracerCamera);
+      this.revealOverlays();
+      pending
           .then(() => {
             settle();
           })
@@ -556,6 +846,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     pathTracer.setScene(scene, pathTracerCamera);
+    this.revealOverlays();
     settle();
   }
 
