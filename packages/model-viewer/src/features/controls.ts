@@ -13,18 +13,48 @@
  * limitations under the License.
  */
 
-import {property} from 'lit/decorators.js';
-import {Event, OrthographicCamera, PerspectiveCamera, Spherical, Vector3} from 'three';
+import { property } from 'lit/decorators.js';
+import { Event, OrthographicCamera, PerspectiveCamera, Spherical, Vector3 } from 'three';
 
-import {style} from '../decorators.js';
-import ModelViewerElementBase, {$ariaLabel, $container, $getModelIsVisible, $loadedTime, $needsRender, $onModelLoad, $onResize, $renderer, $scene, $tick, $updateStatus, $userInputElement, toVector3D, Vector3D,} from '../model-viewer-base.js';
-import {degreesToRadians, normalizeUnit} from '../styles/conversions.js';
-import {EvaluatedStyle, Intrinsics, SphericalIntrinsics, StyleEvaluator, Vector3Intrinsics,} from '../styles/evaluators.js';
-import {IdentNode, NumberNode, numberNode, parseExpressions,} from '../styles/parsers.js';
-import {DECAY_MILLISECONDS} from '../three-components/Damper.js';
-import {ChangeSource, PointerChangeEvent, SmoothControls,} from '../three-components/SmoothControls.js';
-import {Constructor} from '../utilities.js';
-import {Path, timeline, TimingFunction} from '../utilities/animation.js';
+import { style } from '../decorators.js';
+import ModelViewerElementBase, {
+  $ariaLabel,
+  $container,
+  $getModelIsVisible,
+  $loadedTime,
+  $needsRender,
+  $onModelLoad,
+  $onResize,
+  $renderer,
+  $scene,
+  $tick,
+  $updateStatus,
+  $userInputElement,
+  toVector3D,
+  Vector3D,
+} from '../model-viewer-base.js';
+import { degreesToRadians, normalizeUnit } from '../styles/conversions.js';
+import {
+  EvaluatedStyle,
+  Intrinsics,
+  SphericalIntrinsics,
+  StyleEvaluator,
+  Vector3Intrinsics,
+} from '../styles/evaluators.js';
+import {
+  IdentNode,
+  NumberNode,
+  numberNode,
+  parseExpressions,
+} from '../styles/parsers.js';
+import { DECAY_MILLISECONDS } from '../three-components/Damper.js';
+import {
+  ChangeSource,
+  PointerChangeEvent,
+  SmoothControls,
+} from '../three-components/SmoothControls.js';
+import { Constructor } from '../utilities.js';
+import { Path, timeline, TimingFunction } from '../utilities/animation.js';
 
 // NOTE(cdata): The following "animation" timing functions are deliberately
 // being used in favor of CSS animations. In Safari 12.1 and 13, CSS animations
@@ -37,22 +67,22 @@ const PROMPT_ANIMATION_TIME = 5000;
 const wiggle = timeline({
   initialValue: 0,
   keyframes: [
-    {frames: 5, value: -1},
-    {frames: 1, value: -1},
-    {frames: 8, value: 1},
-    {frames: 1, value: 1},
-    {frames: 5, value: 0},
-    {frames: 18, value: 0},
+    { frames: 5, value: -1 },
+    { frames: 1, value: -1 },
+    { frames: 8, value: 1 },
+    { frames: 1, value: 1 },
+    { frames: 5, value: 0 },
+    { frames: 18, value: 0 },
   ],
 });
 
 const fade = timeline({
   initialValue: 0,
   keyframes: [
-    {frames: 1, value: 1},
-    {frames: 5, value: 1},
-    {frames: 1, value: 0},
-    {frames: 6, value: 0},
+    { frames: 1, value: 1 },
+    { frames: 5, value: 1 },
+    { frames: 1, value: 0 },
+    { frames: 6, value: 0 },
   ],
 });
 
@@ -73,12 +103,12 @@ export const INTERACTION_PROMPT = '. Use mouse, touch or arrow keys to move.';
 
 export interface CameraChangeDetails {
   source: ChangeSource;
-  spatialRegion?: string;  // HACK
+  spatialRegion?: string; // HACK
 }
 
 export interface SphericalPosition {
-  theta: number;  // equator angle around the y (up) axis.
-  phi: number;    // polar angle from the y (up) axis.
+  theta: number; // equator angle around the y (up) axis.
+  phi: number; // polar angle from the y (up) axis.
   radius: number;
   toString(): string;
 }
@@ -104,23 +134,25 @@ export interface A11yTranslationsInterface {
   'interaction-prompt': string;
 }
 
-export type InteractionPromptStrategy = 'auto'|'none';
-export type InteractionPromptStyle = 'basic'|'wiggle';
-export type TouchAction = 'pan-y'|'pan-x'|'none';
+export type InteractionPromptStrategy = 'auto' | 'none';
+export type InteractionPromptStyle = 'basic' | 'wiggle';
+export type TouchAction = 'pan-y' | 'pan-x' | 'none';
 
-export const InteractionPromptStrategy:
-    {[index: string]: InteractionPromptStrategy;} = {
-      AUTO: 'auto',
-      NONE: 'none',
-    };
+export const InteractionPromptStrategy: {
+  [index: string]: InteractionPromptStrategy;
+} = {
+  AUTO: 'auto',
+  NONE: 'none',
+};
 
-export const InteractionPromptStyle:
-    {[index: string]: InteractionPromptStyle;} = {
-      BASIC: 'basic',
-      WIGGLE: 'wiggle',
-    };
+export const InteractionPromptStyle: {
+  [index: string]: InteractionPromptStyle;
+} = {
+  BASIC: 'basic',
+  WIGGLE: 'wiggle',
+};
 
-export const TouchAction: {[index: string]: TouchAction} = {
+export const TouchAction: { [index: string]: TouchAction } = {
   PAN_Y: 'pan-y',
   PAN_X: 'pan-x',
   NONE: 'none',
@@ -131,24 +163,27 @@ export const fieldOfViewIntrinsics = () => {
     basis: [
       degreesToRadians(numberNode(DEFAULT_FOV_DEG, 'deg')) as NumberNode<'rad'>,
     ],
-    keywords: {auto: [null]},
+    keywords: { auto: [null] },
   };
 };
 
 export const minFieldOfViewIntrinsics = () => {
   return {
     basis: [
-      degreesToRadians(numberNode(DEFAULT_MIN_FOV_DEG, 'deg')) as
-          NumberNode<'rad'>,
+      degreesToRadians(
+        numberNode(DEFAULT_MIN_FOV_DEG, 'deg')
+      ) as NumberNode<'rad'>,
     ],
-    keywords: {auto: [null]},
+    keywords: { auto: [null] },
   };
 };
 
 export const cameraOrbitIntrinsics = (() => {
-  const defaultTerms =
-      parseExpressions(DEFAULT_CAMERA_ORBIT)[0]
-          .terms as [NumberNode<'rad'>, NumberNode<'rad'>, IdentNode];
+  const defaultTerms = parseExpressions(DEFAULT_CAMERA_ORBIT)[0].terms as [
+    NumberNode<'rad'>,
+    NumberNode<'rad'>,
+    IdentNode
+  ];
 
   const theta = normalizeUnit(defaultTerms[0]) as NumberNode<'rad'>;
   const phi = normalizeUnit(defaultTerms[1]) as NumberNode<'rad'>;
@@ -158,13 +193,14 @@ export const cameraOrbitIntrinsics = (() => {
 
     return {
       basis: [theta, phi, numberNode(radius, 'm')],
-      keywords: {auto: [null, null, numberNode(105, '%')]},
+      keywords: { auto: [null, null, numberNode(105, '%')] },
     };
   };
 })();
 
-export const minCameraOrbitIntrinsics = (element: ModelViewerElementBase&
-                                         ControlsInterface) => {
+export const minCameraOrbitIntrinsics = (
+  element: ModelViewerElementBase & ControlsInterface
+) => {
   const radius = MINIMUM_RADIUS_RATIO * element[$scene].boundingSphere.radius;
 
   return {
@@ -173,7 +209,7 @@ export const minCameraOrbitIntrinsics = (element: ModelViewerElementBase&
       numberNode(0, 'rad'),
       numberNode(radius, 'm'),
     ],
-    keywords: {auto: [null, null, null]},
+    keywords: { auto: [null, null, null] },
   };
 };
 
@@ -188,7 +224,7 @@ export const maxCameraOrbitIntrinsics = (element: ModelViewerElementBase) => {
       numberNode(Math.PI, 'rad'),
       numberNode(defaultRadius, 'm'),
     ],
-    keywords: {auto: [null, null, null]},
+    keywords: { auto: [null, null, null] },
   };
 };
 
@@ -201,7 +237,7 @@ export const cameraTargetIntrinsics = (element: ModelViewerElementBase) => {
       numberNode(center.y, 'm'),
       numberNode(center.z, 'm'),
     ],
-    keywords: {auto: [null, null, null]},
+    keywords: { auto: [null, null, null] },
   };
 };
 
@@ -219,8 +255,9 @@ export const $fingerAnimatedContainers = Symbol('fingerAnimatedContainers');
  * True while an LD camera API owns the camera pose. Controls use this to
  * avoid applying automatic prompt motion over a programmatic transition.
  */
-export const $programmaticCameraAnimation =
-    Symbol('programmaticCameraAnimation');
+export const $programmaticCameraAnimation = Symbol(
+  'programmaticCameraAnimation'
+);
 
 const $deferInteractionPrompt = Symbol('deferInteractionPrompt');
 const $updateAria = Symbol('updateAria');
@@ -254,7 +291,7 @@ const $syncMaxFieldOfView = Symbol('syncMaxFieldOfView');
 
 export declare interface ControlsInterface {
   cameraControls: boolean;
-  interactionMode: 'rotate'|'pan';
+  interactionMode: 'rotate' | 'pan';
   cameraOrbit: string;
   cameraTarget: string;
   fieldOfView: string;
@@ -273,7 +310,7 @@ export declare interface ControlsInterface {
   disableZoom: boolean;
   disablePan: boolean;
   disableTap: boolean;
-  a11y: A11yTranslationsInterface|string|null;
+  a11y: A11yTranslationsInterface | string | null;
   getCameraOrbit(): SphericalPosition;
   getCameraTarget(): Vector3D;
   getFieldOfView(): number;
@@ -291,13 +328,14 @@ export declare interface ControlsInterface {
 }
 
 export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
-    ModelViewerElement: T): Constructor<ControlsInterface>&T => {
+  ModelViewerElement: T
+): Constructor<ControlsInterface> & T => {
   class ControlsModelViewerElement extends ModelViewerElement {
-    @property({type: Boolean, attribute: 'camera-controls'})
+    @property({ type: Boolean, attribute: 'camera-controls' })
     cameraControls: boolean = false;
 
-    @property({type: String, attribute: 'interaction-mode'})
-    interactionMode: 'rotate'|'pan' = 'rotate';
+    @property({ type: String, attribute: 'interaction-mode' })
+    interactionMode: 'rotate' | 'pan' = 'rotate';
 
     @style({
       intrinsics: cameraOrbitIntrinsics,
@@ -379,69 +417,74 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     })
     maxFieldOfView: string = 'auto';
 
-    @property({type: Number, attribute: 'interaction-prompt-threshold'})
+    @property({ type: Number, attribute: 'interaction-prompt-threshold' })
     interactionPromptThreshold: number = DEFAULT_INTERACTION_PROMPT_THRESHOLD;
 
-    @property({type: String, attribute: 'interaction-prompt'})
+    @property({ type: String, attribute: 'interaction-prompt' })
     interactionPrompt: InteractionPromptStrategy =
-        InteractionPromptStrategy.AUTO;
+      InteractionPromptStrategy.AUTO;
 
-    @property({type: String, attribute: 'interaction-prompt-style'})
+    @property({ type: String, attribute: 'interaction-prompt-style' })
     interactionPromptStyle: InteractionPromptStyle =
-        InteractionPromptStyle.WIGGLE;
+      InteractionPromptStyle.WIGGLE;
 
-    @property({type: Number, attribute: 'orbit-sensitivity'})
+    @property({ type: Number, attribute: 'orbit-sensitivity' })
     orbitSensitivity: number = 1;
 
-    @property({type: Number, attribute: 'zoom-sensitivity'})
+    @property({ type: Number, attribute: 'zoom-sensitivity' })
     zoomSensitivity: number = 1;
 
-    @property({type: Number, attribute: 'pan-sensitivity'})
+    @property({ type: Number, attribute: 'pan-sensitivity' })
     panSensitivity: number = 1;
 
-    @property({type: String, attribute: 'touch-action'})
+    @property({ type: String, attribute: 'touch-action' })
     touchAction: TouchAction = TouchAction.NONE;
 
-    @property({type: Boolean, attribute: 'disable-zoom'})
+    @property({ type: Boolean, attribute: 'disable-zoom' })
     disableZoom: boolean = false;
 
-    @property({type: Boolean, attribute: 'disable-pan'})
+    @property({ type: Boolean, attribute: 'disable-pan' })
     disablePan: boolean = false;
 
-    @property({type: Boolean, attribute: 'disable-tap'})
+    @property({ type: Boolean, attribute: 'disable-tap' })
     disableTap: boolean = false;
 
-    @property({type: Number, attribute: 'interpolation-decay'})
+    @property({ type: Number, attribute: 'interpolation-decay' })
     interpolationDecay: number = DECAY_MILLISECONDS;
 
-    @property() a11y: A11yTranslationsInterface|string|null = null;
+    @property() a11y: A11yTranslationsInterface | string | null = null;
 
-    protected[$promptElement] =
-        this.shadowRoot!.querySelector('.interaction-prompt') as HTMLElement;
-    protected[$promptAnimatedContainer] =
-        this.shadowRoot!.querySelector('#prompt') as HTMLElement;
-    protected[$fingerAnimatedContainers]: HTMLElement[] = [
+    protected [$promptElement] = this.shadowRoot!.querySelector(
+      '.interaction-prompt'
+    ) as HTMLElement;
+    protected [$promptAnimatedContainer] = this.shadowRoot!.querySelector(
+      '#prompt'
+    ) as HTMLElement;
+    protected [$fingerAnimatedContainers]: HTMLElement[] = [
       this.shadowRoot!.querySelector('#finger0')!,
       this.shadowRoot!.querySelector('#finger1')!,
     ];
-    protected[$panElement] =
-        this.shadowRoot!.querySelector('.pan-target') as HTMLElement;
+    protected [$panElement] = this.shadowRoot!.querySelector(
+      '.pan-target'
+    ) as HTMLElement;
 
-    protected[$lastPromptOffset] = 0;
-    protected[$promptElementVisibleTime] = Infinity;
-    protected[$userHasInteracted] = false;
-    protected[$waitingToPromptUser] = false;
-    protected[$cancellationSource] = ChangeSource.AUTOMATIC;
+    protected [$lastPromptOffset] = 0;
+    protected [$promptElementVisibleTime] = Infinity;
+    protected [$userHasInteracted] = false;
+    protected [$waitingToPromptUser] = false;
+    protected [$cancellationSource] = ChangeSource.AUTOMATIC;
 
-    protected[$controls] = new SmoothControls(
-        this[$scene].camera as PerspectiveCamera, this[$userInputElement],
-        this[$scene]);
+    protected [$controls] = new SmoothControls(
+      this[$scene].camera as PerspectiveCamera,
+      this[$userInputElement],
+      this[$scene]
+    );
 
-    protected[$lastSpherical] = new Spherical();
-    protected[$jumpCamera] = false;
-    protected[$initialized] = false;
-    protected[$maintainThetaPhi] = false;
-    protected[$a11y] = {} as A11yTranslationsInterface;
+    protected [$lastSpherical] = new Spherical();
+    protected [$jumpCamera] = false;
+    protected [$initialized] = false;
+    protected [$maintainThetaPhi] = false;
+    protected [$a11y] = {} as A11yTranslationsInterface;
 
     get inputSensitivity(): number {
       return this[$controls].inputSensitivity;
@@ -452,7 +495,7 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     getCameraOrbit(): SphericalPosition {
-      const {theta, phi, radius} = this[$lastSpherical];
+      const { theta, phi, radius } = this[$lastSpherical];
       return {
         theta,
         phi,
@@ -465,8 +508,10 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     getCameraTarget(): Vector3D {
       return toVector3D(
-          this[$renderer].isPresenting ? this[$renderer].arRenderer.target :
-                                         this[$scene].getDynamicTarget());
+        this[$renderer].isPresenting
+          ? this[$renderer].arRenderer.target
+          : this[$scene].getDynamicTarget()
+      );
     }
 
     getFieldOfView(): number {
@@ -496,48 +541,54 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$promptElementVisibleTime] = Infinity;
       this[$userHasInteracted] = false;
       this[$waitingToPromptUser] =
-          this.interactionPrompt === InteractionPromptStrategy.AUTO &&
-          this.cameraControls;
+        this.interactionPrompt === InteractionPromptStrategy.AUTO &&
+        this.cameraControls;
     }
 
     zoom(keyPresses: number) {
-      const event = new WheelEvent('wheel', {deltaY: -30 * keyPresses});
+      const event = new WheelEvent('wheel', { deltaY: -30 * keyPresses });
       this[$userInputElement].dispatchEvent(event);
     }
 
-    disableCameraDrag() {
-    }
+    disableCameraDrag() {}
 
-    enableCameraDrag() {
-    }
+    enableCameraDrag() {}
 
     connectedCallback() {
       super.connectedCallback();
 
       this[$controls].addEventListener(
-          'user-interaction', this[$cancelPrompts]);
+        'user-interaction',
+        this[$cancelPrompts]
+      );
       this[$controls].addEventListener(
-          'pointer-change-start',
-          this[$onPointerChange] as (event: Event) => void);
+        'pointer-change-start',
+        this[$onPointerChange] as (event: Event) => void
+      );
       this[$controls].addEventListener(
-          'pointer-change-end',
-          this[$onPointerChange] as (event: Event) => void);
+        'pointer-change-end',
+        this[$onPointerChange] as (event: Event) => void
+      );
     }
 
     disconnectedCallback() {
       super.disconnectedCallback();
 
       this[$controls].removeEventListener(
-          'user-interaction', this[$cancelPrompts]);
+        'user-interaction',
+        this[$cancelPrompts]
+      );
       this[$controls].removeEventListener(
-          'pointer-change-start',
-          this[$onPointerChange] as (event: Event) => void);
+        'pointer-change-start',
+        this[$onPointerChange] as (event: Event) => void
+      );
       this[$controls].removeEventListener(
-          'pointer-change-end',
-          this[$onPointerChange] as (event: Event) => void);
+        'pointer-change-end',
+        this[$onPointerChange] as (event: Event) => void
+      );
     }
 
-    updated(changedProperties: Map<string|number|symbol, unknown>) {
+    updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
 
       const controls = this[$controls];
@@ -568,11 +619,16 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         controls.enableTap = !this.disableTap;
       }
 
-      if (changedProperties.has('interactionPrompt') ||
-          changedProperties.has('cameraControls') ||
-          changedProperties.has('src')) {
-        if (this.interactionPrompt === InteractionPromptStrategy.AUTO &&
-            this.cameraControls && !this[$userHasInteracted]) {
+      if (
+        changedProperties.has('interactionPrompt') ||
+        changedProperties.has('cameraControls') ||
+        changedProperties.has('src')
+      ) {
+        if (
+          this.interactionPrompt === InteractionPromptStrategy.AUTO &&
+          this.cameraControls &&
+          !this[$userHasInteracted]
+        ) {
           this[$waitingToPromptUser] = true;
         } else {
           this[$deferInteractionPrompt]();
@@ -581,13 +637,14 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (changedProperties.has('interactionPromptStyle')) {
         this[$promptAnimatedContainer].style.opacity =
-            this.interactionPromptStyle == InteractionPromptStyle.BASIC ? '1' :
-                                                                          '0';
+          this.interactionPromptStyle == InteractionPromptStyle.BASIC
+            ? '1'
+            : '0';
       }
 
       if (changedProperties.has('touchAction')) {
         const touchAction = this.touchAction;
-        controls.applyOptions({touchAction});
+        controls.applyOptions({ touchAction });
         controls.updateTouchActionStyle();
       }
 
@@ -647,28 +704,30 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (fingerElements[0].style.opacity === '1') {
         console.warn(
-            'interact() failed because an existing interaction is running.');
+          'interact() failed because an existing interaction is running.'
+        );
         return;
       }
 
-      const xy = new Array<{x: TimingFunction; y: TimingFunction}>();
-      xy.push({x: timeline(finger0.x), y: timeline(finger0.y)});
-      const positions = [{x: xy[0].x(0), y: xy[0].y(0)}];
+      const xy = new Array<{ x: TimingFunction; y: TimingFunction }>();
+      xy.push({ x: timeline(finger0.x), y: timeline(finger0.y) });
+      const positions = [{ x: xy[0].x(0), y: xy[0].y(0) }];
 
       if (finger1 != null) {
-        xy.push({x: timeline(finger1.x), y: timeline(finger1.y)});
-        positions.push({x: xy[1].x(0), y: xy[1].y(0)});
+        xy.push({ x: timeline(finger1.x), y: timeline(finger1.y) });
+        positions.push({ x: xy[1].x(0), y: xy[1].y(0) });
       }
 
       let startTime = performance.now();
-      const {width, height} = this[$scene];
+      const { width, height } = this[$scene];
       const rect = this.getBoundingClientRect();
 
       const dispatchTouches = (type: string) => {
         for (const [i, position] of positions.entries()) {
-          const {style} = fingerElements[i];
+          const { style } = fingerElements[i];
           style.transform = `translateX(${width * position.x}px) translateY(${
-              height * position.y}px)`;
+            height * position.y
+          }px)`;
           if (type === 'pointerdown') {
             style.opacity = '1';
           } else if (type === 'pointerup') {
@@ -676,12 +735,12 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
 
           const init = {
-            pointerId: i - 5678,  // help ensure uniqueness
+            pointerId: i - 5678, // help ensure uniqueness
             pointerType: 'touch',
             target: inputElement,
             clientX: width * position.x + rect.x,
             clientY: height * position.y + rect.y,
-            altKey: true,  // flag that this is not a user interaction
+            altKey: true, // flag that this is not a user interaction
           } as PointerEventInit;
 
           inputElement.dispatchEvent(new PointerEvent(type, init));
@@ -692,16 +751,19 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         // Cancel interaction if something else moves the camera or input is
         // removed from the DOM.
         const changeSource = this[$cancellationSource];
-        if (changeSource !== ChangeSource.AUTOMATIC ||
-            !inputElement.isConnected) {
+        if (
+          changeSource !== ChangeSource.AUTOMATIC ||
+          !inputElement.isConnected
+        ) {
           for (const fingerElement of this[$fingerAnimatedContainers]) {
             fingerElement.style.opacity = '0';
           }
           dispatchTouches('pointercancel');
           this.dispatchEvent(
-              new CustomEvent<CameraChangeDetails>('interact-stopped', {
-                detail: {source: changeSource},
-              }));
+            new CustomEvent<CameraChangeDetails>('interact-stopped', {
+              detail: { source: changeSource },
+            })
+          );
           document.removeEventListener('visibilitychange', onVisibilityChange);
           return;
         }
@@ -718,9 +780,10 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         } else {
           dispatchTouches('pointerup');
           this.dispatchEvent(
-              new CustomEvent<CameraChangeDetails>('interact-stopped', {
-                detail: {source: ChangeSource.AUTOMATIC},
-              }));
+            new CustomEvent<CameraChangeDetails>('interact-stopped', {
+              detail: { source: ChangeSource.AUTOMATIC },
+            })
+          );
           document.removeEventListener('visibilitychange', onVisibilityChange);
         }
       };
@@ -755,7 +818,7 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     [$syncCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
       const controls = this[$controls];
       if (this[$maintainThetaPhi]) {
-        const {theta, phi} = this.getCameraOrbit();
+        const { theta, phi } = this.getCameraOrbit();
         style[0] = theta;
         style[1] = phi;
         this[$maintainThetaPhi] = false;
@@ -793,7 +856,7 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     [$syncMaxFieldOfView](style: EvaluatedStyle<Intrinsics<['rad']>>) {
       const fov = this[$scene].adjustedFoV((style[0] * 180) / Math.PI);
-      this[$controls].applyOptions({maximumFieldOfView: fov});
+      this[$controls].applyOptions({ maximumFieldOfView: fov });
       this.jumpCameraToGoal();
     }
 
@@ -819,8 +882,10 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       const now = performance.now();
       if (this[$waitingToPromptUser]) {
-        if (this.loaded &&
-            now > this[$loadedTime] + this.interactionPromptThreshold) {
+        if (
+          this.loaded &&
+          now > this[$loadedTime] + this.interactionPromptThreshold
+        ) {
           this[$waitingToPromptUser] = false;
           this[$promptElementVisibleTime] = now;
 
@@ -828,11 +893,12 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
       }
 
-      if (isFinite(this[$promptElementVisibleTime]) &&
-          this.interactionPromptStyle === InteractionPromptStyle.WIGGLE) {
+      if (
+        isFinite(this[$promptElementVisibleTime]) &&
+        this.interactionPromptStyle === InteractionPromptStyle.WIGGLE
+      ) {
         const animationTime =
-            ((now - this[$promptElementVisibleTime]) / PROMPT_ANIMATION_TIME) %
-            1;
+          ((now - this[$promptElementVisibleTime]) / PROMPT_ANIMATION_TIME) % 1;
         const offset = wiggle(animationTime);
         const opacity = fade(animationTime);
 
@@ -841,10 +907,11 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (offset !== this[$lastPromptOffset]) {
           const xOffset = offset * scene.width * 0.05;
           const deltaTheta =
-              ((offset - this[$lastPromptOffset]) * Math.PI) / 16;
+            ((offset - this[$lastPromptOffset]) * Math.PI) / 16;
 
-          this[$promptAnimatedContainer].style.transform =
-              `translateX(${xOffset}px)`;
+          this[
+            $promptAnimatedContainer
+          ].style.transform = `translateX(${xOffset}px)`;
 
           // Path tracing restarts accumulation on every camera change.
           // The prompt wiggle orbits forever, so it would pin samples at one
@@ -886,16 +953,17 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     [$updateAria]() {
-      const {theta, phi} =
-          this[$controls]!.getCameraSpherical(this[$lastSpherical]);
+      const { theta, phi } = this[$controls]!.getCameraSpherical(
+        this[$lastSpherical]
+      );
 
       const azimuthalQuadrant =
-          (4 + Math.floor(((theta % TAU) + QUARTER_PI) / HALF_PI)) % 4;
+        (4 + Math.floor(((theta % TAU) + QUARTER_PI) / HALF_PI)) % 4;
 
       const polarTrient = Math.floor(phi / THIRD_PI);
 
       const azimuthalQuadrantLabel =
-          AZIMUTHAL_QUADRANT_LABELS[azimuthalQuadrant];
+        AZIMUTHAL_QUADRANT_LABELS[azimuthalQuadrant];
       const polarTrientLabel = POLAR_TRIENT_LABELS[polarTrient];
       const position = `${polarTrientLabel}${azimuthalQuadrantLabel}`;
 
@@ -906,21 +974,22 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         this[$updateStatus](`View from stage ${position}`);
       }
 
-      return position;  // HACK
+      return position; // HACK
     }
 
-    get[$ariaLabel]() {
+    get [$ariaLabel]() {
       let interactionPrompt = INTERACTION_PROMPT;
       if ('interaction-prompt' in this[$a11y]) {
         interactionPrompt = `. ${this[$a11y]['interaction-prompt']}`;
       }
 
       return (
-          super[$ariaLabel].replace(/\.$/, '') +
-          (this.cameraControls ? interactionPrompt : ''));
+        super[$ariaLabel].replace(/\.$/, '') +
+        (this.cameraControls ? interactionPrompt : '')
+      );
     }
 
-    async[$onResize](event: any) {
+    async [$onResize](event: any) {
       const controls = this[$controls];
       const scene = this[$scene];
       const oldFramedFoV = scene.adjustedFoV(scene.framedFoVDeg);
@@ -980,18 +1049,22 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     };
 
     [$onChange] = () => {
-      const spatialRegion = this[$updateAria]();  // HACK
+      const spatialRegion = this[$updateAria](); // HACK
       this[$needsRender]();
       const source = this[$controls].changeSource;
 
-      this.dispatchEvent(new CustomEvent<CameraChangeDetails>('camera-change', {
-        detail: {source, spatialRegion},
-      }));  // HACK
+      this.dispatchEvent(
+        new CustomEvent<CameraChangeDetails>('camera-change', {
+          detail: { source, spatialRegion },
+        })
+      ); // HACK
     };
 
     [$onPointerChange] = (event: PointerChangeEvent) => {
       this[$container].classList.toggle(
-          'pointer-tumbling', event.type === 'pointer-change-start');
+        'pointer-tumbling',
+        event.type === 'pointer-change-start'
+      );
     };
 
     [$updateA11y]() {
@@ -1004,8 +1077,9 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           }
         } else if (this.a11y.length > 0) {
           console.warn(
-              'Error not supported format, should be a JSON string:',
-              this.a11y);
+            'Error not supported format, should be a JSON string:',
+            this.a11y
+          );
         } else {
           this[$a11y] = <A11yTranslationsInterface>{};
         }
