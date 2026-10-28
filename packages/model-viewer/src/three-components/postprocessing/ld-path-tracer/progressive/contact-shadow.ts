@@ -125,7 +125,9 @@ export const stepContactRays = (
         continue;
       }
       const t = Math.min(1, hit.distance / far);
-      const weight = (1 - t) * (1 - t);
+      // Milder than a square so the rising chine stays in the dark core.
+      // The keel, at t near 0, is still the darkest.
+      const weight = Math.pow(1 - t, 0.75);
       if (s === 0) {
         core = weight;
       } else {
