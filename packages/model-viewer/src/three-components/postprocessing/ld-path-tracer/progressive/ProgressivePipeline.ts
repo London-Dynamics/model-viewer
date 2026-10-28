@@ -631,9 +631,9 @@ export class ProgressivePipeline {
       // Core is the band near the ground (the bottom, not the cabin). The
       // skirt has to clear the hull side, which hides the keel from a
       // typical orbit, so it is wider than the core and always lighter.
-      const falloff = Math.max(size.y * 0.12, 0.04);
-      const penumbraDistance = Math.max(falloff * 2.5, size.y * 0.35);
-      const softnessRadius = Math.max(span * softness * 4, size.y * 0.35);
+      const falloff = Math.max(size.y * 0.22, span * 0.2, 0.05);
+      const penumbraDistance = Math.max(falloff * 1.8, size.y * 0.45);
+      const softnessRadius = Math.max(span * softness * 3.2, size.y * 0.28);
       const width = Math.max(size.x, 0.05) + softnessRadius * 2;
       const depth = Math.max(size.z, 0.05) + softnessRadius * 2;
       this.contact = {

@@ -117,12 +117,12 @@ Cheapest layer, and it does not need UVs.
   It is not part of the raycast BVH (`userData.progressiveOverlay`).
 - Rays start just under the plane and shoot straight up, so they meet the
   underside instead of starting inside the mesh. Sample 0 is unjittered.
-  Its falloff is `max(size.y * 0.12, 0.04)`, and the weight is
-  `(1 - distance / falloff)²`. That is the dark core: the bottom that
-  nearly touches the ground. A cabin well above that band does not extend it.
+  Its falloff is `max(size.y * 0.22, span * 0.2, 0.05)`, and the weight is
+  `(1 - distance / falloff)²`. That is the dark core: the bottom, including
+  a rising chine, but not a cabin well above that band.
 - Later samples only fill texels the center ray missed, at 0.55× the
-  weight, inside a disk of about `softness × 4 ×` the smaller horizontal
-  size (at least `0.35 × height`). A distance falloff then spreads the core
+  weight, inside a disk of about `softness × 3.2 ×` the smaller horizontal
+  size (at least `0.28 × height`). A distance falloff then spreads the core
   across that same disk at 0.62×, quadratic in distance, so the ground
   beside the hull — which hides the keel from a side orbit — is a lighter
   skirt and not a second flat blob.
