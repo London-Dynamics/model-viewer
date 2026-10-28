@@ -1334,9 +1334,31 @@ export class ProgressivePipeline {
       this.aoReady = true;
       return;
     }
-    const data = new Uint8Array(this.aoData.length);
-    for (let i = 0; i < this.aoData.length; i++) {
-      data[i] = Math.round(Math.min(1, Math.max(0, this.aoData[i])) * 255);
+    const blurred = new Float32Array(this.aoData.length);
+    const radius = 1;
+    for (let y = 0; y < resolution; y++) {
+      for (let x = 0; x < resolution; x++) {
+        let sum = 0;
+        let n = 0;
+        for (let ky = -radius; ky <= radius; ky++) {
+          for (let kx = -radius; kx <= radius; kx++) {
+            const sx = Math.min(resolution - 1, Math.max(0, x + kx));
+            const sy = Math.min(resolution - 1, Math.max(0, y + ky));
+            sum += this.aoData[(sy * resolution + sx) * 4];
+            n++;
+          }
+        }
+        const value = sum / n;
+        const texel = (y * resolution + x) * 4;
+        blurred[texel] = value;
+        blurred[texel + 1] = value;
+        blurred[texel + 2] = value;
+        blurred[texel + 3] = 1;
+      }
+    }
+    const data = new Uint8Array(blurred.length);
+    for (let i = 0; i < blurred.length; i++) {
+      data[i] = Math.round(Math.min(1, Math.max(0, blurred[i])) * 255);
     }
     this.aoTexture?.dispose();
     this.aoTexture = new DataTexture(data, resolution, resolution, RGBAFormat);

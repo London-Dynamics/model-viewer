@@ -364,21 +364,26 @@ const packCharts = (job: UvJob) => {
   for (let i = 0; i < chartCount; i++) {
     maxExtent = Math.max(maxExtent, widthOf(i), heightOf(i));
   }
-  let scale = (resolution * 0.9) / maxExtent;
+  let areaSum = 0;
+  for (let i = 0; i < chartCount; i++) {
+    areaSum += widthOf(i) * heightOf(i);
+  }
+  const areaScale = Math.sqrt(((resolution - pad * 2) ** 2) * 0.55 / Math.max(areaSum, 1e-6));
+  let scale = Math.min((resolution * 0.85) / maxExtent, areaScale);
   if (!Number.isFinite(scale) || scale <= 0) {
     scale = 1;
   }
   const place = new Float32Array(chartCount * 4);
   let fitted = false;
-  for (let attempt = 0; attempt < 8 && !fitted; attempt++) {
+  for (let attempt = 0; attempt < 14 && !fitted; attempt++) {
     let cursorX = pad;
     let cursorY = pad;
     let rowH = 0;
     fitted = true;
     for (let n = 0; n < chartCount; n++) {
       const c = order[n];
-      const w = Math.max(2, Math.ceil(widthOf(c) * scale));
-      const h = Math.max(2, Math.ceil(heightOf(c) * scale));
+      const w = Math.max(1, Math.ceil(widthOf(c) * scale));
+      const h = Math.max(1, Math.ceil(heightOf(c) * scale));
       if (cursorX + w + pad > resolution) {
         cursorX = pad;
         cursorY += rowH + pad;
@@ -386,7 +391,7 @@ const packCharts = (job: UvJob) => {
       }
       if (cursorY + h + pad > resolution) {
         fitted = false;
-        scale *= 0.72;
+        scale *= 0.6;
         break;
       }
       place[c * 4] = cursorX;
@@ -584,6 +589,7 @@ export const stepUvJob = (job: UvJob, budgetMs: number) => {
       }
     }
     job.phase = 'pack';
+    return;
   }
   if (job.phase === 'pack') {
     packCharts(job);

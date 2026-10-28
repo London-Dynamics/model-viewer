@@ -49,7 +49,7 @@ export const occlusionAtPoint = (
     distance: number,
     ): number => {
   orient(nx, ny, nz);
-  const bias = Math.max(1e-4, distance * 1e-3);
+  const bias = Math.max(2e-3, distance * 0.015);
   let occ = 0;
   const count = Math.max(1, samples);
   for (let i = 0; i < count; i++) {
@@ -65,9 +65,9 @@ export const occlusionAtPoint = (
     direction.addScaledVector(tangent, lx);
     direction.addScaledVector(bitangent, ly);
     direction.addScaledVector(origin.set(nx, ny, nz), lz).normalize();
-    origin.set(x, y, z).addScaledVector(direction, bias);
+    origin.set(x + nx * bias, y + ny * bias, z + nz * bias);
     ray.set(origin, direction);
-    const hit = bvh.raycastFirst(ray, DoubleSide, 0, distance);
+    const hit = bvh.raycastFirst(ray, DoubleSide, bias, distance);
     if (hit != null) {
       occ += 1 - Math.min(1, hit.distance / distance);
     }

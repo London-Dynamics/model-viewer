@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {Camera, DoubleSide, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
 import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
 import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -382,6 +382,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const blit = this.ensureTraceBlit();
     const material = blit.material as MeshBasicMaterial;
     material.map = map;
+    material.map.colorSpace = LinearSRGBColorSpace;
+    material.toneMapped = true;
     material.opacity = fade;
     material.transparent = fade < 0.999;
     material.blending = fade < 0.999 ? NormalBlending : NoBlending;
@@ -478,7 +480,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.applyOutputState();
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.scene.getCamera());
-    this.renderSoftShadowOverlay();
     this.compositeProgressiveTrace();
     this.pipeline?.noteFrame(performance.now() - started);
     if (this.pipeline?.keepRendering()) {
