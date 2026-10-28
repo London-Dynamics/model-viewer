@@ -22,7 +22,7 @@ import {ModelScene} from '../../../ModelScene.js';
 import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 
 import {blurOcclusion, ContactJob, stepContactRays} from './contact-shadow.js';
-import {createFade, fadeSettled, FadeState, stepFade} from './fade.js';
+import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, occlusionAtPoint, PunctualSample} from './lighting.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
@@ -212,6 +212,11 @@ export class ProgressivePipeline {
 
   get traceHoldImage(): boolean {
     return this.traceHold;
+  }
+
+  shaderAoMix(): number {
+    return mixShaderAo(
+        this.contactFade.value, this.aoFade.value, this.traceFade.value);
   }
 
   get contactReadyFlag(): boolean {

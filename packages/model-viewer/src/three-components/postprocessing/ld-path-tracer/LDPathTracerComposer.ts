@@ -355,6 +355,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return this.pipeline?.probesReadyFlag === true;
   }
 
+  shaderAoMix(): number {
+    return this.pipeline?.shaderAoMix() ?? 1;
+  }
+
   noteProgressiveFrame(ms: number) {
     this.pipeline?.noteFrame(ms);
   }

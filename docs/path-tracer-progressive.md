@@ -40,19 +40,16 @@ Fine-grained settings are only on `setPathTracerOptions` /
 does not replace the beauty pass.
 
 1. Plain realtime renders first: environment, tone mapping, the soft-shadow
-   floor, and the materials. Shader AO is not part of that base. While
-   `mode` is `progressive`, the render pipeline does not run the
-   `ld-ambient-occlusion` pass, even if the `ambient-occlusion` attribute is
-   set. The baked layers are the replacement for that pass, not a second AO
-   on top of it. Bloom and selection still composite if they are on.
-   Turning progressive mode off (or removing `path-tracer`) lets shader AO
-   run again.
+   floor, and the materials. If the scene has shader AO on
+   (`ambient-occlusion`), that pass draws this phase. It is the preset
+   look, not a second bake.
 2. A CPU slice of at most `budgetMs` (default 4) advances the bake. The slice
    checks the clock and returns. BVH construction runs in a second
    `PathTracerBVHWorker`, not on the main thread.
 3. Bake results are normal scene content: a ground mesh, `aoMap` on UV
    channel 1, a composited `lightMap` on the same channel, and a PMREM
-   `envMap`. Whatever pass draws the model shows them.
+   `envMap`. The baked contact shadow and texture AO **replace** shader AO.
+   They do not stack with it. See the handoff below.
 4. When the camera has been still for `idleDelayMs`, the existing
    `WebGLPathTracer` accumulates **one tile** into an offscreen target
    (`renderToCanvas = false`). After `traceRevealSamples` and a denoise, a
@@ -66,6 +63,31 @@ The path-tracer scene merge (`StaticGeometryGenerator`) is still synchronous
 inside three-gpu-pathtracer. Progressive mode **defers that merge until the
 camera is idle**, so orbiting does not pay it. The idle frame that starts
 the trace can still hitch once. That hitch is called out under Risks.
+
+## Shader AO handoff
+
+Shader AO stays available for the plain realtime phase. If
+`ambient-occlusion` is set, that pass draws until a baked AO layer or the
+full trace takes over. The two never run at full strength together.
+
+`shaderAoMix` is `1 - max(contactFade, textureAoFade, traceFade)`, clamped
+to 0..1. The real-time pass uses `authoredIntensity * shaderAoMix`. Contact
+fade and texture-AO fade are the baked AO layers. Light layers and probes
+do not move this mix. The mix uses the same fade values as those layers, so
+the cross-fade takes `fadeMs` and no second clock.
+
+| Phase | Shader AO | Baked AO | Full trace |
+| --- | --- | --- | --- |
+| Pure realtime, attribute on | authored | hidden | hidden |
+| Contact or texture AO fading in by `t` | authored × (1 − t) | fading in by `t` | hidden |
+| Either baked AO layer fully shown | off | shown | hidden or fading |
+| Full trace fading in by `t` | authored × (1 − max(t, baked)) | whatever is still up | fading in |
+| Geometry change (or every baked AO layer and the trace faded out) | fades back to authored | fading out | fading out |
+
+Disabling a layer sets its fade target to 0. Shader AO comes back only
+once contact, texture AO, and the trace have all reached 0, which is the
+pure realtime phase again. Removing `path-tracer` or leaving progressive
+mode restores the authored intensity on the next frame.
 
 ## Layers
 
@@ -394,11 +416,14 @@ Later, not in this change:
 - **SwiftShader.** Headless review may not have a GPU. Tile time dominates
   the full-trace numbers there. Bake rays are CPU and are the fair stall
   measurement.
-- **Shader AO is replaced, not stacked.** Aquila's stored preset turns SSAO
-  on. Review frames leave that mixin off, including the plain realtime
-  baseline. One extra frame per scene shows today's shader AO by itself so
-  the bake can be judged against it. Progressive mode keeps the mixin off
-  for as long as it is the active mode.
+- **Shader AO handoff.** Aquila's preset turns SSAO on, so the plain
+  realtime frame includes it. The mix above turns that pass down as the
+  first baked AO layer or the trace fades in, and brings it back only when
+  those are gone. Review frames: baseline is the preset as stored (Aquila
+  includes shader AO). Every baked or traced frame has shader AO off. An
+  extra frame per scene is realtime with shader AO forced off (Aquila) or
+  on (scenes whose preset leaves it off), so the bake can be compared with
+  both.
 - **Stacked ground shadows.** The built-in soft-shadow floor stays, because
   "feature off" must match today and "feature on" adds a layer. If the two
   planes z-fight or double, the contact plane moves, it does not disable the
@@ -425,7 +450,9 @@ Presets are the default configurator attributes (see the scene README):
   about 675k triangles, no lights). The earlier qa-001112 stand-in is not
   used.
 
-Images are a fixed-camera progression, all with shader AO off: plain
-realtime, contact shadow, texture AO, lights (Aquila on/off), probes
-(trace not revealed), full trace revealed. One extra frame per scene is
-shader AO alone, labelled as today's mixin, not as a step in the bake.
+Images are a fixed-camera progression. The realtime frame uses the scene
+preset as stored, so Aquila includes shader AO and Triton and Montana do
+not. Contact shadow, texture AO, lights (Aquila on/off), probes, and the
+revealed trace are shader-AO off. An extra realtime frame shows the other
+AO state: Aquila with shader AO forced off, Triton and Montana with the
+mixin turned on.

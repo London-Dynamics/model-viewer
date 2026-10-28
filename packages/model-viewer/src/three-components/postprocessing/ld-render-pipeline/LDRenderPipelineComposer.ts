@@ -116,7 +116,18 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
 
   beforeRender(time: DOMHighResTimeStamp, delta: DOMHighResTimeStamp): void {
     this.options.pathTracer.composer?.beforeRender(time, delta);
+    this.applyShaderAoHandoff();
     this.rasterDelegate?.beforeRender(time, delta);
+  }
+
+  private applyShaderAoHandoff() {
+    if (!(this.rasterDelegate instanceof LDAmbientOcclusionComposer)) {
+      return;
+    }
+    const authored = this.options.ambientOcclusion?.intensity ?? 1;
+    const composer = this.options.pathTracer.composer;
+    const mix = composer?.isProgressiveMode() ? composer.shaderAoMix() : 1;
+    this.rasterDelegate.setRuntimeIntensity(authored * mix);
   }
 
   render(deltaTime?: DOMHighResTimeStamp): void {

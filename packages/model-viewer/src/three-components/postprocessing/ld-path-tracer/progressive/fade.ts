@@ -44,3 +44,17 @@ export const stepFade = (
 
 export const fadeSettled = (state: FadeState): boolean =>
     Math.abs(state.value - state.target) < 1e-3;
+
+/**
+ * Shader AO visibility while progressive mode is on. 1 is the authored
+ * real-time pass. It falls as the first baked AO layer or the full trace
+ * fades in, and it returns only when those are all gone.
+ */
+export const shaderAoMix = (
+    contactFade: number,
+    textureAoFade: number,
+    traceFade: number,
+    ): number => {
+  const baked = Math.max(contactFade, textureAoFade, traceFade);
+  return 1 - Math.min(1, Math.max(0, baked));
+};

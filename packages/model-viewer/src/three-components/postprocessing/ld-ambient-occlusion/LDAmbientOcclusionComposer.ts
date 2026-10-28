@@ -1,18 +1,5 @@
 // @ts-nocheck
-import {
-  Camera,
-  DepthTexture,
-  HalfFloatType,
-  LinearSRGBColorSpace,
-  NoToneMapping,
-  NeutralToneMapping,
-  Object3D,
-  PerspectiveCamera,
-  SRGBColorSpace,
-  Vector2,
-  WebGLRenderer,
-  WebGLRenderTarget,
-} from 'three';
+import {Camera, DepthTexture, HalfFloatType, LinearSRGBColorSpace, NeutralToneMapping, NoToneMapping, Object3D, PerspectiveCamera, SRGBColorSpace, Vector2, WebGLRenderer, WebGLRenderTarget,} from 'three';
 import {EffectComposer} from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import {OutlinePass} from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import {OutputPass} from 'three/examples/jsm/postprocessing/OutputPass.js';
@@ -20,14 +7,7 @@ import {RenderPass} from 'three/examples/jsm/postprocessing/RenderPass.js';
 
 import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
-import {
-  applySelectionOutlineStyle,
-  createSelectionOutlinePass,
-  DEFAULT_SELECTION_OUTLINE_STYLE,
-  SelectionOutlineCapable,
-  SelectionOutlineStyle,
-  setSelectionOutlineObjects,
-} from '../ld-selection/selection-outline-pass.js';
+import {applySelectionOutlineStyle, createSelectionOutlinePass, DEFAULT_SELECTION_OUTLINE_STYLE, SelectionOutlineCapable, SelectionOutlineStyle, setSelectionOutlineObjects,} from '../ld-selection/selection-outline-pass.js';
 
 import {AOPass} from './AOPass.js';
 import {AOShader} from './AOShader.js';
@@ -181,19 +161,20 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     // the normal render.
     if (this.renderer) {
       this.renderer.toneMapping = this.scene.toneMapping;
-      // Ensure outputColorSpace is SRGBColorSpace (default) for correct tone mapping
+      // Ensure outputColorSpace is SRGBColorSpace (default) for correct tone
+      // mapping
       this.renderer.outputColorSpace = SRGBColorSpace;
-      
+
       const {element, exposure} = this.scene;
       const exposureIsNumber =
           typeof exposure === 'number' && !Number.isNaN(exposure);
       const env = element.environmentImage;
       const sky = element.skyboxImage;
-      const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
+      const compensateExposure =
+          this.scene.toneMapping === NeutralToneMapping &&
           (env === 'neutral' || env === 'legacy' || (!env && !sky));
-      this.renderer.toneMappingExposure =
-          (exposureIsNumber ? exposure : 1.0) *
-          (compensateExposure ? 1.3 : 1.0); // COMMERCE_EXPOSURE = 1.3
+      this.renderer.toneMappingExposure = (exposureIsNumber ? exposure : 1.0) *
+          (compensateExposure ? 1.3 : 1.0);  // COMMERCE_EXPOSURE = 1.3
     }
   }
 
@@ -213,9 +194,8 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     const sky = element.skyboxImage;
     const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
         (env === 'neutral' || env === 'legacy' || (!env && !sky));
-    this.renderer.toneMappingExposure =
-        (exposureIsNumber ? exposure : 1.0) *
-        (compensateExposure ? 1.3 : 1.0); // COMMERCE_EXPOSURE = 1.3
+    this.renderer.toneMappingExposure = (exposureIsNumber ? exposure : 1.0) *
+        (compensateExposure ? 1.3 : 1.0);  // COMMERCE_EXPOSURE = 1.3
 
     if (this.aoPass?.output === AOPass.OUTPUT.Diffuse && this.camera) {
       // Diffuse should match the AO-off render exactly, so use the normal
@@ -237,8 +217,9 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     const deltaSeconds =
         typeof deltaTime === 'number' ? deltaTime / 1000 : undefined;
     this.composer.render(deltaSeconds);
-    
-    // Don't restore renderer state - let it persist like the normal render path does
+
+    // Don't restore renderer state - let it persist like the normal render path
+    // does
   }
 
   setSize(width: number, height: number) {
@@ -257,6 +238,13 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     }
   }
 
+  setRuntimeIntensity(intensity: number) {
+    if (this.aoPass == null || this.aoPass.intensity === intensity) {
+      return;
+    }
+    this.aoPass.intensity = intensity;
+  }
+
   updateOptions(partial: Partial<AmbientOcclusionOptions>) {
     this.options = {...this.options, ...partial};
     if (!this.aoPass) {
@@ -265,20 +253,22 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
 
     // Scale radius based on scene bounding sphere to account for model-viewer's
     // auto-framing. Model-viewer auto-frames scenes which makes the same radius
-    // value appear much larger relative to the model. We scale down proportionally
-    // to the bounding sphere radius to normalize the effect.
-    // A typical car model might have a bounding sphere radius of ~1-2 units in
+    // value appear much larger relative to the model. We scale down
+    // proportionally to the bounding sphere radius to normalize the effect. A
+    // typical car model might have a bounding sphere radius of ~1-2 units in
     // the original example, but model-viewer's auto-framing changes this.
     const sceneRadius = this.scene?.boundingSphere?.radius ?? 1.0;
     // Scale factor: divide by scene radius to normalize. Use a reference of 1.0
     // so that radius=4 produces similar results as in the original example.
     // Clamp to prevent division by very small values.
     const radiusScale = 1.0 / Math.max(sceneRadius, 0.5);
-    // Apply additional fine-tuning factor (0.1) since auto-framing tends to make
-    // scenes appear smaller in view space, requiring more aggressive scaling.
+    // Apply additional fine-tuning factor (0.1) since auto-framing tends to
+    // make scenes appear smaller in view space, requiring more aggressive
+    // scaling.
     const fineTuneFactor = 0.1;
     const scaledRadius = this.options.radius * radiusScale * fineTuneFactor;
-    const scaledThickness = this.options.thickness * radiusScale * fineTuneFactor;
+    const scaledThickness =
+        this.options.thickness * radiusScale * fineTuneFactor;
 
     this.aoPass.intensity = this.options.intensity;
     this.aoPass.output = this.options.output;
@@ -343,8 +333,8 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     this.dispose();
 
     const depthTexture = new DepthTexture(this.width, this.height);
-    // Preserve linear HDR values through the AO pipeline. Tone mapping and final
-    // color-space conversion happen only in the final output pass.
+    // Preserve linear HDR values through the AO pipeline. Tone mapping and
+    // final color-space conversion happen only in the final output pass.
     const renderTarget = new WebGLRenderTarget(this.width, this.height, {
       depthTexture,
       type: HalfFloatType,
@@ -360,8 +350,7 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
         new RenderPass(this.scene, this.camera as PerspectiveCamera);
     composer.addPass(renderPass);
 
-    const aoPass =
-        new AOPass(this.scene, this.camera, this.width, this.height);
+    const aoPass = new AOPass(this.scene, this.camera, this.width, this.height);
     aoPass.setGBuffer(depthTexture, undefined);
     composer.addPass(aoPass);
 
@@ -376,18 +365,18 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     composer.addPass(outputPass);
 
     const originalOutputRender = outputPass.render.bind(outputPass);
-    outputPass.render = (renderer, writeBuffer, readBuffer, deltaTime,
-        maskActive) => {
-      const originalToneMapping = renderer.toneMapping;
-      const originalOutputColorSpace = renderer.outputColorSpace;
+    outputPass.render =
+        (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+          const originalToneMapping = renderer.toneMapping;
+          const originalOutputColorSpace = renderer.outputColorSpace;
 
-      renderer.toneMapping = this.scene?.toneMapping ?? originalToneMapping;
-      renderer.outputColorSpace = SRGBColorSpace;
-      originalOutputRender(renderer, writeBuffer, readBuffer, deltaTime,
-          maskActive);
-      renderer.toneMapping = originalToneMapping;
-      renderer.outputColorSpace = originalOutputColorSpace;
-    };
+          renderer.toneMapping = this.scene?.toneMapping ?? originalToneMapping;
+          renderer.outputColorSpace = SRGBColorSpace;
+          originalOutputRender(
+              renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+          renderer.toneMapping = originalToneMapping;
+          renderer.outputColorSpace = originalOutputColorSpace;
+        };
 
     // Render the scene and AO passes in linear space, then let OutputPass apply
     // tone mapping and output transfer exactly once at the end.
@@ -400,24 +389,25 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
         const useOutputPass = this.aoPass?.output === AOPass.OUTPUT.Default;
 
         outputPass.enabled = useOutputPass;
-        this.renderer.autoClear = false; // EffectComposer expects this
+        this.renderer.autoClear = false;  // EffectComposer expects this
         this.renderer.toneMapping = NoToneMapping;
         this.renderer.outputColorSpace =
             useOutputPass ? LinearSRGBColorSpace : SRGBColorSpace;
-        
+
         const {element, exposure} = this.scene;
         const exposureIsNumber =
             typeof exposure === 'number' && !Number.isNaN(exposure);
         const env = element.environmentImage;
         const sky = element.skyboxImage;
-        const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
+        const compensateExposure =
+            this.scene.toneMapping === NeutralToneMapping &&
             (env === 'neutral' || env === 'legacy' || (!env && !sky));
         this.renderer.toneMappingExposure =
             (exposureIsNumber ? exposure : 1.0) *
             (compensateExposure ? 1.3 : 1.0);
-        
+
         originalRender(deltaTime);
-        
+
         this.renderer.autoClear = originalAutoClear;
         this.renderer.toneMapping = originalToneMapping;
         this.renderer.outputColorSpace = originalOutputColorSpace;
@@ -439,4 +429,3 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     this.syncOutlinePass();
   }
 }
-
