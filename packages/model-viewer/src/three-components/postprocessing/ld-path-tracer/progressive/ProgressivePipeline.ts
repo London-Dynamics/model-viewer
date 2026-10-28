@@ -632,7 +632,7 @@ export class ProgressivePipeline {
       const softness = this.settings.bake.contactShadow.softness;
       // Only the band just above the ground counts. A tall hull does not
       // paint a solid silhouette.
-      const falloff = Math.max(size.y * (0.06 + softness), span * softness * 0.35, 0.02);
+      const falloff = Math.max(size.y * 0.045, 0.012);
       this.contact = {
         resolution,
         centerX: center.x,
@@ -640,7 +640,7 @@ export class ProgressivePipeline {
         width,
         depth,
         y: box.min.y,
-        softnessRadius: span * softness * 0.45,
+        softnessRadius: span * softness * 0.85,
         samples: softness > 0 ? 12 : 1,
         maxDistance: falloff,
         grid: new Float32Array(resolution * resolution),

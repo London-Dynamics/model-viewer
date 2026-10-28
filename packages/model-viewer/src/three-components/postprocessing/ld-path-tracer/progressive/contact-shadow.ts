@@ -89,12 +89,14 @@ export const stepContactRays = (
         job.depth,
         job.y + bias,
         origin);
-    let hits = 0;
+    let core = 0;
+    let penumbra = 0;
+    let penumbraSamples = 0;
     const samples = Math.max(1, job.samples);
     for (let s = 0; s < samples; s++) {
       const ox = origin.x;
       const oz = origin.z;
-      if (job.softnessRadius > 0 && samples > 1) {
+      if (s > 0 && job.softnessRadius > 0) {
         const angle = halton(s, 2) * Math.PI * 2;
         const radius = Math.sqrt(halton(s, 3)) * job.softnessRadius;
         origin.x = ox + Math.cos(angle) * radius;
@@ -106,12 +108,19 @@ export const stepContactRays = (
       origin.z = oz;
       if (hit != null) {
         const t = Math.min(1, hit.distance / job.maxDistance);
-        // Quadratic so the darkest core is where the surface nearly touches
-        // the ground. Geometry higher up only feathers the penumbra.
-        hits += (1 - t) * (1 - t);
+        const weight = (1 - t) * (1 - t);
+        if (s === 0) {
+          core = weight;
+        } else {
+          penumbra += weight;
+          penumbraSamples++;
+        }
+      } else if (s > 0) {
+        penumbraSamples++;
       }
     }
-    job.grid[job.cursor] = hits / samples;
+    const soft = penumbraSamples > 0 ? penumbra / penumbraSamples : 0;
+    job.grid[job.cursor] = Math.max(core, soft * 0.45);
     job.cursor++;
   }
   return true;
