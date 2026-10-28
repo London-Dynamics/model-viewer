@@ -856,9 +856,6 @@ export class ProgressivePipeline {
     const minY = Math.max(0, Math.floor(Math.min(ay, by, cy) * resolution));
     const maxY =
         Math.min(resolution - 1, Math.ceil(Math.max(ay, by, cy) * resolution));
-    if (maxX - minX > 48 || maxY - minY > 48) {
-      return;
-    }
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const slot = y * resolution + x;
