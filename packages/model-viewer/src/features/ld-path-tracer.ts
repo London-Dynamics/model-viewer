@@ -173,6 +173,9 @@ export const LDPathTracerMixin = <
       const composer = this.getPathTracerComposer();
       composer?.setBuildOptions(this.pathTracerBuildOptions);
       composer?.setProgressiveSettings(this.progressiveSettings);
+      // Progressive mode replaces shader AO. The render pipeline reads the
+      // mode from the composer and drops the AO pass.
+      this.dispatchEvent(new CustomEvent(PATH_TRACER_BACKEND_CHANGE_EVENT));
     }
 
     getPathTracerOptions(): PathTracerBuildOptions&ProgressiveSettings {

@@ -1,25 +1,14 @@
 import {Object3D} from 'three';
 
-import {
-  $needsRender,
-  $onModelLoad,
-  $scene,
-} from '../model-viewer-base.js';
+import {$needsRender, $onModelLoad, $scene,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
-import {
-  AmbientOcclusionOptions,
-} from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
-import {
-  DEFAULT_SELECTION_OUTLINE_STYLE,
-} from '../three-components/postprocessing/ld-selection/selection-outline-pass.js';
-import {
-  LDRenderPipelineComposer,
-  LDRenderPipelineOptions,
-  SelectionOutlineOptions,
-} from '../three-components/postprocessing/ld-render-pipeline/LDRenderPipelineComposer.js';
-import {Constructor} from '../utilities.js';
-import {LDBloomOptions} from './ld-bloom.js';
+import {AmbientOcclusionOptions,} from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 import {LDPathTracerComposer} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {LDRenderPipelineComposer, LDRenderPipelineOptions, SelectionOutlineOptions,} from '../three-components/postprocessing/ld-render-pipeline/LDRenderPipelineComposer.js';
+import {DEFAULT_SELECTION_OUTLINE_STYLE,} from '../three-components/postprocessing/ld-selection/selection-outline-pass.js';
+import {Constructor} from '../utilities.js';
+
+import {LDBloomOptions} from './ld-bloom.js';
 
 const $renderPipelineComposer = Symbol('renderPipelineComposer');
 const $syncRenderPipeline = Symbol('syncRenderPipeline');
@@ -47,7 +36,7 @@ type PipelineHost = ModelViewerElementBase&{
   getBloomTargets?: () => LDBloomOptions['targets'];
   pathTracer?: boolean;
   pathTracerSamplesThreshold?: number;
-  getPathTracerComposer?: () => LDPathTracerComposer|null;
+  getPathTracerComposer?: () => LDPathTracerComposer | null;
   highlightSelected?: boolean;
   selectionHighlightColor?: string;
   selectionHighlightThickness?: number;
@@ -105,10 +94,7 @@ const PIPELINE_OPTION_PROPERTIES = [
 ] as const;
 
 export const LDRenderPipelineMixin = <
-  T extends Constructor<ModelViewerElementBase>
->(
-  ModelViewerElement: T
-) => {
+    T extends Constructor<ModelViewerElementBase>>(ModelViewerElement: T) => {
   class LDRenderPipelineModelViewerElement extends ModelViewerElement {
     protected[$renderPipelineComposer]: LDRenderPipelineComposer|null = null;
     private[$qualityTimer]: number|null = null;
@@ -145,8 +131,8 @@ export const LDRenderPipelineMixin = <
     override updated(changedProperties: Map<string|number|symbol, unknown>) {
       super.updated(changedProperties);
 
-      if (PIPELINE_OPTION_PROPERTIES.some((prop) =>
-            changedProperties.has(prop))) {
+      if (PIPELINE_OPTION_PROPERTIES.some(
+              (prop) => changedProperties.has(prop))) {
         this[$syncRenderPipeline]();
       }
     }
@@ -158,8 +144,7 @@ export const LDRenderPipelineMixin = <
 
     private[$syncRenderPipeline]() {
       const options = this[$pipelineOptions]();
-      const shouldEnable =
-          options.ambientOcclusion != null ||
+      const shouldEnable = options.ambientOcclusion != null ||
           (options.bloom.enabled && options.bloom.strength > 0) ||
           options.pathTracer.enabled ||
           options.selectionOutline?.enabled === true;
@@ -192,18 +177,20 @@ export const LDRenderPipelineMixin = <
 
     private[$pipelineOptions](): LDRenderPipelineOptions {
       const host = this as unknown as PipelineHost;
-      const ambientOcclusion =
+      const progressive = typeof host.getPathTracerComposer === 'function' &&
+          host.getPathTracerComposer()?.isProgressiveMode() === true;
+      const ambientOcclusion = progressive ? null :
           host.ambientOcclusion &&
-          typeof host.getAmbientOcclusionOptions === 'function' ?
-          host.getAmbientOcclusionOptions() :
-          null;
+              typeof host.getAmbientOcclusionOptions === 'function' ?
+                                             host.getAmbientOcclusionOptions() :
+                                             null;
       const bloom: LDBloomOptions = {
         ...EMPTY_BLOOM,
         enabled: Boolean(host.bloom),
         targets: typeof host.getBloomTargets === 'function' ?
-          host.getBloomTargets().filter((target) =>
-            target.material != null || target.mesh != null) :
-          [],
+            host.getBloomTargets().filter(
+                (target) => target.material != null || target.mesh != null) :
+            [],
         mode: host.bloomMode ?? EMPTY_BLOOM.mode,
         strength: host.bloomStrength ?? EMPTY_BLOOM.strength,
         radius: host.bloomRadius ?? EMPTY_BLOOM.radius,
@@ -214,26 +201,25 @@ export const LDRenderPipelineMixin = <
       };
 
       const selectionOutline: SelectionOutlineOptions|null =
-          host.highlightSelected ?
-          {
+          host.highlightSelected ? {
             enabled: true,
             color: host.selectionHighlightColor ||
                 DEFAULT_SELECTION_OUTLINE_STYLE.color,
             thickness: host.selectionHighlightThickness ??
                 DEFAULT_SELECTION_OUTLINE_STYLE.thickness,
           } :
-          null;
+                                   null;
 
       return {
         ambientOcclusion,
         bloom,
         pathTracer: {
           enabled: Boolean(host.pathTracer),
-          samplesThreshold: Math.max(
-              1, Math.floor(host.pathTracerSamplesThreshold ?? 1)),
+          samplesThreshold:
+              Math.max(1, Math.floor(host.pathTracerSamplesThreshold ?? 1)),
           composer: typeof host.getPathTracerComposer === 'function' ?
-            host.getPathTracerComposer() :
-            null,
+              host.getPathTracerComposer() :
+              null,
         },
         selectionOutline,
       };
@@ -274,7 +260,7 @@ export const LDRenderPipelineMixin = <
     };
   }
 
-  return LDRenderPipelineModelViewerElement as Constructor<
-      LDRenderPipelineInterface> &
+  return LDRenderPipelineModelViewerElement as
+      Constructor<LDRenderPipelineInterface>&
       T;
 };

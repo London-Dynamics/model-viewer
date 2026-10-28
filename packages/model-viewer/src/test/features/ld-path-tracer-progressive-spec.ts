@@ -17,6 +17,7 @@ import {expect} from 'chai';
 import {BufferGeometry, Float32BufferAttribute} from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
 
+import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
@@ -152,6 +153,39 @@ suite('progressive contact shadow rays', () => {
 
 suite('progressive path tracer integration', function() {
   this.timeout(60000);
+
+  test('turns shader AO off while progressive mode is on', async () => {
+    const element = new ModelViewerElement();
+    element.style.width = '96px';
+    element.style.height = '96px';
+    element.interactionPrompt = 'none';
+    document.body.appendChild(element);
+    try {
+      element.ambientOcclusion = true;
+      element.pathTracer = true;
+      element.setPathTracerOptions({
+        mode: 'progressive',
+        idleDelayMs: 1e9,
+        bake: {
+          contactShadow: {enabled: false},
+          textureAO: {enabled: false},
+        },
+        lights: {include: false},
+        probes: {enabled: false},
+      });
+      await element.updateComplete;
+      await rafPasses();
+      const pipeline = element[$scene].effectRenderer as unknown as {
+        hasAmbientOcclusion(): boolean;
+        hasPathTracer(): boolean;
+      };
+      expect(pipeline.hasAmbientOcclusion()).to.equal(false);
+      expect(pipeline.hasPathTracer()).to.equal(true);
+      expect(element.ambientOcclusion).to.equal(true);
+    } finally {
+      element.remove();
+    }
+  });
 
   test('contact shadow becomes ready without enabling texture AO', async () => {
     const element = new ModelViewerElement();

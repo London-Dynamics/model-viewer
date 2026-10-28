@@ -39,9 +39,14 @@ Fine-grained settings are only on `setPathTracerOptions` /
 `Renderer` still calls the effect composer. In progressive mode the composer
 does not replace the beauty pass.
 
-1. Realtime renders first. If shader AO, bloom, or selection is also on, that
-   delegate still draws the beauty pass. Preset SSAO stays until the full
-   trace replaces the frame.
+1. Plain realtime renders first: environment, tone mapping, the soft-shadow
+   floor, and the materials. Shader AO is not part of that base. While
+   `mode` is `progressive`, the render pipeline does not run the
+   `ld-ambient-occlusion` pass, even if the `ambient-occlusion` attribute is
+   set. The baked layers are the replacement for that pass, not a second AO
+   on top of it. Bloom and selection still composite if they are on.
+   Turning progressive mode off (or removing `path-tracer`) lets shader AO
+   run again.
 2. A CPU slice of at most `budgetMs` (default 4) advances the bake. The slice
    checks the clock and returns. BVH construction runs in a second
    `PathTracerBVHWorker`, not on the main thread.
@@ -389,9 +394,11 @@ Later, not in this change:
 - **SwiftShader.** Headless review may not have a GPU. Tile time dominates
   the full-trace numbers there. Bake rays are CPU and are the fair stall
   measurement.
-- **Stacked AO.** Aquila's preset turns shader SSAO on. Texture AO multiplies
-  indirect light on top. If the boat crushes, the follow-up is to fade
-  shader AO down as the bake fades in. Not done unless the images need it.
+- **Shader AO is replaced, not stacked.** Aquila's stored preset turns SSAO
+  on. Review frames leave that mixin off, including the plain realtime
+  baseline. One extra frame per scene shows today's shader AO by itself so
+  the bake can be judged against it. Progressive mode keeps the mixin off
+  for as long as it is the active mode.
 - **Stacked ground shadows.** The built-in soft-shadow floor stays, because
   "feature off" must match today and "feature on" adds a layer. If the two
   planes z-fight or double, the contact plane moves, it does not disable the
@@ -418,5 +425,7 @@ Presets are the default configurator attributes (see the scene README):
   about 675k triangles, no lights). The earlier qa-001112 stand-in is not
   used.
 
-Images are a fixed-camera progression: realtime, contact, AO, lights
-(Aquila on/off), probes (trace not revealed), full trace revealed.
+Images are a fixed-camera progression, all with shader AO off: plain
+realtime, contact shadow, texture AO, lights (Aquila on/off), probes
+(trace not revealed), full trace revealed. One extra frame per scene is
+shader AO alone, labelled as today's mixin, not as a step in the bake.
