@@ -115,10 +115,13 @@ Cheapest layer, and it does not need UVs.
 - Plane sits on the bounds' XZ footprint at `min.y`, about 1.5× the
   footprint so the penumbra has room. Front face points up. It is not part
   of the raycast BVH (`userData.progressiveOverlay`).
-- Each texel shoots `samples` rays straight up. Origins are jittered in a
-  disk of radius `softness` × the larger horizontal size (Halton, stable
-  across rebakes). A hit within the model height counts as occlusion.
-- A small separable blur kills leftover noise.
+- Each texel shoots several rays straight up. A hit contributes
+  `(1 - distance / falloff)²`, so the darkest core is where the surface
+  nearly touches the ground and a tall hull does not paint a solid
+  silhouette. `falloff` is about `size.y * (0.06 + softness)`. The sample
+  disk (`softness` × the smaller horizontal size) is only the penumbra.
+- The built-in soft-shadow floor fades out with the same contact fade, so
+  the realtime blob and the bake are not both drawn.
 - The texture is black RGB with occlusion in alpha. Opacity is
   `contactShadow.opacity * fade`. `depthWrite` is off.
 

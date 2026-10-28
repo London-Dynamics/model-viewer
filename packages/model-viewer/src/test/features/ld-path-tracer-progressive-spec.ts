@@ -149,6 +149,40 @@ suite('progressive contact shadow rays', () => {
     expect(center).to.be.greaterThan(0.5);
     expect(grid[0]).to.equal(0);
   });
+
+  test('a near hit is darker than a high hit', () => {
+    const low = new BufferGeometry();
+    low.setAttribute(
+        'position',
+        new Float32BufferAttribute(
+            [-0.2, 0.05, -0.2, 0.2, 0.05, -0.2, 0, 0.05, 0.2], 3));
+    const high = new BufferGeometry();
+    high.setAttribute(
+        'position',
+        new Float32BufferAttribute(
+            [-0.2, 0.8, -0.2, 0.2, 0.8, -0.2, 0, 0.8, 0.2], 3));
+    const sample = (geometry: BufferGeometry) => {
+      const grid = new Float32Array(8 * 8);
+      stepContactRays(
+          {
+            resolution: 8,
+            centerX: 0,
+            centerZ: 0,
+            width: 2,
+            depth: 2,
+            y: 0,
+            softnessRadius: 0,
+            samples: 1,
+            maxDistance: 1,
+            grid,
+            cursor: 0,
+          },
+          new MeshBVH(geometry),
+          1000);
+      return grid[4 * 8 + 4];
+    };
+    expect(sample(low)).to.be.greaterThan(sample(high) + 0.25);
+  });
 });
 
 suite('progressive shader AO handoff', () => {

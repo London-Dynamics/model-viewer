@@ -626,8 +626,13 @@ export class ProgressivePipeline {
     const center = box.getCenter(tmp);
     if (this.settings.bake.contactShadow.enabled) {
       const resolution = this.settings.bake.contactShadow.resolution;
-      const width = Math.max(size.x, 0.05) * 1.45;
-      const depth = Math.max(size.z, 0.05) * 1.45;
+      const width = Math.max(size.x, 0.05) * 1.35;
+      const depth = Math.max(size.z, 0.05) * 1.35;
+      const span = Math.max(Math.min(size.x, size.z), 0.05);
+      const softness = this.settings.bake.contactShadow.softness;
+      // Only the band just above the ground counts. A tall hull does not
+      // paint a solid silhouette.
+      const falloff = Math.max(size.y * (0.06 + softness), span * softness * 0.35, 0.02);
       this.contact = {
         resolution,
         centerX: center.x,
@@ -635,10 +640,9 @@ export class ProgressivePipeline {
         width,
         depth,
         y: box.min.y,
-        softnessRadius: this.settings.bake.contactShadow.softness *
-            Math.max(size.x, size.z),
-        samples: this.settings.bake.contactShadow.softness > 0 ? 8 : 1,
-        maxDistance: Math.max(size.y * 1.25, 0.05),
+        softnessRadius: span * softness * 0.45,
+        samples: softness > 0 ? 12 : 1,
+        maxDistance: falloff,
         grid: new Float32Array(resolution * resolution),
         cursor: 0,
       };
@@ -1280,9 +1284,7 @@ export class ProgressivePipeline {
     if (this.contact == null) {
       return;
     }
-    const radius = this.contact.softnessRadius > 0 ?
-        Math.min(6, Math.max(1, Math.round(this.contact.resolution * 0.02))) :
-        0;
+    const radius = this.contact.softnessRadius > 0 ? 1 : 0;
     const grid =
         blurOcclusion(this.contact.grid, this.contact.resolution, radius);
     const data =
@@ -1325,7 +1327,7 @@ export class ProgressivePipeline {
     }
     if (this.contactMesh != null && this.contact != null) {
       this.contactMesh.position.set(
-          this.contact.centerX, this.contact.y - 0.002, this.contact.centerZ);
+          this.contact.centerX, this.contact.y, this.contact.centerZ);
       this.contactMesh.rotation.set(-Math.PI / 2, 0, 0);
       this.contactMesh.scale.set(this.contact.width, this.contact.depth, 1);
     }
@@ -1525,6 +1527,16 @@ export class ProgressivePipeline {
     });
   }
 
+  private syncRealtimeShadow() {
+    const scene = this.host.scene();
+    const shadow = scene?.shadow;
+    if (shadow == null || scene == null) {
+      return;
+    }
+    const mix = this.settings.bake.contactShadow.enabled ? this.contactFade.value : 0;
+    shadow.setIntensity(scene.shadowIntensity * (1 - mix));
+  }
+
   private applyVisuals() {
     const material =
         this.contactMesh?.material as MeshBasicMaterial | undefined;
@@ -1534,6 +1546,7 @@ export class ProgressivePipeline {
       material.transparent = true;
       this.contactMesh!.visible = this.contactFade.value > 0.01;
     }
+    this.syncRealtimeShadow();
     if (this.aoTexture != null) {
       this.forStandardMaterials((standard) => {
         standard.aoMapIntensity = this.aoFade.value;

@@ -105,7 +105,10 @@ export const stepContactRays = (
       origin.x = ox;
       origin.z = oz;
       if (hit != null) {
-        hits++;
+        const t = Math.min(1, hit.distance / job.maxDistance);
+        // Quadratic so the darkest core is where the surface nearly touches
+        // the ground. Geometry higher up only feathers the penumbra.
+        hits += (1 - t) * (1 - t);
       }
     }
     job.grid[job.cursor] = hits / samples;
