@@ -22,7 +22,7 @@ import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
 import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 
-import {PathTracerBVHWorker} from './PathTracerBVHWorker.js';
+import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
 
 const PATH_TRACER_FADE_DURATION_MS = 600;
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -153,6 +153,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private ready = false;
   private needsSceneUpdate = true;
   private bvhWorker: PathTracerBVHWorker|null = null;
+  private bvhWorkerFailed = false;
+  private bvhWorkerFetch: Promise<void>|null = null;
   private sceneBuildInFlight = false;
   private sceneBuildQueued = false;
   private sceneBuildGeneration = 0;
@@ -491,6 +493,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
+    if (this.shouldFetchCrossOriginWorker()) {
+      this.invalidateReady();
+      this.sceneBuildInFlight = true;
+      this.needsSceneUpdate = false;
+      this.fetchCrossOriginWorker();
+      return;
+    }
+
     const generation = ++this.sceneBuildGeneration;
     const pathTracerCamera = this.getPathTracerCamera();
     this.invalidateReady();
@@ -537,6 +547,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
                 '[model-viewer] Path tracer BVH worker failed. Building on the main thread.',
                 error);
             this.disableBvhWorker();
+            this.bvhWorkerFailed = true;
             this.sceneBuildInFlight = false;
             this.needsSceneUpdate = true;
             this.syncScene();
@@ -548,16 +559,61 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     settle();
   }
 
+  private shouldFetchCrossOriginWorker(): boolean {
+    if (this.bvhWorker != null || this.bvhWorkerFailed ||
+        this.bvhWorkerFetch != null || typeof Worker === 'undefined') {
+      return false;
+    }
+    try {
+      return isCrossOriginScript(pathTracerBvhWorkerScriptUrl());
+    } catch {
+      return false;
+    }
+  }
+
+  private fetchCrossOriginWorker() {
+    const generation = this.sceneBuildGeneration;
+    this.bvhWorkerFetch =
+        PathTracerBVHWorker.open()
+            .then((worker) => {
+              if (this.disposed || generation !== this.sceneBuildGeneration) {
+                worker.dispose();
+                return;
+              }
+              this.bvhWorker = worker;
+            })
+            .catch((error: unknown) => {
+              console.warn(
+                  '[model-viewer] Path tracer BVH worker could not be loaded from another origin. Building on the main thread.',
+                  error);
+              this.bvhWorkerFailed = true;
+            })
+            .finally(() => {
+              this.bvhWorkerFetch = null;
+              this.sceneBuildInFlight = false;
+              if (this.disposed) {
+                return;
+              }
+              this.needsSceneUpdate = true;
+              this.syncScene();
+            });
+  }
+
   private ensureBvhWorker(): PathTracerBVHWorker|null {
-    if (this.bvhWorker != null || typeof Worker === 'undefined') {
+    if (this.bvhWorker != null || this.bvhWorkerFailed ||
+        typeof Worker === 'undefined') {
       return this.bvhWorker;
     }
     try {
+      if (isCrossOriginScript(pathTracerBvhWorkerScriptUrl())) {
+        return null;
+      }
       this.bvhWorker = new PathTracerBVHWorker();
     } catch (error) {
       console.warn(
           '[model-viewer] Path tracer BVH worker is unavailable. Building on the main thread.',
           error);
+      this.bvhWorkerFailed = true;
       this.bvhWorker = null;
     }
     return this.bvhWorker;

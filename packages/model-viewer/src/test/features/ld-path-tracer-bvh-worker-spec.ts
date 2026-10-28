@@ -17,6 +17,7 @@ import {expect} from 'chai';
 import {WebGLPathTracer} from 'three-gpu-pathtracer';
 
 import {ModelViewerElement} from '../../model-viewer.js';
+import {isCrossOriginScript, openPathTracerBvhWorker} from '../../three-components/postprocessing/ld-path-tracer/PathTracerBVHWorker.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
 
@@ -105,4 +106,74 @@ suite('LD path tracer BVH worker', function() {
         expect(asyncBuilds).to.equal(1);
         expect(workerUrls.length).to.equal(1);
       });
+});
+
+suite('path tracer BVH worker URL', () => {
+  const OriginalWorker = window.Worker;
+
+  const installWorkerSpy = () => {
+    const urls: string[] = [];
+    const PatchedWorker = class extends OriginalWorker {
+      constructor(url: string|URL, options?: WorkerOptions) {
+        urls.push(String(url));
+        super(url, options);
+      }
+    };
+    window.Worker = PatchedWorker as typeof Worker;
+    return urls;
+  };
+
+  teardown(() => {
+    window.Worker = OriginalWorker;
+  });
+
+  test('starts a cross-origin script from a blob URL', async () => {
+    const crossOrigin = new URL('http://cdn.example/path-tracer-bvh.worker.js');
+    expect(isCrossOriginScript(crossOrigin)).to.equal(true);
+    const urls = installWorkerSpy();
+    let fetched = '';
+    const worker = await openPathTracerBvhWorker(crossOrigin, async (input) => {
+      fetched = String(input);
+      return new Response(
+          'self.onmessage = function () {};',
+          {status: 200, headers: {'content-type': 'text/javascript'}});
+    });
+
+    expect(fetched).to.equal(crossOrigin.href);
+    expect(urls.length).to.equal(1);
+    expect(urls[0].startsWith('blob:')).to.equal(true);
+    worker.terminate();
+  });
+
+  test(
+      'reports a failed cross-origin fetch instead of calling Worker',
+      async () => {
+        const crossOrigin = new URL('http://cdn.example/missing-worker.js');
+        const urls = installWorkerSpy();
+        try {
+          await openPathTracerBvhWorker(
+              crossOrigin, async () => new Response('missing', {status: 404}));
+          expect.fail('cross-origin fetch should reject');
+        } catch (error) {
+          expect(String(error)).to.contain('Access-Control-Allow-Origin');
+          expect(String(error)).to.contain('404');
+        }
+        expect(urls.length).to.equal(0);
+      });
+
+  test('starts a same-origin script directly', async () => {
+    const sameOrigin = new URL('path-tracer-bvh.worker.js', location.href);
+    expect(isCrossOriginScript(sameOrigin)).to.equal(false);
+    let fetched = false;
+    const urls = installWorkerSpy();
+    const worker = await openPathTracerBvhWorker(sameOrigin, async () => {
+      fetched = true;
+      return new Response('', {status: 200});
+    });
+
+    expect(fetched).to.equal(false);
+    expect(urls.length).to.equal(1);
+    expect(urls[0]).to.equal(sameOrigin.href);
+    worker.terminate();
+  });
 });

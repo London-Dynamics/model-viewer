@@ -18,6 +18,47 @@ import {MeshBVH} from 'three-mesh-bvh';
 
 const WORKER_FILE = 'path-tracer-bvh.worker.js';
 
+export const pathTracerBvhWorkerScriptUrl = (): URL =>
+    new URL(WORKER_FILE, import.meta.url);
+
+export const isCrossOriginScript = (url: URL): boolean =>
+    url.origin !== self.location.origin;
+
+/**
+ * Same-origin scripts are started directly. A classic Worker cannot load a
+ * cross-origin script, so those are fetched (the host must send
+ * Access-Control-Allow-Origin) and started from a blob URL.
+ */
+export const openPathTracerBvhWorker = async(
+    url: URL = pathTracerBvhWorkerScriptUrl(),
+    fetchImpl: typeof fetch = fetch,
+    ): Promise<Worker> => {
+  if (!isCrossOriginScript(url)) {
+    return new Worker(url);
+  }
+
+  let response: Response;
+  try {
+    response = await fetchImpl(url.href, {mode: 'cors', credentials: 'omit'});
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+        `Path tracer BVH worker ${url.href} could not be fetched (${
+            reason}). ` +
+        'A cross-origin worker script needs Access-Control-Allow-Origin.');
+  }
+  if (!response.ok) {
+    throw new Error(
+        `Path tracer BVH worker ${url.href} responded with ${
+            response.status}. ` +
+        'A cross-origin worker script needs Access-Control-Allow-Origin.');
+  }
+  const source = await response.text();
+  const blobUrl =
+      URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
+  return new Worker(blobUrl);
+};
+
 interface BVHWorkerResponse {
   error?: string|null;
   serialized?: {
@@ -43,17 +84,23 @@ export class PathTracerBVHWorker implements PathTracerBVHGenerator {
   private worker: Worker|null = null;
   private running = false;
 
-  constructor() {
-    let url: URL;
-    try {
-      url = new URL(WORKER_FILE, import.meta.url);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+  constructor(worker?: Worker) {
+    if (worker != null) {
+      this.worker = worker;
+      return;
+    }
+    const url = pathTracerBvhWorkerScriptUrl();
+    if (isCrossOriginScript(url)) {
       throw new Error(
-          `Path tracer BVH worker URL is unavailable in this bundle: ${
-              reason}`);
+          `Path tracer BVH worker ${url.href} is cross-origin. ` +
+          'Fetch it before constructing a Worker.');
     }
     this.worker = new Worker(url);
+  }
+
+  static async open(): Promise<PathTracerBVHWorker> {
+    const worker = await openPathTracerBvhWorker();
+    return new PathTracerBVHWorker(worker);
   }
 
   generate(geometry: BufferGeometry, options: Record<string, unknown> = {}) {
