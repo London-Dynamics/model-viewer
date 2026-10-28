@@ -2579,7 +2579,7 @@
       {
         "name": "isPathTracerReady",
         "htmlName": "isPathTracerReady",
-        "description": "Read-only. True after the path tracer has finished building the scene BVH and has drawn at least one sample. Becomes false when the model or scene contents change, when BVH build options change, and while path tracing is disabled.",
+        "description": "Read-only. True after the BVH build and the first traced tile. With the default 3\u00d73 tile grid, <code>pathTracerRenderedSamples</code> is about 1/9 at that moment, not a whole sample. Becomes false when the model or scene contents change, when BVH build options change, and while path tracing is disabled. Camera motion restarts accumulation and does not clear this flag.",
         "default": {
           "default": "false",
           "options": "true, false"
@@ -2611,7 +2611,7 @@
       {
         "name": "path-tracer-ready",
         "htmlName": "pathTracerReady",
-        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the path tracer finishes building the scene BVH and draws its first sample. <code>event.detail.samples</code> is the sample count at that frame. The event fires again after the model changes or BVH options change, once the new build has produced a sample. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the path-tracer backend is registered and can happen while the BVH build is still running.",
+        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the BVH build, when the first tile of a frame has been traced. <code>event.detail.samples</code> is the path tracer's sample count then. The default tile grid is 3\u00d73, and each <code>renderSample()</code> traces one tile, so the first event usually carries about 1/9 rather than a finished sample. It does not wait for <span class=\"attribute\">path-tracer-samples</span> or <span class=\"attribute\">path-tracer-samples-threshold</span>. The event fires again only after the model changes or BVH options change, once the new build has traced a tile. Camera moves, including orbit changes, restart accumulation (the count can fall back to one tile) and do not fire the event again. The default interaction-prompt wiggle does not orbit the camera while path tracing is on, so that hint does not keep resetting the count. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the backend is registered and can happen while the BVH build is running.",
         "links": [
           "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
         ]

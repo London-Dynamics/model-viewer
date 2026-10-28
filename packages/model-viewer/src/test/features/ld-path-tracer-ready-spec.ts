@@ -85,6 +85,7 @@ suite('LD path tracer ready signal', function() {
     element = new ModelViewerElement();
     element.style.width = '96px';
     element.style.height = '96px';
+    element.interactionPrompt = 'none';
     element.pathTracerSamples = 4;
     element.pathTracerSamplesThreshold = 1;
     element.addEventListener(PATH_TRACER_READY_EVENT, () => {
@@ -109,13 +110,30 @@ suite('LD path tracer ready signal', function() {
   });
 
   test(
-      'fires path-tracer-ready once after the build and first sample',
+      'fires path-tracer-ready once after the build and the first traced tile',
       async () => {
         await waitFrames(8);
 
         expect(sceneBuilds).to.equal(1);
         expect(readyCount).to.equal(1);
-        expect(samplesAtReady[0]).to.be.at.least(1);
+        expect(samplesAtReady[0]).to.be.greaterThan(0);
+        expect(asHost(element).isPathTracerReady).to.equal(true);
+      });
+
+  test(
+      'keeps accumulating samples while the interaction prompt is visible',
+      async () => {
+        element.pathTracerSamples = 32;
+        element.cameraControls = true;
+        element.interactionPrompt = 'auto';
+        element.interactionPromptThreshold = 0;
+        await waitFrames(8);
+        const duringPrompt = element.pathTracerRenderedSamples;
+        await waitFrames(12);
+
+        expect(element.pathTracerRenderedSamples)
+            .to.be.greaterThan(duringPrompt + 0.3);
+        expect(readyCount).to.equal(1);
         expect(asHost(element).isPathTracerReady).to.equal(true);
       });
 

@@ -390,8 +390,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private maybeMarkReady() {
+    // tiles are 3x3 by default, so one renderSample() finishes a single tile
+    // and leaves samples at 1/9. A full sample is samples >= 1. Ready tracks
+    // the first completed tile, which is what a host can observe on a heavy
+    // model before nine tile passes have finished.
     if (this.ready || this.needsSceneUpdate || this.pathTracer == null ||
-        this.pathTracer.samples < 1 || this.scene == null) {
+        this.pathTracer.samples <= 0 || this.scene == null) {
       return;
     }
     if (!this.hasTraceableMesh()) {
