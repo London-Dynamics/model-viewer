@@ -139,6 +139,7 @@ suite('progressive contact shadow rays', () => {
           softnessRadius: 0,
           samples: 1,
           maxDistance: 2,
+          penumbraDistance: 2,
           grid,
           cursor: 0,
         },
@@ -174,6 +175,7 @@ suite('progressive contact shadow rays', () => {
             softnessRadius: 0,
             samples: 1,
             maxDistance: 1,
+            penumbraDistance: 1,
             grid,
             cursor: 0,
           },
@@ -182,6 +184,56 @@ suite('progressive contact shadow rays', () => {
       return grid[4 * 8 + 4];
     };
     expect(sample(low)).to.be.greaterThan(sample(high) + 0.25);
+  });
+
+  test('extra samples add a lighter skirt outside the core', () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+        'position',
+        new Float32BufferAttribute(
+            [-0.15, 0.02, -0.15, 0.15, 0.02, -0.15, 0, 0.02, 0.15], 3));
+    const resolution = 16;
+    const grid = new Float32Array(resolution * resolution);
+    stepContactRays(
+        {
+          resolution,
+          centerX: 0,
+          centerZ: 0,
+          width: 2,
+          depth: 2,
+          y: 0,
+          softnessRadius: 0.55,
+          samples: 10,
+          maxDistance: 0.25,
+          penumbraDistance: 0.6,
+          grid,
+          cursor: 0,
+        },
+        new MeshBVH(geometry),
+        1000);
+    const at = (i: number, j: number) => grid[j * resolution + i];
+    const core = at(8, 8);
+    let skirt = 0;
+    let far = 0;
+    for (let j = 0; j < resolution; j++) {
+      for (let i = 0; i < resolution; i++) {
+        const u = (i + 0.5) / resolution;
+        const v = (j + 0.5) / resolution;
+        const x = (u - 0.5) * 2;
+        const z = (0.5 - v) * 2;
+        const d = Math.hypot(x, z);
+        if (d > 0.22 && d < 0.45) {
+          skirt = Math.max(skirt, at(i, j));
+        }
+        if (d > 0.9) {
+          far = Math.max(far, at(i, j));
+        }
+      }
+    }
+    expect(core).to.be.greaterThan(0.7);
+    expect(skirt).to.be.greaterThan(0.02);
+    expect(skirt).to.be.lessThan(core * 0.5);
+    expect(far).to.equal(0);
   });
 });
 

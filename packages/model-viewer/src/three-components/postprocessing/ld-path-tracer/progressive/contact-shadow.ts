@@ -60,7 +60,13 @@ export interface ContactJob {
   y: number;
   softnessRadius: number;
   samples: number;
+  /** Unjittered core ray. Short, so only real contact goes dark. */
   maxDistance: number;
+  /**
+   * Jittered samples. Longer than the core so the skirt can still see the
+   * hull, and scaled down so it stays lighter than the core.
+   */
+  penumbraDistance: number;
   grid: Float32Array;
   cursor: number;
 }
@@ -72,13 +78,15 @@ export const stepContactRays = (
     ): boolean => {
   const start = performance.now();
   const count = job.resolution * job.resolution;
-  const bias = Math.max(1e-4, job.maxDistance * 1e-4);
+  const bias = Math.max(1e-3, job.maxDistance * 0.002);
   while (job.cursor < count) {
     if (performance.now() - start >= budgetMs) {
       return false;
     }
     const i = job.cursor % job.resolution;
     const j = Math.floor(job.cursor / job.resolution);
+    // Start just under the plane so the ray meets the underside instead of
+    // beginning inside the hull and missing the contact.
     contactTexelOrigin(
         i,
         j,
@@ -87,35 +95,43 @@ export const stepContactRays = (
         job.centerZ,
         job.width,
         job.depth,
-        job.y + bias,
+        job.y - bias,
         origin);
     let core = 0;
     let penumbra = 0;
     let penumbraSamples = 0;
     const samples = Math.max(1, job.samples);
+    const penumbraFar = Math.max(job.maxDistance, job.penumbraDistance || 0);
     for (let s = 0; s < samples; s++) {
       const ox = origin.x;
       const oz = origin.z;
+      let jitter = 0;
       if (s > 0 && job.softnessRadius > 0) {
         const angle = halton(s, 2) * Math.PI * 2;
-        const radius = Math.sqrt(halton(s, 3)) * job.softnessRadius;
+        jitter = Math.sqrt(halton(s, 3));
+        const radius = jitter * job.softnessRadius;
         origin.x = ox + Math.cos(angle) * radius;
         origin.z = oz + Math.sin(angle) * radius;
       }
+      const far = s === 0 ? job.maxDistance : penumbraFar;
       ray.set(origin, up);
-      const hit = bvh.raycastFirst(ray, DoubleSide, 0, job.maxDistance);
+      const hit = bvh.raycastFirst(ray, DoubleSide, 0, far);
       origin.x = ox;
       origin.z = oz;
-      if (hit != null) {
-        const t = Math.min(1, hit.distance / job.maxDistance);
-        const weight = (1 - t) * (1 - t);
-        if (s === 0) {
-          core = weight;
-        } else {
-          penumbra += weight;
+      if (hit == null) {
+        if (s > 0) {
           penumbraSamples++;
         }
-      } else if (s > 0) {
+        continue;
+      }
+      const t = Math.min(1, hit.distance / far);
+      const weight = (1 - t) * (1 - t);
+      if (s === 0) {
+        core = weight;
+      } else {
+        // Outer disk samples contribute less, so the skirt fades out.
+        const spatial = (1 - jitter) * (1 - jitter);
+        penumbra += weight * spatial;
         penumbraSamples++;
       }
     }

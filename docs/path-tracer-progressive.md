@@ -112,14 +112,19 @@ Switchable illumination is the light-layer path below.
 
 Cheapest layer, and it does not need UVs.
 
-- Plane sits on the bounds' XZ footprint at `min.y`, about 1.5× the
-  footprint so the penumbra has room. Front face points up. It is not part
-  of the raycast BVH (`userData.progressiveOverlay`).
-- Each texel shoots several rays straight up. A hit contributes
-  `(1 - distance / falloff)²`, so the darkest core is where the surface
-  nearly touches the ground and a tall hull does not paint a solid
-  silhouette. `falloff` is about `size.y * (0.06 + softness)`. The sample
-  disk (`softness` × the smaller horizontal size) is only the penumbra.
+- Plane sits on the bounds' XZ footprint at `min.y`. It is wider than the
+  footprint by the penumbra disk so the skirt is not clipped. Front face
+  points up. It is not part of the raycast BVH (`userData.progressiveOverlay`).
+- Rays start just under the plane and shoot straight up, so they meet the
+  underside instead of starting inside the mesh. Sample 0 is unjittered.
+  Its falloff is `max(size.y * 0.045, 0.012)`, and the weight is
+  `(1 - distance / falloff)²`. That is the dark core: geometry that nearly
+  touches the ground. A tall cabin does not extend it.
+- Later samples are only the penumbra. They jitter inside a disk of
+  `softness × 2.2 ×` the smaller horizontal size, and they may travel about
+  `max(falloff * 4, size.y * 0.16)`. Each hit is scaled by how far out in
+  the disk it landed, then the average is multiplied by 0.45, so the skirt
+  stays lighter than the core and fades before it becomes a second blob.
 - The built-in soft-shadow floor fades out with the same contact fade, so
   the realtime blob and the bake are not both drawn.
 - The texture is black RGB with occlusion in alpha. Opacity is

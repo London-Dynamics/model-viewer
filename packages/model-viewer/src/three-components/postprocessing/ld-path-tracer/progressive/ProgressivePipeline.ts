@@ -626,13 +626,16 @@ export class ProgressivePipeline {
     const center = box.getCenter(tmp);
     if (this.settings.bake.contactShadow.enabled) {
       const resolution = this.settings.bake.contactShadow.resolution;
-      const width = Math.max(size.x, 0.05) * 1.35;
-      const depth = Math.max(size.z, 0.05) * 1.35;
       const span = Math.max(Math.min(size.x, size.z), 0.05);
       const softness = this.settings.bake.contactShadow.softness;
-      // Only the band just above the ground counts. A tall hull does not
-      // paint a solid silhouette.
+      // Core stays in the band that actually touches the ground. The extra
+      // samples reach a bit higher and wider, and are scaled down to a skirt.
       const falloff = Math.max(size.y * 0.045, 0.012);
+      const penumbraDistance = Math.max(falloff * 4, size.y * 0.16, 0.05);
+      const softnessRadius = span * softness * 2.2;
+      const margin = softnessRadius * 2.2;
+      const width = Math.max(size.x, 0.05) * 1.15 + margin;
+      const depth = Math.max(size.z, 0.05) * 1.15 + margin;
       this.contact = {
         resolution,
         centerX: center.x,
@@ -640,9 +643,10 @@ export class ProgressivePipeline {
         width,
         depth,
         y: box.min.y,
-        softnessRadius: span * softness * 0.85,
+        softnessRadius,
         samples: softness > 0 ? 12 : 1,
         maxDistance: falloff,
+        penumbraDistance,
         grid: new Float32Array(resolution * resolution),
         cursor: 0,
       };
