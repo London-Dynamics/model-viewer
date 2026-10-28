@@ -136,10 +136,67 @@ export const stepContactRays = (
       }
     }
     const soft = penumbraSamples > 0 ? penumbra / penumbraSamples : 0;
-    job.grid[job.cursor] = Math.max(core, soft * 0.45);
+    // A hit on the center ray is the core. Extra samples only fill texels
+    // the center ray missed, and at a lower weight.
+    job.grid[job.cursor] = core > 0 ? core : soft * 0.55;
     job.cursor++;
   }
   return true;
+};
+
+/**
+ * Spread a light skirt around the core. Jittered rays are sparse, so the
+ * visible ground beside a hull would otherwise stay empty. The skirt is
+ * always dimmer than the core texel it spreads from, and it falls off before
+ * the disk edge.
+ */
+export const expandPenumbra = (
+    grid: Float32Array,
+    resolution: number,
+    width: number,
+    depth: number,
+    radiusMeters: number,
+    strength: number,
+    ): void => {
+  if (radiusMeters <= 1e-4 || strength <= 0 || resolution <= 1) {
+    return;
+  }
+  const mx = width / resolution;
+  const mz = depth / resolution;
+  const rx = Math.max(1, Math.ceil(radiusMeters / mx));
+  const rz = Math.max(1, Math.ceil(radiusMeters / mz));
+  const copy = grid.slice();
+  for (let j = 0; j < resolution; j++) {
+    for (let i = 0; i < resolution; i++) {
+      const core = copy[j * resolution + i];
+      if (core < 0.2) {
+        continue;
+      }
+      const cap = Math.min(strength, core * 0.62);
+      for (let dj = -rz; dj <= rz; dj++) {
+        const y = j + dj;
+        if (y < 0 || y >= resolution) {
+          continue;
+        }
+        for (let di = -rx; di <= rx; di++) {
+          const x = i + di;
+          if (x < 0 || x >= resolution) {
+            continue;
+          }
+          const dist = Math.hypot(di * mx, dj * mz);
+          if (dist <= 0 || dist >= radiusMeters) {
+            continue;
+          }
+          const t = 1 - dist / radiusMeters;
+          const skirt = cap * t * t;
+          const idx = y * resolution + x;
+          if (skirt > grid[idx]) {
+            grid[idx] = skirt;
+          }
+        }
+      }
+    }
+  }
 };
 
 export const blurOcclusion = (

@@ -21,7 +21,7 @@ import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 import {ModelScene} from '../../../ModelScene.js';
 import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 
-import {blurOcclusion, ContactJob, stepContactRays} from './contact-shadow.js';
+import {blurOcclusion, ContactJob, expandPenumbra, stepContactRays} from './contact-shadow.js';
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, occlusionAtPoint, PunctualSample} from './lighting.js';
@@ -628,14 +628,14 @@ export class ProgressivePipeline {
       const resolution = this.settings.bake.contactShadow.resolution;
       const span = Math.max(Math.min(size.x, size.z), 0.05);
       const softness = this.settings.bake.contactShadow.softness;
-      // Core stays in the band that actually touches the ground. The extra
-      // samples reach a bit higher and wider, and are scaled down to a skirt.
-      const falloff = Math.max(size.y * 0.045, 0.012);
-      const penumbraDistance = Math.max(falloff * 4, size.y * 0.16, 0.05);
-      const softnessRadius = span * softness * 2.2;
-      const margin = softnessRadius * 2.2;
-      const width = Math.max(size.x, 0.05) * 1.15 + margin;
-      const depth = Math.max(size.z, 0.05) * 1.15 + margin;
+      // Core is the band near the ground (the bottom, not the cabin). The
+      // skirt has to clear the hull side, which hides the keel from a
+      // typical orbit, so it is wider than the core and always lighter.
+      const falloff = Math.max(size.y * 0.12, 0.04);
+      const penumbraDistance = Math.max(falloff * 2.5, size.y * 0.35);
+      const softnessRadius = Math.max(span * softness * 4, size.y * 0.35);
+      const width = Math.max(size.x, 0.05) + softnessRadius * 2;
+      const depth = Math.max(size.z, 0.05) + softnessRadius * 2;
       this.contact = {
         resolution,
         centerX: center.x,
@@ -1284,6 +1284,15 @@ export class ProgressivePipeline {
   private publishContact() {
     if (this.contact == null) {
       return;
+    }
+    if (this.contact.softnessRadius > 0) {
+      expandPenumbra(
+          this.contact.grid,
+          this.contact.resolution,
+          this.contact.width,
+          this.contact.depth,
+          this.contact.softnessRadius,
+          0.62);
     }
     const radius = this.contact.softnessRadius > 0 ? 1 : 0;
     const grid =

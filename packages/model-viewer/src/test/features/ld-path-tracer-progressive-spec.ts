@@ -19,7 +19,7 @@ import {MeshBVH} from 'three-mesh-bvh';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
-import {stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
+import {expandPenumbra, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
@@ -233,6 +233,23 @@ suite('progressive contact shadow rays', () => {
     expect(core).to.be.greaterThan(0.7);
     expect(skirt).to.be.greaterThan(0.02);
     expect(skirt).to.be.lessThan(core * 0.5);
+    expect(far).to.equal(0);
+  });
+
+  test('the penumbra spread stays lighter than the core', () => {
+    const resolution = 32;
+    const grid = new Float32Array(resolution * resolution);
+    grid[16 * resolution + 16] = 1;
+    expandPenumbra(grid, resolution, 4, 4, 0.8, 0.62);
+    const core = grid[16 * resolution + 16];
+    const near = grid[16 * resolution + 18];
+    const mid = grid[16 * resolution + 20];
+    const far = grid[16 * resolution + 31];
+    expect(core).to.equal(1);
+    expect(near).to.be.greaterThan(0.15);
+    expect(near).to.be.lessThan(0.62);
+    expect(mid).to.be.greaterThan(0);
+    expect(mid).to.be.lessThan(near);
     expect(far).to.equal(0);
   });
 });

@@ -112,19 +112,20 @@ Switchable illumination is the light-layer path below.
 
 Cheapest layer, and it does not need UVs.
 
-- Plane sits on the bounds' XZ footprint at `min.y`. It is wider than the
-  footprint by the penumbra disk so the skirt is not clipped. Front face
-  points up. It is not part of the raycast BVH (`userData.progressiveOverlay`).
+- Plane sits on the bounds' XZ footprint at `min.y`, extended on every side
+  by the penumbra disk so the skirt is not clipped. Front face points up.
+  It is not part of the raycast BVH (`userData.progressiveOverlay`).
 - Rays start just under the plane and shoot straight up, so they meet the
   underside instead of starting inside the mesh. Sample 0 is unjittered.
-  Its falloff is `max(size.y * 0.045, 0.012)`, and the weight is
-  `(1 - distance / falloff)²`. That is the dark core: geometry that nearly
-  touches the ground. A tall cabin does not extend it.
-- Later samples are only the penumbra. They jitter inside a disk of
-  `softness × 2.2 ×` the smaller horizontal size, and they may travel about
-  `max(falloff * 4, size.y * 0.16)`. Each hit is scaled by how far out in
-  the disk it landed, then the average is multiplied by 0.45, so the skirt
-  stays lighter than the core and fades before it becomes a second blob.
+  Its falloff is `max(size.y * 0.12, 0.04)`, and the weight is
+  `(1 - distance / falloff)²`. That is the dark core: the bottom that
+  nearly touches the ground. A cabin well above that band does not extend it.
+- Later samples only fill texels the center ray missed, at 0.55× the
+  weight, inside a disk of about `softness × 4 ×` the smaller horizontal
+  size (at least `0.35 × height`). A distance falloff then spreads the core
+  across that same disk at 0.62×, quadratic in distance, so the ground
+  beside the hull — which hides the keel from a side orbit — is a lighter
+  skirt and not a second flat blob.
 - The built-in soft-shadow floor fades out with the same contact fade, so
   the realtime blob and the bake are not both drawn.
 - The texture is black RGB with occlusion in alpha. Opacity is
