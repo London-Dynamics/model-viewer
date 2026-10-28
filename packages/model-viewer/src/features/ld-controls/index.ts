@@ -521,7 +521,7 @@ class ThirdPartyControlsAdapter implements ControlsAdapter {
   private installCameraControlsHooks(): void {
     const controls = this.thirdPartyControls as unknown as {
       _dollyInternal?: (delta: number, x: number, y: number) => void,
-      saveState: () => void,
+                    saveState: () => void,
       _ldHooksInstalled?: boolean,
     };
     if (controls._ldHooksInstalled) {
@@ -2428,8 +2428,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       const sameTargetGoal = this[$lastSyncedCameraTarget] != null &&
           this.cameraTarget === this[$lastSyncedCameraTarget];
-      const keepLiveTarget =
-          this[$preserveLiveCameraPose] && sameTargetGoal;
+      const keepLiveTarget = this[$preserveLiveCameraPose] && sameTargetGoal;
       if (!keepLiveTarget && !this[$renderer].arRenderer.isPresenting) {
         const cc = (this[$controls] as any)?.thirdPartyControls;
         if (cc && typeof cc.setLookAt === 'function') {
@@ -2507,9 +2506,14 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           this[$promptAnimatedContainer].style.transform =
               `translateX(${xOffset}px)`;
 
-          controls.changeSource = ChangeSource.AUTOMATIC;
-          controls.adjustOrbit(deltaTheta, 0, 0);
-          interactionPromptAdjustedOrbit = true;
+          // Path tracing restarts accumulation on every camera change.
+          // The prompt wiggle orbits forever, so it would pin samples at one
+          // tile. Keep the on-screen hint and leave the camera still.
+          if ((this as {pathTracer?: boolean}).pathTracer !== true) {
+            controls.changeSource = ChangeSource.AUTOMATIC;
+            controls.adjustOrbit(deltaTheta, 0, 0);
+            interactionPromptAdjustedOrbit = true;
+          }
 
           this[$lastPromptOffset] = offset;
         }

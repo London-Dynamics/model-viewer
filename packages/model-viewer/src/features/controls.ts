@@ -913,8 +913,13 @@ export const ControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
             $promptAnimatedContainer
           ].style.transform = `translateX(${xOffset}px)`;
 
-          controls.changeSource = ChangeSource.AUTOMATIC;
-          controls.adjustOrbit(deltaTheta, 0, 0);
+          // Path tracing restarts accumulation on every camera change.
+          // The prompt wiggle orbits forever, so it would pin samples at one
+          // tile. Keep the on-screen hint and leave the camera still.
+          if ((this as {pathTracer?: boolean}).pathTracer !== true) {
+            controls.changeSource = ChangeSource.AUTOMATIC;
+            controls.adjustOrbit(deltaTheta, 0, 0);
+          }
 
           this[$lastPromptOffset] = offset;
         }

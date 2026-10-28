@@ -13,39 +13,61 @@
  * limitations under the License.
  */
 
-import {
-  Camera,
-  DoubleSide,
-  Matrix4,
-  Mesh,
-  MeshStandardMaterial,
-  NoBlending,
-  NeutralToneMapping,
-  NormalBlending,
-  Object3D,
-  PerspectiveCamera,
-  PlaneGeometry,
-  SRGBColorSpace,
-  Vector3,
-  Vector2,
-  WebGLRenderer,
-  WebGLRenderTarget,
-} from 'three';
-import {
-  DenoiseMaterial,
-  PhysicalCamera,
-  WebGLPathTracer,
-} from 'three-gpu-pathtracer';
+import {Camera, DoubleSide, Matrix4, Mesh, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
+import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
 import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
-import {
-  AmbientOcclusionOptions,
-  LDAmbientOcclusionComposer,
-} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
+import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 
 const PATH_TRACER_FADE_DURATION_MS = 600;
+export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
+
+export type PathTracerBVHStrategy = 'sah'|'center'|'average';
+
+export interface PathTracerBuildOptions {
+  strategy: PathTracerBVHStrategy;
+  maxLeafTris: number;
+}
+
+export const DEFAULT_PATH_TRACER_BUILD_OPTIONS: PathTracerBuildOptions = {
+  strategy: 'sah',
+  maxLeafTris: 1,
+};
+
+const PATH_TRACER_BVH_STRATEGIES = new Set<PathTracerBVHStrategy>([
+  'sah',
+  'center',
+  'average',
+]);
+
+const BVH_STRATEGY = {
+  sah: SAH,
+  center: CENTER,
+  average: AVERAGE,
+} as const;
+
+export const resolvePathTracerBuildOptions = (
+    current: PathTracerBuildOptions,
+    partial?: Partial<PathTracerBuildOptions>|null,
+    ): PathTracerBuildOptions => {
+  if (partial == null) {
+    return {...current};
+  }
+
+  const strategy = PATH_TRACER_BVH_STRATEGIES.has(
+                       partial.strategy as PathTracerBVHStrategy) ?
+      partial.strategy as PathTracerBVHStrategy :
+      current.strategy;
+  const maxLeafTris =
+      partial.maxLeafTris != null && Number.isFinite(partial.maxLeafTris) ?
+      Math.max(1, Math.floor(partial.maxLeafTris)) :
+      current.maxLeafTris;
+
+  return {strategy, maxLeafTris};
+};
 const PATH_TRACER_RESET_OPTION_KEYS = [
   'bounces',
   'renderScale',
@@ -109,8 +131,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private pathTracer: WebGLPathTracer|null = null;
   private ambientOcclusionPreviewComposer: LDAmbientOcclusionComposer|null =
       null;
-  private currentAmbientOcclusionPreviewOptions:
-      AmbientOcclusionOptions|null = null;
+  private currentAmbientOcclusionPreviewOptions: AmbientOcclusionOptions|null =
+      null;
   private queuedRender: number|null = null;
   private readonly lastCameraWorldMatrix = new Matrix4();
   private readonly lastCameraProjectionMatrix = new Matrix4();
@@ -123,6 +145,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     ...DEFAULT_PATH_TRACER_OPTIONS,
     tiles: DEFAULT_PATH_TRACER_OPTIONS.tiles.clone(),
   };
+  private buildOptions: PathTracerBuildOptions = {
+    ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
+  };
+  private ready = false;
   private needsSceneUpdate = true;
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
@@ -132,23 +158,34 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   setRenderer(renderer: WebGLRenderer) {
+    const rendererUnchanged =
+        this.pathTracer != null && this.renderer === renderer;
     this.renderer = renderer;
     this.syncAmbientOcclusionPreview();
-    this.rebuildPathTracer();
+    if (!rendererUnchanged) {
+      this.rebuildPathTracer();
+    }
     this.requestRender();
   }
 
   setMainScene(scene: ModelScene) {
+    const sceneChanged = this.scene !== scene;
     this.scene = scene;
-    this.needsSceneUpdate = true;
+    if (sceneChanged) {
+      this.needsSceneUpdate = true;
+      this.invalidateReady();
+    }
     this.syncAmbientOcclusionPreview();
     this.syncScene();
     this.requestRender();
   }
 
   setMainCamera(camera: Camera) {
+    const cameraChanged = this.camera !== camera;
     this.camera = camera;
-    this.needsSceneUpdate = true;
+    if (cameraChanged) {
+      this.needsSceneUpdate = true;
+    }
     this.syncAmbientOcclusionPreview();
     this.syncScene();
     this.requestRender();
@@ -182,7 +219,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   render(_deltaTime?: DOMHighResTimeStamp) {
-    if (this.pathTracer == null || this.renderer == null || this.scene == null) {
+    if (this.pathTracer == null || this.renderer == null ||
+        this.scene == null) {
       return;
     }
 
@@ -197,8 +235,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
         (env === 'neutral' || env === 'legacy' || (!env && !sky));
     this.renderer.toneMappingExposure =
-        (exposureIsNumber ? exposure : 1.0) *
-        (compensateExposure ? 1.3 : 1.0);
+        (exposureIsNumber ? exposure : 1.0) * (compensateExposure ? 1.3 : 1.0);
 
     this.pathTracer.renderSample();
     if (this.shouldRenderAmbientOcclusionPreview()) {
@@ -209,6 +246,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (this.pathTracer.samples < this.options.samples) {
       this.queueNextProgressiveRender();
     }
+    this.maybeMarkReady();
   }
 
   updateOptions(partial: Partial<PathTracerOptions>) {
@@ -221,8 +259,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       const current = this.options[key];
       const next = nextOptions[key];
       return current instanceof Vector2 && next instanceof Vector2 ?
-        !current.equals(next) :
-        current !== next;
+          !current.equals(next) :
+          current !== next;
     });
 
     this.options = nextOptions;
@@ -235,11 +273,34 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return this.pathTracer?.samples ?? 0;
   }
 
+  get isReady() {
+    return this.ready;
+  }
+
+  getBuildOptions(): PathTracerBuildOptions {
+    return {...this.buildOptions};
+  }
+
+  setBuildOptions(partial: Partial<PathTracerBuildOptions>) {
+    const next = resolvePathTracerBuildOptions(this.buildOptions, partial);
+    if (next.strategy === this.buildOptions.strategy &&
+        next.maxLeafTris === this.buildOptions.maxLeafTris) {
+      return;
+    }
+
+    this.buildOptions = next;
+    if (this.renderer != null && this.pathTracer != null) {
+      this.rebuildPathTracer();
+    }
+    this.requestRender();
+  }
+
   get ambientOcclusionPreviewOptions() {
     return this.currentAmbientOcclusionPreviewOptions;
   }
 
   markSceneDirty() {
+    this.invalidateReady();
     this.needsSceneUpdate = true;
     this.meshWorldMatrices.clear();
     this.pathTracer?.reset();
@@ -270,6 +331,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.cameraStateInitialized = false;
     this.needsSceneUpdate = true;
+    this.ready = false;
   }
 
   private rebuildPathTracer() {
@@ -277,17 +339,91 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
+    this.disposePathTracer();
+    this.invalidateReady();
     this.pathTracer = new WebGLPathTracer(this.renderer);
     this.pathTracer.renderDelay = 0;
     this.pathTracer.fadeDuration = PATH_TRACER_FADE_DURATION_MS;
     this.pathTracer.rasterizeScene = true;
     this.pathTracer.renderToCanvas = true;
-    this.pathTracer.renderToCanvasCallback =
-        (target, renderer, quad) => this.renderPathTracerOutput(
-            target, renderer, quad);
+    this.pathTracer.renderToCanvasCallback = (target, renderer, quad) =>
+        this.renderPathTracerOutput(target, renderer, quad);
     this.applyOptions();
+    this.applyBuildOptions();
     this.needsSceneUpdate = true;
     this.syncScene();
+  }
+
+  private disposePathTracer() {
+    if (this.pathTracer == null) {
+      return;
+    }
+
+    try {
+      this.pathTracer.dispose();
+    } catch {
+      // three-gpu-pathtracer 0.0.23 references a private dispose member that
+      // is not present. Drop the instance so a replacement can be created.
+    }
+    this.pathTracer = null;
+  }
+
+  private applyBuildOptions() {
+    const generator = (this.pathTracer as unknown as {
+                        _generator?: {bvhOptions?: Record<string, unknown>;};
+                      } |
+                       null)
+                          ?._generator;
+    if (generator == null) {
+      return;
+    }
+
+    generator.bvhOptions = {
+      ...generator.bvhOptions,
+      strategy: BVH_STRATEGY[this.buildOptions.strategy],
+      maxLeafTris: this.buildOptions.maxLeafTris,
+    };
+  }
+
+  private invalidateReady() {
+    this.ready = false;
+  }
+
+  private maybeMarkReady() {
+    // tiles are 3x3 by default, so one renderSample() finishes a single tile
+    // and leaves samples at 1/9. A full sample is samples >= 1. Ready tracks
+    // the first completed tile, which is what a host can observe on a heavy
+    // model before nine tile passes have finished.
+    if (this.ready || this.needsSceneUpdate || this.pathTracer == null ||
+        this.pathTracer.samples <= 0 || this.scene == null) {
+      return;
+    }
+    if (!this.hasTraceableMesh()) {
+      return;
+    }
+
+    this.ready = true;
+    this.scene.element.dispatchEvent(new CustomEvent(PATH_TRACER_READY_EVENT, {
+      detail: {samples: this.pathTracer.samples},
+    }));
+  }
+
+  private hasTraceableMesh() {
+    if (this.scene == null) {
+      return false;
+    }
+
+    let found = false;
+    this.scene.traverseVisible((object: Object3D) => {
+      if (found || !(object as Mesh).isMesh) {
+        return;
+      }
+      if ((object as Mesh).userData?.pathTracerShadowCatcher === true) {
+        return;
+      }
+      found = true;
+    });
+    return found;
   }
 
   private applyOptions(reset: boolean = true) {
@@ -296,16 +432,15 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.pathTracer.bounces = Math.max(1, Math.floor(this.options.bounces));
-    this.pathTracer.minSamples = Math.max(
-        1, Math.floor(this.options.samplesThreshold));
-    this.pathTracer.renderScale = Math.min(
-        1, Math.max(0.1, this.options.renderScale));
+    this.pathTracer.minSamples =
+        Math.max(1, Math.floor(this.options.samplesThreshold));
+    this.pathTracer.renderScale =
+        Math.min(1, Math.max(0.1, this.options.renderScale));
     this.pathTracer.tiles.copy(this.options.tiles);
     this.denoiseMaterial.sigma = Math.max(0.001, this.options.denoiseSigma);
     this.denoiseMaterial.threshold =
         Math.max(0.0001, this.options.denoiseThreshold);
-    this.denoiseMaterial.kSigma =
-        Math.max(0, this.options.denoiseKSigma);
+    this.denoiseMaterial.kSigma = Math.max(0, this.options.denoiseKSigma);
     if (reset && this.camera != null) {
       this.pathTracer.setCamera(this.getPathTracerCamera());
     }
@@ -397,8 +532,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private renderPathTracerOutput(
-      target: WebGLRenderTarget,
-      renderer: WebGLRenderer,
+      target: WebGLRenderTarget, renderer: WebGLRenderer,
       quad: FullScreenQuad) {
     if (this.shouldRenderAmbientOcclusionPreview()) {
       return;
@@ -476,8 +610,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       transparent: false,
     });
 
-    this.shadowCatcher =
-        new Mesh(new PlaneGeometry(1, 1), material);
+    this.shadowCatcher = new Mesh(new PlaneGeometry(1, 1), material);
     this.shadowCatcher.name = 'PathTracerShadowCatcher';
     this.shadowCatcher.userData.noHit = true;
     this.shadowCatcher.userData.pathTracerShadowCatcher = true;
@@ -593,8 +726,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.physicalCamera.copy(this.camera);
-    this.physicalCamera.setFocalLength(
-        Math.max(1, this.options.focalLength));
+    this.physicalCamera.setFocalLength(Math.max(1, this.options.focalLength));
     this.physicalCamera.fStop = Math.max(0.1, this.options.fStop);
     this.physicalCamera.focusDistance =
         Math.max(0.001, this.options.focusDistance);
