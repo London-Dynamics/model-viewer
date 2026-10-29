@@ -56,6 +56,7 @@ export class WebGPUBeautyTrace {
   private texture: CanvasTexture|null = null;
   private starting: Promise<boolean>|null = null;
   private failed = false;
+  private disposed = false;
   private boundScene: Scene|null = null;
   private cameraStamp = '';
   presented = false;
@@ -122,6 +123,12 @@ export class WebGPUBeautyTrace {
       Upscaler: upscaler.Upscaler,
       sharpness: 1,
     }));
+    if (this.disposed) {
+      pathTracer.dispose();
+      renderer.dispose();
+      this.starting = null;
+      return false;
+    }
     this.renderer = renderer;
     this.tracer = pathTracer;
     this.starting = null;
@@ -207,6 +214,7 @@ export class WebGPUBeautyTrace {
   }
 
   dispose() {
+    this.disposed = true;
     this.tracer?.dispose();
     this.renderer?.dispose();
     this.texture?.dispose();

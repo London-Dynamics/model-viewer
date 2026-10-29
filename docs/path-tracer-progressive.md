@@ -9,10 +9,11 @@ The mixin stays the product API. Examples only set `path-tracer` and call
 
 ## Problem
 
-`path-tracer` today swaps the beauty pass for `WebGLPathTracer`. The first
-frames wait on a scene merge and a BVH, and the traced image is the only
-image. Configurators cannot use that on a boat or a car: the camera has to
-stay live, geometry changes when options change, and lights turn on and off.
+`path-tracer` samples the beauty pass with `WebGPUPathTracer` only. There is
+no `WebGLPathTracer` fallback. The raster view stays on the WebGL canvas
+until that trace is ready to show. Configurators cannot replace the live
+view with a trace: the camera has to stay live, geometry changes when
+options change, and lights turn on and off.
 
 Shader AO (`ld-ambient-occlusion`) is not a substitute. It is fine on some
 cars and not good enough on a bag, and a Blender bake does not survive a
@@ -50,12 +51,12 @@ does not replace the beauty pass.
    channel 1, a composited `lightMap` on the same channel, and a PMREM
    `envMap`. The baked contact shadow and texture AO **replace** shader AO.
    They do not stack with it. See the handoff below.
-4. When the camera has been still for `idleDelayMs`, the existing
-   `WebGLPathTracer` accumulates **one tile** into an offscreen target
-   (`renderToCanvas = false`). After `traceRevealSamples` and a denoise, a
-   fullscreen quad crossfades that target over the beauty pass. At fade 1
-   the quad is opaque and fully replaces realtime. There is no persistent
-   opacity blend.
+4. When the camera has been still for `idleDelayMs`, `WebGPUPathTracer`
+   samples the beauty trace (blue dither, frame budget, OIDN, FSR). After
+   `traceRevealSamples`, a fullscreen quad crossfades that picture over the
+   raster view. At fade 1 the quad is opaque. There is no WebGL path tracer
+   and no screen-space shadow pass. The UV atlas bake is a stub until a
+   `getCameraRay` atlas camera lands.
 5. Camera motion fades that quad back out. Realtime, the bakes, and the
    probes remain.
 

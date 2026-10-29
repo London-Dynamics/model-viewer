@@ -15,7 +15,6 @@
 
 import {AdditiveBlending, BufferAttribute, BufferGeometry, Camera, ClampToEdgeWrapping, Color, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, LinearFilter, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, RGBAFormat, Texture, Vector3, WebGLRenderer, WebGLRenderTarget} from 'three';
 import {SAH} from 'three-mesh-bvh';
-import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -26,7 +25,7 @@ import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepC
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, PunctualSample} from './lighting.js';
-import {openLevel, SurfaceFactorBake, usableFactorScale} from './surface-bake.js';
+import {AtlasBake} from './surface-bake.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
 import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
@@ -39,11 +38,6 @@ export interface ProgressiveHost {
   dispatch(name: string, detail: Record<string, unknown>): void;
   buildTrace(): void;
   traceReady(): boolean;
-  prepareOcclusion(): void;
-  occlusionReady(): boolean;
-  occlusionMaterial(): PhysicalPathTracingMaterial|null;
-  bounces(): number;
-  setOcclusionScale(value: number): void;
   occlusionSamples(): number;
   resetTrace(): void;
   sampleTrace(): number;
@@ -180,7 +174,7 @@ export class ProgressivePipeline {
   private areaTri = 0;
   private areaPartial = 0;
   private meshAreas: number[] = [];
-  private factorBake: SurfaceFactorBake|null = null;
+  private atlasBake: AtlasBake|null = null;
   private factorScale = 1;
   private occlusionScaleSent = false;
   private shadowMs = 0;
@@ -753,11 +747,10 @@ export class ProgressivePipeline {
     } else {
       this.contactReady = true;
     }
-    const ownsShadow = this.settings.shadowPass.enabled &&
-        this.settings.view === 'beauty';
-    const wantUv = !ownsShadow && (this.settings.bake.textureAO.enabled ||
-                                   (this.settings.lights.include &&
-                                    this.sceneHasLights()));
+    // The WebGL shadow pass no longer replaces the atlas. shadowPass stays
+    // in the options for the WebGPU bake; it does not skip UV or AO.
+    const wantUv = this.settings.bake.textureAO.enabled ||
+        (this.settings.lights.include && this.sceneHasLights());
     this.uvTasks = [];
     this.uvPlaced.clear();
     this.geometryOwner.clear();
@@ -766,17 +759,13 @@ export class ProgressivePipeline {
     this.areaTri = 0;
     this.areaPartial = 0;
     this.meshAreas = new Array(this.meshes.length).fill(0);
-    this.factorBake?.dispose();
-    this.factorBake = null;
+    this.atlasBake?.dispose();
+    this.atlasBake = null;
     this.factorScale = 1;
     this.occlusionScaleSent = false;
-    if (!ownsShadow) {
-      this.shadowMs = 0;
-    }
+    this.shadowMs = 0;
     this.uvReady = !wantUv;
-    if (ownsShadow) {
-      this.aoReady = this.shadowNoted;
-    } else if (!this.settings.bake.textureAO.enabled) {
+    if (!this.settings.bake.textureAO.enabled) {
       this.aoReady = true;
     } else {
       this.aoReady = false;
@@ -1335,12 +1324,11 @@ export class ProgressivePipeline {
   }
 
   /**
-   * The texture is the path tracer, frozen. Each texel runs the same shader
-   * as the shadow view. There is no separate occlusion heuristic.
+   * The WebGL screen-space shadow pass is gone. The atlas bake does not
+   * block the beauty trace while getCameraRay is still a stub.
    */
   private shadowPending(): boolean {
-    return this.settings.shadowPass.enabled && this.settings.view === 'beauty' &&
-        !this.host.shadowLayerReady();
+    return false;
   }
 
   private noteShadowLayer() {
@@ -1358,55 +1346,27 @@ export class ProgressivePipeline {
   }
 
   private stepAo(_budgetMs: number) {
-    if (this.settings.shadowPass.enabled && this.settings.view === 'beauty') {
-      return;
-    }
     if (this.surface == null || this.surfaceCount === 0) {
       this.aoReady = true;
       return;
     }
-    const renderer = this.host.renderer();
-    const source = this.host.occlusionMaterial();
-    if (renderer == null || source == null || !this.host.occlusionReady()) {
-      this.host.prepareOcclusion();
+    if (this.atlasBake == null) {
+      this.atlasBake = new AtlasBake();
+    }
+    // No atlas yet, so texture AO stays unready and shader AO stays up.
+    // This does not block the beauty trace.
+    if (!this.atlasBake.implemented) {
       return;
     }
-    const samples = ProgressivePipeline.SHADOW_SAMPLES;
+    // TODO(webgpu-atlas-bake): step the WebGPU atlas. Its camera is
+    // getCameraRay. Publish that image here; do not use a WebGL tracer.
+    const samples = this.atlasBake.step();
+    if (samples <= 0) {
+      return;
+    }
+    this.aoCursor = samples;
     const resolution = Math.min(128, this.settings.bake.textureAO.resolution);
-    if (this.factorBake == null) {
-      this.factorBake = new SurfaceFactorBake(renderer, source);
-      this.factorBake.setSurfaces(this.surface, this.surfaceCount, resolution);
-      this.aoCursor = 0;
-      return;
-    }
-    try {
-      const done = this.factorBake.step();
-      this.aoCursor = Math.min(samples, Math.floor(done));
-      if (done + 1e-3 < samples) {
-        return;
-      }
-      try {
-        this.factorBake.denoise(renderer);
-      } catch (error) {
-        console.warn('[model-viewer] Shadow denoise failed.', error);
-      }
-      const image = this.factorBake.read(renderer);
-      this.factorScale = usableFactorScale(openLevel(image));
-      if (!this.occlusionScaleSent) {
-        this.host.setOcclusionScale(this.factorScale);
-        this.occlusionScaleSent = true;
-      }
-      this.bakeMs.textureAO = performance.now() - this.aoStamp;
-      this.publishFactor(image, image, resolution);
-      this.factorBake.dispose();
-      this.factorBake = null;
-    } catch (error) {
-      console.warn(
-          '[model-viewer] Surface factor bake failed.', error);
-      this.factorBake?.dispose();
-      this.factorBake = null;
-      this.aoReady = true;
-    }
+    this.publishFactor(new Float32Array(0), new Float32Array(0), resolution);
   }
 
   private buildLightList(resolution: number) {
@@ -1638,12 +1598,7 @@ export class ProgressivePipeline {
     if (this.settings.view === 'beauty' && this.settings.shadowPass.enabled) {
       this.noteShadowLayer();
     }
-    // The screen-space shadow samples before the UV atlas. The full-material
-    // trace starts once that layer is stored.
-    if (this.shadowPending() || this.aoReady ||
-        !this.settings.bake.textureAO.enabled) {
-      this.stepTrace();
-    }
+    this.stepTrace();
   }
 
   private stepProbes() {
@@ -1809,7 +1764,7 @@ export class ProgressivePipeline {
   /** Ratio of path-traced irradiance to the unoccluded irradiance. No blur. */
   private publishFactor(
       front: Float32Array, back: Float32Array, resolution: number) {
-    const scale = usableFactorScale(this.factorScale);
+    const scale = this.factorScale > 0 ? this.factorScale : 1;
     const ratio = (source: Float32Array) => {
       const out = new Float32Array(source.length);
       out.fill(-1);
@@ -2189,13 +2144,8 @@ export class ProgressivePipeline {
     const fading = !fadeSettled(this.contactFade) ||
         !fadeSettled(this.aoFade) || !fadeSettled(this.lightFade) ||
         !fadeSettled(this.probeFade) || !fadeSettled(this.traceFade);
-    if (this.settings.view === 'beauty' && this.settings.shadowPass.enabled &&
-        !this.host.shadowLayerReady()) {
-      return true;
-    }
     if (this.settings.view === 'occlusion') {
-      return this.phase !== 'done' || fading ||
-          this.host.occlusionSamples() < this.host.maxSamples();
+      return this.phase !== 'done' || fading;
     }
     if (this.settings.view === 'bake' || this.settings.view === 'realtime') {
       return this.phase !== 'done' || fading;
@@ -2370,8 +2320,8 @@ export class ProgressivePipeline {
     this.areaTri = 0;
     this.areaPartial = 0;
     this.meshAreas = [];
-    this.factorBake?.dispose();
-    this.factorBake = null;
+    this.atlasBake?.dispose();
+    this.atlasBake = null;
     this.uvPlaced.clear();
     this.geometryOwner.clear();
     this.overlapSkips = 0;

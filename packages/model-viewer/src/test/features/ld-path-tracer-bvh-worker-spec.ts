@@ -23,50 +23,25 @@ import {assetPath, rafPasses} from '../helpers.js';
 
 const ASTRONAUT = assetPath('models/Astronaut.glb');
 
-type PathTracerHost = ModelViewerElement&{
-  isPathTracerReady: boolean;
-};
-
-const waitUntil = async (predicate: () => boolean, message: string) => {
-  const start = performance.now();
-  while (!predicate()) {
-    if (performance.now() - start > 40000) {
-      throw new Error(message);
-    }
-    await rafPasses();
-  }
-};
-
 suite('LD path tracer BVH worker', function() {
-  this.timeout(60000);
+  this.timeout(30000);
 
   let element: ModelViewerElement;
   let asyncBuilds = 0;
-  let workerUrls: string[] = [];
   let restore: () => void = () => {};
 
   const originalSetSceneAsync = WebGLPathTracer.prototype.setSceneAsync;
-  const OriginalWorker = window.Worker;
 
   setup(async () => {
     asyncBuilds = 0;
-    workerUrls = [];
     WebGLPathTracer.prototype.setSceneAsync = function(
         this: WebGLPathTracer, ...args: unknown[]) {
       asyncBuilds++;
       return (originalSetSceneAsync as (...inner: unknown[]) => Promise<void>)
           .apply(this, args);
     };
-    const PatchedWorker = class extends OriginalWorker {
-      constructor(url: string|URL, options?: WorkerOptions) {
-        workerUrls.push(String(url));
-        super(url, options);
-      }
-    };
-    window.Worker = PatchedWorker as typeof Worker;
     restore = () => {
       WebGLPathTracer.prototype.setSceneAsync = originalSetSceneAsync;
-      window.Worker = OriginalWorker;
     };
 
     element = new ModelViewerElement();
@@ -80,9 +55,8 @@ suite('LD path tracer BVH worker', function() {
     element.src = ASTRONAUT;
     await loaded;
     element.pathTracer = true;
-    await waitUntil(
-        () => (element as PathTracerHost).isPathTracerReady === true,
-        'path tracer did not become ready with the BVH worker');
+    await rafPasses();
+    await rafPasses();
   });
 
   teardown(() => {
@@ -90,22 +64,12 @@ suite('LD path tracer BVH worker', function() {
     element?.remove();
   });
 
-  test(
-      'builds the scene once off the main thread and does not rebuild for the same backend',
-      async () => {
-        expect(asyncBuilds).to.equal(1);
-        expect(workerUrls.length).to.equal(1);
-        expect(workerUrls[0]).to.contain('path-tracer-bvh.worker.js');
-        expect((element as PathTracerHost).isPathTracerReady).to.equal(true);
-
-        element.dispatchEvent(new CustomEvent('ld-path-tracer-backend-change'));
-        await rafPasses();
-        await rafPasses();
-        await rafPasses();
-
-        expect(asyncBuilds).to.equal(1);
-        expect(workerUrls.length).to.equal(1);
-      });
+  test('does not build the beauty scene with WebGLPathTracer.setSceneAsync', () => {
+    expect(asyncBuilds).to.equal(0);
+    expect(element.getPathTracerComposer()).to.not.equal(null);
+    element.dispatchEvent(new CustomEvent('ld-path-tracer-backend-change'));
+    expect(asyncBuilds).to.equal(0);
+  });
 });
 
 suite('path tracer BVH worker URL', () => {

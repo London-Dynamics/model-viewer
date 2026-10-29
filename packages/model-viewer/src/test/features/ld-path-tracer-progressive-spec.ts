@@ -16,7 +16,6 @@
 import {expect} from 'chai';
 import {BufferGeometry, Float32BufferAttribute} from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
-import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
@@ -25,7 +24,7 @@ import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-compon
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {applyUvJob, createUvJob, orientWindingToNormals, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
-import {installSurfaceBake, openLevel} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
+import {AtlasBake} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
 
@@ -57,24 +56,12 @@ suite('progressive path tracer options', () => {
     expect(DEFAULT_PROGRESSIVE_SETTINGS.view).to.equal('beauty');
   });
 
-  test('surface bake patches the path tracer shader in place', () => {
-    const material = new PhysicalPathTracingMaterial();
-    installSurfaceBake(material);
-    expect(material.fragmentShader).to.contain('uniform int ldBake;');
-    expect(material.fragmentShader).to.contain('ray.origin = ldPos.xyz + ldN * 0.02');
-    expect(material.fragmentShader).to.contain('texture2D( ldPosition, vUv )');
-    expect(material.fragmentShader).to.contain('ldBake == 1');
-    expect(material.uniforms.ldBake.value).to.equal(0);
-    installSurfaceBake(material);
-    expect(material.fragmentShader.match(/uniform int ldBake;/g)?.length).to.equal(1);
-  });
-
-  test('an empty open level stays 1 so the shadow quad is not divided away', () => {
-    expect(openLevel(new Float32Array(16))).to.equal(1);
-    expect(openLevel(new Float32Array([-1, -1, -1]))).to.equal(1);
-    const faint = new Float32Array(32);
-    faint.fill(0.01);
-    expect(openLevel(faint)).to.equal(1);
+  test('atlas bake waits for a WebGPU getCameraRay camera', () => {
+    const bake = new AtlasBake();
+    expect(bake.implemented).to.equal(false);
+    expect(bake.camera).to.equal('getCameraRay');
+    expect(bake.step()).to.equal(0);
+    bake.dispose();
   });
 
   test('shadow pass clamps to a short preset', () => {
