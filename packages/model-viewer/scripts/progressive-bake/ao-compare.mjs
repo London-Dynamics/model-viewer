@@ -132,6 +132,12 @@ async function load(page, src, hdr, orbit, target) {
           material.color.set(1, 1, 1);
           material.roughness = 1;
           material.metalness = 0;
+          material.clearcoat = 0;
+          material.clearcoatRoughness = 1;
+          material.sheen = 0;
+          material.transmission = 0;
+          material.specularIntensity = 0;
+          material.iridescence = 0;
           if (material.emissive) {
             material.emissive.set(0, 0, 0);
           }

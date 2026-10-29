@@ -39,7 +39,7 @@ float halton(int index, int base) {
   return result;
 }
 
-vec2 castRays(vec3 origin, vec3 normal) {
+float castRays(vec3 origin, vec3 normal) {
   vec3 n = normalize(normal);
   vec3 helper = abs(n.y) > 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
   vec3 tangent = normalize(cross(helper, n));
@@ -84,8 +84,11 @@ vec2 castRays(vec3 origin, vec3 normal) {
       occ++;
     }
   }
-  float denom = float(count);
-  return vec2(1.0 - float(occ) / denom, float(selfHits) / denom);
+  int valid = count - selfHits;
+  if (valid <= 0) {
+    return 1.0;
+  }
+  return 1.0 - float(occ) / float(valid);
 }
 
 void main() {
@@ -96,13 +99,11 @@ void main() {
     return;
   }
   vec3 nrm = texelFetch(sampleNormal, coord, 0).xyz;
-  vec2 primary = castRays(pos.xyz, nrm);
-  float ao = primary.x;
-  if (primary.y > 0.5) {
-    vec2 flipped = castRays(pos.xyz, -nrm);
-    ao = flipped.y <= 0.5 ? flipped.x : 1.0;
-  }
-  fragColor = vec4(ao, 0.0, 0.0, 1.0);
+  // R is the geometric-normal hemisphere. G is the opposite side, which
+  // the rasterizer shows on a double-sided back face.
+  float front = castRays(pos.xyz, nrm);
+  float back = castRays(pos.xyz, -nrm);
+  fragColor = vec4(front, back, front, 1.0);
 }
 `;
 

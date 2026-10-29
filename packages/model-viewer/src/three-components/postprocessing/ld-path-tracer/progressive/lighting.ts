@@ -48,15 +48,10 @@ export const occlusionAtPoint = (
     samples: number,
     distance: number,
     ): number => {
-  const primary = castOcclusion(bvh, x, y, z, nx, ny, nz, samples, distance);
-  // A normal that points into the solid self-hits on almost every ray and
-  // would paint the face black. Flip once. If that side is also buried,
-  // leave the texel white instead of inventing occlusion.
-  if (primary.selfRatio <= 0.5) {
-    return primary.ao;
-  }
-  const flipped = castOcclusion(bvh, x, y, z, -nx, -ny, -nz, samples, distance);
-  return flipped.selfRatio <= 0.5 ? flipped.ao : 1;
+  // Self-hits are the surface we started on. They are not a reason to
+  // swap in the opposite hemisphere: that swap painted the outside of a
+  // shell with the occlusion of the inside.
+  return castOcclusion(bvh, x, y, z, nx, ny, nz, samples, distance).ao;
 };
 
 const castOcclusion = (
@@ -102,11 +97,12 @@ const castOcclusion = (
       self++;
       continue;
     }
-    // A 2-bounce white trace gets environment light only when the
-    // scattered ray misses. A hit in range blocks that direction fully.
+    // A hit past the surface itself blocks that direction fully.
     occ += 1;
   }
-  return {ao: Math.max(0, 1 - occ / count), selfRatio: self / count};
+  const valid = count - self;
+  const ao = valid > 0 ? Math.max(0, 1 - occ / valid) : 1;
+  return {ao, selfRatio: self / count};
 };
 
 /**

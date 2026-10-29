@@ -197,6 +197,8 @@ export class ProgressivePipeline {
     lightMapIntensity: number;
     envMap: Texture|null;
     envMapIntensity: number;
+    onBeforeCompile: MeshStandardMaterial['onBeforeCompile'];
+    customProgramCacheKey: MeshStandardMaterial['customProgramCacheKey'];
   }
   > ();
   private probes: ProbeBaker[] = [];
@@ -1284,7 +1286,7 @@ export class ProgressivePipeline {
         return;
       }
       const o = this.aoCursor * 8;
-      const ao = occlusionAtPoint(
+      const front = occlusionAtPoint(
           this.bvh,
           this.surface[o],
           this.surface[o + 1],
@@ -1294,6 +1296,16 @@ export class ProgressivePipeline {
           this.surface[o + 5],
           samples,
           distance);
+      const back = occlusionAtPoint(
+          this.bvh,
+          this.surface[o],
+          this.surface[o + 1],
+          this.surface[o + 2],
+          -this.surface[o + 3],
+          -this.surface[o + 4],
+          -this.surface[o + 5],
+          samples,
+          distance);
       const x = Math.min(
           resolution - 1, Math.floor(this.surface[o + 6] * resolution));
       const y = Math.min(
@@ -1301,7 +1313,8 @@ export class ProgressivePipeline {
       const texel = (y * resolution + x) * 4;
       // One triangle owns the texel. Later samples do not merge or replace it.
       if (this.aoData[texel + 3] === 0) {
-        this.aoData[texel] = ao;
+        this.aoData[texel] = front;
+        this.aoData[texel + 1] = back;
         this.aoData[texel + 3] = 1;
       }
       this.aoCursor++;
@@ -1346,6 +1359,7 @@ export class ProgressivePipeline {
       for (let i = 0; i < resolution * resolution; i++) {
         if (pixels[i * 4 + 3] > 0.5) {
           this.aoData[i * 4] = pixels[i * 4];
+          this.aoData[i * 4 + 1] = pixels[i * 4 + 1];
           this.aoData[i * 4 + 3] = 1;
           written++;
         }
@@ -1358,7 +1372,7 @@ export class ProgressivePipeline {
         this.gpuAoFailed = true;
         return false;
       }
-      console.info('AO gpu samples', 64, 'texels', written);
+      console.info('AO gpu samples', 64, 'texels', written, 'distance', distance);
       this.publishAo(resolution);
       return true;
     } catch (error) {
@@ -1755,30 +1769,45 @@ export class ProgressivePipeline {
       this.aoReady = true;
       return;
     }
-    const filtered = finalizeAmbientOcclusion(this.aoData, resolution);
+    const texels = resolution * resolution;
+    const frontSrc = new Float32Array(texels * 4);
+    const backSrc = new Float32Array(texels * 4);
+    for (let i = 0; i < texels; i++) {
+      frontSrc[i * 4] = this.aoData[i * 4];
+      frontSrc[i * 4 + 3] = this.aoData[i * 4 + 3];
+      backSrc[i * 4] = this.aoData[i * 4 + 1];
+      backSrc[i * 4 + 3] = this.aoData[i * 4 + 3];
+    }
+    const front = finalizeAmbientOcclusion(frontSrc, resolution);
+    const back = finalizeAmbientOcclusion(backSrc, resolution);
     let written = 0;
     let dark = 0;
-    for (let i = 0; i < filtered.length; i++) {
-      if (filtered[i] < 0.999) {
+    for (let i = 0; i < front.length; i++) {
+      if (front[i] < 0.999 || back[i] < 0.999) {
         written++;
       }
-      if (filtered[i] < 0.75) {
+      if (front[i] >= 0 && front[i] < 0.75) {
         dark++;
       }
     }
-    console.info('AO written', written, 'dark', dark, 'of', filtered.length);
+    console.info('AO written', written, 'dark', dark, 'of', front.length);
     const data = new Uint8Array(resolution * resolution * 4);
-    for (let i = 0; i < filtered.length; i++) {
-      if (filtered[i] < 0) {
+    for (let i = 0; i < front.length; i++) {
+      const frontByte = front[i] < 0 ?
+          255 :
+          Math.round(Math.min(1, Math.max(0, front[i])) * 255);
+      const backByte = back[i] < 0 ?
+          frontByte :
+          Math.round(Math.min(1, Math.max(0, back[i])) * 255);
+      if (front[i] < 0 && back[i] < 0) {
         data[i * 4] = 255;
         data[i * 4 + 1] = 255;
         data[i * 4 + 2] = 255;
         data[i * 4 + 3] = 0;
       } else {
-        const byte = Math.round(Math.min(1, Math.max(0, filtered[i])) * 255);
-        data[i * 4] = byte;
-        data[i * 4 + 1] = byte;
-        data[i * 4 + 2] = byte;
+        data[i * 4] = frontByte;
+        data[i * 4 + 1] = backByte;
+        data[i * 4 + 2] = frontByte;
         data[i * 4 + 3] = 255;
       }
     }
@@ -1795,6 +1824,14 @@ export class ProgressivePipeline {
     this.forStandardMaterials((material) => {
       this.remember(material);
       material.aoMap = this.aoTexture;
+      const prior = material.onBeforeCompile;
+      material.onBeforeCompile = (shader, renderer) => {
+        prior?.call(material, shader, renderer);
+        shader.fragmentShader = shader.fragmentShader.replace(
+            /texture2D\( aoMap, vAoMapUv \)\.r/g,
+            '( gl_FrontFacing ? texture2D( aoMap, vAoMapUv ).r : texture2D( aoMap, vAoMapUv ).g )');
+      };
+      material.customProgramCacheKey = () => 'ld-ao-front-back';
       material.needsUpdate = true;
     });
     this.aoReady = true;
@@ -1945,6 +1982,8 @@ export class ProgressivePipeline {
       lightMapIntensity: material.lightMapIntensity,
       envMap: material.envMap ?? null,
       envMapIntensity: material.envMapIntensity,
+      onBeforeCompile: material.onBeforeCompile,
+      customProgramCacheKey: material.customProgramCacheKey,
     });
   }
 
@@ -2203,6 +2242,8 @@ export class ProgressivePipeline {
       material.lightMapIntensity = saved.lightMapIntensity;
       material.envMap = saved.envMap;
       material.envMapIntensity = saved.envMapIntensity;
+      material.onBeforeCompile = saved.onBeforeCompile;
+      material.customProgramCacheKey = saved.customProgramCacheKey;
       material.needsUpdate = true;
     });
     this.savedMaterials.clear();

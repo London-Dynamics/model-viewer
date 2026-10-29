@@ -64,6 +64,13 @@ def score_pair(image_b, image_t, label):
     return side
 
 
+def parts_for(scenes, scene_id, cam):
+    for scene in scenes:
+        if scene.get('id') == scene_id:
+            return (scene.get('parts') or {}).get(cam) or []
+    return []
+
+
 def crops_for(scenes, scene_id, cam):
     for scene in scenes:
         if scene.get('id') == scene_id:
@@ -99,6 +106,15 @@ def main():
                 side = score_pair(image_b, image_t, f'{scene} {cam} {kind}')
                 if side is not None:
                     Image.fromarray(side).save(sheets / f'{scene}-{cam}-vs-{kind}.png')
+                for part in parts_for(scenes, scene, cam):
+                    x = int(part['x'] * image_b.shape[1])
+                    y = int(part['y'] * image_b.shape[0])
+                    w = int(part['w'] * image_b.shape[1])
+                    h = int(part['h'] * image_b.shape[0])
+                    score_pair(
+                        image_b[y:y + h, x:x + w],
+                        image_t[y:y + h, x:x + w],
+                        f'{scene} {cam} {kind} part {part["name"]}')
                 image = np.asarray(Image.open(baked).convert('RGB'))
                 for crop in crops_for(scenes, scene, cam):
                     x, y, w, h = crop['x'], crop['y'], crop['w'], crop['h']
