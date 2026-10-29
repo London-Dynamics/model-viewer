@@ -29,6 +29,7 @@
 <script type="module">
 import {
   ACESFilmicToneMapping,
+  ClampToEdgeWrapping,
   DataTexture,
   EquirectangularReflectionMapping,
   LinearFilter,
@@ -56,7 +57,7 @@ import {
   stepUvJob,
   uv1IsValid,
 } from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
-import {packFactorR8} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/atlas-plan.js';
+import {insetChartUv, packFactorR8} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/atlas-plan.js';
 import {
   AtlasBake,
   fitCameraAspect,
@@ -104,6 +105,30 @@ async function applyLightmap(url, meshes) {
     atlas: [header.atlasWidth, header.atlasHeight],
     meshes: header.meshes.length,
   }));
+}
+
+function bakeTexture(rgba, resolution, channel) {
+  const texture = new DataTexture(rgba, resolution, resolution, RGBAFormat);
+  texture.colorSpace = NoColorSpace;
+  texture.magFilter = LinearFilter;
+  texture.minFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  texture.anisotropy = 1;
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  texture.flipY = false;
+  texture.channel = channel;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function writeInsetUv(mesh, resolution) {
+  const uv = mesh.geometry.getAttribute('uv1');
+  if (uv == null) return;
+  const index = mesh.geometry.getIndex();
+  const source = uv.array instanceof Float32Array ? uv.array : new Float32Array(uv.array);
+  const inset = insetChartUv(source, index, index ? index.count : uv.count, resolution);
+  mesh.geometry.setAttribute('uv2', new BufferAttribute(inset, 2));
 }
 
 function paintCropCanvas(crop, id) {
@@ -226,6 +251,7 @@ try {
   }
   console.info('STAGE_UV', Math.round(performance.now() - uvStart));
 
+  for (const mesh of meshes) writeInsetUv(mesh, resolution);
   const packed = packSurface(root, resolution);
   console.info('STAGE_STAMP', packed.count);
   const bake = new AtlasBake();
@@ -279,13 +305,18 @@ try {
     rgba[i * 4 + 2] = byte;
     rgba[i * 4 + 3] = sample < 0 ? 0 : 255;
   }
-  const ao = new DataTexture(rgba, resolution, resolution, RGBAFormat);
-  ao.colorSpace = NoColorSpace;
-  ao.magFilter = LinearFilter;
-  ao.minFilter = LinearFilter;
-  ao.flipY = false;
-  ao.channel = 1;
-  ao.needsUpdate = true;
+  const ao = bakeTexture(rgba, resolution, 2);
+  const crackRgba = new Uint8Array(resolution * resolution * 4);
+  const crack = bake.crackFactor;
+  for (let i = 0; i < (crack ? crack.length : 0); i++) {
+    const sample = crack[i];
+    const byte = sample < 0 ? 255 : Math.round(Math.min(1, Math.max(0, sample)) * 255);
+    crackRgba[i * 4] = byte;
+    crackRgba[i * 4 + 1] = byte;
+    crackRgba[i * 4 + 2] = byte;
+    crackRgba[i * 4 + 3] = sample < 0 ? 0 : 255;
+  }
+  const crackTex = bakeTexture(crackRgba, resolution, 1);
 
   const camera = new PerspectiveCamera(30, viewW / viewH, 0.05, 50);
   const target = new Vector3(0, 0.38, 0);
@@ -320,12 +351,11 @@ try {
   factorMat.aoMapIntensity = 1;
   factorMat.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
-        /texture2D\( aoMap, vAoMapUv \)\.r/g,
-        'texture2D( aoMap, vAoMapUv ).r');
-    shader.fragmentShader = shader.fragmentShader.replace(
         '#include <dithering_fragment>',
         `{
-          vec4 ldFactor = texture2D( aoMap, vAoMapUv );
+          // uv2 is uv1 pulled half a texel into the chart. Linear, no mips.
+          vec2 ldUv = vAoMapUv;
+          vec4 ldFactor = texture2D( aoMap, ldUv );
           gl_FragColor.rgb = vec3( ldFactor.r );
         }
         #include <dithering_fragment>`);
@@ -360,6 +390,37 @@ try {
   document.body.appendChild(sheet);
   paintCropCanvas(bake.beforeCrop, 'crop-before');
   paintCropCanvas(bake.afterCrop, 'crop-after');
+  const seamCam = camera.clone();
+  seamCam.position.set(0.02, 0.58, 0.92);
+  seamCam.lookAt(0, 0.46, 0);
+  const seamSize = {w: 640, h: 480};
+  const paintSeam = (id, material) => {
+    for (const mesh of meshes) mesh.material = material;
+    gl.setSize(seamSize.w, seamSize.h, false);
+    fitCameraAspect(seamCam, seamSize.w, seamSize.h);
+    gl.render(scene, seamCam);
+    const canvas = document.createElement('canvas');
+    canvas.id = id;
+    canvas.width = seamSize.w;
+    canvas.height = seamSize.h;
+    canvas.getContext('2d').drawImage(gl.domElement, 0, 0);
+    document.body.appendChild(canvas);
+  };
+  const crackMat = new MeshStandardMaterial({color: 0xffffff, roughness: 1, metalness: 0});
+  crackMat.aoMap = crackTex;
+  crackMat.aoMapIntensity = 1;
+  crackMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `{
+          vec4 ldFactor = texture2D( aoMap, vAoMapUv );
+          gl_FragColor.rgb = vec3( ldFactor.r );
+        }
+        #include <dithering_fragment>`);
+  };
+  crackMat.customProgramCacheKey = () => 'ld-bake-crack';
+  paintSeam('seam-before', crackMat);
+  paintSeam('seam-after', factorMat);
   window.__status = {
     done: true,
     cleanMs,

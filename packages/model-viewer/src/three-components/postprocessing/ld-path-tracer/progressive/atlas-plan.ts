@@ -165,6 +165,132 @@ export const splitByDensity = <T>(
  * Copy written factors into empty texels within `radius` px so a bilinear
  * fetch on the chart edge does not read the unwritten gutter.
  */
+/**
+ * Fill every empty texel from the valid ones. Coarser levels average the
+ * texels that were actually baked, then the fine levels copy that colour
+ * back into the gutter. The denoiser then never sees a black hole next to
+ * a chart.
+ */
+export const pushPullFill = (
+    source: Float32Array, valid: Uint8Array, resolution: number,
+): Float32Array => {
+  const levels: {size: number; value: Float32Array; mask: Uint8Array;}[] = [];
+  let size = resolution;
+  let value = source.slice();
+  let mask = valid.slice();
+  levels.push({size, value, mask});
+  while (size > 1) {
+    const next = Math.ceil(size / 2);
+    const coarse = new Float32Array(next * next);
+    const coarseMask = new Uint8Array(next * next);
+    for (let y = 0; y < next; y++) {
+      for (let x = 0; x < next; x++) {
+        let sum = 0;
+        let count = 0;
+        for (let dy = 0; dy < 2; dy++) {
+          const sy = y * 2 + dy;
+          if (sy >= size) {
+            continue;
+          }
+          for (let dx = 0; dx < 2; dx++) {
+            const sx = x * 2 + dx;
+            if (sx >= size) {
+              continue;
+            }
+            const index = sy * size + sx;
+            if (mask[index] === 0) {
+              continue;
+            }
+            sum += value[index];
+            count++;
+          }
+        }
+        if (count > 0) {
+          const index = y * next + x;
+          coarse[index] = sum / count;
+          coarseMask[index] = 1;
+        }
+      }
+    }
+    size = next;
+    value = coarse;
+    mask = coarseMask;
+    levels.push({size, value, mask});
+  }
+  for (let level = levels.length - 2; level >= 0; level--) {
+    const fine = levels[level];
+    const coarse = levels[level + 1];
+    for (let y = 0; y < fine.size; y++) {
+      for (let x = 0; x < fine.size; x++) {
+        const index = y * fine.size + x;
+        if (fine.mask[index] !== 0) {
+          continue;
+        }
+        const cx = Math.min(coarse.size - 1, x >> 1);
+        const cy = Math.min(coarse.size - 1, y >> 1);
+        const sample = cy * coarse.size + cx;
+        if (coarse.mask[sample] === 0) {
+          continue;
+        }
+        fine.value[index] = coarse.value[sample];
+        fine.mask[index] = 1;
+      }
+    }
+  }
+  return levels[0].value;
+};
+
+/**
+ * Move each lightmap UV half a texel toward the centre of the triangles
+ * that share it. Rasterization keeps the original uv1, so the baked texels
+ * stay put. Sampling this inset UV keeps the bilinear footprint on those
+ * texels instead of the empty gutter just outside a chart.
+ */
+export const insetChartUv = (
+    uv: Float32Array,
+    index: {getX: (i: number) => number;}|null,
+    indexCount: number,
+    resolution: number,
+): Float32Array => {
+  const count = uv.length / 2;
+  const acc = new Float32Array(count * 2);
+  const weight = new Uint32Array(count);
+  const triCount = Math.floor(indexCount / 3);
+  const at = (tri: number, corner: number) =>
+    index != null ? index.getX(tri * 3 + corner) : tri * 3 + corner;
+  for (let tri = 0; tri < triCount; tri++) {
+    const a = at(tri, 0);
+    const b = at(tri, 1);
+    const c = at(tri, 2);
+    const cx = (uv[a * 2] + uv[b * 2] + uv[c * 2]) / 3;
+    const cy = (uv[a * 2 + 1] + uv[b * 2 + 1] + uv[c * 2 + 1]) / 3;
+    for (const vertex of [a, b, c]) {
+      acc[vertex * 2] += cx;
+      acc[vertex * 2 + 1] += cy;
+      weight[vertex]++;
+    }
+  }
+  const maxStep = 0.5 / Math.max(1, resolution);
+  const out = uv.slice();
+  for (let vertex = 0; vertex < count; vertex++) {
+    if (weight[vertex] === 0) {
+      continue;
+    }
+    const cx = acc[vertex * 2] / weight[vertex];
+    const cy = acc[vertex * 2 + 1] / weight[vertex];
+    let dx = cx - uv[vertex * 2];
+    let dy = cy - uv[vertex * 2 + 1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-12) {
+      continue;
+    }
+    const step = Math.min(len, maxStep);
+    out[vertex * 2] += (dx / len) * step;
+    out[vertex * 2 + 1] += (dy / len) * step;
+  }
+  return out;
+};
+
 export const dilateFactor = (
     value: Float32Array, resolution: number, radius = 6): void => {
   const seeds: number[] = [];

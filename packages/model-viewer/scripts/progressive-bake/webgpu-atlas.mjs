@@ -48,6 +48,10 @@ const run = async () => {
       const after = await page.$('#crop-after');
       if (before) await before.screenshot({path: join(shots, `${tag}-denoise-before.jpg`), type: 'jpeg', quality: 90});
       if (after) await after.screenshot({path: join(shots, `${tag}-denoise-after.jpg`), type: 'jpeg', quality: 90});
+      const seamBefore = await page.$('#seam-before');
+      const seamAfter = await page.$('#seam-after');
+      if (seamBefore) await seamBefore.screenshot({path: join(shots, `${tag}-seam-before.jpg`), type: 'jpeg', quality: 90});
+      if (seamAfter) await seamAfter.screenshot({path: join(shots, `${tag}-seam-after.jpg`), type: 'jpeg', quality: 90});
     }
     await writeFile(join(shots, 'timings.json'), JSON.stringify(status, null, 2));
   } finally {

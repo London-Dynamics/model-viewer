@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
-import {BufferAttribute, Camera, ClampToEdgeWrapping, DataTexture, FloatType, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NoToneMapping, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RGBAFormat, RenderTarget, Scene, UnsignedByteType, Vector3} from 'three';
+import {BufferAttribute, Camera, ClampToEdgeWrapping, DataTexture, FloatType, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NoColorSpace, NoToneMapping, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RGBAFormat, RenderTarget, Scene, UnsignedByteType, Vector3} from 'three';
 
-import {dilateFactor} from './atlas-plan.js';
+import {dilateFactor, pushPullFill} from './atlas-plan.js';
 
 /**
  * Atlas camera the WebGPU path tracer already calls for a primary ray.
@@ -147,6 +147,13 @@ export function packSurface(root: Object3D, resolution: number):
       if (Math.abs(denom) < 1e-8) {
         continue;
       }
+      const bary = (pu: number, pv: number): [number, number, number] => {
+        const w0 = ((v1 - v2) * (pu - u2) + (u2 - u1) * (pv - v2)) / denom;
+        const w1 = ((v2 - v0) * (pu - u2) + (u0 - u2) * (pv - v2)) / denom;
+        return [w0, w1, 1 - w0 - w1];
+      };
+      const covers = (w: [number, number, number]) =>
+        w[0] >= -1e-4 && w[1] >= -1e-4 && w[2] >= -1e-4;
       const p0x = position.getX(i0);
       const p0y = position.getY(i0);
       const p0z = position.getZ(i0);
@@ -160,11 +167,30 @@ export function packSurface(root: Object3D, resolution: number):
         for (let x = minX; x <= maxX; x++) {
           const pu = (x + 0.5) / size;
           const pv = (y + 0.5) / size;
-          const w0 = ((v1 - v2) * (pu - u2) + (u2 - u1) * (pv - v2)) / denom;
-          const w1 = ((v2 - v0) * (pu - u2) + (u0 - u2) * (pv - v2)) / denom;
-          const w2 = 1 - w0 - w1;
-          if (w0 < -1e-4 || w1 < -1e-4 || w2 < -1e-4) {
-            continue;
+          let [w0, w1, w2] = bary(pu, pv);
+          if (!covers([w0, w1, w2])) {
+            // The centre sits just outside, but the bilinear footprint of a
+            // seam still reads this texel. Keep it when the triangle touches
+            // the texel, and clamp the sample onto the triangle.
+            const x0 = x / size;
+            const x1 = (x + 1) / size;
+            const y0 = y / size;
+            const y1 = (y + 1) / size;
+            const touched = covers(bary(x0, y0)) || covers(bary(x1, y0)) ||
+                covers(bary(x0, y1)) || covers(bary(x1, y1)) ||
+                (u0 >= x0 && u0 <= x1 && v0 >= y0 && v0 <= y1) ||
+                (u1 >= x0 && u1 <= x1 && v1 >= y0 && v1 <= y1) ||
+                (u2 >= x0 && u2 <= x1 && v2 >= y0 && v2 <= y1);
+            if (!touched) {
+              continue;
+            }
+            w0 = Math.max(0, w0);
+            w1 = Math.max(0, w1);
+            w2 = Math.max(0, w2);
+            const sum = w0 + w1 + w2 || 1;
+            w0 /= sum;
+            w1 /= sum;
+            w2 /= sum;
           }
           const slot = y * size + x;
           if (grid[slot] !== -1) {
@@ -250,6 +276,8 @@ export class AtlasBake {
   private denoiseTask: Promise<void>|null = null;
   beforeCrop: {x: number; y: number; size: number; rgba: Uint8ClampedArray;}|null = null;
   afterCrop: {x: number; y: number; size: number; rgba: Uint8ClampedArray;}|null = null;
+  /** Normalised chart texels before gutter dilation, so a seam crop can show the crack. */
+  crackFactor: Float32Array|null = null;
   private constantUp = false;
   private albedoTex: unknown = null;
   private guideTex: unknown = null;
@@ -416,10 +444,20 @@ export class AtlasBake {
     const scale = cropScale(raw, this.resolution, crop);
     this.beforeCrop = paintCrop(raw, this.resolution, crop, scale);
     console.info('OIDN_CROP', crop.x, crop.y, crop.size, scale);
+    const fillStarted = performance.now();
+    const mask = this.mask ?? new Uint8Array(this.resolution * this.resolution);
+    const finite = new Uint8Array(mask.length);
+    for (let i = 0; i < mask.length; i++) {
+      finite[i] = mask[i] === 1 && Number.isFinite(raw[i]) ? 1 : 0;
+    }
+    const filled = pushPullFill(raw, finite, this.resolution);
+    const color = this.filledColorTexture(filled);
+    this.fillGuide(finite);
+    console.info('PUSH_PULL', Math.round(performance.now() - fillStarted));
     const started = performance.now();
     let promiseMs = -1;
     let promiseError: unknown = null;
-    const promised = denoiser.denoise(target, this.albedoTex, this.guideTex)
+    const promised = denoiser.denoise(color, this.albedoTex, this.guideTex)
         .then(() => {
           promiseMs = performance.now() - started;
           console.info('OIDN_PROMISE', JSON.stringify({
@@ -482,6 +520,68 @@ export class AtlasBake {
     const denoised = await this.copyFloatTarget(denoiser.texture);
     this.afterCrop = paintCrop(denoised, this.resolution, crop, scale);
     await this.readFactor(denoised);
+  }
+
+  private filledColorTexture(filled: Float32Array): DataTexture {
+    const resolution = this.resolution;
+    const rgba = new Float32Array(resolution * resolution * 4);
+    for (let i = 0; i < filled.length; i++) {
+      const value = Number.isFinite(filled[i]) ? filled[i] : 0;
+      const offset = i * 4;
+      rgba[offset] = rgba[offset + 1] = rgba[offset + 2] = value;
+      rgba[offset + 3] = 1;
+    }
+    const texture = new DataTexture(rgba, resolution, resolution, RGBAFormat, FloatType);
+    texture.colorSpace = NoColorSpace;
+    texture.magFilter = NearestFilter;
+    texture.minFilter = NearestFilter;
+    texture.wrapS = ClampToEdgeWrapping;
+    texture.wrapT = ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
+    texture.flipY = false;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  /** Nearest-chart normals in the gutter, so the guided filter has no zero normal. */
+  private fillGuide(valid: Uint8Array) {
+    const guide = this.guideTex as DataTexture|null;
+    const data = guide?.image?.data as Uint8Array|undefined;
+    if (guide == null || data == null) {
+      return;
+    }
+    const resolution = this.resolution;
+    const texels = resolution * resolution;
+    const nx = new Float32Array(texels);
+    const ny = new Float32Array(texels);
+    const nz = new Float32Array(texels);
+    for (let i = 0; i < texels; i++) {
+      if (valid[i] !== 1) {
+        continue;
+      }
+      const offset = i * 4;
+      nx[i] = data[offset] / 255 * 2 - 1;
+      ny[i] = data[offset + 1] / 255 * 2 - 1;
+      nz[i] = data[offset + 2] / 255 * 2 - 1;
+    }
+    const fx = pushPullFill(nx, valid, resolution);
+    const fy = pushPullFill(ny, valid, resolution);
+    const fz = pushPullFill(nz, valid, resolution);
+    for (let i = 0; i < texels; i++) {
+      let x = fx[i];
+      let y = fy[i];
+      let z = fz[i];
+      const len = Math.hypot(x, y, z) || 1;
+      x /= len;
+      y /= len;
+      z /= len;
+      const offset = i * 4;
+      data[offset] = Math.round((x * 0.5 + 0.5) * 255);
+      data[offset + 1] = Math.round((y * 0.5 + 0.5) * 255);
+      data[offset + 2] = Math.round((z * 0.5 + 0.5) * 255);
+      data[offset + 3] = 255;
+    }
+    guide.needsUpdate = true;
   }
 
   private async copyFloatTarget(source: unknown): Promise<Float32Array> {
@@ -903,7 +1003,16 @@ export class AtlasBake {
         factor[i] = Math.min(1, Math.max(0, factor[i] / peak));
       }
     }
-    dilateFactor(factor, resolution);
+    // Gutters are still empty here. Dilate only the denoised chart texels,
+    // after the blit, so the filter's own padding is what sampling reads.
+    this.crackFactor = factor.slice();
+    const emptyBefore = countEmpty(factor);
+    dilateFactor(factor, resolution, 8);
+    console.info('DILATE_AFTER_READBACK', JSON.stringify({
+      radius: 8,
+      emptyBefore,
+      emptyAfter: countEmpty(factor),
+    }));
     this.factorData = factor;
     this.stages.readback = Math.round(performance.now() - started);
     let peakSeen = 0;
@@ -1033,6 +1142,16 @@ const paintCrop = (
     }
   }
   return {x: crop.x, y: crop.y, size: crop.size, rgba};
+};
+
+const countEmpty = (value: Float32Array): number => {
+  let empty = 0;
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] < 0) {
+      empty++;
+    }
+  }
+  return empty;
 };
 
 const luminance = (pixels: ArrayBufferView, offset: number): number => {
