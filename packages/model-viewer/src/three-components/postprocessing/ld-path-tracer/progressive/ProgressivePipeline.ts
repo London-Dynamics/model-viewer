@@ -1557,17 +1557,19 @@ export class ProgressivePipeline {
         }
       }
     }
-    const probeMap = nearest?.productMapTarget?.texture ?? null;
-    const show = this.probeFade.value > 0.5 && probeMap != null;
+    // The cube capture's sky is much darker than the viewer's filtered
+    // environment. Assigning it (raw cube or its PMREM) turns glossy upward
+    // surfaces nearly black. Keep the viewer's environment.
     this.forStandardMaterials((material) => {
       this.remember(material);
       const saved = this.savedMaterials.get(material);
-      const next = show ? probeMap : (saved?.envMap ?? null);
+      const next = saved?.envMap ?? null;
       if (material.envMap !== next) {
         material.envMap = next;
         material.needsUpdate = true;
       }
     });
+    void nearest;
   }
 
   private syncRealtimeShadow() {

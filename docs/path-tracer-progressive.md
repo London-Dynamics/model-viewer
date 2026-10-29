@@ -211,11 +211,10 @@ textures.
 - Each cubemap is rendered one face per frame, with the viewer's skybox
   (the equirect, not the PMREM) as the background, so the capture is lit by
   the same environment as realtime. A second cubemap hides the product.
-- The product cubemap's PMREM is assigned directly as `envMap` once the
-  fade passes halfway. Resampling a PMREM atlas through a fullscreen UV
-  blend scrambles the lighting and turns the model black. Below that fade
-  the material keeps its previous env map, which is usually none, so
-  `scene.environment` lights the model.
+- The capture is kept, but it is not assigned as `envMap`. Its sky is
+  much darker than the viewer's filtered environment, and putting it on
+  the material turns glossy upward surfaces (the hardtop, the deck) nearly
+  black. The model stays on `scene.environment`.
 - While the camera moves, the nearest baked probe is selected. A change of
   nearest probe crossfades the same way. Probes do not follow the camera.
 - The full trace does not use `material.envMap` (three-gpu-pathtracer
