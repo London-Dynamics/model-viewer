@@ -58,9 +58,9 @@ export const occlusionAtPoint = (
     const u = halton(i + 1, 2);
     const v = halton(i + 1, 3);
     const phi = Math.PI * 2 * u;
-    // Uniform hemisphere. Cosine weighting misses the side wall a few
-    // centimetres away, which is exactly the shelf-corner occlusion.
-    const cosTheta = 1 - v;
+    // Bias toward the normal, but keep some grazing rays so a side wall
+    // a few centimetres away still darkens a corner.
+    const cosTheta = Math.sqrt(1 - v * 0.65);
     const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
     const lx = Math.cos(phi) * sinTheta;
     const ly = Math.sin(phi) * sinTheta;
@@ -75,14 +75,13 @@ export const occlusionAtPoint = (
     if (hit != null) {
       const t = Math.min(1, hit.distance / distance);
       // Only nearby hits darken. A graze at the far end of the ray does not.
-      // Linear in distance so a wall a few centimetres away still counts.
-      const falloff = 1 - t;
+      const falloff = (1 - t) * (1 - t);
       occ += falloff;
     }
   }
-  // Open faces stay at 1. Corners, where most rays hit, drop quickly.
+  // Open faces stay near 1. Corners, where several rays hit nearby, shade.
   const ao = Math.max(0, 1 - occ / count);
-  return Math.pow(ao, 1.8);
+  return Math.pow(ao, 1.15);
 };
 
 /**
@@ -111,8 +110,8 @@ export const finalizeAmbientOcclusion = (
       }
       let sum = 0;
       let n = 0;
-      for (let ky = -1; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++) {
+      for (let ky = -2; ky <= 2; ky++) {
+        for (let kx = -2; kx <= 2; kx++) {
           const sx = x + kx;
           const sy = y + ky;
           if (sx < 0 || sy < 0 || sx >= resolution || sy >= resolution) {

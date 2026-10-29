@@ -1526,16 +1526,6 @@ export class ProgressivePipeline {
       data[i * 4 + 2] = byte;
       data[i * 4 + 3] = 255;
     }
-    // The occlusion map is multiplied onto indirect light. Push corner values
-    // down so a 0.85 texel, which is invisible on white, becomes a real shade.
-    for (let i = 0; i < filtered.length; i++) {
-      const ao = filtered[i];
-      const shaped = ao >= 0.98 ? 1 : Math.pow(ao, 2.4);
-      const byte = Math.round(Math.min(1, Math.max(0, shaped)) * 255);
-      data[i * 4] = byte;
-      data[i * 4 + 1] = byte;
-      data[i * 4 + 2] = byte;
-    }
     this.aoTexture?.dispose();
     this.aoTexture = new DataTexture(data, resolution, resolution, RGBAFormat);
     this.aoTexture.colorSpace = LinearSRGBColorSpace;
