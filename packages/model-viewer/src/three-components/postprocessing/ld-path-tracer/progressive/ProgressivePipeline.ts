@@ -136,7 +136,6 @@ export class ProgressivePipeline {
   private replaced = new Map<Mesh, BufferGeometry>();
   private surface: Float32Array|null = null;
   private surfaceGrid: Int32Array|null = null;
-  private surfaceCounts: Int32Array|null = null;
   private surfaceDone = false;
   private surfaceCount = 0;
   private surfaceMesh = 0;
@@ -835,7 +834,17 @@ export class ProgressivePipeline {
       }
     }
     if (!placed) {
-      return;
+      // Shelf packing did not fit. A regular grid still keeps charts from
+      // writing on top of each other, which was painting unrelated faces black.
+      const cols = Math.max(1, Math.ceil(Math.sqrt(items.length)));
+      const cell = (1 - pad * (cols + 1)) / cols;
+      for (let n = 0; n < items.length; n++) {
+        const col = n % cols;
+        const row = Math.floor(n / cols);
+        origin[n * 3] = pad + col * (cell + pad);
+        origin[n * 3 + 1] = pad + row * (cell + pad);
+        origin[n * 3 + 2] = Math.max(2 / resolution, cell);
+      }
     }
     for (let n = 0; n < items.length; n++) {
       this.fitUvTile(
@@ -880,7 +889,6 @@ export class ProgressivePipeline {
       this.surface = new Float32Array(resolution * resolution * 8 * 2);
       this.surfaceGrid = new Int32Array(resolution * resolution);
       this.surfaceGrid.fill(-1);
-      this.surfaceCounts = new Int32Array(resolution * resolution);
       this.surfaceCount = 0;
       this.surfaceMesh = 0;
       this.surfaceTri = 0;
@@ -950,8 +958,7 @@ export class ProgressivePipeline {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const slot = y * resolution + x;
-        const filled = this.surfaceCounts != null ? this.surfaceCounts[slot] : 0;
-        if (filled >= 2) {
+        if (grid[slot] !== -1) {
           continue;
         }
         const px = (x + 0.5) / resolution;
@@ -993,17 +1000,6 @@ export class ProgressivePipeline {
         } else {
           tmpN.set(0, 1, 0);
         }
-        if (filled === 1 && this.surfaceGrid != null && this.surface != null) {
-          const prev = this.surfaceGrid[slot] * 8;
-          const dot = this.surface[prev + 3] * tmpN.x +
-              this.surface[prev + 4] * tmpN.y +
-              this.surface[prev + 5] * tmpN.z;
-          // Same side already owns the texel. The other side of a panel
-          // (the inside of a bay) still needs its own sample.
-          if (dot > 0.35) {
-            continue;
-          }
-        }
         const o = this.surfaceCount * 8;
         if (o + 8 > this.surface!.length) {
           return;
@@ -1017,9 +1013,6 @@ export class ProgressivePipeline {
         this.surface![o + 6] = px;
         this.surface![o + 7] = py;
         grid[slot] = this.surfaceCount;
-        if (this.surfaceCounts != null) {
-          this.surfaceCounts[slot] = filled + 1;
-        }
         this.surfaceCount++;
       }
     }
@@ -1053,73 +1046,41 @@ export class ProgressivePipeline {
       return;
     }
     const sceneSize = this.host.scene()?.size;
-    const diagonal = Math.max(sceneSize?.length() ?? 1, 0.05);
-    // Crevice scale, not a fraction of the whole boat. A 14 m hull with a
-    // multi-metre ray greys every panel that can see another part.
+    const feature = sceneSize == null ? 0.5 :
+        Math.min(sceneSize.x, sceneSize.y, sceneSize.z);
+    const span = sceneSize == null ? 1 :
+        Math.max(sceneSize.x, sceneSize.y, sceneSize.z);
+    // Cover a cabinet bay or a cockpit. Do not reach the far end of a hull.
     const distance = this.settings.bake.textureAO.distance > 0 ?
         this.settings.bake.textureAO.distance :
-        Math.min(1.1, Math.max(0.45, diagonal * 0.045));
+        Math.min(2, Math.max(0.5, Math.min(feature * 1.8, span * 0.15)));
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
-    const view = this.host.camera()?.getWorldDirection(tmp) ?? tmp.set(0, 0, 1);
-    const vx = view.x;
-    const vy = view.y;
-    const vz = view.z;
     const start = performance.now();
-    let shelfSum = 0;
-    let shelfN = 0;
-    let veryDark = 0;
     while (this.aoCursor < this.surfaceCount) {
       if (performance.now() - start >= budgetMs) {
         return;
       }
       const o = this.aoCursor * 8;
-      let nx = this.surface[o + 3];
-      let ny = this.surface[o + 4];
-      let nz = this.surface[o + 5];
-      // The face we see may be the back of a panel. Trace into the bay.
-      if (nx * vx + ny * vy + nz * vz > 0.05) {
-        nx = -nx;
-        ny = -ny;
-        nz = -nz;
-      }
       const ao = occlusionAtPoint(
           this.bvh,
           this.surface[o],
           this.surface[o + 1],
           this.surface[o + 2],
-          nx,
-          ny,
-          nz,
+          this.surface[o + 3],
+          this.surface[o + 4],
+          this.surface[o + 5],
           samples,
           distance);
-      if (Math.abs(ny) > 0.65) {
-        shelfSum += ao;
-        shelfN++;
-      }
-      if (ao < 0.55) {
-        veryDark++;
-      }
       const x = Math.min(
           resolution - 1, Math.floor(this.surface[o + 6] * resolution));
       const y = Math.min(
           resolution - 1, Math.floor(this.surface[o + 7] * resolution));
       const texel = (y * resolution + x) * 4;
-      // Darkest sample wins, so the inside of a panel beats the open outside.
-      if (this.aoData[texel + 3] === 0 || ao < this.aoData[texel]) {
-        this.aoData[texel] = ao;
-        this.aoData[texel + 3] = 1;
-      }
+      this.aoData[texel] += ao;
+      this.aoData[texel + 3] += 1;
       this.aoCursor++;
     }
-    console.info(
-        'AO samples shelf',
-        shelfN,
-        shelfN > 0 ? (shelfSum / shelfN).toFixed(3) : 'na',
-        'veryDark',
-        veryDark,
-        'of',
-        this.surfaceCount);
     this.publishAo(resolution);
   }
 
@@ -1983,7 +1944,6 @@ export class ProgressivePipeline {
     this.uvCursor = 0;
     this.uvReady = false;
     this.surface = null;
-    this.surfaceCounts = null;
     this.surfaceDone = false;
     this.surfaceCount = 0;
     this.aoData = null;

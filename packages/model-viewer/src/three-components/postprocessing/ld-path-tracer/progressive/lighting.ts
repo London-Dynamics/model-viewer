@@ -48,20 +48,43 @@ export const occlusionAtPoint = (
     samples: number,
     distance: number,
     ): number => {
+  const primary = castOcclusion(bvh, x, y, z, nx, ny, nz, samples, distance);
+  // A normal that points into the solid self-hits on almost every ray and
+  // would paint the face black. Flip once. If that side is also buried,
+  // leave the texel white instead of inventing occlusion.
+  if (primary.selfRatio <= 0.5) {
+    return primary.ao;
+  }
+  const flipped = castOcclusion(bvh, x, y, z, -nx, -ny, -nz, samples, distance);
+  return flipped.selfRatio <= 0.5 ? flipped.ao : 1;
+};
+
+const castOcclusion = (
+    bvh: MeshBVH,
+    x: number,
+    y: number,
+    z: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    samples: number,
+    distance: number,
+    ): {ao: number; selfRatio: number} => {
   orient(nx, ny, nz);
-  // A few millimetres, not a fraction of a long ray. A large bias starts
-  // the sample inside neighbouring geometry and greys open panels.
-  const bias = Math.max(5e-4, Math.min(0.004, distance * 0.004));
+  const bias = 0.0015;
+  // Anything closer than this is the surface we started on, or a
+  // coplanar shell, not a wall across the bay.
+  const selfDistance = 0.003;
   let occ = 0;
+  let self = 0;
   const count = Math.max(1, samples);
   for (let i = 0; i < count; i++) {
     const u = halton(i + 1, 2);
     const v = halton(i + 1, 3);
     const phi = Math.PI * 2 * u;
-    // Bias toward the normal, but keep some grazing rays so a side wall
-    // a few centimetres away still darkens a corner.
-    const cosTheta = Math.sqrt(1 - v * 0.65);
-    const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
+    // Cosine-weighted hemisphere, matching irradiance from the environment.
+    const cosTheta = Math.sqrt(1 - v);
+    const sinTheta = Math.sqrt(v);
     const lx = Math.cos(phi) * sinTheta;
     const ly = Math.sin(phi) * sinTheta;
     const lz = cosTheta;
@@ -72,16 +95,19 @@ export const occlusionAtPoint = (
     origin.set(x + nx * bias, y + ny * bias, z + nz * bias);
     ray.set(origin, direction);
     const hit = bvh.raycastFirst(ray, DoubleSide, 0, distance);
-    if (hit != null) {
-      const t = Math.min(1, hit.distance / distance);
-      // Only nearby hits darken. A graze at the far end of the ray does not.
-      const falloff = (1 - t) * (1 - t);
-      occ += falloff;
+    if (hit == null) {
+      continue;
     }
+    if (hit.distance <= selfDistance) {
+      self++;
+      continue;
+    }
+    // A wall blocks the environment whether it is 5 cm or 40 cm away.
+    // Squared falloff was dropping cabinet bays that the trace still shades.
+    const t = Math.min(1, hit.distance / distance);
+    occ += 1 - t * t * t;
   }
-  // Open faces stay near 1. Corners, where several rays hit nearby, shade.
-  const ao = Math.max(0, 1 - occ / count);
-  return Math.pow(ao, 1.15);
+  return {ao: Math.max(0, 1 - occ / count), selfRatio: self / count};
 };
 
 /**
@@ -110,8 +136,8 @@ export const finalizeAmbientOcclusion = (
       }
       let sum = 0;
       let n = 0;
-      for (let ky = -2; ky <= 2; ky++) {
-        for (let kx = -2; kx <= 2; kx++) {
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
           const sx = x + kx;
           const sy = y + ky;
           if (sx < 0 || sy < 0 || sx >= resolution || sy >= resolution) {

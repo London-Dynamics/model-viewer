@@ -265,6 +265,17 @@ suite('progressive contact shadow rays', () => {
     expect(far).to.be.greaterThan(0.9);
   });
 
+  test('a normal pointing into the surface does not paint the face black', () => {
+    const cover = new BufferGeometry();
+    cover.setAttribute(
+        'position',
+        new Float32BufferAttribute(
+            [-1, 0.002, -1, 1, 0.002, -1, 0, 0.002, 1], 3));
+    const buried = occlusionAtPoint(
+        new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.4);
+    expect(buried).to.be.greaterThan(0.85);
+  });
+
   test('unwritten AO texels stay white and gutters copy a neighbor', () => {
     const resolution = 8;
     const data = new Float32Array(resolution * resolution * 4);
