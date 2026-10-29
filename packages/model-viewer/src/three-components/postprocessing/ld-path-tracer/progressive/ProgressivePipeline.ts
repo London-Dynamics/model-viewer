@@ -169,6 +169,8 @@ export class ProgressivePipeline {
   private traceBuildRequested = false;
   private customEnv: Texture|null = null;
   private customEnvUrl = '';
+  private captureSky: Texture|null = null;
+  private captureSkyRequested = false;
   private frameSamples: number[] = [];
   private cpuLast = 0;
   private cpuMax = 0;
@@ -346,6 +348,11 @@ export class ProgressivePipeline {
     this.worker = null;
     this.customEnv?.dispose();
     this.customEnv = null;
+    if (this.captureSkyRequested) {
+      this.captureSky?.dispose();
+    }
+    this.captureSky = null;
+    this.captureSkyRequested = false;
   }
 
   private layer(ready: boolean, fade: number, progress: number): LayerReadout {
@@ -1242,8 +1249,12 @@ export class ProgressivePipeline {
       this.finishProbes();
       return;
     }
-    const background = this.customEnv ?? scene.skyboxTexture ?? null;
-    probe.step(renderer, scene, background, (hide) => this.hideProduct(hide));
+    this.ensureCaptureSky(scene);
+    if (this.captureSky == null) {
+      return;
+    }
+    probe.step(
+        renderer, scene, this.captureSky, (hide) => this.hideProduct(hide));
     if (probe.done) {
       this.probeIndex++;
       if (this.probeIndex >= this.probes.length) {
@@ -1721,6 +1732,32 @@ export class ProgressivePipeline {
       }
     });
     return parts.join('|');
+  }
+
+  private ensureCaptureSky(scene: ModelScene) {
+    if (this.captureSky != null || this.captureSkyRequested) {
+      return;
+    }
+    const sky = scene.skyboxTexture;
+    if (sky != null && sky.mapping === EquirectangularReflectionMapping) {
+      this.captureSky = sky;
+      return;
+    }
+    const url = scene.element.getAttribute('environment-image');
+    if (url == null || url === '') {
+      return;
+    }
+    this.captureSkyRequested = true;
+    const loader = new RGBELoader();
+    loader.load(url, (texture) => {
+      if (this.disposed) {
+        texture.dispose();
+        return;
+      }
+      texture.mapping = EquirectangularReflectionMapping;
+      texture.colorSpace = LinearSRGBColorSpace;
+      this.captureSky = texture;
+    });
   }
 
   private loadEnvironment(url: string) {
