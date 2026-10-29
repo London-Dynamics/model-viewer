@@ -1780,17 +1780,6 @@ export class ProgressivePipeline {
     }
     const front = finalizeAmbientOcclusion(frontSrc, resolution);
     const back = finalizeAmbientOcclusion(backSrc, resolution);
-    let written = 0;
-    let dark = 0;
-    for (let i = 0; i < front.length; i++) {
-      if (front[i] < 0.999 || back[i] < 0.999) {
-        written++;
-      }
-      if (front[i] >= 0 && front[i] < 0.75) {
-        dark++;
-      }
-    }
-    console.info('AO written', written, 'dark', dark, 'of', front.length);
     const data = new Uint8Array(resolution * resolution * 4);
     for (let i = 0; i < front.length; i++) {
       const frontByte = front[i] < 0 ?

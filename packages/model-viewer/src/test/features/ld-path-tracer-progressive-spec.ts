@@ -23,7 +23,7 @@ import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../thr
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
-import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
+import {applyUvJob, createUvJob, orientWindingToNormals, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
@@ -310,6 +310,31 @@ suite('progressive contact shadow rays', () => {
       expect(uv.getX(i)).to.be.at.most((4 + 36) / 64 + 1e-4);
       expect(uv.getY(i)).to.be.at.most((6 + 28) / 64 + 1e-4);
     }
+  });
+
+  test('winding follows the vertex normal so both hemispheres stay put', () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+        'position',
+        new Float32BufferAttribute([
+          0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0,
+        ], 3));
+    geometry.setAttribute(
+        'normal',
+        new Float32BufferAttribute([
+          0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+        ], 3));
+    // Second triangle is clockwise when viewed along +Z.
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    const oriented = orientWindingToNormals(geometry);
+    expect(oriented).to.not.equal(geometry);
+    const index = oriented.getIndex()!;
+    expect(index.getX(1)).to.equal(1);
+    expect(index.getX(4)).to.equal(3);
+    expect(index.getX(5)).to.equal(2);
+    const again = orientWindingToNormals(oriented, true);
+    expect(again).to.equal(oriented);
+    expect(again.getIndex()!.getX(4)).to.equal(3);
   });
 
   test('UV2 that shares a texel is treated as missing', () => {

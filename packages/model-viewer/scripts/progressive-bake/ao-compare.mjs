@@ -103,13 +103,18 @@ async function shoot(page, file) {
   console.log('WROTE', file);
 }
 
-async function load(page, src, hdr, orbit, target) {
-  const meshes = await page.evaluate(async (src, hdr, orbit, target) => {
+async function load(page, src, hdr, orbit, target, fov) {
+  const meshes = await page.evaluate(async (src, hdr, orbit, target, fov) => {
     const mv = document.querySelector('model-viewer');
     mv.setAttribute('src', src);
     mv.setAttribute('environment-image', hdr);
+    mv.setAttribute('min-camera-orbit', 'auto 0deg 0.04m');
     mv.setAttribute('camera-orbit', orbit);
     mv.setAttribute('camera-target', target);
+    if (fov) {
+      mv.setAttribute('max-field-of-view', '120deg');
+      mv.setAttribute('field-of-view', fov);
+    }
     mv.removeAttribute('ambient-occlusion');
     await new Promise((resolve, reject) => {
       const ok = () => {
@@ -170,7 +175,7 @@ async function load(page, src, hdr, orbit, target) {
       }
     }
     return count;
-  }, src, hdr, orbit, target);
+  }, src, hdr, orbit, target, fov || '');
   console.log('MESHES', meshes);
   await new Promise((resolve) => setTimeout(resolve, 400));
 }
@@ -223,11 +228,15 @@ try {
         };
       });
       for (const name of Object.keys(scene.cameras)) {
-        const [camOrbit, camTarget] = scene.cameras[name];
-        const applied = await page.evaluate((orbit, target) => {
+        const [camOrbit, camTarget, fov] = scene.cameras[name];
+        const applied = await page.evaluate((orbit, target, fov) => {
           const mv = document.querySelector('model-viewer');
-          mv.setAttribute('min-camera-orbit', 'auto 0deg 0.15m');
+          mv.setAttribute('min-camera-orbit', 'auto 0deg 0.04m');
           mv.setAttribute('max-camera-orbit', 'auto 180deg 80m');
+          if (fov) {
+            mv.setAttribute('max-field-of-view', '120deg');
+            mv.setAttribute('field-of-view', fov);
+          }
           mv.cameraOrbit = orbit;
           mv.cameraTarget = target;
           if (typeof mv.jumpCameraToGoal === 'function') {
@@ -235,7 +244,7 @@ try {
           }
           const got = mv.getCameraOrbit();
           return {theta: got.theta, phi: got.phi, radius: got.radius, asked: orbit};
-        }, camOrbit, camTarget);
+        }, camOrbit, camTarget, fov || '');
         console.log('CAMERA', scene.id, name, JSON.stringify(applied));
         await settleCamera(page, camOrbit);
         await shoot(page, join(outDir, `${scene.id}-baked-${name}.png`));
@@ -314,8 +323,8 @@ try {
     } else {
       for (const name of Object.keys(scene.cameras)) {
         await page.goto(pageUrl, {waitUntil: 'networkidle0'});
-        const [orbit, target] = scene.cameras[name];
-        await load(page, model, hdr, orbit, target);
+        const [orbit, target, fov] = scene.cameras[name];
+        await load(page, model, hdr, orbit, target, fov);
         await settleCamera(page, orbit);
         await page.evaluate((options) => {
           const mv = document.querySelector('model-viewer');

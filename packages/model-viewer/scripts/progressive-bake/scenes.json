@@ -109,7 +109,8 @@
       "cameras": {
         "hero": ["0deg 75deg 2.4m", "0m 0.38m 0m"],
         "side": ["90deg 78deg 2.2m", "0m 0.38m 0m"],
-        "close": ["18deg 82deg 1.15m", "0.08m 0.32m 0.02m"]
+        "close": ["18deg 82deg 1.15m", "0.08m 0.32m 0.02m"],
+        "interior": ["0deg 100deg 0.18m", "-0.17m 0.58m -0.07m", "95deg"]
       },
       "crops": {
         "close": [{"name": "shelf", "x": 200, "y": 250, "w": 700, "h": 270}],
@@ -126,6 +127,13 @@
         "close": [
           {"name": "shelf", "x": 0.18, "y": 0.30, "w": 0.55, "h": 0.28},
           {"name": "back-wall", "x": 0.22, "y": 0.18, "w": 0.50, "h": 0.22}
+        ],
+        "interior": [
+          {"name": "back-wall", "x": 0.32, "y": 0.36, "w": 0.36, "h": 0.32},
+          {"name": "left-side", "x": 0.01, "y": 0.35, "w": 0.12, "h": 0.35},
+          {"name": "right-side", "x": 0.86, "y": 0.30, "w": 0.12, "h": 0.40},
+          {"name": "underside", "x": 0.30, "y": 0.01, "w": 0.40, "h": 0.12},
+          {"name": "floor", "x": 0.30, "y": 0.84, "w": 0.40, "h": 0.14}
         ]
       }
     }

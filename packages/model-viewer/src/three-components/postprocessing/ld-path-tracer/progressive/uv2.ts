@@ -177,6 +177,7 @@ export interface UvJob {
   chartQueue: number[];
   seedNormal: Float32Array;
   chartActive: boolean;
+  weld: Uint32Array|null;
   rects: Float32Array;
   source: Uint32Array|null;
   uv1: Float32Array|null;
@@ -263,12 +264,34 @@ export const createUvJob = (
     chartQueue: [],
     seedNormal: new Float32Array(3),
     chartActive: false,
+    weld: null,
     rects: new Float32Array(0),
     source: null,
     uv1: null,
     outIndex: null,
     pack: null,
   };
+};
+
+/** CAD shells duplicate vertices along a seam. Weld so those charts join. */
+const weldIds = (positions: Float32Array, count: number): Uint32Array => {
+  const weld = new Uint32Array(count);
+  const map = new Map<string, number>();
+  const q = 1e4;
+  for (let i = 0; i < count; i++) {
+    const p = i * 3;
+    const key = Math.round(positions[p] * q) + ',' +
+        Math.round(positions[p + 1] * q) + ',' +
+        Math.round(positions[p + 2] * q);
+    const found = map.get(key);
+    if (found == null) {
+      map.set(key, i);
+      weld[i] = i;
+    } else {
+      weld[i] = found;
+    }
+  }
+  return weld;
 };
 
 const insertEdge = (table: EdgeTable, a: number, b: number, tri: number) => {
@@ -431,7 +454,9 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
   for (let i = 0; i < chartCount; i++) {
     order[i] = i;
   }
-  order.sort((a, b) => heightOf(b) - heightOf(a));
+  // Largest surfaces first. A shelf must keep its texels when thousands of
+  // bevel charts also want a slot.
+  order.sort((a, b) => widthOf(b) * heightOf(b) - widthOf(a) * heightOf(a));
   const gutter = 4;
   const originX = job.tile?.x ?? gutter;
   const originY = job.tile?.y ?? gutter;
@@ -439,33 +464,51 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
   const spanY = Math.max(1, job.tile?.h ?? resolution - gutter * 2);
   const pad = Math.min(
       gutter, Math.max(1, Math.floor(Math.min(spanX, spanY) / 8)));
-  let maxExtent = 1e-6;
   let areaSum = 0;
   for (let i = 0; i < chartCount; i++) {
-    maxExtent = Math.max(maxExtent, widthOf(i), heightOf(i));
     areaSum += widthOf(i) * heightOf(i);
   }
-  const areaScale = Math.sqrt(
-      Math.max(1, (spanX - pad * 2) * (spanY - pad * 2)) * 0.8 /
-      Math.max(areaSum, 1e-6));
-  let scale = Math.min((Math.min(spanX, spanY) * 0.9) / maxExtent, areaScale);
+  const budget = Math.max(1, (spanX - pad) * (spanY - pad) * 0.82);
+  let scale = Math.sqrt(budget / Math.max(areaSum, 1e-6));
   if (!Number.isFinite(scale) || scale <= 0) {
     scale = 1;
   }
-  const limitX = originX + spanX - pad;
-  const limitY = originY + spanY - pad;
-  const tryShelf = (useScale: number): Float32Array|null => {
+  const limitX = originX + spanX;
+  const limitY = originY + spanY;
+  // Sub-pixel charts share one corner texel. They must not force every
+  // chart, including the shelf, down to a single pixel.
+  const collapseTo = (placed: Float32Array, chart: number) => {
+    placed[chart * 4] = originX;
+    placed[chart * 4 + 1] = originY;
+    placed[chart * 4 + 2] = 1;
+    placed[chart * 4 + 3] = 1;
+  };
+  // Null when a chart that deserves at least two pixels does not fit.
+  // Marginal charts collapse instead of rejecting the scale.
+  const packAt = (useScale: number): Float32Array|null => {
     const placed = new Float32Array(chartCount * 4);
     let cursorX = originX + pad;
     let cursorY = originY + pad;
     let rowH = 0;
     for (let n = 0; n < chartCount; n++) {
       const c = order[n];
-      const w = Math.max(2, Math.ceil(widthOf(c) * useScale));
-      const h = Math.max(2, Math.ceil(heightOf(c) * useScale));
+      const rawW = widthOf(c) * useScale;
+      const rawH = heightOf(c) * useScale;
+      const deserve = Math.max(rawW, rawH);
+      const area = widthOf(c) * heightOf(c);
+      const largestArea = widthOf(order[0]) * heightOf(order[0]);
+      // Bevels and hole rims are a few percent of a shelf. Giving each one a
+      // slot is what previously crushed the shelf to a single texel.
+      if (deserve < 1.25 || area < largestArea * 0.015) {
+        collapseTo(placed, c);
+        continue;
+      }
+      const w = Math.max(2, Math.round(rawW));
+      const h = Math.max(2, Math.round(rawH));
+      const gap = w >= 4 && h >= 4 ? pad : 1;
       if (cursorX + w > limitX) {
         cursorX = originX + pad;
-        cursorY += rowH + pad;
+        cursorY += rowH + gap;
         rowH = 0;
       }
       if (cursorX + w > limitX || cursorY + h > limitY) {
@@ -475,33 +518,22 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
       placed[c * 4 + 1] = cursorY;
       placed[c * 4 + 2] = w;
       placed[c * 4 + 3] = h;
-      cursorX += w + pad;
+      cursorX += w + gap;
       rowH = Math.max(rowH, h);
     }
     return placed;
   };
-  let place: Float32Array|null = null;
-  for (let attempt = 0; attempt < 14 && place == null; attempt++) {
-    place = tryShelf(scale);
-    scale *= 0.62;
+  let place = packAt(scale);
+  // Shrink until every chart that still wants two pixels fits. Charts that
+  // fall under that share the corner texel.
+  for (let attempt = 0; attempt < 16 && place == null; attempt++) {
+    scale *= 0.72;
+    place = packAt(scale);
   }
   if (place == null) {
     place = new Float32Array(chartCount * 4);
-    const cols = Math.max(
-        1, Math.ceil(Math.sqrt(chartCount * spanX / Math.max(spanY, 1))));
-    const rows = Math.max(1, Math.ceil(Math.max(chartCount, 1) / cols));
-    const cellW = spanX / cols;
-    const cellH = spanY / rows;
-    const gap = Math.min(
-        pad, Math.max(0, Math.floor(Math.min(cellW, cellH) / 4)));
-    for (let n = 0; n < chartCount; n++) {
-      const c = order[n];
-      const col = n % cols;
-      const row = Math.floor(n / cols);
-      place[c * 4] = originX + col * cellW + gap;
-      place[c * 4 + 1] = originY + row * cellH + gap;
-      place[c * 4 + 2] = Math.max(1, cellW - gap * 2);
-      place[c * 4 + 3] = Math.max(1, cellH - gap * 2);
+    for (let c = 0; c < chartCount; c++) {
+      collapseTo(place, c);
     }
   }
   return place;
@@ -654,11 +686,18 @@ export const stepPack = (job: UvJob, budgetMs: number): boolean => {
         job.uv1[id * 2 + 1] = minV;
         continue;
       }
-      const [u, v] = projectChart(job, pack, chart, vertex);
-      const px = place[chart * 4] +
-          ((u - pack.minX[chart]) / widthOf(chart)) * place[chart * 4 + 2];
-      const py = place[chart * 4 + 1] +
-          ((v - pack.minY[chart]) / heightOf(chart)) * place[chart * 4 + 3];
+      const target = chart;
+      const [u, v] = projectChart(job, pack, target, vertex);
+      const x0 = place[target * 4];
+      const y0 = place[target * 4 + 1];
+      const rw = place[target * 4 + 2];
+      const rh = place[target * 4 + 3];
+      // Stay inside the chart. A sliver projected past the panel used to
+      // clamp to the far side of the atlas and paint a spike.
+      const px = Math.min(x0 + rw, Math.max(x0, x0 +
+          ((u - pack.minX[target]) / widthOf(target)) * rw));
+      const py = Math.min(y0 + rh, Math.max(y0, y0 +
+          ((v - pack.minY[target]) / heightOf(target)) * rh));
       job.uv1[id * 2] = Math.min(maxU, Math.max(minU, px / resolution));
       job.uv1[id * 2 + 1] = Math.min(maxV, Math.max(minV, py / resolution));
     }
@@ -742,9 +781,13 @@ export const stepUvJob = (job: UvJob, budgetMs: number) => {
         return;
       }
       const tri = job.edgeCursor;
-      const a = job.indices[tri * 3];
-      const b = job.indices[tri * 3 + 1];
-      const c = job.indices[tri * 3 + 2];
+      if (job.weld == null) {
+        job.weld = weldIds(job.positions, job.vertexCount);
+      }
+      const weld = job.weld;
+      const a = weld[job.indices[tri * 3]];
+      const b = weld[job.indices[tri * 3 + 1]];
+      const c = weld[job.indices[tri * 3 + 2]];
       insertEdge(table, a, b, tri);
       insertEdge(table, b, c, tri);
       insertEdge(table, c, a, tri);
@@ -782,9 +825,12 @@ export const stepUvJob = (job: UvJob, budgetMs: number) => {
       while (queue.length > 0 && steps < 2500) {
         steps++;
         const tri = queue.pop() as number;
-        const a = job.indices[tri * 3];
-        const b = job.indices[tri * 3 + 1];
-        const c = job.indices[tri * 3 + 2];
+        const weld = job.weld;
+        const a = weld == null ? job.indices[tri * 3] : weld[job.indices[tri * 3]];
+        const b = weld == null ? job.indices[tri * 3 + 1] :
+                                 weld[job.indices[tri * 3 + 1]];
+        const c = weld == null ? job.indices[tri * 3 + 2] :
+                                 weld[job.indices[tri * 3 + 2]];
         const pairs: Array<[number, number]> = [[a, b], [b, c], [c, a]];
         for (let e = 0; e < 3; e++) {
           const other = neighbor(job.edges, pairs[e][0], pairs[e][1], tri);
@@ -819,6 +865,62 @@ export const stepUvJob = (job: UvJob, budgetMs: number) => {
   }
 };
 
+/**
+ * Double-sided shells often wind some triangles against the vertex normal.
+ * The beauty pass lights `normal * gl_FrontFacing`, and the occlusion map
+ * stores the vertex-normal hemisphere in R. A flipped triangle would show
+ * the opposite hemisphere and stripe a flat shelf.
+ * Returns the same geometry when every triangle already agrees.
+ */
+export const orientWindingToNormals = (
+    geometry: BufferGeometry,
+    mutate = false,
+    ): BufferGeometry => {
+  const index = geometry.getIndex();
+  const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
+  if (index == null || position == null || normal == null) {
+    return geometry;
+  }
+  const flipped: number[] = [];
+  for (let tri = 0; tri < index.count; tri += 3) {
+    const i0 = index.getX(tri);
+    const i1 = index.getX(tri + 1);
+    const i2 = index.getX(tri + 2);
+    const e1x = position.getX(i1) - position.getX(i0);
+    const e1y = position.getY(i1) - position.getY(i0);
+    const e1z = position.getZ(i1) - position.getZ(i0);
+    const e2x = position.getX(i2) - position.getX(i0);
+    const e2y = position.getY(i2) - position.getY(i0);
+    const e2z = position.getZ(i2) - position.getZ(i0);
+    const nx = e1y * e2z - e1z * e2y;
+    const ny = e1z * e2x - e1x * e2z;
+    const nz = e1x * e2y - e1y * e2x;
+    const vx = normal.getX(i0) + normal.getX(i1) + normal.getX(i2);
+    const vy = normal.getY(i0) + normal.getY(i1) + normal.getY(i2);
+    const vz = normal.getZ(i0) + normal.getZ(i1) + normal.getZ(i2);
+    if (nx * vx + ny * vy + nz * vz < 0) {
+      flipped.push(tri);
+    }
+  }
+  if (flipped.length === 0) {
+    return geometry;
+  }
+  const next = mutate ? geometry : geometry.clone();
+  const target = next.getIndex();
+  if (target == null) {
+    return geometry;
+  }
+  for (const tri of flipped) {
+    const i1 = target.getX(tri + 1);
+    const i2 = target.getX(tri + 2);
+    target.setX(tri + 1, i2);
+    target.setX(tri + 2, i1);
+  }
+  target.needsUpdate = true;
+  return next;
+};
+
 export const applyUvJob = (
     geometry: BufferGeometry,
     job: UvJob,
@@ -840,7 +942,7 @@ export const applyUvJob = (
   const uv1 = new BufferAttribute(job.uv1, 2);
   if (!needsSplit) {
     geometry.setAttribute('uv1', uv1);
-    return geometry;
+    return orientWindingToNormals(geometry, false);
   }
   const clone = new BufferGeometry();
   const names = Object.keys(geometry.attributes);
@@ -866,5 +968,5 @@ export const applyUvJob = (
   }
   clone.setAttribute('uv1', uv1);
   clone.setIndex(new BufferAttribute(job.outIndex, 1));
-  return clone;
+  return orientWindingToNormals(clone, true);
 };

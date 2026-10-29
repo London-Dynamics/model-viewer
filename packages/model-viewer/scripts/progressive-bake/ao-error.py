@@ -89,7 +89,7 @@ def main():
     scenes = config['scenes']
     bar = config.get('passBar') or {'mean': 0.08, 'p95': 0.18}
     ids = args.ids or [scene['id'] for scene in scenes]
-    cams = ['hero', 'side', 'close']
+    cams = ['hero', 'side', 'close', 'interior']
     sheets = args.root / 'sheets'
     sheets.mkdir(parents=True, exist_ok=True)
     print(f"pass bar: mean <= {bar['mean']} and p95 <= {bar['p95']}")
