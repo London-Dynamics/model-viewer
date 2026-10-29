@@ -1,0 +1,691 @@
+<!--
+/*
+* Copyright 2020 Google Inc. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; LD Camera</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="&lt;model-viewer&gt; LD Camera examples"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+
+    <!-- Import Three.js using an import-map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@^0.172.0/build/three.module.min.js"
+        }
+      }
+    </script>
+
+    <!-- Loads <model-viewer> on modern browsers: -->
+    <!-- Import the <model-viewer> component without three bundled -->
+
+    <script
+      type="module"
+      src="../../node_modules/@google/model-viewer/dist/model-viewer-module.min.js"
+    ></script>
+
+    <!-- Tailwind CSS via CDN: -->
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+  </head>
+  <body class="ld">
+    <div class="examples-page">
+      <div class="sidebar" id="sidenav"></div>
+      <div id="toggle"></div>
+
+      <div class="examples-container">
+        <div class="sample">
+          <div id="camera-angles" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h4 id="intro">
+                  <span class="font-medium">LD Camera </span>by
+                  <a href="https://londondynamics.com" target="_blank"
+                    >London Dynamics</a
+                  >. The default camera controls have been replaced with
+                  <a
+                    href="https://yomotsu.github.io/camera-controls/"
+                    target="_blank"
+                    >@yomotsu/camera-controls</a
+                  >
+                  to provide advanced features such as smooth animated
+                  transitions, precise orbit and dolly, panning, fit-to-object,
+                  collision detection, and programmable camera movements.
+                </h4>
+
+                <div class="heading">
+                  <h2 class="demo-title">Camera Angles</h2>
+                  <h4>
+                    <span class="attribute">doSomething()</span> does something.
+                  </h4>
+                </div>
+              </div>
+              <example-snippet stamp-to="camera-angles" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    id="angles-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    viewport-gizmo
+                  >
+                    <div class="ld-card absolute bottom-4 left-4">
+                      <div class="ld-card-body ld-sections">
+                      <fieldset class="ld-field-row">
+                        <label class="ld-label-muted">States</label>
+                        <button
+                          class="ld-button-sm"
+                          type="button"
+                          id="saveState"
+                        >
+                          Save State
+                        </button>
+                        <button
+                          class="ld-button-sm"
+                          type="button"
+                          id="resetCamera"
+                        >
+                          Reset to State
+                        </button>
+                      </fieldset>
+                      <fieldset class="ld-field-row">
+                        <label class="ld-label-muted">Rotation</label>
+                        <button
+                          class="rotate-camera ld-button-sm"
+                          type="button"
+                          data-azimuth="0"
+                          data-polar="0"
+                        >
+                          T
+                        </button>
+                        <button
+                          class="rotate-camera ld-button-sm"
+                          type="button"
+                          data-azimuth="0"
+                          data-polar="180"
+                        >
+                          Btm
+                        </button>
+                        <button
+                          class="rotate-camera ld-button-sm"
+                          type="button"
+                          data-azimuth="-90"
+                          data-polar="90"
+                        >
+                          L
+                        </button>
+                        <button
+                          class="rotate-camera ld-button-sm"
+                          type="button"
+                          data-azimuth="90"
+                          data-polar="90"
+                        >
+                          R
+                        </button>
+                        <button
+                          class="rotate-camera ld-button-sm"
+                          type="button"
+                          data-azimuth="0"
+                          data-polar="90"
+                        >
+                          F
+                        </button>
+                        <button
+                          class="rotate-camera ld-button-sm"
+                          type="button"
+                          data-azimuth="180"
+                          data-polar="90"
+                        >
+                          Bk
+                        </button>
+                      </fieldset>
+                      <fieldset>
+                        <label class="ld-label-muted">Mode</label>
+                        <button
+                          class="camera-mode ld-button-sm"
+                          type="button"
+                          data-type="perspective"
+                        >
+                          Perspective
+                        </button>
+                        <button
+                          class="camera-mode ld-button-sm"
+                          type="button"
+                          data-type="orthographic"
+                        >
+                          Orthographic
+                        </button>
+                      </fieldset>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer =
+                        document.querySelector('#angles-demo');
+
+                      document
+                        .getElementById('resetCamera')
+                        .addEventListener('click', () => {
+                          modelViewer.resetCamera();
+                        });
+
+                      document
+                        .getElementById('saveState')
+                        .addEventListener('click', () => {
+                          modelViewer.setCurrentAsDefaultCamera();
+                        });
+
+                      document
+                        .querySelectorAll('.rotate-camera')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const azimuth = parseFloat(
+                              button.getAttribute('data-azimuth')
+                            );
+                            const polar = parseFloat(
+                              button.getAttribute('data-polar')
+                            );
+
+                            modelViewer.rotateCamera(azimuth, polar, true);
+                          });
+                        });
+
+                      document
+                        .querySelectorAll('.camera-mode')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            const type = button.getAttribute('data-type');
+                            modelViewer.setCameraType(type);
+                          });
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="viewport-gizmo-position" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Viewport gizmo positioning</h2>
+                <h4>
+                  Control the viewport gizmo position from outside
+                  <span class="attribute">&lt;model-viewer&gt;</span> using CSS
+                  custom properties on the element. You can use <code>em</code>,
+                  <code>rem</code>, or any CSS length for offsets.
+                </h4>
+              </div>
+              <example-snippet
+                stamp-to="viewport-gizmo-position"
+                highlight-as="html"
+              >
+                <template>
+                  <style>
+                    #gizmo-position-demo {
+                      --ld-viewport-gizmo-placement: bottom-left;
+                      --ld-viewport-gizmo-offset-bottom: 1.5rem;
+                      --ld-viewport-gizmo-offset-left: 2rem;
+                    }
+                  </style>
+                  <model-viewer
+                    id="gizmo-position-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    viewport-gizmo
+                  ></model-viewer>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="interaction-mode-pan" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">
+                  Interaction mode: rotate vs pan
+                </h2>
+                <h4>
+                  Toggle <code>interaction-mode</code> between
+                  <code>rotate</code> and <code>pan</code>, then switch camera
+                  type to verify pan mode keeps interactions enabled even when
+                  <code>camera-controls</code> is not set.
+                </h4>
+              </div>
+              <example-snippet stamp-to="interaction-mode-pan" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="interaction-mode-demo"
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                  >
+                    <div class="ld-card absolute bottom-4 left-4">
+                      <div class="ld-card-body ld-sections">
+                      <div class="ld-field-row-between">
+                        <div class="ld-switch-row">
+                          <button
+                            type="button"
+                            id="interaction-camera-type-toggle"
+                            role="switch"
+                            aria-checked="false"
+                            class="ld-switch"
+                          >
+                            <span class="ld-switch-thumb"></span>
+                          </button>
+                          <span class="ml-2 text-sm" id="camera-type-toggle-label">
+                            <span class="font-medium text-gray-900"
+                              >Camera Type</span
+                            >
+                            <span class="text-gray-500">
+                              (<span id="camera-type-value">perspective</span>)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="ld-field-row-between">
+                        <div class="ld-switch-row">
+                          <button
+                            type="button"
+                            id="interaction-mode-toggle"
+                            role="switch"
+                            aria-checked="false"
+                            class="ld-switch"
+                          >
+                            <span class="ld-switch-thumb"></span>
+                          </button>
+                          <span class="ml-2 text-sm" id="interaction-mode-toggle-label">
+                            <span class="font-medium text-gray-900"
+                              >Interaction Mode</span
+                            >
+                            <span class="text-gray-500">
+                              (<span id="interaction-mode-value">rotate</span>)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="ld-field-row-between">
+                        <div class="ld-switch-row">
+                          <button
+                            type="button"
+                            id="camera-controls-toggle"
+                            role="switch"
+                            aria-checked="true"
+                            class="ld-switch"
+                          >
+                            <span class="ld-switch-thumb"></span>
+                          </button>
+                          <span class="ml-2 text-sm" id="camera-controls-toggle-label">
+                            <span class="font-medium text-gray-900"
+                              >Camera Controls</span
+                            >
+                            <span class="text-gray-500">
+                              (<span id="camera-controls-value">on</span>)
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                      <div id="interaction-mode-state" class="ld-helper-text">
+                        cameraType: perspective, interaction-mode: rotate,
+                        camera-controls: true
+                      </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#interaction-mode-demo'
+                      );
+                      const state = document.querySelector(
+                        '#interaction-mode-state'
+                      );
+                      const cameraTypeToggle = document.querySelector(
+                        '#interaction-camera-type-toggle'
+                      );
+                      const interactionModeToggle = document.querySelector(
+                        '#interaction-mode-toggle'
+                      );
+                      const cameraControlsToggle = document.querySelector(
+                        '#camera-controls-toggle'
+                      );
+                      const cameraTypeValue = document.querySelector(
+                        '#camera-type-value'
+                      );
+                      const interactionModeValue = document.querySelector(
+                        '#interaction-mode-value'
+                      );
+                      const cameraControlsValue = document.querySelector(
+                        '#camera-controls-value'
+                      );
+
+                      const updateState = () => {
+                        const cameraType = modelViewer.getCameraType();
+                        const interactionMode = modelViewer.interactionMode;
+                        const cameraControls = modelViewer.hasAttribute(
+                          'camera-controls'
+                        );
+                        const isOrthographic = cameraType === 'orthographic';
+                        const isPan = interactionMode === 'pan';
+
+                        cameraTypeToggle.setAttribute(
+                          'aria-checked',
+                          isOrthographic ? 'true' : 'false'
+                        );
+                        interactionModeToggle.setAttribute(
+                          'aria-checked',
+                          isPan ? 'true' : 'false'
+                        );
+                        cameraControlsToggle.setAttribute(
+                          'aria-checked',
+                          cameraControls ? 'true' : 'false'
+                        );
+                        cameraTypeValue.textContent = cameraType;
+                        interactionModeValue.textContent = interactionMode;
+                        cameraControlsValue.textContent = cameraControls
+                          ? 'on'
+                          : 'off';
+
+                        state.textContent =
+                          `cameraType: ${cameraType}, ` +
+                          `interaction-mode: ${interactionMode}, ` +
+                          `camera-controls: ${cameraControls}`;
+                      };
+
+                      cameraTypeToggle.addEventListener('click', () => {
+                        const nextType =
+                          modelViewer.getCameraType() === 'orthographic'
+                            ? 'perspective'
+                            : 'orthographic';
+                        modelViewer.setCameraType(nextType);
+                        updateState();
+                      });
+
+                      interactionModeToggle.addEventListener('click', () => {
+                        const nextMode =
+                          modelViewer.interactionMode === 'pan'
+                            ? 'rotate'
+                            : 'pan';
+                        modelViewer.setAttribute('interaction-mode', nextMode);
+                        updateState();
+                      });
+
+                      cameraControlsToggle.addEventListener('click', () => {
+                        if (modelViewer.hasAttribute('camera-controls')) {
+                          modelViewer.removeAttribute('camera-controls');
+                        } else {
+                          modelViewer.setAttribute('camera-controls', '');
+                        }
+                        updateState();
+                      });
+
+                      updateState();
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="get-camera-json" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Camera JSON interactions</h2>
+                <h4>
+                  Save and restore camera state. Persist
+                  <code>getCameraJSON().object</code> in your host (include
+                  <code>controlsSnapshot</code> for views after pan/truck).
+                  Restore with
+                  <code>await setCameraFromJSON(saved)</code>. Legacy
+                  <code>controlsState</code> strings still work. Use
+                  <b>Get Camera JSON</b> to inspect the payload; round-trip
+                  buttons run silent checks.
+                </h4>
+              </div>
+              <example-snippet stamp-to="get-camera-json" highlight-as="html">
+                <template>
+                  <model-viewer
+                    id="three-demo"
+                    camera-controls
+                    interaction-prompt="none"
+                    autoplay
+                    ar
+                    ar-modes="webxr scene-viewer"
+                    shadow-intensity="1"
+                    src="../../shared-assets/models/cubes.gltf"
+                    alt="An animated 3D model two cubes"
+                  >
+                    <div class="ld-card absolute bottom-4 left-4 max-w-xl">
+                      <div class="ld-card-body">
+                      <div class="ld-card-toolbar mb-2">
+                        <button
+                          class="ld-button-sm"
+                          type="button"
+                          id="getCameraButton"
+                        >
+                          Get Camera JSON
+                        </button>
+                        <button
+                          class="ld-button-sm"
+                          type="button"
+                          id="setCameraButton"
+                        >
+                          Set Camera from JSON
+                        </button>
+                        <button
+                          class="ld-button-sm"
+                          type="button"
+                          id="roundTripButton"
+                        >
+                          Round-trip test
+                        </button>
+                        <button
+                          class="ld-button-sm"
+                          type="button"
+                          id="targetRoundTripButton"
+                          title="Round-trips the current view using controlsSnapshot (pan manually first)"
+                        >
+                          Target round-trip test
+                        </button>
+                      </div>
+                      <div
+                        id="camera-json-output"
+                        class="ld-helper-text block bg-gray-100 p-2 rounded overflow-auto max-h-48 min-h-[4rem] empty:hidden"
+                      ></div>
+                      </div>
+                    </div>
+                  </model-viewer>
+
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector('#three-demo');
+                      const output = document.querySelector(
+                        '#camera-json-output'
+                      );
+
+                      const defaultCameraJSON = {
+                        matrix: [
+                          1, 0, 0, 0, 0, 0.9659258262890683,
+                          -0.2588190451025207, 0, 0, 0.2588190451025207,
+                          0.9659258262890683, 0, 0, 1.500161641239547,
+                          5.598679464671904, 1,
+                        ],
+                        up: [0, 1, 0],
+                        fov: 33.83851389059542,
+                        zoom: 1,
+                        near: 0.011592358983051795,
+                        far: 11.592358983051795,
+                        focus: 10,
+                        aspect: 0.4628482972136223,
+                        filmGauge: 35,
+                        filmOffset: 0,
+                      };
+
+                      function writeOut(text) {
+                        output.textContent = text;
+                      }
+
+                      function waitFrames(count) {
+                        return new Promise((resolve) => {
+                          let remaining = count;
+                          const step = () => {
+                            remaining -= 1;
+                            if (remaining <= 0) {
+                              resolve();
+                              return;
+                            }
+                            requestAnimationFrame(step);
+                          };
+                          requestAnimationFrame(step);
+                        });
+                      }
+
+                      /** Wait for the current view (pan manually first to test look-at). */
+                      async function waitForCurrentCameraView() {
+                        await waitFrames(2);
+                        return true;
+                      }
+
+                      /** Fields the host persists (Blender API + controlsSnapshot). */
+                      function toHostCameraPayload(object) {
+                        const host = Object.assign({}, object);
+                        delete host.controlsState;
+                        delete host.controlsPose;
+                        delete host.focalOffset;
+                        delete host.controlsZoom;
+                        return host;
+                      }
+
+                      let lastStoredJSON = null;
+
+                      document
+                        .getElementById('getCameraButton')
+                        .addEventListener('click', () => {
+                          const meta = modelViewer.getCameraJSON();
+                          if (!meta) {
+                            return;
+                          }
+                          lastStoredJSON =
+                            meta.object != null ? meta.object : meta;
+                          writeOut(
+                            JSON.stringify(lastStoredJSON, null, 2)
+                          );
+                        });
+
+                      document
+                        .getElementById('setCameraButton')
+                        .addEventListener('click', () => {
+                          const toSet = lastStoredJSON || defaultCameraJSON;
+                          modelViewer.setCameraFromJSON(toSet);
+                        });
+
+                      document
+                        .getElementById('roundTripButton')
+                        .addEventListener('click', async () => {
+                          const metaA = modelViewer.getCameraJSON();
+                          if (!metaA) {
+                            return;
+                          }
+                          const A = metaA.object != null ? metaA.object : metaA;
+                          await modelViewer.setCameraFromJSON(A);
+                        });
+
+                      document
+                        .getElementById('targetRoundTripButton')
+                        .addEventListener('click', async () => {
+                          await waitForCurrentCameraView();
+
+                          const metaA = modelViewer.getCameraJSON();
+                          if (!metaA || !metaA.object) {
+                            return;
+                          }
+
+                          const A = toHostCameraPayload(metaA.object);
+
+                          await waitFrames(2);
+                          await modelViewer.resetCamera();
+                          await waitFrames(2);
+                          if (!A.controlsSnapshot) {
+                            return;
+                          }
+                          await modelViewer.setCameraFromJSON(A);
+                          await waitFrames(6);
+                        });
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+        <div class="footer">
+          <ul></ul>
+          <div style="margin-top: 24px" class="copyright">
+            ©Copyright 2019 Google Inc. Licensed under the Apache License 2.0.
+          </div>
+          <div id="footer-links"></div>
+        </div>
+      </div>
+    </div>
+    <script
+      type="module"
+      src="../../examples/built/docs-and-examples.js"
+    ></script>
+    <script type="module">
+      (() => {
+        init('examples-ld_camera');
+      })();
+      (() => {
+        initFooterLinks();
+      })();
+    </script>
+
+    <!-- Documentation-specific dependencies: -->
+    <script type="module" src="../built/dependencies.js"></script>
+  </body>
+</html>

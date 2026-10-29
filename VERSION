@@ -1,0 +1,7 @@
+commit e0973a8985de4db1ef887df91a9827d982754c31
+Author: Martin Lundin <martin@talkative.se>
+Date:   Thu Oct 29 16:09:06 2026 +0100
+
+    Merge pull request #17 from London-Dynamics/cursor/ld-example-model-viewer-paths-406b
+    
+    Fix LD example model-viewer script paths for GitHub Pages
