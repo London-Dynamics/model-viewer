@@ -136,6 +136,7 @@ export class ProgressivePipeline {
   private replaced = new Map<Mesh, BufferGeometry>();
   private surface: Float32Array|null = null;
   private surfaceGrid: Int32Array|null = null;
+  private surfaceCounts: Int32Array|null = null;
   private surfaceDone = false;
   private surfaceCount = 0;
   private surfaceMesh = 0;
@@ -876,9 +877,10 @@ export class ProgressivePipeline {
   private stepSurface(budgetMs: number) {
     const resolution = this.settings.bake.textureAO.resolution;
     if (this.surface == null || this.surfaceGrid == null) {
-      this.surface = new Float32Array(resolution * resolution * 8);
+      this.surface = new Float32Array(resolution * resolution * 8 * 2);
       this.surfaceGrid = new Int32Array(resolution * resolution);
       this.surfaceGrid.fill(-1);
+      this.surfaceCounts = new Int32Array(resolution * resolution);
       this.surfaceCount = 0;
       this.surfaceMesh = 0;
       this.surfaceTri = 0;
@@ -948,7 +950,8 @@ export class ProgressivePipeline {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const slot = y * resolution + x;
-        if (grid[slot] !== -1) {
+        const filled = this.surfaceCounts != null ? this.surfaceCounts[slot] : 0;
+        if (filled >= 2) {
           continue;
         }
         const px = (x + 0.5) / resolution;
@@ -990,6 +993,17 @@ export class ProgressivePipeline {
         } else {
           tmpN.set(0, 1, 0);
         }
+        if (filled === 1 && this.surfaceGrid != null && this.surface != null) {
+          const prev = this.surfaceGrid[slot] * 8;
+          const dot = this.surface[prev + 3] * tmpN.x +
+              this.surface[prev + 4] * tmpN.y +
+              this.surface[prev + 5] * tmpN.z;
+          // Same side already owns the texel. The other side of a panel
+          // (the inside of a bay) still needs its own sample.
+          if (dot > 0.35) {
+            continue;
+          }
+        }
         const o = this.surfaceCount * 8;
         if (o + 8 > this.surface!.length) {
           return;
@@ -1003,6 +1017,9 @@ export class ProgressivePipeline {
         this.surface![o + 6] = px;
         this.surface![o + 7] = py;
         grid[slot] = this.surfaceCount;
+        if (this.surfaceCounts != null) {
+          this.surfaceCounts[slot] = filled + 1;
+        }
         this.surfaceCount++;
       }
     }
@@ -1065,8 +1082,11 @@ export class ProgressivePipeline {
       const y = Math.min(
           resolution - 1, Math.floor(this.surface[o + 7] * resolution));
       const texel = (y * resolution + x) * 4;
-      this.aoData[texel] += ao;
-      this.aoData[texel + 3] += 1;
+      // Darkest sample wins, so the inside of a panel beats the open outside.
+      if (this.aoData[texel + 3] === 0 || ao < this.aoData[texel]) {
+        this.aoData[texel] = ao;
+        this.aoData[texel + 3] = 1;
+      }
       this.aoCursor++;
     }
     this.publishAo(resolution);
@@ -1456,6 +1476,17 @@ export class ProgressivePipeline {
       return;
     }
     const filtered = finalizeAmbientOcclusion(this.aoData, resolution);
+    let written = 0;
+    let dark = 0;
+    for (let i = 0; i < filtered.length; i++) {
+      if (filtered[i] < 0.999) {
+        written++;
+      }
+      if (filtered[i] < 0.75) {
+        dark++;
+      }
+    }
+    console.info('AO written', written, 'dark', dark, 'of', filtered.length);
     const data = new Uint8Array(resolution * resolution * 4);
     for (let i = 0; i < filtered.length; i++) {
       const byte = Math.round(Math.min(1, Math.max(0, filtered[i])) * 255);
@@ -1921,6 +1952,7 @@ export class ProgressivePipeline {
     this.uvCursor = 0;
     this.uvReady = false;
     this.surface = null;
+    this.surfaceCounts = null;
     this.surfaceDone = false;
     this.surfaceCount = 0;
     this.aoData = null;

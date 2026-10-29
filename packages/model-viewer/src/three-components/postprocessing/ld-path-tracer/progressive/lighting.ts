@@ -74,13 +74,14 @@ export const occlusionAtPoint = (
     if (hit != null) {
       const t = Math.min(1, hit.distance / distance);
       // Only nearby hits darken. A graze at the far end of the ray does not.
-      const falloff = (1 - t) * (1 - t);
+      // Linear in distance so a wall a few centimetres away still counts.
+      const falloff = 1 - t;
       occ += falloff;
     }
   }
-  // A power above 1 deepens corners without greying open faces (those stay 1).
+  // Open faces stay at 1. Corners, where most rays hit, drop quickly.
   const ao = Math.max(0, 1 - occ / count);
-  return Math.pow(ao, 1.4);
+  return Math.pow(ao, 1.8);
 };
 
 /**

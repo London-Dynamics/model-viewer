@@ -631,7 +631,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.fireflyClamp = new ShaderMaterial({
         uniforms: {
           tDiffuse: {value: null},
-          limit: {value: 2.2},
+          limit: {value: 1.05},
         },
         vertexShader: `
           varying vec2 vUv;
