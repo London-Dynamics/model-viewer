@@ -21,7 +21,7 @@ import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 import {ModelScene} from '../../../ModelScene.js';
 import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 
-import {blurOcclusion, contactGroundY, ContactJob, expandPenumbra, stepContactRays} from './contact-shadow.js';
+import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepContactRays} from './contact-shadow.js';
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, finalizeAmbientOcclusion, occlusionAtPoint, PunctualSample} from './lighting.js';
@@ -632,14 +632,16 @@ export class ProgressivePipeline {
       const resolution = this.settings.bake.contactShadow.resolution;
       const span = Math.max(Math.min(size.x, size.z), 0.05);
       const softness = this.settings.bake.contactShadow.softness;
-      // Core is the band near the ground (the bottom, not the cabin). The
-      // skirt has to clear the hull side, which hides the keel from a
-      // typical orbit, so it is wider than the core and always lighter.
-      const falloff = Math.max(size.y * 0.12, span * 0.1, 0.05);
-      const penumbraDistance = Math.max(falloff * 2, size.y * 0.28);
-      const softnessRadius = Math.max(span * softness * 5, size.y * 0.4);
-      const width = Math.max(size.x, 0.05) + softnessRadius * 2;
-      const depth = Math.max(size.z, 0.05) + softnessRadius * 2;
+      // How high above the ground still counts as the footprint. The
+      // penumbra radius is this clearance times heightScale, so a wheel
+      // stays tight and a case on castors only softens by its own gap.
+      const falloff = Math.min(
+          Math.max(size.y * 0.28, 0.06),
+          Math.max(span * 0.22, 0.12));
+      const heightScale = 0.65 + softness * 3;
+      const margin = falloff * heightScale;
+      const width = Math.max(size.x, 0.05) + margin * 2;
+      const depth = Math.max(size.z, 0.05) + margin * 2;
       const groundY = this.positions != null ?
           contactGroundY(this.positions) :
           box.min.y;
@@ -650,11 +652,13 @@ export class ProgressivePipeline {
         width,
         depth,
         y: groundY,
-        softnessRadius,
-        samples: softness > 0 ? 12 : 1,
+        softnessRadius: 0,
+        samples: 1,
         maxDistance: falloff,
-        penumbraDistance,
+        penumbraDistance: falloff,
         grid: new Float32Array(resolution * resolution),
+        heights: new Float32Array(resolution * resolution).fill(-1),
+        heightScale,
         cursor: 0,
       };
       this.contactStamp = performance.now();
@@ -775,7 +779,83 @@ export class ProgressivePipeline {
       this.applyUv(task.mesh, task.job);
       this.uvCursor++;
     }
+    this.layoutUvTiles();
     this.uvReady = true;
+  }
+
+  /**
+   * Each mesh unwraps into its own 0–1 square. They share one AO texture,
+   * so those squares must become disjoint tiles or charts overwrite each
+   * other and the bake looks like stripes.
+   */
+  private layoutUvTiles() {
+    const items: {mesh: Mesh; weight: number}[] = [];
+    for (const mesh of this.meshes) {
+      const uv = mesh.geometry.getAttribute('uv1');
+      if (uv == null) {
+        continue;
+      }
+      const index = mesh.geometry.getIndex();
+      const tris = index != null ? index.count / 3 : uv.count / 3;
+      items.push({mesh, weight: Math.max(1, tris)});
+    }
+    if (items.length <= 1) {
+      return;
+    }
+    items.sort((a, b) => b.weight - a.weight);
+    const total = items.reduce((sum, item) => sum + item.weight, 0);
+    const resolution = Math.max(8, this.settings.bake.textureAO.resolution);
+    const pad = 4 / resolution;
+    let scale = 0.92;
+    let placed = false;
+    const origin = new Float32Array(items.length * 3);
+    for (let attempt = 0; attempt < 8 && !placed; attempt++) {
+      let x = pad;
+      let y = pad;
+      let rowH = 0;
+      placed = true;
+      for (let n = 0; n < items.length; n++) {
+        const side = Math.max(
+            4 / resolution,
+            Math.sqrt(items[n].weight / total) * scale);
+        if (x + side > 1 - pad) {
+          x = pad;
+          y += rowH + pad;
+          rowH = 0;
+        }
+        if (y + side > 1 - pad) {
+          placed = false;
+          scale *= 0.72;
+          break;
+        }
+        origin[n * 3] = x;
+        origin[n * 3 + 1] = y;
+        origin[n * 3 + 2] = side;
+        x += side + pad;
+        rowH = Math.max(rowH, side);
+      }
+    }
+    if (!placed) {
+      return;
+    }
+    for (let n = 0; n < items.length; n++) {
+      this.fitUvTile(
+          items[n].mesh,
+          origin[n * 3],
+          origin[n * 3 + 1],
+          origin[n * 3 + 2]);
+    }
+  }
+
+  private fitUvTile(mesh: Mesh, ox: number, oy: number, side: number) {
+    const uv = mesh.geometry.getAttribute('uv1');
+    if (uv == null || side <= 0) {
+      return;
+    }
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, uv.getX(i) * side + ox, uv.getY(i) * side + oy);
+    }
+    uv.needsUpdate = true;
   }
 
   private applyUv(mesh: Mesh, job: UvJob) {
@@ -879,11 +959,24 @@ export class ProgressivePipeline {
         if (Math.abs(denom) < 1e-8) {
           continue;
         }
-        const w0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom;
-        const w1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom;
-        const w2 = 1 - w0 - w1;
-        if (w0 < -1e-3 || w1 < -1e-3 || w2 < -1e-3) {
+        let w0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom;
+        let w1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom;
+        let w2 = 1 - w0 - w1;
+        // Thin charts miss texel centres and leave stripes. Accept a texel
+        // whose centre is just outside, then clamp the sample back inside.
+        const thin = (maxX - minX) <= 2 || (maxY - minY) <= 2;
+        const slack = thin ? -0.35 : -1e-4;
+        if (w0 < slack || w1 < slack || w2 < slack) {
           continue;
+        }
+        if (w0 < 0 || w1 < 0 || w2 < 0) {
+          w0 = Math.max(0, w0);
+          w1 = Math.max(0, w1);
+          w2 = Math.max(0, w2);
+          const sum = w0 + w1 + w2 || 1;
+          w0 /= sum;
+          w1 /= sum;
+          w2 /= sum;
         }
         tmp.fromBufferAttribute(position, i0).multiplyScalar(w0);
         tmp2.fromBufferAttribute(position, i1).multiplyScalar(w1);
@@ -1299,16 +1392,14 @@ export class ProgressivePipeline {
     if (this.contact == null) {
       return;
     }
-    if (this.contact.softnessRadius > 0) {
-      expandPenumbra(
-          this.contact.grid,
-          this.contact.resolution,
-          this.contact.width,
-          this.contact.depth,
-          this.contact.softnessRadius,
-          0.95);
-    }
-    const radius = this.contact.softnessRadius > 0 ? 1 : 0;
+    expandPenumbraByHeight(
+        this.contact.grid,
+        this.contact.heights,
+        this.contact.resolution,
+        this.contact.width,
+        this.contact.depth,
+        this.contact.heightScale);
+    const radius = 1;
     const grid =
         blurOcclusion(this.contact.grid, this.contact.resolution, radius);
     const data =

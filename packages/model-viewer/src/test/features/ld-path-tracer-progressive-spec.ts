@@ -19,7 +19,7 @@ import {MeshBVH} from 'three-mesh-bvh';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
-import {contactGroundY, expandPenumbra, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
+import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
@@ -141,6 +141,8 @@ suite('progressive contact shadow rays', () => {
           samples: 1,
           maxDistance: 2,
           penumbraDistance: 2,
+          heights: new Float32Array(16 * 16),
+          heightScale: 1,
           grid,
           cursor: 0,
         },
@@ -177,6 +179,8 @@ suite('progressive contact shadow rays', () => {
             samples: 1,
             maxDistance: 1,
             penumbraDistance: 1,
+            heights: new Float32Array(8 * 8),
+            heightScale: 1,
             grid,
             cursor: 0,
           },
@@ -207,6 +211,8 @@ suite('progressive contact shadow rays', () => {
           samples: 10,
           maxDistance: 0.25,
           penumbraDistance: 0.6,
+          heights: new Float32Array(16 * 16),
+          heightScale: 1,
           grid,
           cursor: 0,
         },
@@ -271,21 +277,26 @@ suite('progressive contact shadow rays', () => {
     expect(out[resolution * resolution - 1]).to.equal(1);
   });
 
-  test('the penumbra spread stays lighter than the core', () => {
+  test('the penumbra scales with clearance and stays lighter than the core', () => {
     const resolution = 32;
     const grid = new Float32Array(resolution * resolution);
-    grid[16 * resolution + 16] = 1;
-    expandPenumbra(grid, resolution, 4, 4, 0.8, 0.62);
-    const core = grid[16 * resolution + 16];
+    const heights = new Float32Array(resolution * resolution).fill(-1);
+    const center = 16 * resolution + 16;
+    grid[center] = 1;
+    heights[center] = 0.4;
+    expandPenumbraByHeight(grid, heights, resolution, 4, 4, 1);
     const near = grid[16 * resolution + 18];
-    const mid = grid[16 * resolution + 20];
-    const far = grid[16 * resolution + 31];
-    expect(core).to.equal(1);
-    expect(near).to.be.greaterThan(0.15);
-    expect(near).to.be.lessThan(0.62);
-    expect(mid).to.be.greaterThan(0);
-    expect(mid).to.be.lessThan(near);
+    const far = grid[16 * resolution + 28];
+    expect(grid[center]).to.equal(1);
+    expect(near).to.be.greaterThan(0.02);
+    expect(near).to.be.lessThan(0.5);
     expect(far).to.equal(0);
+    const tight = new Float32Array(resolution * resolution);
+    const tightH = new Float32Array(resolution * resolution).fill(-1);
+    tight[center] = 1;
+    tightH[center] = 0;
+    expandPenumbraByHeight(tight, tightH, resolution, 4, 4, 1);
+    expect(tight[16 * resolution + 19]).to.equal(0);
   });
 });
 

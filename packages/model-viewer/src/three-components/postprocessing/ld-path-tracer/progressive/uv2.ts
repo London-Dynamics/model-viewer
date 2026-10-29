@@ -359,7 +359,7 @@ const packCharts = (job: UvJob) => {
   const widthOf = (c: number) => Math.max(1e-6, maxX[c] - minX[c]);
   const heightOf = (c: number) => Math.max(1e-6, maxY[c] - minY[c]);
   order.sort((a, b) => heightOf(b) - heightOf(a));
-  const pad = 2;
+  const pad = 4;
   let maxExtent = 1e-6;
   for (let i = 0; i < chartCount; i++) {
     maxExtent = Math.max(maxExtent, widthOf(i), heightOf(i));

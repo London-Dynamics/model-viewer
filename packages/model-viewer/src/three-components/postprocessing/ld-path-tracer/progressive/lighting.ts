@@ -127,7 +127,7 @@ export const finalizeAmbientOcclusion = (
     }
   }
   const out = new Float32Array(count);
-  const radius = 2;
+  const radius = 1;
   for (let y = 0; y < resolution; y++) {
     for (let x = 0; x < resolution; x++) {
       let sum = 0;

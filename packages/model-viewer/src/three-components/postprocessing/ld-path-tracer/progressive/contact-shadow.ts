@@ -92,6 +92,10 @@ export interface ContactJob {
    */
   penumbraDistance: number;
   grid: Float32Array;
+  /** Core-ray hit distance in metres. -1 when the center ray missed. */
+  heights: Float32Array;
+  /** Penumbra radius = hit height × this. */
+  heightScale: number;
   cursor: number;
 }
 
@@ -124,6 +128,7 @@ export const stepContactRays = (
     let core = 0;
     let penumbra = 0;
     let penumbraSamples = 0;
+    let hitHeight = -1;
     const samples = Math.max(1, job.samples);
     const penumbraFar = Math.max(job.maxDistance, job.penumbraDistance || 0);
     for (let s = 0; s < samples; s++) {
@@ -152,6 +157,7 @@ export const stepContactRays = (
       const weight = (1 - t) * (1 - t);
       if (s === 0) {
         core = weight;
+        hitHeight = hit.distance;
       } else {
         // Outer disk samples contribute less, so the skirt fades out.
         const spatial = (1 - jitter) * (1 - jitter);
@@ -162,41 +168,47 @@ export const stepContactRays = (
     const soft = penumbraSamples > 0 ? penumbra / penumbraSamples : 0;
     // A hit on the center ray is the core. Extra samples only fill texels
     // the center ray missed, and at a lower weight.
-    job.grid[job.cursor] = core > 0 ? core : soft * 0.75;
+    job.grid[job.cursor] = core > 0 ? core : soft * 0.45;
+    if (job.heights != null) {
+      job.heights[job.cursor] = hitHeight;
+    }
     job.cursor++;
   }
   return true;
 };
 
 /**
- * Spread a light skirt around the core. Jittered rays are sparse, so the
- * visible ground beside a hull would otherwise stay empty. The skirt is
- * always dimmer than the core texel it spreads from, and it falls off before
- * the disk edge.
+ * Penumbra radius tracks how high the occluder is. A castor a centimetre
+ * off the ground stays a tight dot. A case 15 cm up gets a short soft edge.
+ * The skirt is lighter than the core it spreads from.
  */
-export const expandPenumbra = (
+export const expandPenumbraByHeight = (
     grid: Float32Array,
+    heights: Float32Array,
     resolution: number,
     width: number,
     depth: number,
-    radiusMeters: number,
-    strength: number,
+    heightScale: number,
     ): void => {
-  if (radiusMeters <= 1e-4 || strength <= 0 || resolution <= 1) {
+  if (heightScale <= 0 || resolution <= 1) {
     return;
   }
   const mx = width / resolution;
   const mz = depth / resolution;
-  const rx = Math.max(1, Math.ceil(radiusMeters / mx));
-  const rz = Math.max(1, Math.ceil(radiusMeters / mz));
   const copy = grid.slice();
+  const copyH = heights.slice();
   for (let j = 0; j < resolution; j++) {
     for (let i = 0; i < resolution; i++) {
-      const core = copy[j * resolution + i];
-      if (core < 0.2) {
+      const idx0 = j * resolution + i;
+      const height = copyH[idx0];
+      const core = copy[idx0];
+      if (height < 0 || core < 0.04) {
         continue;
       }
-      const cap = Math.min(strength, core * 0.9);
+      const radius = Math.max(mx, Math.min(height * heightScale, height + mx));
+      const cap = core * 0.42;
+      const rx = Math.max(1, Math.ceil(radius / mx));
+      const rz = Math.max(1, Math.ceil(radius / mz));
       for (let dj = -rz; dj <= rz; dj++) {
         const y = j + dj;
         if (y < 0 || y >= resolution) {
@@ -208,13 +220,11 @@ export const expandPenumbra = (
             continue;
           }
           const dist = Math.hypot(di * mx, dj * mz);
-          if (dist <= 0 || dist >= radiusMeters) {
+          if (dist <= 0 || dist >= radius) {
             continue;
           }
-          const t = 1 - dist / radiusMeters;
-          // Gentler than a square so the ground under the hull stays dark
-          // and the edge still fades out.
-          const skirt = cap * Math.pow(t, 0.55);
+          const t = 1 - dist / radius;
+          const skirt = cap * t * t;
           const idx = y * resolution + x;
           if (skirt > grid[idx]) {
             grid[idx] = skirt;

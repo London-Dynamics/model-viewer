@@ -101,6 +101,16 @@ export class ProbeBaker {
     if (this.pass === 'empty') {
       hideProduct(true);
     }
+    // The grounded skybox is a mesh with a PMREM map. It occludes the
+    // equirect background and the upper cube faces go black, which is what
+    // turns a glossy hardtop black.
+    const covered: {object: {visible: boolean}; visible: boolean}[] = [];
+    scene.traverse((object) => {
+      if (object.userData?.noHit === true && object.visible) {
+        covered.push({object, visible: true});
+        object.visible = false;
+      }
+    });
     if (background != null) {
       scene.background = background;
     }
@@ -114,6 +124,9 @@ export class ProbeBaker {
     renderer.outputColorSpace = previousSpace;
     renderer.autoClear = previousAutoClear;
     scene.background = previousBackground;
+    for (const entry of covered) {
+      entry.object.visible = entry.visible;
+    }
     if (this.pass === 'empty') {
       hideProduct(false);
     }

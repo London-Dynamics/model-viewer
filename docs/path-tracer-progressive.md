@@ -121,12 +121,11 @@ Cheapest layer, and it does not need UVs.
   underside instead of starting inside the mesh. Sample 0 is unjittered.
   Its falloff is `max(size.y * 0.12, span * 0.1, 0.05)`, and the weight is
   `(1 - distance / falloff)²`. That is the dark core, tight to the bottom.
-- Later samples only fill texels the center ray missed, at 0.75× the
-  weight, inside a disk of about `softness × 5 ×` the smaller horizontal
-  size (at least `0.4 × height`). A distance falloff then spreads the core
-  across that same disk at 0.9×, with a gentle power curve, so the ground
-  beside the hull is darker than the realtime blob and still lighter than
-  the core.
+- The penumbra radius is the clearance of that hit times about
+  `0.65 + softness * 3`. A castor a centimetre up stays a tight dot. A case
+  sitting on those castors softens only by its own gap, so the shadow is a
+  rectangle under the case plus small contacts at the wheels, not a puddle
+  the size of the model. The skirt is 0.42× the core it spreads from.
 - The built-in soft-shadow floor fades out with the same contact fade, so
   the realtime blob and the bake are not both drawn.
 - The texture is black RGB with occlusion in alpha. Opacity is
