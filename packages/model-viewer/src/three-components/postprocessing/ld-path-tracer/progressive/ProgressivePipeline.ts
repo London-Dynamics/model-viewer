@@ -26,7 +26,7 @@ import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepC
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, PunctualSample} from './lighting.js';
-import {meanFactor, SurfaceBakePass, SurfaceFactorBake} from './surface-bake.js';
+import {openLevel, SurfaceFactorBake} from './surface-bake.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
 import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
@@ -67,6 +67,7 @@ export interface ProgressiveReadout {
       {samples: number; fade: number; revealed: boolean; idleMs: number;};
   occlusionSamples: number;
   occlusionScale: number;
+  shadowMs: number;
   frameMs:
       {last: number; mean: number; max: number; p95: number; count: number;};
   cpuSliceMs: {last: number; max: number;};
@@ -175,10 +176,12 @@ export class ProgressivePipeline {
   private areaPartial = 0;
   private meshAreas: number[] = [];
   private factorBake: SurfaceFactorBake|null = null;
-  private factorPass: SurfaceBakePass = 'front';
-  private factorFront: Float32Array|null = null;
   private factorScale = 1;
   private occlusionScaleSent = false;
+  private shadowMs = 0;
+  private readonly shadowStarted = performance.now();
+  /** A few path-tracer samples, then denoise. Not the old ray estimator. */
+  private static readonly SHADOW_SAMPLES = 4;
   private boundAoView = '';
   private uvPlaced = new Set<Mesh>();
   private geometryOwner = new Map<BufferGeometry, Mesh>();
@@ -317,6 +320,7 @@ export class ProgressivePipeline {
       },
       occlusionSamples: this.host.occlusionSamples(),
       occlusionScale: this.occlusionScaleSent ? this.factorScale : 0,
+      shadowMs: this.shadowMs,
       frameMs: {
         last: frames.length ? frames[frames.length - 1] : 0,
         mean: frames.length ? sum / frames.length : 0,
@@ -571,6 +575,12 @@ export class ProgressivePipeline {
           this.meshes.push(object);
         }
       });
+      if (!this.settings.bake.contactShadow.enabled &&
+          !this.settings.lights.include) {
+        this.phase = 'bake';
+        this.prepareBakeJobs();
+        return;
+      }
       let vertices = 0;
       let corners = 0;
       for (const mesh of this.meshes) {
@@ -674,7 +684,9 @@ export class ProgressivePipeline {
 
   private prepareBakeJobs() {
     const scene = this.host.scene();
-    if (scene == null || this.bvh == null) {
+    const needsLocalBvh = this.settings.bake.contactShadow.enabled ||
+        this.settings.lights.include;
+    if (scene == null || (needsLocalBvh && this.bvh == null)) {
       return;
     }
     const size = scene.size;
@@ -726,10 +738,9 @@ export class ProgressivePipeline {
     this.meshAreas = new Array(this.meshes.length).fill(0);
     this.factorBake?.dispose();
     this.factorBake = null;
-    this.factorPass = 'front';
-    this.factorFront = null;
     this.factorScale = 1;
     this.occlusionScaleSent = false;
+    this.shadowMs = 0;
     this.uvReady = !wantUv;
     if (!this.settings.bake.textureAO.enabled) {
       this.aoReady = true;
@@ -1302,12 +1313,11 @@ export class ProgressivePipeline {
       this.host.prepareOcclusion();
       return;
     }
-    const samples = this.settings.bake.textureAO.samples;
-    const resolution = this.settings.bake.textureAO.resolution;
+    const samples = ProgressivePipeline.SHADOW_SAMPLES;
+    const resolution = Math.min(128, this.settings.bake.textureAO.resolution);
     if (this.factorBake == null) {
       this.factorBake = new SurfaceFactorBake(renderer, source);
       this.factorBake.setSurfaces(this.surface, this.surfaceCount, resolution);
-      this.factorPass = 'front';
       this.aoCursor = 0;
       return;
     }
@@ -1317,26 +1327,22 @@ export class ProgressivePipeline {
       if (done + 1e-3 < samples) {
         return;
       }
+      try {
+        this.factorBake.denoise(renderer);
+      } catch (error) {
+        console.warn('[model-viewer] Shadow denoise failed.', error);
+      }
       const image = this.factorBake.read(renderer);
-      if (this.factorPass === 'front') {
-        this.factorFront = image;
-        this.factorPass = 'open';
-        this.factorBake.setPass('open');
-        this.aoCursor = 0;
-        return;
+      this.factorScale = Math.max(1e-4, openLevel(image));
+      if (!this.occlusionScaleSent) {
+        this.host.setOcclusionScale(this.factorScale);
+        this.occlusionScaleSent = true;
       }
-      if (this.factorPass === 'open') {
-        this.factorScale = Math.max(1e-4, meanFactor(image));
-        if (!this.occlusionScaleSent) {
-          this.host.setOcclusionScale(this.factorScale);
-          this.occlusionScaleSent = true;
-        }
-        this.factorPass = 'back';
-        this.factorBake.setPass('back');
-        this.aoCursor = 0;
-        return;
-      }
-      this.publishFactor(this.factorFront ?? image, image, resolution);
+      this.shadowMs = performance.now() - this.shadowStarted;
+      console.info(
+          '[model-viewer] Shadow layer ready in',
+          Math.round(this.shadowMs), 'ms');
+      this.publishFactor(image, image, resolution);
       this.factorBake.dispose();
       this.factorBake = null;
     } catch (error) {
@@ -1573,9 +1579,10 @@ export class ProgressivePipeline {
   private stepGpu() {
     if (this.phase === 'probes') {
       this.stepProbes();
-      return;
     }
-    if (this.phase === 'done') {
+    // Shadows land first. The full-material trace starts once that layer
+    // is stored, and keeps accumulating from there.
+    if (this.aoReady || !this.settings.bake.textureAO.enabled) {
       this.stepTrace();
     }
   }
@@ -2083,9 +2090,8 @@ export class ProgressivePipeline {
     if (this.surfaceCount === 0) {
       return 0.45;
     }
-    const samples = Math.max(1, this.settings.bake.textureAO.samples);
-    const phase = this.factorPass === 'front' ? 0 : this.factorPass === 'open' ? 1 : 2;
-    return 0.45 + 0.55 * ((phase + this.aoCursor / samples) / 3);
+    const samples = ProgressivePipeline.SHADOW_SAMPLES;
+    return 0.45 + 0.55 * (this.aoCursor / samples);
   }
 
   private lightProgress(): number {

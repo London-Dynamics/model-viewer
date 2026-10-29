@@ -530,6 +530,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           this.progressiveHost(), this.progressiveSettings);
     }
     this.pipeline.tick(performance.now());
+    if (this.progressiveSettings.view === 'occlusion') {
+      this.sampleOcclusionView();
+    }
   }
 
   private renderProgressive() {

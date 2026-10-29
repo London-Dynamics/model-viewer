@@ -13,9 +13,11 @@
  * limitations under the License.
  */
 
-import {DataTexture, FloatType, NearestFilter, NoColorSpace, RGBAFormat, WebGLRenderer} from 'three';
+import {DataTexture, FloatType, LinearSRGBColorSpace, NearestFilter, NoColorSpace, RGBAFormat, WebGLRenderer, WebGLRenderTarget} from 'three';
+import {DenoiseMaterial} from 'three-gpu-pathtracer';
 import {PathTracingRenderer} from 'three-gpu-pathtracer/src/core/PathTracingRenderer.js';
 import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
+import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
 const replaceOnce = (
     source: string, needle: string, next: string, label: string): string => {
@@ -100,6 +102,9 @@ export class SurfaceFactorBake {
   private readonly normal: DataTexture;
   private resolution = 1;
   private frontNormal = new Float32Array(4);
+  private denoised: WebGLRenderTarget|null = null;
+  private denoiseMaterial: DenoiseMaterial|null = null;
+  private denoiseQuad: FullScreenQuad|null = null;
   mask: Uint8Array;
 
   constructor(gl: WebGLRenderer, source: PhysicalPathTracingMaterial) {
@@ -194,10 +199,37 @@ export class SurfaceFactorBake {
     return this.renderer.samples;
   }
 
+  /** The path tracer's own denoise, applied once the few shadow samples are in. */
+  denoise(gl: WebGLRenderer) {
+    const source = this.renderer.target;
+    if (this.denoised == null || this.denoised.width !== this.resolution) {
+      this.denoised?.dispose();
+      this.denoised = new WebGLRenderTarget(this.resolution, this.resolution, {
+        type: FloatType,
+        format: RGBAFormat,
+        depthBuffer: false,
+      });
+    }
+    if (this.denoiseMaterial == null) {
+      this.denoiseMaterial = new DenoiseMaterial({
+        sigma: 10,
+        kSigma: 2,
+        threshold: 0.35,
+      });
+      this.denoiseQuad = new FullScreenQuad(this.denoiseMaterial);
+    }
+    source.texture.colorSpace = LinearSRGBColorSpace;
+    this.denoiseMaterial.map = source.texture;
+    const previous = gl.getRenderTarget();
+    gl.setRenderTarget(this.denoised);
+    this.denoiseQuad!.render(gl);
+    gl.setRenderTarget(previous);
+  }
+
   read(gl: WebGLRenderer): Float32Array {
     const resolution = this.resolution;
     const pixels = new Float32Array(resolution * resolution * 4);
-    const target = this.renderer.target;
+    const target = this.denoised ?? this.renderer.target;
     gl.readRenderTargetPixels(target, 0, 0, resolution, resolution, pixels);
     const value = new Float32Array(resolution * resolution);
     value.fill(-1);
@@ -213,18 +245,33 @@ export class SurfaceFactorBake {
   dispose() {
     this.position.dispose();
     this.normal.dispose();
+    this.denoised?.dispose();
+    this.denoiseQuad?.dispose();
+    this.denoiseMaterial?.dispose();
     this.renderer.dispose();
   }
 }
 
-export const meanFactor = (value: Float32Array): number => {
-  let sum = 0;
-  let count = 0;
+/** Bright texels are the open faces. Their level is the unoccluded divisor. */
+export const openLevel = (value: Float32Array): number => {
+  const samples: number[] = [];
   for (let i = 0; i < value.length; i++) {
     if (value[i] >= 0) {
-      sum += value[i];
-      count++;
+      samples.push(value[i]);
     }
+  }
+  if (samples.length === 0) {
+    return 1;
+  }
+  samples.sort((a, b) => a - b);
+  // Skip the brightest spikes. Open faces sit in the band under them.
+  const start = Math.floor(samples.length * 0.6);
+  const end = Math.max(start + 1, Math.floor(samples.length * 0.85));
+  let sum = 0;
+  let count = 0;
+  for (let i = start; i < end; i++) {
+    sum += samples[i];
+    count++;
   }
   return count > 0 ? sum / count : 1;
 };
