@@ -611,7 +611,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   /**
    * A single indirect sample can be orders of magnitude above the picture
-   * (the white blob under a chrome wheel). Keep highlights, drop the spike.
+   * (the white blob under a chrome wheel). Scale that spike. A cap near
+   * 0.5 clamped every well-lit pixel and made the whole trace darker
+   * than the real-time view of the same environment.
    */
   private clampHeldRadiance() {
     if (this.renderer == null || this.traceHoldTarget == null) {
@@ -632,7 +634,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.fireflyClamp = new ShaderMaterial({
         uniforms: {
           tDiffuse: {value: null},
-          limit: {value: 0.55},
+          limit: {value: 24},
         },
         vertexShader: `
           varying vec2 vUv;
@@ -817,14 +819,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       }
       const pattern = /gl_FragColor\.rgb \+= ([^;]+);/g;
       if (!pattern.test(material.fragmentShader)) {
-        console.info('PROBE fireflyClamp missing needle');
         continue;
       }
       material.fragmentShader = material.fragmentShader.replace(
           /gl_FragColor\.rgb \+= ([^;]+);/g,
-          `gl_FragColor.rgb += $1;\n\t\t\t\t\t// ldFireflyClamp\n\t\t\t\t\tgl_FragColor.rgb = min( gl_FragColor.rgb, vec3( 0.32 ) );`);
+          `{
+            // ldFireflyClamp: one indirect spike must not cap the whole picture.
+            vec3 ldSample = $1;
+            float ldPeak = max( ldSample.r, max( ldSample.g, ldSample.b ) );
+            if ( ldPeak > 24.0 ) ldSample *= 24.0 / ldPeak;
+            gl_FragColor.rgb += ldSample;
+          }`);
       material.needsUpdate = true;
-      console.info('PROBE fireflyClamp installed');
     }
   }
 
