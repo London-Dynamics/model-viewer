@@ -14,7 +14,7 @@
  */
 
 import {Camera, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, Light, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, MultiplyBlending, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, ShaderMaterial, Side, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
-import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
+import {DenoiseMaterial, PathTracingSceneGenerator, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
 import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -27,6 +27,33 @@ import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} 
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
 import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
 import {FactorEncoder, openLevel, usableFactorScale} from './progressive/surface-bake.js';
+import {WebGPUBeautyTrace} from './progressive/webgpu-beauty-trace.js';
+
+/**
+ * three-gpu-pathtracer 0.0.27 reads an undeclared `length` on the second
+ * scene build, so a camera move or a follow-up build throws. Clearing the
+ * cached material ids takes the short-circuit path and still refreshes the
+ * material index.
+ */
+const patchSceneGenerator = () => {
+  const prototype = PathTracingSceneGenerator.prototype as PathTracingSceneGenerator & {
+    generate(onProgress?: ((...args: unknown[]) => void)|null): unknown;
+    _materialUuids?: string[]|null;
+  };
+  const original = prototype.generate;
+  if ((original as {_ldPatched?: boolean})._ldPatched) {
+    return;
+  }
+  const patched = function(
+      this: {_materialUuids?: string[]|null},
+      onProgress?: ((...args: unknown[]) => void)|null) {
+    this._materialUuids = null;
+    return original.call(this, onProgress ?? null);
+  };
+  (patched as {_ldPatched?: boolean})._ldPatched = true;
+  prototype.generate = patched as typeof original;
+};
+patchSceneGenerator();
 
 const PATH_TRACER_FADE_DURATION_MS = 600;
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -194,6 +221,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private shadowScale = 1;
   private shadowStale = false;
   private readonly factorEncoder = new FactorEncoder();
+  private readonly beautyTrace = new WebGPUBeautyTrace();
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -425,6 +453,24 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.compositeShadowHold();
     const fade = this.pipeline?.traceFadeValue ?? 0;
+    const gpu = this.beautyTrace.outputTexture();
+    if (gpu != null && fade > 0.001 && this.renderer != null) {
+      const blit = this.ensureTraceBlit();
+      const material = blit.material as MeshBasicMaterial;
+      material.map = gpu;
+      material.toneMapped = true;
+      material.opacity = fade;
+      material.transparent = fade < 0.999;
+      material.blending = fade < 0.999 ? NormalBlending : NoBlending;
+      material.depthTest = false;
+      material.depthWrite = false;
+      const previousClear = this.renderer.autoClear;
+      this.renderer.autoClear = false;
+      blit.render(this.renderer);
+      this.renderer.autoClear = previousClear;
+      material.blending = NoBlending;
+      return;
+    }
     if (fade <= 0.001 || this.pathTracer == null || this.renderer == null ||
         this.pathTracer.target == null) {
       return;
@@ -538,6 +584,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.shadowMaterial?.dispose();
     this.shadowMaterial = null;
     this.factorEncoder.dispose();
+    this.beautyTrace.dispose();
     this.disposeShadowCatcher();
     this.renderer = null;
     this.scene = null;
@@ -645,9 +692,28 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           this.blitTrace(this.pathTracer.target, this.options.denoise);
         }
         this.pathTracer?.reset();
+        this.beautyTrace.reset();
         this.denoisedSample = -1;
       },
       sampleTrace: () => {
+        if (this.shadowStage === 'full' && this.scene != null &&
+            this.renderer != null && this.beautyTrace.canStart() &&
+            this.traceSceneReady && !this.sceneBuildInFlight) {
+          try {
+            return this.beautyTrace.sample(
+                this.scene,
+                this.scene.getCamera(),
+                this.renderer,
+                this.options.bounces,
+                this.options.samples,
+                this.options.denoise,
+                this.options.renderScale);
+          } catch (error) {
+            console.warn(
+                '[model-viewer] WebGPU beauty trace sample failed.', error);
+            return -1;
+          }
+        }
         if (this.pathTracer == null || !this.traceSceneReady ||
             this.sceneBuildInFlight) {
           return -1;
@@ -674,9 +740,15 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.maybeMarkReady();
         return elapsed;
       },
-      traceSamples: () => this.shadowStage === 'full' ?
-          (this.pathTracer?.samples ?? 0) :
-          0,
+      traceSamples: () => {
+        if (this.shadowStage !== 'full') {
+          return 0;
+        }
+        if (this.beautyTrace.active) {
+          return this.beautyTrace.samples;
+        }
+        return this.pathTracer?.samples ?? 0;
+      },
       maxSamples: () => Math.max(1, this.options.samples),
       invalidateTrace: () => {
         this.traceSceneReady = false;
@@ -1207,7 +1279,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private shouldBuildOcclusion(): boolean {
-    if (this.occlusionReady) {
+    if (this.occlusionReady || !this.isProgressiveMode()) {
       return false;
     }
     const view = this.progressiveSettings.view;

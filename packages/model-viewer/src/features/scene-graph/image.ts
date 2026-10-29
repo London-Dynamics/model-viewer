@@ -45,28 +45,30 @@ export class Image extends ThreeDOMElement implements ImageInterface {
   constructor(onUpdate: () => void, texture: ThreeTexture) {
     super(onUpdate, new Set<ThreeTexture>(texture ? [texture] : []));
 
-    if (!this[$threeTexture].image.src) {
-      this[$threeTexture].image.src =
-          texture.name ? texture.name : 'adhoc_image' + adhocNum++;
+    const image = this[$threeTexture].image as
+        {src?: string; name?: string; bufferView?: number;};
+    if (!image.src) {
+      image.src = texture.name ? texture.name : 'adhoc_image' + adhocNum++;
     }
-    if (!this[$threeTexture].image.name) {
-      this[$threeTexture].image.name =
-          (texture && texture.image && texture.image.src) ?
-          texture.image.src.split('/').pop() :
-          'adhoc_image';
+    if (!image.name) {
+      const source = texture.image as {src?: string;} | undefined;
+      image.name = source?.src ? source.src.split('/').pop() : 'adhoc_image';
     }
   }
 
   get name(): string {
-    return this[$threeTexture].image.name || '';
+    const image = this[$threeTexture].image as {name?: string;};
+    return image.name || '';
   }
 
   get uri(): string|undefined {
-    return this[$threeTexture].image.src;
+    const image = this[$threeTexture].image as {src?: string;};
+    return image.src;
   }
 
   get bufferView(): number|undefined {
-    return this[$threeTexture].image.bufferView;
+    const image = this[$threeTexture].image as {bufferView?: number;};
+    return image.bufferView;
   }
 
   get element(): HTMLVideoElement|HTMLCanvasElement|undefined {
@@ -91,7 +93,7 @@ export class Image extends ThreeDOMElement implements ImageInterface {
 
   set name(name: string) {
     for (const texture of this[$threeTextures]) {
-      texture.image.name = name;
+      (texture.image as {name?: string;}).name = name;
     }
   }
 

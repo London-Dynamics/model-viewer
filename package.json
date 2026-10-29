@@ -52,6 +52,10 @@
     "typescript": "5.8.2"
   },
   "dependencies": {
-    "puppeteer": "^24.4.0"
+    "puppeteer": "^24.4.0",
+    "three": "0.186.1"
+  },
+  "overrides": {
+    "three": "0.186.1"
   }
 }

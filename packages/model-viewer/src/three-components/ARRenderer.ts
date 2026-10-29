@@ -381,12 +381,12 @@ export class ARRenderer extends EventDispatcher<
         this.selectedController.userData.line.visible = false;
         if (scene.canScale) {
           this.isTwoFingering = true;
-          this.firstRatio = this.controllerSeparation() / scene.pivot.scale.x;
+          this.firstRatio = this.controllerSeparation() / scene.modelPivot.scale.x;
           this.scaleLine.visible = true;
         }
       }
 
-      controller.attach(scene.pivot);
+      controller.attach(scene.modelPivot);
       this.selectedController = controller;
 
       scene.setShadowIntensity(0.01);
@@ -397,7 +397,7 @@ export class ARRenderer extends EventDispatcher<
 
       this.relativeOrientation.copy(controller.quaternion)
           .invert()
-          .multiply(scene.pivot.getWorldQuaternion(quaternion));
+          .multiply(scene.modelPivot.getWorldQuaternion(quaternion));
 
       otherController.userData.turning = false;
       controller.userData.turning = true;
@@ -417,12 +417,12 @@ export class ARRenderer extends EventDispatcher<
     }
     const scene = this.presentedScene!;
     // drop on floor
-    scene.attach(scene.pivot);
+    scene.attach(scene.modelPivot);
     this.selectedController = null;
     this.goalYaw = Math.atan2(
-        scene.pivot.matrix.elements[8], scene.pivot.matrix.elements[10]);
-    this.goalPosition.x = scene.pivot.position.x;
-    this.goalPosition.z = scene.pivot.position.z;
+        scene.modelPivot.matrix.elements[8], scene.modelPivot.matrix.elements[10]);
+    this.goalPosition.x = scene.modelPivot.position.x;
+    this.goalPosition.z = scene.modelPivot.position.z;
   };
 
   /**
@@ -541,10 +541,10 @@ export class ARRenderer extends EventDispatcher<
         this.xrLight = null;
       }
 
-      scene.add(scene.pivot);
-      scene.pivot.quaternion.set(0, 0, 0, 1);
-      scene.pivot.position.set(0, 0, 0);
-      scene.pivot.scale.set(1, 1, 1);
+      scene.add(scene.modelPivot);
+      scene.modelPivot.quaternion.set(0, 0, 0, 1);
+      scene.modelPivot.position.set(0, 0, 0);
+      scene.modelPivot.scale.set(1, 1, 1);
       scene.setShadowOffset(0);
       const yaw = this.turntableRotation;
       if (yaw != null) {
@@ -677,8 +677,8 @@ export class ARRenderer extends EventDispatcher<
 
   private placeInitially() {
     const scene = this.presentedScene!;
-    const {pivot, element} = scene;
-    const {position} = pivot;
+    const {modelPivot, element} = scene;
+    const {position} = modelPivot;
     const xrCamera = scene.getCamera();
 
     const {width, height} = this.overlay!.getBoundingClientRect();
@@ -811,7 +811,7 @@ export class ARRenderer extends EventDispatcher<
       box.show = true;
       this.isTwoFingering = true;
       const {separation} = this.fingerPolar(fingers);
-      this.firstRatio = separation / scene.pivot.scale.x;
+      this.firstRatio = separation / scene.modelPivot.scale.x;
     }
   };
 
@@ -860,7 +860,7 @@ export class ARRenderer extends EventDispatcher<
     }
     const fingers = frame.getHitTestResultsForTransientInput(hitSource);
     const scene = this.presentedScene!;
-    const scale = scene.pivot.scale.x;
+    const scale = scene.modelPivot.scale.x;
 
     // Rotating, translating and scaling are mutually exclusive operations; only
     // one can happen at a time, but we can switch during a gesture.
@@ -936,36 +936,36 @@ export class ARRenderer extends EventDispatcher<
 
   private moveScene(delta: number) {
     const scene = this.presentedScene!;
-    const {pivot} = scene;
+    const {modelPivot} = scene;
     const box = this.placementBox!;
     box.updateOpacity(delta);
 
     if (this.controller1) {
       if (this.controller1.userData.turning) {
-        pivot.quaternion.copy(this.controller1.quaternion)
+        modelPivot.quaternion.copy(this.controller1.quaternion)
             .multiply(this.relativeOrientation);
         if (this.selectedController &&
             this.selectedController === this.controller2) {
-          pivot.quaternion.premultiply(
+          modelPivot.quaternion.premultiply(
               quaternion.copy(this.controller2.quaternion).invert());
         }
       }
       this.controller1.userData.box.position.copy(this.controller1.position);
-      pivot.getWorldQuaternion(this.controller1.userData.box.quaternion);
+      modelPivot.getWorldQuaternion(this.controller1.userData.box.quaternion);
     }
 
     if (this.controller2) {
       if (this.controller2.userData.turning) {
-        pivot.quaternion.copy(this.controller2.quaternion)
+        modelPivot.quaternion.copy(this.controller2.quaternion)
             .multiply(this.relativeOrientation);
         if (this.selectedController &&
             this.selectedController === this.controller1) {
-          pivot.quaternion.premultiply(
+          modelPivot.quaternion.premultiply(
               quaternion.copy(this.controller1.quaternion).invert());
         }
       }
       this.controller2.userData.box.position.copy(this.controller2.position);
-      pivot.getWorldQuaternion(this.controller2.userData.box.quaternion);
+      modelPivot.getWorldQuaternion(this.controller2.userData.box.quaternion);
     }
 
     if (this.controller1 && this.controller2 && this.isTwoFingering) {
@@ -975,17 +975,17 @@ export class ARRenderer extends EventDispatcher<
       this.scaleLine.lookAt(this.controller2.position);
     }
 
-    const oldScale = scene.pivot.scale.x;
+    const oldScale = scene.modelPivot.scale.x;
     if (this.goalScale !== oldScale) {
       const newScale =
           this.scaleDamper.update(oldScale, this.goalScale, delta, 1);
-      scene.pivot.scale.set(newScale, newScale, newScale);
+      scene.modelPivot.scale.set(newScale, newScale, newScale);
     }
 
-    if (pivot.parent !== scene) {
+    if (modelPivot.parent !== scene) {
       return;  // attached to controller instead
     }
-    const {position} = pivot;
+    const {position} = modelPivot;
     const boundingRadius = scene.boundingSphere.radius;
     const goal = this.goalPosition;
 
@@ -1001,7 +1001,7 @@ export class ARRenderer extends EventDispatcher<
       if (this.xrMode === 'screen-space' && !this.isTranslating) {
         const offset = goal.y - y;
         if (this.placementComplete && this.placeOnWall === false) {
-          box.offsetHeight = offset / scene.pivot.scale.x;
+          box.offsetHeight = offset / scene.modelPivot.scale.x;
           scene.setShadowOffset(offset);
         } else if (offset === 0) {
           this.placementComplete = true;
@@ -1016,9 +1016,9 @@ export class ARRenderer extends EventDispatcher<
     scene.updateTarget(delta);
     // yaw must be updated last, since this also updates the shadow position.
     quaternion.setFromAxisAngle(vector3.set(0, 1, 0), this.goalYaw);
-    const angle = scene.pivot.quaternion.angleTo(quaternion);
+    const angle = scene.modelPivot.quaternion.angleTo(quaternion);
     const angleStep = angle - this.yawDamper.update(angle, 0, delta, Math.PI);
-    scene.pivot.quaternion.rotateTowards(quaternion, angleStep);
+    scene.modelPivot.quaternion.rotateTowards(quaternion, angleStep);
     // camera changes on every frame - user-interaction only if touching the
     // screen, plus damping time.
     scene.element.dispatchEvent(new CustomEvent<CameraChangeDetails>(

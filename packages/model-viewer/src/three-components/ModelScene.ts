@@ -184,7 +184,7 @@ export class ModelScene extends Scene {
   private savedPerspectiveFov: number = 45; // Store original FOV for restoration
 
   public url: string | null = null;
-  public pivot = new Object3D();
+  public modelPivot = new Object3D();
   public target = new Object3D();
   public environmentRoot = new Object3D();
   public animationNames: Array<string> = [];
@@ -245,13 +245,13 @@ export class ModelScene extends Scene {
     this.camera = new PerspectiveCamera(45, 1, 0.1, 100);
     this.camera.name = 'MainCamera';
 
-    this.add(this.pivot);
-    this.pivot.name = 'Pivot';
+    this.add(this.modelPivot);
+    this.modelPivot.name = 'Pivot';
 
     this.add(this.environmentRoot);
     this.environmentRoot.name = 'EnvironmentRoot';
 
-    this.pivot.add(this.target);
+    this.modelPivot.add(this.target);
 
     this.setSize(width, height);
 
@@ -970,14 +970,14 @@ export class ModelScene extends Scene {
    * center.
    */
   set yaw(radiansY: number) {
-    this.pivot.rotation.y = radiansY;
+    this.modelPivot.rotation.y = radiansY;
     this.groundedSkybox.rotation.copy(this.skyboxRotation);
     this.groundedSkybox.rotation.y -= radiansY;
     this.queueRender();
   }
 
   get yaw(): number {
-    return this.pivot.rotation.y;
+    return this.modelPivot.rotation.y;
   }
 
   set animationTime(value: number) {

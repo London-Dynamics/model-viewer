@@ -101,13 +101,16 @@
   "dependencies": {
     "@london-dynamics/three-viewport-gizmo": "2.2.1-ld.0",
     "@monogrid/gainmap-js": "^3.1.0",
+    "@pmndrs/upscaler": "^0.3.0",
     "camera-controls": "3.1.0",
     "lit": "^3.2.1",
-    "three-gpu-pathtracer": "^0.0.23",
+    "oidn-web": "^0.4.0",
+    "three-gpu-pathtracer": "^0.0.27",
+    "three-mesh-bvh": "^0.9.17",
     "utility-types": "3.11.0"
   },
   "peerDependencies": {
-    "three": "^0.172.0"
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@london-dynamics/types": "0.1.8",
@@ -120,7 +123,8 @@
     "@types/chai": "^4.3.19",
     "@types/mocha": "^10.0.10",
     "@types/pngjs": "^6.0.5",
-    "@types/three": "^0.172.0",
+    "@types/three": "^0.186.0",
+    "@webgpu/types": "^0.1.72",
     "@ungap/event-target": "^0.2.4",
     "@web/test-runner": "^0.20.0",
     "@web/test-runner-playwright": "^0.11.0",
@@ -133,7 +137,7 @@
     "rollup-plugin-dts": "^6.1.1",
     "rollup-plugin-polyfill": "^4.2.0",
     "terser": "^5.39.0",
-    "three": "^0.172.0",
+    "three": "^0.186.1",
     "typescript": "5.8.2"
   },
   "publishConfig": {

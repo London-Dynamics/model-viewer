@@ -97,7 +97,9 @@ export class CorrelatedSceneGraph {
       for (const mapping in gltfMappings) {
         if (mapping != null && mapping !== 'primitives') {
           const type = mapping as GLTFReferenceType;
-          const elementArray = gltf[type] || [];
+          const elementArray =
+              (gltf as unknown as Record<string, GLTFElement[] | undefined>)[type] ??
+              [];
           const gltfElement = elementArray[gltfMappings[type]!];
           if (gltfElement == null) {
             // TODO: Maybe throw here...
@@ -151,7 +153,9 @@ export class CorrelatedSceneGraph {
               if (mapping != null && mapping !== 'primitives') {
                 const type = mapping as GLTFReferenceType;
                 const index = elementReference[type]!;
-                const cloneElement = cloneGLTF[type]![index];
+                const lists = cloneGLTF as unknown as
+                    Record<string, GLTFElement[] | undefined>;
+                const cloneElement = lists[type]![index];
 
                 const mappings =
                     cloneThreeObjectMap.get(cloneObject) || {} as GLTFReference;

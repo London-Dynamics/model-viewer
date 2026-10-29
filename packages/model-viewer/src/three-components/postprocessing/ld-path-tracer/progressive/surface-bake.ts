@@ -163,7 +163,10 @@ export const sharePathTracerScene = (
   dest.filterGlossyFactor = 0;
   for (const key of Object.keys(source.defines)) {
     if (key.startsWith('FEATURE_') || key === 'RANDOM_TYPE') {
-      dest.setDefine(key, source.defines[key]);
+      const value = source.defines[key];
+      if (typeof value === 'string' || typeof value === 'number') {
+        dest.setDefine(key, value);
+      }
     }
   }
 };
