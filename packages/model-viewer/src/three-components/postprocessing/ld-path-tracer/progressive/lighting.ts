@@ -102,8 +102,8 @@ const castOcclusion = (
       self++;
       continue;
     }
-    // A blocked direction contributes no environment light, same as a
-    // one-bounce trace. Distance only limits how far a wall still counts.
+    // A 2-bounce white trace gets environment light only when the
+    // scattered ray misses. A hit in range blocks that direction fully.
     occ += 1;
   }
   return {ao: Math.max(0, 1 - occ / count), selfRatio: self / count};
@@ -126,6 +126,8 @@ export const finalizeAmbientOcclusion = (
       value[i] = sumAndCount[i * 4] / n;
     }
   }
+  // Pull real samples two texels into unwritten cracks. Chart padding is
+  // four pixels, so this stays inside the gutter and does not mix charts.
   const dilated = value.slice();
   for (let y = 0; y < resolution; y++) {
     for (let x = 0; x < resolution; x++) {
@@ -135,8 +137,11 @@ export const finalizeAmbientOcclusion = (
       }
       let sum = 0;
       let n = 0;
-      for (let ky = -1; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++) {
+      for (let ky = -2; ky <= 2; ky++) {
+        for (let kx = -2; kx <= 2; kx++) {
+          if (Math.max(Math.abs(kx), Math.abs(ky)) > 2) {
+            continue;
+          }
           const sx = x + kx;
           const sy = y + ky;
           if (sx < 0 || sy < 0 || sx >= resolution || sy >= resolution) {

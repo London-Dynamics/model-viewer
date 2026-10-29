@@ -967,24 +967,36 @@ export class ProgressivePipeline {
         if (Math.abs(denom) < 1e-8) {
           continue;
         }
-        let w0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom;
-        let w1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom;
-        let w2 = 1 - w0 - w1;
-        // Thin charts miss texel centres and leave stripes. Accept a texel
-        // whose centre is just outside, then clamp the sample back inside.
-        const thin = (maxX - minX) <= 2 || (maxY - minY) <= 2;
-        const slack = thin ? -0.35 : -1e-4;
-        if (w0 < slack || w1 < slack || w2 < slack) {
-          continue;
+        // The shelf stripes were texels the triangle crossed whose centres
+        // sat just outside it, so they stayed unwritten and white.
+        const half = 0.5 / resolution;
+        const probes = [
+          px, py,
+          px - half, py - half,
+          px + half, py - half,
+          px - half, py + half,
+          px + half, py + half,
+        ];
+        let w0 = 0;
+        let w1 = 0;
+        let w2 = 0;
+        let covered = false;
+        for (let p = 0; p < probes.length; p += 2) {
+          const qx = probes[p];
+          const qy = probes[p + 1];
+          const a = ((by - cy) * (qx - cx) + (cx - bx) * (qy - cy)) / denom;
+          const b = ((cy - ay) * (qx - cx) + (ax - cx) * (qy - cy)) / denom;
+          const c = 1 - a - b;
+          if (a >= -1e-4 && b >= -1e-4 && c >= -1e-4) {
+            w0 = a;
+            w1 = b;
+            w2 = c;
+            covered = true;
+            break;
+          }
         }
-        if (w0 < 0 || w1 < 0 || w2 < 0) {
-          w0 = Math.max(0, w0);
-          w1 = Math.max(0, w1);
-          w2 = Math.max(0, w2);
-          const sum = w0 + w1 + w2 || 1;
-          w0 /= sum;
-          w1 /= sum;
-          w2 /= sum;
+        if (!covered) {
+          continue;
         }
         tmp.fromBufferAttribute(position, i0).multiplyScalar(w0);
         tmp2.fromBufferAttribute(position, i1).multiplyScalar(w1);
@@ -1048,12 +1060,11 @@ export class ProgressivePipeline {
     const sceneSize = this.host.scene()?.size;
     const feature = sceneSize == null ? 0.5 :
         Math.min(sceneSize.x, sceneSize.y, sceneSize.z);
-    const span = sceneSize == null ? 1 :
-        Math.max(sceneSize.x, sceneSize.y, sceneSize.z);
-    // Cover a cabinet bay or a cockpit. Do not reach the far end of a hull.
+    // Reach the walls a 2-bounce trace would hit: across a bay, or a few
+    // metres of cockpit, not a strength multiplier on the result.
     const distance = this.settings.bake.textureAO.distance > 0 ?
         this.settings.bake.textureAO.distance :
-        Math.min(2, Math.max(0.5, Math.min(feature * 1.8, span * 0.15)));
+        Math.min(8, Math.max(feature * 2, 0.45));
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
     const start = performance.now();
@@ -1077,8 +1088,11 @@ export class ProgressivePipeline {
       const y = Math.min(
           resolution - 1, Math.floor(this.surface[o + 7] * resolution));
       const texel = (y * resolution + x) * 4;
-      this.aoData[texel] += ao;
-      this.aoData[texel + 3] += 1;
+      // A real occluded sample beats an empty or self-hit write of 1.
+      if (this.aoData[texel + 3] === 0 || ao < this.aoData[texel]) {
+        this.aoData[texel] = ao;
+        this.aoData[texel + 3] = 1;
+      }
       this.aoCursor++;
     }
     this.publishAo(resolution);
