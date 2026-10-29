@@ -127,12 +127,13 @@ export const finalizeAmbientOcclusion = (
     }
   }
   const out = new Float32Array(count);
+  const radius = 2;
   for (let y = 0; y < resolution; y++) {
     for (let x = 0; x < resolution; x++) {
       let sum = 0;
       let n = 0;
-      for (let ky = -1; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++) {
+      for (let ky = -radius; ky <= radius; ky++) {
+        for (let kx = -radius; kx <= radius; kx++) {
           const sx = Math.min(resolution - 1, Math.max(0, x + kx));
           const sy = Math.min(resolution - 1, Math.max(0, y + ky));
           const sample = dilated[sy * resolution + sx];

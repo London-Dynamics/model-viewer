@@ -260,7 +260,7 @@ suite('progressive contact shadow rays', () => {
   });
 
   test('unwritten AO texels stay white and gutters copy a neighbor', () => {
-    const resolution = 4;
+    const resolution = 8;
     const data = new Float32Array(resolution * resolution * 4);
     data[0] = 0.2;
     data[3] = 1;
