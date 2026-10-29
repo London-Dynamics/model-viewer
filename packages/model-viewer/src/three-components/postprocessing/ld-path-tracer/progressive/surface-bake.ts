@@ -252,39 +252,6 @@ export class SurfaceFactorBake {
   }
 }
 
-/** Copy the nearest written texel into empty gutter pixels. Written texels stay. */
-export const dilateFactor = (
-    value: Float32Array, resolution: number, radius: number): Float32Array => {
-  let current = value;
-  for (let pass = 0; pass < radius; pass++) {
-    const next = current.slice();
-    for (let y = 0; y < resolution; y++) {
-      for (let x = 0; x < resolution; x++) {
-        const idx = y * resolution + x;
-        if (current[idx] >= 0) {
-          continue;
-        }
-        for (let ky = -1; ky <= 1 && next[idx] < 0; ky++) {
-          for (let kx = -1; kx <= 1; kx++) {
-            const sx = x + kx;
-            const sy = y + ky;
-            if (sx < 0 || sy < 0 || sx >= resolution || sy >= resolution) {
-              continue;
-            }
-            const neighbor = current[sy * resolution + sx];
-            if (neighbor >= 0) {
-              next[idx] = neighbor;
-              break;
-            }
-          }
-        }
-      }
-    }
-    current = next;
-  }
-  return current;
-};
-
 export const meanFactor = (value: Float32Array): number => {
   let sum = 0;
   let count = 0;

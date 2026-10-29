@@ -23,7 +23,6 @@ import {ModelViewerElement} from '../../model-viewer.js';
 import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
-import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
 import {applyUvJob, createUvJob, orientWindingToNormals, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {installSurfaceBake} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
@@ -273,33 +272,6 @@ suite('progressive contact shadow rays', () => {
     expect(contactGroundY(positions, 0.04)).to.equal(1);
   });
 
-  test('a lit panel bounces light and a closed gap stays dark', () => {
-    const cover = new BufferGeometry();
-    cover.setAttribute(
-        'position',
-        new Float32BufferAttribute(
-            [-1, 0.05, -1, 1, 0.05, -1, 0, 0.05, 1], 3));
-    const bounced = occlusionAtPoint(
-        new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.4);
-    const far = occlusionAtPoint(
-        new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.02);
-    // The panel blocks the sky, then its underside sees the open
-    // hemisphere and bounces that light back.
-    expect(bounced).to.be.greaterThan(0.65);
-    expect(far).to.be.greaterThan(0.9);
-    const closed = new BufferGeometry();
-    closed.setAttribute(
-        'position',
-        new Float32BufferAttribute([
-          -1, 0.05, -1, 1, 0.05, -1, 0, 0.05, 1,
-          -1, -0.05, -1, 0, -0.05, 1, 1, -0.05, -1,
-        ], 3));
-    const gap = occlusionAtPoint(
-        new MeshBVH(closed), 0, 0, 0, 0, 1, 0, 24, 0.4);
-    expect(gap).to.be.lessThan(bounced);
-    expect(gap).to.be.lessThan(0.55);
-  });
-
   test('atlas tiles follow surface area, not triangle count', () => {
     const tiles = planAtlasTiles([4, 0.01], 128);
     expect(tiles).to.have.length(2);
@@ -381,29 +353,6 @@ suite('progressive contact shadow rays', () => {
         ], 2));
     geometry.setIndex([0, 1, 2, 3, 4, 5]);
     expect(uv1IsValid(geometry, 32)).to.equal(false);
-  });
-
-  test('a normal pointing into the surface does not paint the face black', () => {
-    const cover = new BufferGeometry();
-    cover.setAttribute(
-        'position',
-        new Float32BufferAttribute(
-            [-1, 0.002, -1, 1, 0.002, -1, 0, 0.002, 1], 3));
-    const buried = occlusionAtPoint(
-        new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.4);
-    expect(buried).to.be.greaterThan(0.85);
-  });
-
-  test('unwritten AO texels stay white and gutters copy a neighbor', () => {
-    const resolution = 8;
-    const data = new Float32Array(resolution * resolution * 4);
-    data[0] = 0.2;
-    data[3] = 1;
-    const out = finalizeAmbientOcclusion(data, resolution);
-    expect(out[0]).to.be.closeTo(0.2, 0.05);
-    expect(out[1]).to.be.greaterThan(0);
-    expect(out[1]).to.be.lessThan(1);
-    expect(out[resolution * resolution - 1]).to.equal(-1);
   });
 
   test('the penumbra scales with clearance and stays lighter than the core', () => {

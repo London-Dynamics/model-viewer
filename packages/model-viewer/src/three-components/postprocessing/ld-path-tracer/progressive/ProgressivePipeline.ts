@@ -26,7 +26,7 @@ import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepC
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, PunctualSample} from './lighting.js';
-import {dilateFactor, meanFactor, SurfaceBakePass, SurfaceFactorBake} from './surface-bake.js';
+import {meanFactor, SurfaceBakePass, SurfaceFactorBake} from './surface-bake.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
 import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
@@ -1742,7 +1742,7 @@ export class ProgressivePipeline {
           out[i] = source[i] / scale;
         }
       }
-      return dilateFactor(out, resolution, 4);
+      return out;
     };
     const frontRatio = ratio(front);
     const backRatio = ratio(back);
