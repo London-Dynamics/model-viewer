@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, HalfFloatType, LinearSRGBColorSpace, NoToneMapping, PerspectiveCamera, PMREMGenerator, RGBAFormat, Scene, Texture, Vector3, WebGLCubeRenderTarget, WebGLRenderer, WebGLRenderTarget} from 'three';
+import {Camera, FloatType, LinearSRGBColorSpace, NoToneMapping, PerspectiveCamera, PMREMGenerator, RGBAFormat, Scene, Texture, Vector3, WebGLCubeRenderTarget, WebGLRenderer, WebGLRenderTarget} from 'three';
 
 const FACES = [
   {x: 1, y: 0, z: 0, ux: 0, uy: -1, uz: 0},
@@ -68,7 +68,7 @@ export class ProbeBaker {
     }
     if (this.product == null) {
       const options = {
-        type: HalfFloatType,
+        type: FloatType,
         format: RGBAFormat,
         generateMipmaps: false,
         colorSpace: LinearSRGBColorSpace,
@@ -113,6 +113,7 @@ export class ProbeBaker {
     });
     if (background != null) {
       scene.background = background;
+      scene.backgroundIntensity = 1;
     }
     renderer.toneMapping = NoToneMapping;
     renderer.outputColorSpace = LinearSRGBColorSpace;
