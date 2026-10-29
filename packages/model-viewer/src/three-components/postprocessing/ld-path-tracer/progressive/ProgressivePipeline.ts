@@ -635,10 +635,8 @@ export class ProgressivePipeline {
       // How high above the ground still counts as the footprint. The
       // penumbra radius is this clearance times heightScale, so a wheel
       // stays tight and a case on castors only softens by its own gap.
-      const falloff = Math.min(
-          Math.max(size.y * 0.28, 0.06),
-          Math.max(span * 0.22, 0.12));
-      const heightScale = 0.65 + softness * 3;
+      const falloff = Math.max(size.y * 0.4, 0.18);
+      const heightScale = 0.8 + softness;
       const margin = falloff * heightScale;
       const width = Math.max(size.x, 0.05) + margin * 2;
       const depth = Math.max(size.z, 0.05) + margin * 2;
