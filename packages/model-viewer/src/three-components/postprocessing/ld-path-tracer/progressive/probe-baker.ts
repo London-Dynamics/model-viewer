@@ -231,7 +231,9 @@ export const placeProbe = (
     count: number,
     target: Vector3,
     ): Vector3 => {
-  const radius = Math.max(size.x, size.y, size.z, 0.2) * 0.75;
+  // Just outside the near face, not a hull-length away, so the body
+  // fills the cube and shows up in paint and glass.
+  const radius = Math.max(Math.min(size.x, size.z) * 0.7, size.y * 0.55, 0.45);
   const direction = new Vector3();
   camera.getWorldDirection(direction);
   direction.y = 0;
