@@ -64,8 +64,7 @@ export const uv1IsValid = (
   const grid = new Uint8Array(resolution * resolution);
   let written = 0;
   let overlap = 0;
-  const step = Math.max(1, Math.floor(triCount / 4000));
-  for (let tri = 0; tri < triCount; tri += step) {
+  for (let tri = 0; tri < triCount; tri++) {
     const i0 = index != null ? index.getX(tri * 3) : tri * 3;
     const i1 = index != null ? index.getX(tri * 3 + 1) : tri * 3 + 1;
     const i2 = index != null ? index.getX(tri * 3 + 2) : tri * 3 + 2;
@@ -75,6 +74,12 @@ export const uv1IsValid = (
     const by = uv.getY(i1);
     const cx = uv.getX(i2);
     const cy = uv.getY(i2);
+    const coords = [ax, ay, bx, by, cx, cy];
+    for (let c = 0; c < coords.length; c++) {
+      if (coords[c] < -1e-3 || coords[c] > 1.001) {
+        return false;
+      }
+    }
     const area = Math.abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay));
     if (area < 1e-8) {
       continue;
@@ -102,10 +107,10 @@ export const uv1IsValid = (
       }
     }
   }
-  if (written < 4) {
+  if (written < 4 || overlap > 0) {
     return false;
   }
-  return overlap / written <= 0.02;
+  return true;
 };
 
 interface EdgeTable {

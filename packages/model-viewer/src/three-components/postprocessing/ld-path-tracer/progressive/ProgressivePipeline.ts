@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {AdditiveBlending, BufferAttribute, BufferGeometry, Camera, ClampToEdgeWrapping, Color, DataTexture, EquirectangularReflectionMapping, FloatType, FrontSide, LinearFilter, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, RGBAFormat, Texture, Vector3, WebGLRenderer, WebGLRenderTarget} from 'three';
+import {AdditiveBlending, BufferAttribute, BufferGeometry, Camera, ClampToEdgeWrapping, Color, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, LinearFilter, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, RGBAFormat, Texture, Vector3, WebGLRenderer, WebGLRenderTarget} from 'three';
 import {SAH} from 'three-mesh-bvh';
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -87,6 +87,34 @@ const tmp = new Vector3();
 const tmp2 = new Vector3();
 const tmpN = new Vector3();
 const tmpCam = new Matrix4();
+
+const materialList = (mesh: Mesh): MeshStandardMaterial[] => {
+  const source = mesh.material;
+  const list = Array.isArray(source) ? source : [source];
+  return list.filter((material): material is MeshStandardMaterial =>
+      (material as MeshStandardMaterial)?.isMeshStandardMaterial === true);
+};
+
+/** Glass and other transmissive surfaces let light through in the trace. */
+const blocksAmbientLight = (mesh: Mesh): boolean => {
+  for (const material of materialList(mesh)) {
+    const transmission = (material as MeshStandardMaterial & {transmission?: number}).transmission ?? 0;
+    if (transmission > 0.02 || (material.opacity ?? 1) < 0.98) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/** A shared chart cannot store both sides of a shell. Regenerate UV2. */
+const uvMustBeGenerated = (mesh: Mesh): boolean => {
+  for (const material of materialList(mesh)) {
+    if (material.side === DoubleSide || material.side !== FrontSide) {
+      return true;
+    }
+  }
+  return false;
+};
 
 const isBakeMesh = (object: Object3D): object is Mesh => {
   const mesh = object as Mesh;
@@ -555,9 +583,11 @@ export class ProgressivePipeline {
         this.fillVertex++;
       }
       const count = index != null ? index.count : position.count;
-      for (let i = 0; i < count; i++) {
-        const vertex = index != null ? index.getX(i) : i;
-        this.indices![this.write++] = this.vertexBase + vertex;
+      if (blocksAmbientLight(mesh)) {
+        for (let i = 0; i < count; i++) {
+          const vertex = index != null ? index.getX(i) : i;
+          this.indices![this.write++] = this.vertexBase + vertex;
+        }
       }
       this.vertexBase += position.count;
       this.fillVertex = 0;
@@ -579,7 +609,7 @@ export class ProgressivePipeline {
     }
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new BufferAttribute(this.positions, 3));
-    geometry.setIndex(new BufferAttribute(this.indices, 1));
+    geometry.setIndex(new BufferAttribute(this.indices.subarray(0, this.write), 1));
     const generation = this.generation;
     this.bvhPending = true;
     const finish = (bvh: import('three-mesh-bvh').MeshBVH) => {
@@ -673,7 +703,7 @@ export class ProgressivePipeline {
             (mesh.userData.progressiveSourceGeometry as BufferGeometry |
              undefined) ??
             mesh.geometry;
-        if (uv1IsValid(source)) {
+        if (uv1IsValid(source, resolution) && !uvMustBeGenerated(mesh)) {
           continue;
         }
         const job = createUvJob(source, resolution);
@@ -926,6 +956,7 @@ export class ProgressivePipeline {
       this.surfaceMesh++;
       this.surfaceTri = 0;
     }
+    this.stampVertexTexels(resolution);
     this.compactSurface(resolution);
     this.surfaceDone = true;
   }
@@ -1030,6 +1061,59 @@ export class ProgressivePipeline {
     }
   }
 
+  /** Every vertex UV must land on a written texel, or the shelf shows white. */
+  private stampVertexTexels(resolution: number) {
+    const grid = this.surfaceGrid;
+    if (grid == null || this.surface == null) {
+      return;
+    }
+    for (const mesh of this.meshes) {
+      const uv = mesh.geometry.getAttribute('uv1');
+      const position = mesh.geometry.getAttribute('position');
+      const normal = mesh.geometry.getAttribute('normal');
+      const index = mesh.geometry.getIndex();
+      if (uv == null || position == null) {
+        continue;
+      }
+      mesh.updateWorldMatrix(true, false);
+      const corners = index != null ? index.count : position.count;
+      for (let corner = 0; corner < corners; corner++) {
+        const vertex = index != null ? index.getX(corner) : corner;
+        const u = Math.min(1 - 1e-4, Math.max(0, uv.getX(vertex)));
+        const v = Math.min(1 - 1e-4, Math.max(0, uv.getY(vertex)));
+        const x = Math.min(resolution - 1, Math.floor(u * resolution));
+        const y = Math.min(resolution - 1, Math.floor(v * resolution));
+        const slot = y * resolution + x;
+        if (grid[slot] !== -1) {
+          continue;
+        }
+        const o = this.surfaceCount * 8;
+        if (o + 8 > this.surface.length) {
+          return;
+        }
+        tmp.fromBufferAttribute(position as BufferAttribute, vertex)
+            .applyMatrix4(mesh.matrixWorld);
+        if (normal != null) {
+          tmpN.fromBufferAttribute(normal as BufferAttribute, vertex)
+              .transformDirection(mesh.matrixWorld)
+              .normalize();
+        } else {
+          tmpN.set(0, 1, 0);
+        }
+        this.surface[o] = tmp.x;
+        this.surface[o + 1] = tmp.y;
+        this.surface[o + 2] = tmp.z;
+        this.surface[o + 3] = tmpN.x;
+        this.surface[o + 4] = tmpN.y;
+        this.surface[o + 5] = tmpN.z;
+        this.surface[o + 6] = (x + 0.5) / resolution;
+        this.surface[o + 7] = (y + 0.5) / resolution;
+        grid[slot] = this.surfaceCount;
+        this.surfaceCount++;
+      }
+    }
+  }
+
   private compactSurface(resolution: number) {
     const packed = new Float32Array(Math.max(8, this.surfaceCount * 8));
     packed.set(this.surface!.subarray(0, this.surfaceCount * 8));
@@ -1058,13 +1142,10 @@ export class ProgressivePipeline {
       return;
     }
     const sceneSize = this.host.scene()?.size;
-    const feature = sceneSize == null ? 0.5 :
-        Math.min(sceneSize.x, sceneSize.y, sceneSize.z);
-    // Reach the walls a 2-bounce trace would hit: across a bay, or a few
-    // metres of cockpit, not a strength multiplier on the result.
+    // Same reach as the trace: a ray stops only when it leaves the scene.
     const distance = this.settings.bake.textureAO.distance > 0 ?
         this.settings.bake.textureAO.distance :
-        Math.min(8, Math.max(feature * 2, 0.45));
+        Math.max(sceneSize?.length() ?? 1, 0.5);
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
     const start = performance.now();
@@ -1088,8 +1169,8 @@ export class ProgressivePipeline {
       const y = Math.min(
           resolution - 1, Math.floor(this.surface[o + 7] * resolution));
       const texel = (y * resolution + x) * 4;
-      // A real occluded sample beats an empty or self-hit write of 1.
-      if (this.aoData[texel + 3] === 0 || ao < this.aoData[texel]) {
+      // One triangle owns the texel. Later samples do not merge or replace it.
+      if (this.aoData[texel + 3] === 0) {
         this.aoData[texel] = ao;
         this.aoData[texel + 3] = 1;
       }

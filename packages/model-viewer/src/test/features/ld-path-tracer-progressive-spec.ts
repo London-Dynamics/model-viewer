@@ -23,6 +23,7 @@ import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../thr
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
+import {uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
@@ -263,6 +264,18 @@ suite('progressive contact shadow rays', () => {
         new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.02);
     expect(under).to.be.lessThan(0.55);
     expect(far).to.be.greaterThan(0.9);
+  });
+
+  test('UV2 that shares a texel is treated as missing', () => {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute(
+        'uv1',
+        new Float32BufferAttribute([
+          0, 0, 1, 0, 0, 1,
+          0.1, 0.1, 0.9, 0.1, 0.1, 0.9,
+        ], 2));
+    geometry.setIndex([0, 1, 2, 3, 4, 5]);
+    expect(uv1IsValid(geometry, 32)).to.equal(false);
   });
 
   test('a normal pointing into the surface does not paint the face black', () => {
