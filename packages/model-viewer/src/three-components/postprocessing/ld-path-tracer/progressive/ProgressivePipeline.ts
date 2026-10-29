@@ -27,7 +27,7 @@ import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, finalizeAmbientOcclusion, occlusionAtPoint, PunctualSample} from './lighting.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
-import {applyUvJob, createUvJob, stepUvJob, uv1IsValid, UvJob} from './uv2.js';
+import {applyUvJob, createUvJob, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
 
 export interface ProgressiveHost {
   renderer(): WebGLRenderer|null;
@@ -96,14 +96,11 @@ const materialList = (mesh: Mesh): MeshStandardMaterial[] => {
 };
 
 /** Glass and other transmissive surfaces let light through in the trace. */
-const blocksAmbientLight = (mesh: Mesh): boolean => {
-  for (const material of materialList(mesh)) {
-    const transmission = (material as MeshStandardMaterial & {transmission?: number}).transmission ?? 0;
-    if (transmission > 0.02 || (material.opacity ?? 1) < 0.98) {
-      return false;
-    }
-  }
-  return true;
+const materialBlocksAmbient = (material: MeshStandardMaterial): boolean => {
+  const transmission =
+      (material as MeshStandardMaterial & {transmission?: number}).transmission ??
+      0;
+  return transmission <= 0.02 && (material.opacity ?? 1) >= 0.98;
 };
 
 /** A shared chart cannot store both sides of a shell. Regenerate UV2. */
@@ -161,6 +158,10 @@ export class ProgressivePipeline {
   private uvTasks: UvTask[] = [];
   private uvCursor = 0;
   private uvReady = false;
+  private tileOf = new Map<Mesh, UvTile>();
+  private uvPlaced = new Set<Mesh>();
+  private geometryOwner = new Map<BufferGeometry, Mesh>();
+  private overlapSkips = 0;
   private replaced = new Map<Mesh, BufferGeometry>();
   private surface: Float32Array|null = null;
   private surfaceGrid: Int32Array|null = null;
@@ -168,6 +169,7 @@ export class ProgressivePipeline {
   private surfaceCount = 0;
   private surfaceMesh = 0;
   private surfaceTri = 0;
+  private surfacePass = 0;
   private aoData: Float32Array|null = null;
   private aoCursor = 0;
   private aoFade = createFade();
@@ -583,12 +585,7 @@ export class ProgressivePipeline {
         this.fillVertex++;
       }
       const count = index != null ? index.count : position.count;
-      if (blocksAmbientLight(mesh)) {
-        for (let i = 0; i < count; i++) {
-          const vertex = index != null ? index.getX(i) : i;
-          this.indices![this.write++] = this.vertexBase + vertex;
-        }
-      }
+      this.appendOccluders(mesh, index, count);
       this.vertexBase += position.count;
       this.fillVertex = 0;
       this.fillMesh++;
@@ -696,17 +693,18 @@ export class ProgressivePipeline {
     const wantUv = this.settings.bake.textureAO.enabled ||
         (this.settings.lights.include && this.sceneHasLights());
     this.uvTasks = [];
+    this.uvPlaced.clear();
+    this.geometryOwner.clear();
+    this.planTiles();
     if (wantUv) {
       const resolution = this.settings.bake.textureAO.resolution;
       for (const mesh of this.meshes) {
-        const source =
-            (mesh.userData.progressiveSourceGeometry as BufferGeometry |
-             undefined) ??
-            mesh.geometry;
+        this.exclusiveGeometry(mesh);
+        const source = mesh.geometry;
         if (uv1IsValid(source, resolution) && !uvMustBeGenerated(mesh)) {
           continue;
         }
-        const job = createUvJob(source, resolution);
+        const job = createUvJob(source, resolution, this.tileOf.get(mesh) ?? null);
         if (job != null) {
           this.uvTasks.push({mesh, job});
         }
@@ -807,81 +805,105 @@ export class ProgressivePipeline {
       this.applyUv(task.mesh, task.job);
       this.uvCursor++;
     }
-    this.layoutUvTiles();
+    this.applyPlannedTiles();
     this.uvReady = true;
   }
 
   /**
-   * Each mesh unwraps into its own 0–1 square. They share one AO texture,
-   * so those squares must become disjoint tiles or charts overwrite each
-   * other and the bake looks like stripes.
+   * Each mesh gets a disjoint atlas rectangle. Charts are packed inside
+   * that rectangle in pixels, so the gutter survives. Meshes that already
+   * had a valid UV2 are scaled into the same rectangle here.
    */
-  private layoutUvTiles() {
+  private planTiles() {
+    this.tileOf.clear();
     const items: {mesh: Mesh; weight: number}[] = [];
     for (const mesh of this.meshes) {
-      const uv = mesh.geometry.getAttribute('uv1');
-      if (uv == null) {
+      const position = mesh.geometry.getAttribute('position');
+      if (position == null) {
         continue;
       }
       const index = mesh.geometry.getIndex();
-      const tris = index != null ? index.count / 3 : uv.count / 3;
+      const tris = index != null ? index.count / 3 : position.count / 3;
       items.push({mesh, weight: Math.max(1, tris)});
     }
-    if (items.length <= 1) {
+    if (items.length === 0) {
+      return;
+    }
+    const resolution = Math.max(8, this.settings.bake.textureAO.resolution);
+    const pad = 4;
+    if (items.length === 1) {
+      this.tileOf.set(items[0].mesh, {
+        x: pad,
+        y: pad,
+        w: resolution - pad * 2,
+        h: resolution - pad * 2,
+      });
       return;
     }
     items.sort((a, b) => b.weight - a.weight);
     const total = items.reduce((sum, item) => sum + item.weight, 0);
-    const resolution = Math.max(8, this.settings.bake.textureAO.resolution);
-    const pad = 4 / resolution;
     let scale = 0.92;
     let placed = false;
-    const origin = new Float32Array(items.length * 3);
+    const rects: UvTile[] = [];
     for (let attempt = 0; attempt < 8 && !placed; attempt++) {
       let x = pad;
       let y = pad;
       let rowH = 0;
       placed = true;
+      rects.length = 0;
       for (let n = 0; n < items.length; n++) {
         const side = Math.max(
-            4 / resolution,
-            Math.sqrt(items[n].weight / total) * scale);
-        if (x + side > 1 - pad) {
+            4,
+            Math.floor(Math.sqrt(items[n].weight / total) * scale *
+                (resolution - pad * 2)));
+        if (x + side > resolution - pad) {
           x = pad;
           y += rowH + pad;
           rowH = 0;
         }
-        if (y + side > 1 - pad) {
+        if (y + side > resolution - pad) {
           placed = false;
           scale *= 0.72;
           break;
         }
-        origin[n * 3] = x;
-        origin[n * 3 + 1] = y;
-        origin[n * 3 + 2] = side;
+        rects.push({x, y, w: side, h: side});
         x += side + pad;
         rowH = Math.max(rowH, side);
       }
     }
     if (!placed) {
-      // Shelf packing did not fit. A regular grid still keeps charts from
-      // writing on top of each other, which was painting unrelated faces black.
       const cols = Math.max(1, Math.ceil(Math.sqrt(items.length)));
-      const cell = (1 - pad * (cols + 1)) / cols;
+      const cell = Math.max(
+          2, Math.floor((resolution - pad * (cols + 1)) / cols));
       for (let n = 0; n < items.length; n++) {
         const col = n % cols;
         const row = Math.floor(n / cols);
-        origin[n * 3] = pad + col * (cell + pad);
-        origin[n * 3 + 1] = pad + row * (cell + pad);
-        origin[n * 3 + 2] = Math.max(2 / resolution, cell);
+        rects[n] = {
+          x: pad + col * (cell + pad),
+          y: pad + row * (cell + pad),
+          w: cell,
+          h: cell,
+        };
       }
     }
     for (let n = 0; n < items.length; n++) {
+      this.tileOf.set(items[n].mesh, rects[n]);
+    }
+  }
+
+  /** Meshes that kept their own UV2 still have to land in a private tile. */
+  private applyPlannedTiles() {
+    const resolution = Math.max(8, this.settings.bake.textureAO.resolution);
+    for (const mesh of this.meshes) {
+      if (this.uvPlaced.has(mesh)) {
+        continue;
+      }
+      const tile = this.tileOf.get(mesh);
+      if (tile == null) {
+        continue;
+      }
       this.fitUvTile(
-          items[n].mesh,
-          origin[n * 3],
-          origin[n * 3 + 1],
-          origin[n * 3 + 2]);
+          mesh, tile.x / resolution, tile.y / resolution, tile.w / resolution);
     }
   }
 
@@ -896,20 +918,78 @@ export class ProgressivePipeline {
     uv.needsUpdate = true;
   }
 
+  /**
+   * Two nodes often share one geometry. Scaling UV2 in place would apply
+   * the second tile on top of the first and stack both charts.
+   */
+  private exclusiveGeometry(mesh: Mesh) {
+    const geometry = mesh.geometry;
+    const owner = this.geometryOwner.get(geometry);
+    if (owner != null && owner !== mesh) {
+      const clone = geometry.clone();
+      if (!this.replaced.has(mesh)) {
+        this.replaced.set(mesh, geometry);
+        mesh.userData.progressiveSourceGeometry = geometry;
+      }
+      mesh.geometry = clone;
+      this.geometryOwner.set(clone, mesh);
+      return;
+    }
+    if (owner == null) {
+      this.geometryOwner.set(geometry, mesh);
+    }
+  }
+
   private applyUv(mesh: Mesh, job: UvJob) {
-    const source = (mesh.userData.progressiveSourceGeometry as BufferGeometry |
-                    undefined) ??
-        mesh.geometry;
+    const source = mesh.geometry;
     const next = applyUvJob(source, job);
     if (next == null) {
       return;
     }
     if (next !== source) {
-      if (mesh.userData.progressiveSourceGeometry == null) {
+      const original = mesh.userData.progressiveSourceGeometry as
+          BufferGeometry |
+          undefined;
+      if (original == null) {
         mesh.userData.progressiveSourceGeometry = source;
         this.replaced.set(mesh, source);
+      } else if (source !== original) {
+        source.dispose();
       }
       mesh.geometry = next;
+    }
+    this.uvPlaced.add(mesh);
+  }
+
+  /** Skip glass groups. An opaque sibling on the same mesh still occludes. */
+  private appendOccluders(
+      mesh: Mesh,
+      index: BufferAttribute|null,
+      count: number) {
+    const materials = materialList(mesh);
+    const groups = mesh.geometry.groups;
+    const writeRange = (start: number, end: number) => {
+      const last = Math.min(count, end);
+      for (let i = start; i < last; i++) {
+        const vertex = index != null ? index.getX(i) : i;
+        this.indices![this.write++] = this.vertexBase + vertex;
+      }
+    };
+    if (materials.length === 0) {
+      writeRange(0, count);
+      return;
+    }
+    if (groups.length > 1 && materials.length > 1) {
+      for (const group of groups) {
+        const material = materials[group.materialIndex ?? 0];
+        if (material != null && materialBlocksAmbient(material)) {
+          writeRange(group.start, group.start + group.count);
+        }
+      }
+      return;
+    }
+    if (materials.every(materialBlocksAmbient)) {
+      writeRange(0, count);
     }
   }
 
@@ -922,40 +1002,49 @@ export class ProgressivePipeline {
       this.surfaceCount = 0;
       this.surfaceMesh = 0;
       this.surfaceTri = 0;
+      this.surfacePass = 0;
+      this.overlapSkips = 0;
     }
     const grid = this.surfaceGrid;
     const start = performance.now();
-    while (this.surfaceMesh < this.meshes.length) {
-      if (performance.now() - start >= budgetMs) {
-        return;
-      }
-      const mesh = this.meshes[this.surfaceMesh];
-      const uv = mesh.geometry.getAttribute('uv1');
-      const position = mesh.geometry.getAttribute('position');
-      const normal = mesh.geometry.getAttribute('normal');
-      const index = mesh.geometry.getIndex();
-      if (uv == null || position == null) {
-        this.surfaceMesh++;
-        this.surfaceTri = 0;
-        continue;
-      }
-      const triCount = index != null ? Math.floor(index.count / 3) :
-                                       Math.floor(position.count / 3);
-      mesh.updateWorldMatrix(true, false);
-      while (this.surfaceTri < triCount) {
+    while (this.surfacePass < 2) {
+      while (this.surfaceMesh < this.meshes.length) {
         if (performance.now() - start >= budgetMs) {
           return;
         }
-        const tri = this.surfaceTri++;
-        const i0 = index != null ? index.getX(tri * 3) : tri * 3;
-        const i1 = index != null ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-        const i2 = index != null ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-        this.rasterTriangle(
-            mesh, uv, position, normal, i0, i1, i2, resolution, grid);
+        const mesh = this.meshes[this.surfaceMesh];
+        const uv = mesh.geometry.getAttribute('uv1');
+        const position = mesh.geometry.getAttribute('position');
+        const normal = mesh.geometry.getAttribute('normal');
+        const index = mesh.geometry.getIndex();
+        if (uv == null || position == null) {
+          this.surfaceMesh++;
+          this.surfaceTri = 0;
+          continue;
+        }
+        const triCount = index != null ? Math.floor(index.count / 3) :
+                                         Math.floor(position.count / 3);
+        mesh.updateWorldMatrix(true, false);
+        const mode = this.surfacePass === 0 ? 'center' : 'corner';
+        while (this.surfaceTri < triCount) {
+          if (performance.now() - start >= budgetMs) {
+            return;
+          }
+          const tri = this.surfaceTri++;
+          const i0 = index != null ? index.getX(tri * 3) : tri * 3;
+          const i1 = index != null ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+          const i2 = index != null ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+          this.rasterTriangle(
+              mesh, uv, position, normal, i0, i1, i2, resolution, grid, mode);
+        }
+        this.surfaceMesh++;
+        this.surfaceTri = 0;
       }
-      this.surfaceMesh++;
+      this.surfacePass++;
+      this.surfaceMesh = 0;
       this.surfaceTri = 0;
     }
+    console.info('AO raster overlaps', this.overlapSkips);
     this.stampVertexTexels(resolution);
     this.compactSurface(resolution);
     this.surfaceDone = true;
@@ -973,7 +1062,7 @@ export class ProgressivePipeline {
           .BufferAttribute|import('three')
           .InterleavedBufferAttribute|null,
       i0: number, i1: number, i2: number, resolution: number,
-      grid: Int32Array) {
+      grid: Int32Array, mode: 'center'|'corner') {
     const ax = uv.getX(i0);
     const ay = uv.getY(i0);
     const bx = uv.getX(i1);
@@ -989,7 +1078,7 @@ export class ProgressivePipeline {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const slot = y * resolution + x;
-        if (grid[slot] !== -1) {
+        if (grid[slot] !== -1 && mode !== 'center') {
           continue;
         }
         const px = (x + 0.5) / resolution;
@@ -998,16 +1087,17 @@ export class ProgressivePipeline {
         if (Math.abs(denom) < 1e-8) {
           continue;
         }
-        // The shelf stripes were texels the triangle crossed whose centres
-        // sat just outside it, so they stayed unwritten and white.
+        // Centre pass owns the texel. Corner pass only fills texels whose
+        // centres sit just outside a triangle, which used to stay white.
         const half = 0.5 / resolution;
-        const probes = [
-          px, py,
-          px - half, py - half,
-          px + half, py - half,
-          px - half, py + half,
-          px + half, py + half,
-        ];
+        const probes = mode === 'center' ?
+            [px, py] :
+            [
+              px - half, py - half,
+              px + half, py - half,
+              px - half, py + half,
+              px + half, py + half,
+            ];
         let w0 = 0;
         let w1 = 0;
         let w2 = 0;
@@ -1029,6 +1119,10 @@ export class ProgressivePipeline {
         if (!covered) {
           continue;
         }
+        if (grid[slot] !== -1) {
+          this.overlapSkips++;
+          continue;
+        }
         tmp.fromBufferAttribute(position, i0).multiplyScalar(w0);
         tmp2.fromBufferAttribute(position, i1).multiplyScalar(w1);
         tmp.add(tmp2);
@@ -1045,7 +1139,9 @@ export class ProgressivePipeline {
         }
         const o = this.surfaceCount * 8;
         if (o + 8 > this.surface!.length) {
-          return;
+          const grown = new Float32Array(this.surface!.length * 2);
+          grown.set(this.surface!);
+          this.surface = grown;
         }
         this.surface![o] = tmp.x;
         this.surface![o + 1] = tmp.y;
@@ -2045,6 +2141,11 @@ export class ProgressivePipeline {
     this.uvTasks = [];
     this.uvCursor = 0;
     this.uvReady = false;
+    this.tileOf.clear();
+    this.uvPlaced.clear();
+    this.geometryOwner.clear();
+    this.overlapSkips = 0;
+    this.surfacePass = 0;
     this.surface = null;
     this.surfaceDone = false;
     this.surfaceCount = 0;

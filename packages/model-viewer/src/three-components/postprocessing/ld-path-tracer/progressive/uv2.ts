@@ -122,9 +122,19 @@ interface EdgeTable {
   cursor: number;
 }
 
+/** Pixel rectangle inside the shared AO atlas. Charts are packed here. */
+export interface UvTile {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface UvJob {
   done: boolean;
   resolution: number;
+  /** When set, charts stay inside this atlas rectangle instead of the full texture. */
+  tile: UvTile|null;
   positions: Float32Array;
   indices: Uint32Array;
   vertexCount: number;
@@ -185,6 +195,7 @@ const faceNormal =
 export const createUvJob = (
     geometry: BufferGeometry,
     resolution: number,
+    tile: UvTile|null = null,
     ): UvJob|null => {
   const position = geometry.getAttribute('position');
   if (position == null ||
@@ -208,6 +219,7 @@ export const createUvJob = (
   return {
     done: false,
     resolution: Math.max(8, resolution),
+    tile,
     positions,
     indices,
     vertexCount,
@@ -364,7 +376,15 @@ const packCharts = (job: UvJob) => {
   const widthOf = (c: number) => Math.max(1e-6, maxX[c] - minX[c]);
   const heightOf = (c: number) => Math.max(1e-6, maxY[c] - minY[c]);
   order.sort((a, b) => heightOf(b) - heightOf(a));
-  const pad = 4;
+  // Gutters are in final atlas pixels. Scaling a full-texture pack down
+  // into a mesh tile used to collapse those gutters and let charts overlap.
+  const gutter = 4;
+  const originX = job.tile?.x ?? gutter;
+  const originY = job.tile?.y ?? gutter;
+  const spanX = Math.max(1, job.tile?.w ?? resolution - gutter * 2);
+  const spanY = Math.max(1, job.tile?.h ?? resolution - gutter * 2);
+  const pad = Math.min(
+      gutter, Math.max(1, Math.floor(Math.min(spanX, spanY) / 8)));
   let maxExtent = 1e-6;
   for (let i = 0; i < chartCount; i++) {
     maxExtent = Math.max(maxExtent, widthOf(i), heightOf(i));
@@ -373,38 +393,63 @@ const packCharts = (job: UvJob) => {
   for (let i = 0; i < chartCount; i++) {
     areaSum += widthOf(i) * heightOf(i);
   }
-  const areaScale = Math.sqrt(((resolution - pad * 2) ** 2) * 0.55 / Math.max(areaSum, 1e-6));
-  let scale = Math.min((resolution * 0.85) / maxExtent, areaScale);
+  const areaScale = Math.sqrt(
+      Math.max(1, (spanX - pad * 2) * (spanY - pad * 2)) * 0.62 /
+      Math.max(areaSum, 1e-6));
+  let scale = Math.min((Math.min(spanX, spanY) * 0.9) / maxExtent, areaScale);
   if (!Number.isFinite(scale) || scale <= 0) {
     scale = 1;
   }
-  const place = new Float32Array(chartCount * 4);
-  let fitted = false;
-  for (let attempt = 0; attempt < 14 && !fitted; attempt++) {
-    let cursorX = pad;
-    let cursorY = pad;
+  const limitX = originX + spanX - pad;
+  const limitY = originY + spanY - pad;
+  const tryShelf = (useScale: number): Float32Array|null => {
+    const placed = new Float32Array(chartCount * 4);
+    let cursorX = originX + pad;
+    let cursorY = originY + pad;
     let rowH = 0;
-    fitted = true;
     for (let n = 0; n < chartCount; n++) {
       const c = order[n];
-      const w = Math.max(3, Math.ceil(widthOf(c) * scale));
-      const h = Math.max(3, Math.ceil(heightOf(c) * scale));
-      if (cursorX + w + pad > resolution) {
-        cursorX = pad;
+      const w = Math.max(2, Math.ceil(widthOf(c) * useScale));
+      const h = Math.max(2, Math.ceil(heightOf(c) * useScale));
+      if (cursorX + w > limitX) {
+        cursorX = originX + pad;
         cursorY += rowH + pad;
         rowH = 0;
       }
-      if (cursorY + h + pad > resolution) {
-        fitted = false;
-        scale *= 0.6;
-        break;
+      if (cursorX + w > limitX || cursorY + h > limitY) {
+        return null;
       }
-      place[c * 4] = cursorX;
-      place[c * 4 + 1] = cursorY;
-      place[c * 4 + 2] = w;
-      place[c * 4 + 3] = h;
+      placed[c * 4] = cursorX;
+      placed[c * 4 + 1] = cursorY;
+      placed[c * 4 + 2] = w;
+      placed[c * 4 + 3] = h;
       cursorX += w + pad;
       rowH = Math.max(rowH, h);
+    }
+    return placed;
+  };
+  let place: Float32Array|null = null;
+  for (let attempt = 0; attempt < 14 && place == null; attempt++) {
+    place = tryShelf(scale);
+    scale *= 0.62;
+  }
+  if (place == null) {
+    // One cell per chart. Cells do not share texels even when the shelf failed.
+    place = new Float32Array(chartCount * 4);
+    const cols = Math.max(
+        1, Math.ceil(Math.sqrt(chartCount * spanX / Math.max(spanY, 1))));
+    const rows = Math.max(1, Math.ceil(chartCount / cols));
+    const cellW = spanX / cols;
+    const cellH = spanY / rows;
+    const gap = Math.min(pad, Math.max(0, Math.floor(Math.min(cellW, cellH) / 4)));
+    for (let n = 0; n < chartCount; n++) {
+      const c = order[n];
+      const col = n % cols;
+      const row = Math.floor(n / cols);
+      place[c * 4] = originX + col * cellW + gap;
+      place[c * 4 + 1] = originY + row * cellH + gap;
+      place[c * 4 + 2] = Math.max(1, cellW - gap * 2);
+      place[c * 4 + 3] = Math.max(1, cellH - gap * 2);
     }
   }
   const map = new Map<number, number>();
@@ -430,9 +475,13 @@ const packCharts = (job: UvJob) => {
         key < job.vertexCount ? -1 : Math.floor(key / job.vertexCount) - 1;
     const vertex = chart < 0 ? key : key - (chart + 1) * job.vertexCount;
     source[id] = vertex;
+    const minU = originX / resolution;
+    const minV = originY / resolution;
+    const maxU = Math.max(minU, (originX + spanX - 0.5) / resolution);
+    const maxV = Math.max(minV, (originY + spanY - 0.5) / resolution);
     if (chart < 0) {
-      uv1[id * 2] = 0;
-      uv1[id * 2 + 1] = 0;
+      uv1[id * 2] = minU;
+      uv1[id * 2 + 1] = minV;
       return;
     }
     const [u, v] = project(chart, vertex);
@@ -442,9 +491,8 @@ const packCharts = (job: UvJob) => {
         place[chart * 4] + ((u - minX[chart]) / spanU) * place[chart * 4 + 2];
     const py = place[chart * 4 + 1] +
         ((v - minY[chart]) / spanV) * place[chart * 4 + 3];
-    uv1[id * 2] = Math.min(1 - 0.5 / resolution, Math.max(0, px / resolution));
-    uv1[id * 2 + 1] =
-        Math.min(1 - 0.5 / resolution, Math.max(0, py / resolution));
+    uv1[id * 2] = Math.min(maxU, Math.max(minU, px / resolution));
+    uv1[id * 2 + 1] = Math.min(maxV, Math.max(minV, py / resolution));
   });
   const outIndex = new Uint32Array(triCount * 3);
   outIndex.set(cornerSource);

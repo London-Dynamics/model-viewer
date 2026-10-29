@@ -23,7 +23,7 @@ import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../thr
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
-import {uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
+import {applyUvJob, createUvJob, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
@@ -264,6 +264,41 @@ suite('progressive contact shadow rays', () => {
         new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.02);
     expect(under).to.be.lessThan(0.55);
     expect(far).to.be.greaterThan(0.9);
+  });
+
+  test('charts packed into an atlas tile do not share texels', () => {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const addTri = (ax: number, ay: number, az: number, bx: number, by: number,
+                    bz: number, cx: number, cy: number, cz: number) => {
+      const base = positions.length / 3;
+      positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+      indices.push(base, base + 1, base + 2);
+    };
+    for (let i = 0; i < 24; i++) {
+      const x = (i % 6) * 0.4;
+      const z = Math.floor(i / 6) * 0.4;
+      const lift = (i % 3) * 0.15;
+      addTri(x, lift, z, x + 0.2, lift, z, x, lift + 0.05, z + 0.2);
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    const job = createUvJob(geometry, 64, {x: 4, y: 6, w: 36, h: 28});
+    expect(job).to.not.equal(null);
+    while (!job!.done) {
+      stepUvJob(job!, 1e9);
+    }
+    const packed = applyUvJob(geometry, job!);
+    expect(packed).to.not.equal(null);
+    expect(uv1IsValid(packed!, 64)).to.equal(true);
+    const uv = packed!.getAttribute('uv1');
+    for (let i = 0; i < uv.count; i++) {
+      expect(uv.getX(i)).to.be.at.least(4 / 64 - 1e-4);
+      expect(uv.getY(i)).to.be.at.least(6 / 64 - 1e-4);
+      expect(uv.getX(i)).to.be.at.most((4 + 36) / 64 + 1e-4);
+      expect(uv.getY(i)).to.be.at.most((6 + 28) / 64 + 1e-4);
+    }
   });
 
   test('UV2 that shares a texel is treated as missing', () => {
