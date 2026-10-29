@@ -382,8 +382,8 @@ const packCharts = (job: UvJob) => {
     fitted = true;
     for (let n = 0; n < chartCount; n++) {
       const c = order[n];
-      const w = Math.max(1, Math.ceil(widthOf(c) * scale));
-      const h = Math.max(1, Math.ceil(heightOf(c) * scale));
+      const w = Math.max(3, Math.ceil(widthOf(c) * scale));
+      const h = Math.max(3, Math.ceil(heightOf(c) * scale));
       if (cursorX + w + pad > resolution) {
         cursorX = pad;
         cursorY += rowH + pad;

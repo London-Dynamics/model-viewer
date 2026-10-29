@@ -542,6 +542,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         }
         this.pathTracer.renderToCanvas = false;
         this.pathTracer.pausePathTracing = false;
+        this.clampPathTracerFireflies();
         const started = performance.now();
         try {
           this.pathTracer.renderSample();
@@ -631,7 +632,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.fireflyClamp = new ShaderMaterial({
         uniforms: {
           tDiffuse: {value: null},
-          limit: {value: 1.05},
+          limit: {value: 0.55},
         },
         vertexShader: `
           varying vec2 vUv;
@@ -647,7 +648,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           void main() {
             vec4 color = texture2D(tDiffuse, vUv);
             float peak = max(color.r, max(color.g, color.b));
-            if (peak > limit) color.rgb *= limit / peak;
+            // NaN and inf fail a plain greater-than and show up white.
+            if (!(peak <= limit)) {
+              color.rgb = peak > limit ? color.rgb * (limit / peak) : vec3(limit);
+            }
             gl_FragColor = color;
           }
         `,
@@ -801,12 +805,36 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return found;
   }
 
+  private clampPathTracerFireflies() {
+    const tracer = this.pathTracer as unknown as {
+      _pathTracer?: {material?: {fragmentShader: string; needsUpdate: boolean}};
+      _lowResPathTracer?: {material?: {fragmentShader: string; needsUpdate: boolean}};
+    };
+    for (const pass of [tracer._pathTracer, tracer._lowResPathTracer]) {
+      const material = pass?.material;
+      if (material == null || material.fragmentShader.includes('ldFireflyClamp')) {
+        continue;
+      }
+      const pattern = /gl_FragColor\.rgb \+= ([^;]+);/g;
+      if (!pattern.test(material.fragmentShader)) {
+        console.info('PROBE fireflyClamp missing needle');
+        continue;
+      }
+      material.fragmentShader = material.fragmentShader.replace(
+          /gl_FragColor\.rgb \+= ([^;]+);/g,
+          `gl_FragColor.rgb += $1;\n\t\t\t\t\t// ldFireflyClamp\n\t\t\t\t\tgl_FragColor.rgb = min( gl_FragColor.rgb, vec3( 0.32 ) );`);
+      material.needsUpdate = true;
+      console.info('PROBE fireflyClamp installed');
+    }
+  }
+
   private applyOptions(reset: boolean = true) {
     if (this.pathTracer == null) {
       return;
     }
 
     this.pathTracer.bounces = Math.max(1, Math.floor(this.options.bounces));
+    this.clampPathTracerFireflies();
     // Secondary glossy hits are what blow out into fireflies at low sample
     // counts. Roughen them a little.
     this.pathTracer.filterGlossyFactor = Math.max(

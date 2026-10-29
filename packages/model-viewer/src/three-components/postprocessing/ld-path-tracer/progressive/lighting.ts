@@ -58,9 +58,10 @@ export const occlusionAtPoint = (
     const u = halton(i + 1, 2);
     const v = halton(i + 1, 3);
     const phi = Math.PI * 2 * u;
-    // Cosine-weighted hemisphere: more rays near the normal.
-    const cosTheta = Math.sqrt(1 - v);
-    const sinTheta = Math.sqrt(v);
+    // Uniform hemisphere. Cosine weighting misses the side wall a few
+    // centimetres away, which is exactly the shelf-corner occlusion.
+    const cosTheta = 1 - v;
+    const sinTheta = Math.sqrt(Math.max(0, 1 - cosTheta * cosTheta));
     const lx = Math.cos(phi) * sinTheta;
     const ly = Math.sin(phi) * sinTheta;
     const lz = cosTheta;

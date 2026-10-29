@@ -1061,22 +1061,45 @@ export class ProgressivePipeline {
         Math.min(1.1, Math.max(0.45, diagonal * 0.045));
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
+    const view = this.host.camera()?.getWorldDirection(tmp) ?? tmp.set(0, 0, 1);
+    const vx = view.x;
+    const vy = view.y;
+    const vz = view.z;
     const start = performance.now();
+    let shelfSum = 0;
+    let shelfN = 0;
+    let veryDark = 0;
     while (this.aoCursor < this.surfaceCount) {
       if (performance.now() - start >= budgetMs) {
         return;
       }
       const o = this.aoCursor * 8;
+      let nx = this.surface[o + 3];
+      let ny = this.surface[o + 4];
+      let nz = this.surface[o + 5];
+      // The face we see may be the back of a panel. Trace into the bay.
+      if (nx * vx + ny * vy + nz * vz > 0.05) {
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+      }
       const ao = occlusionAtPoint(
           this.bvh,
           this.surface[o],
           this.surface[o + 1],
           this.surface[o + 2],
-          this.surface[o + 3],
-          this.surface[o + 4],
-          this.surface[o + 5],
+          nx,
+          ny,
+          nz,
           samples,
           distance);
+      if (Math.abs(ny) > 0.65) {
+        shelfSum += ao;
+        shelfN++;
+      }
+      if (ao < 0.55) {
+        veryDark++;
+      }
       const x = Math.min(
           resolution - 1, Math.floor(this.surface[o + 6] * resolution));
       const y = Math.min(
@@ -1089,6 +1112,14 @@ export class ProgressivePipeline {
       }
       this.aoCursor++;
     }
+    console.info(
+        'AO samples shelf',
+        shelfN,
+        shelfN > 0 ? (shelfSum / shelfN).toFixed(3) : 'na',
+        'veryDark',
+        veryDark,
+        'of',
+        this.surfaceCount);
     this.publishAo(resolution);
   }
 
@@ -1494,6 +1525,16 @@ export class ProgressivePipeline {
       data[i * 4 + 1] = byte;
       data[i * 4 + 2] = byte;
       data[i * 4 + 3] = 255;
+    }
+    // The occlusion map is multiplied onto indirect light. Push corner values
+    // down so a 0.85 texel, which is invisible on white, becomes a real shade.
+    for (let i = 0; i < filtered.length; i++) {
+      const ao = filtered[i];
+      const shaped = ao >= 0.98 ? 1 : Math.pow(ao, 2.4);
+      const byte = Math.round(Math.min(1, Math.max(0, shaped)) * 255);
+      data[i * 4] = byte;
+      data[i * 4 + 1] = byte;
+      data[i * 4 + 2] = byte;
     }
     this.aoTexture?.dispose();
     this.aoTexture = new DataTexture(data, resolution, resolution, RGBAFormat);
