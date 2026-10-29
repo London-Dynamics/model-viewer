@@ -42,6 +42,8 @@ import {
   Scene,
   SRGBColorSpace,
   Vector3,
+  BufferAttribute,
+  BufferGeometry,
   WebGLRenderer,
 } from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -66,6 +68,54 @@ const resolution = Number(params.get('resolution') || 2048);
 const viewW = 640;
 const viewH = 480;
 window.__status = {done: false};
+
+async function applyLightmap(url, meshes) {
+  const buf = await fetch(url).then((response) => {
+    if (!response.ok) throw new Error('lightmap ' + response.status);
+    return response.arrayBuffer();
+  });
+  const view = new DataView(buf);
+  if (view.getUint32(0, true) !== 0x3156554c) throw new Error('bad lightmap');
+  const headerLen = view.getUint32(4, true);
+  const headerText = new TextDecoder().decode(new Uint8Array(buf, 8, headerLen)).replace(/\0+$/, '');
+  const header = JSON.parse(headerText);
+  let offset = 8 + headerLen;
+  const take = (count, Type) => {
+    const out = new Type(buf, offset, count);
+    offset += count * Type.BYTES_PER_ELEMENT;
+    return out;
+  };
+  if (header.meshes.length !== meshes.length) {
+    throw new Error('lightmap mesh count ' + header.meshes.length);
+  }
+  for (let n = 0; n < meshes.length; n++) {
+    const spec = header.meshes[n];
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(take(spec.vertexCount * 3, Float32Array), 3));
+    geometry.setAttribute('normal', new BufferAttribute(take(spec.vertexCount * 3, Float32Array), 3));
+    geometry.setAttribute('uv', new BufferAttribute(take(spec.vertexCount * 2, Float32Array), 2));
+    geometry.setAttribute('uv1', new BufferAttribute(take(spec.vertexCount * 2, Float32Array), 2));
+    geometry.setIndex(new BufferAttribute(take(spec.indexCount, Uint32Array), 1));
+    meshes[n].geometry = geometry;
+  }
+  console.info('LIGHTMAP', JSON.stringify({
+    unwrapMs: header.unwrapMs,
+    texelsPerCm: header.texelsPerCm,
+    atlas: [header.atlasWidth, header.atlasHeight],
+    meshes: header.meshes.length,
+  }));
+}
+
+function paintCropCanvas(crop, id) {
+  if (crop == null) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = id;
+  canvas.width = crop.size;
+  canvas.height = crop.size;
+  const image = new ImageData(crop.rgba, crop.size, crop.size);
+  canvas.getContext('2d').putImageData(image, 0, 0);
+  document.body.appendChild(canvas);
+}
 
 const fail = (error) => {
   console.error('ATLAS_FAIL', error);
@@ -120,6 +170,9 @@ try {
     if (child.geometry.getAttribute('uv1')) fileUv1 = true;
   });
   console.info('UV1_IN_FILE', fileUv1, 'meshes', meshes.length);
+  if (params.get('lightmap')) {
+    await applyLightmap(params.get('lightmap'), meshes);
+  }
 
   const areas = meshes.map((mesh) => {
     const position = mesh.geometry.getAttribute('position');
@@ -147,7 +200,10 @@ try {
   });
   const tiles = planAtlasTiles(areas, resolution);
   const uvStart = performance.now();
-  for (let n = 0; n < meshes.length; n++) {
+  if (params.get('lightmap')) {
+    console.info('STAGE_UV', 'xatlas-file');
+  }
+  for (let n = 0; n < meshes.length && !params.get('lightmap'); n++) {
     const mesh = meshes[n];
     if (uv1IsValid(mesh.geometry, resolution)) {
       console.info('UV1_KEPT', mesh.name);
@@ -302,6 +358,8 @@ try {
   atlas.getContext('2d').putImageData(image, 0, 0);
   document.body.appendChild(atlas);
   document.body.appendChild(sheet);
+  paintCropCanvas(bake.beforeCrop, 'crop-before');
+  paintCropCanvas(bake.afterCrop, 'crop-after');
   window.__status = {
     done: true,
     cleanMs,

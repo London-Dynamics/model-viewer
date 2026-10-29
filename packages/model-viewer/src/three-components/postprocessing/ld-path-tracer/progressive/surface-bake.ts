@@ -247,6 +247,9 @@ export class AtlasBake {
   private gpuMsSum = 0;
   private loggedSamples = -1;
   private denoiseStarted = false;
+  private denoiseTask: Promise<void>|null = null;
+  beforeCrop: {x: number; y: number; size: number; rgba: Uint8ClampedArray;}|null = null;
+  afterCrop: {x: number; y: number; size: number; rgba: Uint8ClampedArray;}|null = null;
   private constantUp = false;
   private albedoTex: unknown = null;
   private guideTex: unknown = null;
@@ -316,9 +319,6 @@ export class AtlasBake {
       return this.samples;
     }
     if (this.denoiseStarted) {
-      if (this.denoiser?.complete && this.reading == null) {
-        this.reading = this.finishRead();
-      }
       return this.samples;
     }
     if (this.reading == null) {
@@ -335,6 +335,10 @@ export class AtlasBake {
    * few samples. The step itself is the budgeted dispatch.
    */
   async syncFrame(): Promise<{ms: number; samples: number;}> {
+    if (this.denoiseTask != null) {
+      await this.denoiseTask;
+      return {ms: 0, samples: this.samples};
+    }
     const started = performance.now();
     const samples = this.step();
     const ms = performance.now() - started;
@@ -394,26 +398,113 @@ export class AtlasBake {
       this.stages.samples = Math.round(performance.now() - this.startedAt);
       console.info('STAGE_SAMPLES', this.stages.samples, 'frames', this.frames.count);
     }
-    const target = this.tracer.target as {width?: number; height?: number;};
-    console.info('DENOISE_TARGET', target?.width ?? 0, target?.height ?? 0);
-    this.denoiser.denoise(target, this.albedoTex, this.guideTex).then(() => {
-      if (this.stages.denoise < 0) {
-        this.stages.denoise = Math.round(performance.now() - this.startedAt);
-        console.info('STAGE_DENOISE', this.stages.denoise);
-      }
-    }).catch((error: unknown) => {
-      console.warn('[model-viewer] WebGPU atlas denoise failed.', error);
-      this.failed = true;
-      this.ready = false;
-    });
+    this.denoiseTask = this.runDenoise();
   }
 
-  private finishRead(): Promise<void> {
-    return this.readFactor().catch((error: unknown) => {
-      console.warn('[model-viewer] WebGPU atlas readback failed.', error);
+  private async runDenoise() {
+    const denoiser = this.denoiser;
+    const tracer = this.tracer;
+    const renderer = this.renderer;
+    if (denoiser == null || tracer == null || renderer == null) {
+      this.failed = true;
+      return;
+    }
+    const target = tracer.target as {width?: number; height?: number;};
+    console.info('DENOISE_TARGET', target?.width ?? 0, target?.height ?? 0);
+    const raw = await this.copyFloatTarget(target);
+    const crop = pickCrop(raw, this.resolution, 320);
+    const scale = cropScale(raw, this.resolution, crop);
+    this.beforeCrop = paintCrop(raw, this.resolution, crop, scale);
+    console.info('OIDN_CROP', crop.x, crop.y, crop.size, scale);
+    const started = performance.now();
+    let promiseMs = -1;
+    let promiseError: unknown = null;
+    const promised = denoiser.denoise(target, this.albedoTex, this.guideTex)
+        .then(() => {
+          promiseMs = performance.now() - started;
+          console.info('OIDN_PROMISE', JSON.stringify({
+            ms: Math.round(promiseMs),
+            complete: denoiser.complete,
+            running: denoiser.running,
+          }));
+        })
+        .catch((error: unknown) => {
+          promiseError = error;
+        });
+    const deadline = started + 120000;
+    while (!denoiser.complete) {
+      if (promiseError != null) {
+        console.warn('[model-viewer] WebGPU atlas denoise failed.', promiseError);
+        this.failed = true;
+        this.ready = false;
+        return;
+      }
+      if (performance.now() > deadline) {
+        console.info('OIDN_STUCK', JSON.stringify({
+          running: denoiser.running,
+          complete: denoiser.complete,
+          ms: Math.round(performance.now() - started),
+        }));
+        this.failed = true;
+        this.ready = false;
+        return;
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    await promised;
+    await renderer.backend.device?.queue.onSubmittedWorkDone();
+    const ms = performance.now() - started;
+    let execution: unknown = null;
+    try {
+      const unets = (denoiser as unknown as {
+        _unets?: {aux?: Promise<{_lastExecution?: unknown;}>;};
+      })._unets;
+      const unet = await unets?.aux;
+      execution = unet?._lastExecution ?? null;
+    } catch {
+      execution = null;
+    }
+    this.stages.denoise = Math.round(ms);
+    console.info('OIDN_DONE', JSON.stringify({
+      ms: Math.round(ms),
+      promiseMs: Math.round(promiseMs),
+      execution,
+    }));
+    if (ms < 100) {
+      console.info('OIDN_TOO_FAST', Math.round(ms));
+    }
+    if (denoiser.texture == null) {
+      console.info('OIDN_NO_TEXTURE');
       this.failed = true;
       this.ready = false;
-    });
+      return;
+    }
+    const denoised = await this.copyFloatTarget(denoiser.texture);
+    this.afterCrop = paintCrop(denoised, this.resolution, crop, scale);
+    await this.readFactor(denoised);
+  }
+
+  private async copyFloatTarget(source: unknown): Promise<Float32Array> {
+    const resolution = this.resolution;
+    const renderer = this.renderer!;
+    let pixels: ArrayBufferView;
+    try {
+      pixels = await renderer.backend.copyTextureToBuffer(
+          source as never, 0, 0, resolution, resolution, 0);
+    } catch (error) {
+      console.warn('[model-viewer] Direct atlas read failed, blitting.', error);
+      pixels = await this.blitRead(renderer, source, resolution);
+    }
+    const out = new Float32Array(resolution * resolution);
+    const bytesPerTexel = pixels instanceof Float32Array ? 16 : 8;
+    const rowBytes = Math.ceil((resolution * bytesPerTexel) / 256) * 256;
+    const stride = rowBytes / (pixels instanceof Float32Array ? 4 : 2);
+    for (let y = 0; y < resolution; y++) {
+      for (let x = 0; x < resolution; x++) {
+        out[y * resolution + x] = luminance(pixels, y * stride + x * 4);
+      }
+    }
+    return out;
   }
 
   private noteCpu(ms: number) {
@@ -740,7 +831,7 @@ export class AtlasBake {
     return {position: positionTex, normal: normalTex, guide: guideTex, albedo, mask};
   }
 
-  private async readFactor() {
+  private async readFactor(grid?: Float32Array) {
     const renderer = this.renderer;
     const tracer = this.tracer;
     const denoiser = this.denoiser;
@@ -751,15 +842,17 @@ export class AtlasBake {
       return;
     }
     const started = performance.now();
-    const denoised = denoiser?.complete === true ? denoiser.texture : null;
-    const source = denoised ?? tracer.target;
-    let pixels: ArrayBufferView;
-    try {
-      pixels = await renderer.backend.copyTextureToBuffer(
-          source, 0, 0, resolution, resolution, 0);
-    } catch (directError) {
-      console.warn('[model-viewer] Direct atlas read failed, blitting.', directError);
-      pixels = await this.blitRead(renderer, source, resolution);
+    let pixels: ArrayBufferView|null = null;
+    if (grid == null) {
+      const denoised = denoiser?.complete === true ? denoiser.texture : null;
+      const source = denoised ?? tracer.target;
+      try {
+        pixels = await renderer.backend.copyTextureToBuffer(
+            source, 0, 0, resolution, resolution, 0);
+      } catch (directError) {
+        console.warn('[model-viewer] Direct atlas read failed, blitting.', directError);
+        pixels = await this.blitRead(renderer, source, resolution);
+      }
     }
 
     const factor = new Float32Array(resolution * resolution);
@@ -767,16 +860,19 @@ export class AtlasBake {
     const lums: number[] = [];
     let rawMaxUnclamped = 0;
     const bytesPerTexel = pixels instanceof Float32Array ? 16 : 8;
-    const rowBytes = Math.ceil((resolution * bytesPerTexel) / 256) * 256;
-    const stride = rowBytes / (pixels instanceof Float32Array ? 4 : 2);
+    const rowBytes = pixels == null ? 0 :
+        Math.ceil((resolution * bytesPerTexel) / 256) * 256;
+    const stride = pixels == null ? 0 :
+        rowBytes / (pixels instanceof Float32Array ? 4 : 2);
     for (let y = 0; y < resolution; y++) {
       for (let x = 0; x < resolution; x++) {
         const slot = y * resolution + x;
         if (mask[slot] !== 1) {
           continue;
         }
-        const o = y * stride + x * 4;
-        const lum = luminance(pixels, o);
+        const lum = grid != null
+          ? grid[slot]
+          : luminance(pixels as ArrayBufferView, y * stride + x * 4);
         if (!Number.isFinite(lum)) {
           continue;
         }
@@ -868,6 +964,76 @@ export class AtlasBake {
     return pixels;
   }
 }
+
+const pickCrop = (
+    grid: Float32Array, resolution: number, size: number,
+): {x: number; y: number; size: number;} => {
+  let bestX = 0;
+  let bestY = 0;
+  let best = -1;
+  const step = 64;
+  for (let y = 0; y + size <= resolution; y += step) {
+    for (let x = 0; x + size <= resolution; x += step) {
+      let sum = 0;
+      let sum2 = 0;
+      let n = 0;
+      for (let yy = y; yy < y + size; yy += 4) {
+        for (let xx = x; xx < x + size; xx += 4) {
+          const value = grid[yy * resolution + xx];
+          if (!Number.isFinite(value) || value <= 0) continue;
+          sum += value;
+          sum2 += value * value;
+          n++;
+        }
+      }
+      if (n < 20) continue;
+      const mean = sum / n;
+      const variance = sum2 / n - mean * mean;
+      if (variance > best) {
+        best = variance;
+        bestX = x;
+        bestY = y;
+      }
+    }
+  }
+  return {x: bestX, y: bestY, size};
+};
+
+const cropScale = (
+    grid: Float32Array, resolution: number,
+    crop: {x: number; y: number; size: number;},
+): number => {
+  const values: number[] = [];
+  for (let y = crop.y; y < crop.y + crop.size; y++) {
+    for (let x = crop.x; x < crop.x + crop.size; x++) {
+      const value = grid[y * resolution + x];
+      if (Number.isFinite(value) && value > 0) values.push(Math.min(value, 8));
+    }
+  }
+  values.sort((a, b) => a - b);
+  const hi = values.length
+    ? values[Math.min(values.length - 1, Math.floor(values.length * 0.98))]
+    : 1;
+  return hi > 1e-4 ? hi : 1;
+};
+
+const paintCrop = (
+    grid: Float32Array, resolution: number,
+    crop: {x: number; y: number; size: number;}, scale: number,
+): {x: number; y: number; size: number; rgba: Uint8ClampedArray;} => {
+  const rgba = new Uint8ClampedArray(crop.size * crop.size * 4);
+  for (let y = 0; y < crop.size; y++) {
+    for (let x = 0; x < crop.size; x++) {
+      const value = grid[(crop.y + y) * resolution + crop.x + x];
+      const byte = Math.round(
+          Math.min(1, Math.max(0, (Number.isFinite(value) ? value : 0) / scale)) * 255);
+      const offset = (y * crop.size + x) * 4;
+      rgba[offset] = rgba[offset + 1] = rgba[offset + 2] = byte;
+      rgba[offset + 3] = 255;
+    }
+  }
+  return {x: crop.x, y: crop.y, size: crop.size, rgba};
+};
 
 const luminance = (pixels: ArrayBufferView, offset: number): number => {
   if (pixels instanceof Float32Array) {
