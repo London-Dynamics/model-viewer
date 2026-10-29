@@ -25,7 +25,7 @@ npm run build:dev
 
 | Value | What it uses |
 | --- | --- |
-| `gpu` | ANGLE on native GL. This is the real GPU path. |
+| `gpu` | Real GPU. ANGLE Metal on macOS, ANGLE GL on other platforms. `--use-angle=gl` has no WebGL context on macOS. |
 | `angle` | ANGLE default backend, software rasterizer disabled. |
 | `vulkan` | ANGLE on Vulkan. Use this on a headless Linux GPU if `gpu` falls back to software. |
 | `swiftshader` | ANGLE SwiftShader. Software GL for machines with no GPU. |

@@ -195,7 +195,7 @@ try {
     const files = await prepareSceneAssets(scene);
     const model = cacheUrl(server.port, `${scene.id}.glb`);
     const hdr = KIND === 'uniform' ?
-        cacheUrl(server.port, 'uniform-white.hdr') :
+        cacheUrl(server.port, 'uniform-white-e8.hdr') :
         cacheUrl(server.port, `${scene.id}.hdr`);
     void files;
     if (KIND === 'baked') {

@@ -19,6 +19,11 @@ def foreground(baked, trace):
     return (np.abs(b - 216 / 255) > 0.055) & (t > 0.03)
 
 
+def white_point(values, mask):
+    """p90 of the foreground. A crushed frame sits under 0.12 and must not be stretched."""
+    return float(np.percentile(values[mask], 90))
+
+
 def score_pair(image_b, image_t, label):
     if image_b.shape != image_t.shape or np.array_equal(image_b, image_t):
         print(f'{label}: missing or identical')
@@ -29,13 +34,23 @@ def score_pair(image_b, image_t, label):
     if mask.sum() < 500:
         print(f'{label}: not enough foreground')
         return None
-    bn = b / max(float(np.percentile(b[mask], 90)), 1e-4)
-    tn = t / max(float(np.percentile(t[mask], 90)), 1e-4)
+    pb = white_point(b, mask)
+    pt = white_point(t, mask)
+    # Independent 1/p90 stretch turns a crushed trace into noise and
+    # reports that noise as AO error. Cap the relative gain at 3x.
+    white_b = max(pb, 1e-4)
+    white_t = max(pt, white_b / 3, 1e-4)
+    crushed = pt < 0.12 and pt * 3 < pb
+    bn = b / white_b
+    tn = t / white_t
     err = np.abs(bn - tn)
     mean = float(err[mask].mean())
     p95 = float(np.percentile(err[mask], 95))
     signed = float((bn - tn)[mask].mean())
-    print(f'{label}: mean {mean:.3f}  p95 {p95:.3f}  signed {signed:+.3f}  pixels {int(mask.sum())}')
+    note = '  trace-crushed' if crushed else ''
+    print(
+        f'{label}: mean {mean:.3f}  p95 {p95:.3f}  signed {signed:+.3f}'
+        f'  pixels {int(mask.sum())}  bakeP90 {pb:.3f}  traceP90 {pt:.3f}{note}')
     heat = np.zeros_like(image_b)
     heat[..., 0] = np.clip((bn - tn) * 255, 0, 255)
     heat[..., 2] = np.clip((tn - bn) * 255, 0, 255)

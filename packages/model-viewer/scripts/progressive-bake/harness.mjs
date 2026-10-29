@@ -2,6 +2,7 @@ import {execFileSync} from 'node:child_process';
 import {createReadStream, existsSync, statSync} from 'node:fs';
 import {mkdir, readFile, rename, writeFile} from 'node:fs/promises';
 import http from 'node:http';
+import {platform} from 'node:os';
 import {dirname, extname, join, normalize, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -30,7 +31,10 @@ export async function loadScenes() {
   return JSON.parse(raw).scenes;
 }
 
-export function chromeArgs(backend = process.env.GL_BACKEND || 'gpu') {
+export function chromeArgs(
+    backend = process.env.GL_BACKEND || 'gpu',
+    os = platform(),
+    ) {
   const common = [
     '--no-sandbox',
     '--disable-dev-shm-usage',
@@ -63,10 +67,12 @@ export function chromeArgs(backend = process.env.GL_BACKEND || 'gpu') {
     ];
   }
   if (backend === 'gpu') {
+    // macOS Chrome has no desktop GL backend. ANGLE Metal is the GPU path.
+    const angle = os === 'darwin' ? 'metal' : 'gl';
     return [
       ...common,
       '--use-gl=angle',
-      '--use-angle=gl',
+      `--use-angle=${angle}`,
       '--disable-software-rasterizer',
     ];
   }
@@ -78,7 +84,10 @@ export function findChrome() {
   if (process.env.CHROME_PATH) {
     return process.env.CHROME_PATH;
   }
+  const home = process.env.HOME || '';
   const candidates = [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    join(home, 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
     '/usr/local/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/google-chrome',
@@ -165,12 +174,13 @@ export function viewerUrl(port) {
 /** Constant white Radiance HDR so the trace is occlusion, not a key light. */
 export async function ensureUniformHdr() {
   await mkdir(cacheDir, {recursive: true});
-  const dest = join(cacheDir, 'uniform-white.hdr');
+  const dest = join(cacheDir, 'uniform-white-e8.hdr');
   if (existsSync(dest)) {
     return dest;
   }
   const header = Buffer.from('#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 4 +X 4\n');
-  const texel = Buffer.from([0x80, 0x80, 0x80, 0x81]);
+  // Radiance 8. A value of 1 is crushed by the neutral tone mapper.
+  const texel = Buffer.from([0x80, 0x80, 0x80, 0x84]);
   const body = Buffer.alloc(4 * 16);
   for (let i = 0; i < 16; i++) {
     texel.copy(body, i * 4);
