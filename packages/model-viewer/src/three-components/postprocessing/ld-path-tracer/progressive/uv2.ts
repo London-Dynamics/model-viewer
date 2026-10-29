@@ -457,7 +457,7 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
   // Largest surfaces first. A shelf must keep its texels when thousands of
   // bevel charts also want a slot.
   order.sort((a, b) => widthOf(b) * heightOf(b) - widthOf(a) * heightOf(a));
-  const gutter = 4;
+  const gutter = 6;
   const originX = job.tile?.x ?? gutter;
   const originY = job.tile?.y ?? gutter;
   const spanX = Math.max(1, job.tile?.w ?? resolution - gutter * 2);
@@ -497,9 +497,11 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
       const deserve = Math.max(rawW, rawH);
       const area = widthOf(c) * heightOf(c);
       const largestArea = widthOf(order[0]) * heightOf(order[0]);
-      // Bevels and hole rims are a few percent of a shelf. Giving each one a
-      // slot is what previously crushed the shelf to a single texel.
-      if (deserve < 1.25 || area < largestArea * 0.015) {
+      const shortSide = Math.max(1e-6, Math.min(widthOf(c), heightOf(c)));
+      const aspect = Math.max(widthOf(c), heightOf(c)) / shortSide;
+      // Bevels and slivers must not pin the shelf scale. A long rim used to
+      // touch the tile edge and leave the panels in one corner.
+      if (deserve < 4 || (aspect > 24 && area < largestArea * 0.02)) {
         collapseTo(placed, c);
         continue;
       }
@@ -523,12 +525,28 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
     }
     return placed;
   };
-  let place = packAt(scale);
-  // Shrink until every chart that still wants two pixels fits. Charts that
-  // fall under that share the corner texel.
-  for (let attempt = 0; attempt < 16 && place == null; attempt++) {
-    scale *= 0.72;
-    place = packAt(scale);
+  // Largest shelf scale that still fits. A uniform stretch of a corner
+  // cluster cannot grow once one sliver already touches the tile.
+  let lo = Math.max(1e-6, scale * 0.05);
+  let hi = Math.max(lo * 2, scale * 12);
+  let place = packAt(lo);
+  if (place == null) {
+    for (let attempt = 0; attempt < 8 && place == null; attempt++) {
+      lo *= 0.5;
+      place = packAt(lo);
+    }
+  }
+  if (place != null) {
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const mid = (lo + hi) * 0.5;
+      const attemptPlace = packAt(mid);
+      if (attemptPlace != null) {
+        place = attemptPlace;
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
   }
   if (place == null) {
     place = new Float32Array(chartCount * 4);
@@ -536,6 +554,23 @@ const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
       collapseTo(place, c);
     }
   }
+  let rectArea = 0;
+  let kept = 0;
+  for (let c = 0; c < chartCount; c++) {
+    const w = place[c * 4 + 2];
+    const h = place[c * 4 + 3];
+    if (w <= 1 && h <= 1) {
+      continue;
+    }
+    kept++;
+    rectArea += w * h;
+  }
+  console.info('PACK', JSON.stringify({
+    charts: chartCount,
+    kept,
+    rectCoverage: rectArea / Math.max(1, spanX * spanY),
+    scale: lo,
+  }));
   return place;
 };
 
@@ -846,7 +881,7 @@ export const stepUvJob = (job: UvJob, budgetMs: number) => {
           const seedDot = ox * sx + oy * sy + oz * sz;
           const edgeDot = ox * job.normals[tri * 3] +
               oy * job.normals[tri * 3 + 1] + oz * job.normals[tri * 3 + 2];
-          if (seedDot > 0.82 && edgeDot > 0.35) {
+          if (seedDot > 0.96 && edgeDot > 0.5) {
             job.chartOf[other] = chart;
             queue.push(other);
           }

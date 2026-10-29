@@ -43,6 +43,7 @@ export interface ProgressiveHost {
   sampleTrace(): number;
   traceSamples(): number;
   maxSamples(): number;
+  traceSettled(): boolean;
   invalidateTrace(): void;
   shadowLayerReady(): boolean;
   shadowMs(): number;
@@ -1350,23 +1351,33 @@ export class ProgressivePipeline {
       this.aoReady = true;
       return;
     }
+    const scene = this.host.scene();
+    if (scene == null) {
+      return;
+    }
     if (this.atlasBake == null) {
       this.atlasBake = new AtlasBake();
     }
-    // No atlas yet, so texture AO stays unready and shader AO stays up.
-    // This does not block the beauty trace.
+    if (this.atlasBake.unavailable) {
+      this.aoReady = true;
+      return;
+    }
+    const resolution = Math.max(8, this.settings.bake.textureAO.resolution);
+    this.atlasBake.setSurface(this.surface, this.surfaceCount, resolution);
+    this.atlasBake.start(
+        scene, this.settings.bake.textureAO.samples, 2);
     if (!this.atlasBake.implemented) {
       return;
     }
-    // TODO(webgpu-atlas-bake): step the WebGPU atlas. Its camera is
-    // getCameraRay. Publish that image here; do not use a WebGL tracer.
     const samples = this.atlasBake.step();
-    if (samples <= 0) {
+    this.aoCursor = samples;
+    const factor = this.atlasBake.factor();
+    if (factor == null || factor.length !== resolution * resolution) {
       return;
     }
-    this.aoCursor = samples;
-    const resolution = Math.min(128, this.settings.bake.textureAO.resolution);
-    this.publishFactor(new Float32Array(0), new Float32Array(0), resolution);
+    const back = new Float32Array(factor.length);
+    back.fill(-1);
+    this.publishFactor(factor, back, resolution);
   }
 
   private buildLightList(resolution: number) {
@@ -1684,7 +1695,8 @@ export class ProgressivePipeline {
     if (!this.host.traceReady()) {
       return;
     }
-    if (this.host.traceSamples() >= this.host.maxSamples()) {
+    if (this.host.traceSamples() >= this.host.maxSamples() &&
+        this.host.traceSettled()) {
       return;
     }
     const ms = this.host.sampleTrace();
@@ -2152,7 +2164,8 @@ export class ProgressivePipeline {
     }
     return this.phase !== 'done' || fading ||
         (this.phase === 'done' && this.idleMs >= this.settings.idleDelayMs &&
-         this.host.traceSamples() < this.host.maxSamples());
+         (this.host.traceSamples() < this.host.maxSamples() ||
+          !this.host.traceSettled()));
   }
 
   private geometryFingerprint(scene: ModelScene): string {

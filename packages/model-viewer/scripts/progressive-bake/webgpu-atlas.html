@@ -1,0 +1,321 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>WebGPU atlas bake</title>
+<style>
+  html, body { margin: 0; background: #d8d8d8; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/node_modules/three/build/three.module.js",
+    "three/webgpu": "/node_modules/three/build/three.webgpu.js",
+    "three/tsl": "/node_modules/three/build/three.tsl.js",
+    "three/addons/": "/node_modules/three/examples/jsm/",
+    "three/examples/": "/node_modules/three/examples/",
+    "three-gpu-pathtracer/webgpu": "/packages/model-viewer/node_modules/three-gpu-pathtracer/src/webgpu/index.js",
+    "three-mesh-bvh": "/node_modules/three-mesh-bvh/src/index.js",
+    "three-mesh-bvh/webgpu": "/node_modules/three-mesh-bvh/src/webgpu/index.js",
+    "oidn-web": "/node_modules/oidn-web/lib/main.js",
+    "@petamoriken/float16": "/node_modules/@petamoriken/float16/src/index.mjs",
+    "@pmndrs/upscaler": "/packages/model-viewer/node_modules/@pmndrs/upscaler/dist/index.js"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+import {
+  ACESFilmicToneMapping,
+  DataTexture,
+  EquirectangularReflectionMapping,
+  LinearFilter,
+  LinearSRGBColorSpace,
+  Mesh,
+  MeshStandardMaterial,
+  NoColorSpace,
+  PerspectiveCamera,
+  PlaneGeometry,
+  RGBAFormat,
+  Scene,
+  SRGBColorSpace,
+  Vector3,
+  WebGLRenderer,
+} from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
+import {HDRLoader} from 'three/addons/loaders/HDRLoader.js';
+import {
+  applyUvJob,
+  createUvJob,
+  planAtlasTiles,
+  stepUvJob,
+  uv1IsValid,
+} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
+import {packFactorR8} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/atlas-plan.js';
+import {
+  AtlasBake,
+  fitCameraAspect,
+  packSurface,
+} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
+
+const params = new URLSearchParams(location.search);
+const resolution = Number(params.get('resolution') || 2048);
+const viewW = 640;
+const viewH = 480;
+window.__status = {done: false};
+
+const fail = (error) => {
+  console.error('ATLAS_FAIL', error);
+  window.__status = {done: true, error: String(error && error.stack || error)};
+};
+
+try {
+  const adapter = await navigator.gpu.requestAdapter();
+  const info = adapter && adapter.info;
+  console.info('GPU', JSON.stringify({
+    description: info && info.description,
+    architecture: info && info.architecture,
+    vendor: info && info.vendor,
+  }));
+
+  const planeMode = params.get('plane') === '1';
+  const envMap = await new HDRLoader().loadAsync(params.get('env'));
+  envMap.mapping = EquirectangularReflectionMapping;
+  const scene = new Scene();
+  scene.environment = envMap;
+  scene.environmentIntensity = 1;
+  scene.background = null;
+  let root;
+  if (planeMode) {
+    const geometry = new PlaneGeometry(1, 1);
+    geometry.setAttribute('uv1', geometry.getAttribute('uv').clone());
+    const mesh = new Mesh(geometry, new MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      metalness: 0,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.name = 'plane';
+    scene.add(mesh);
+    root = mesh;
+    console.info('PLANE', 'up', 'uv1', true);
+  } else {
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+    const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(params.get('model'));
+    draco.dispose();
+    root = gltf.scene;
+    scene.add(root);
+  }
+  root.updateMatrixWorld(true);
+
+  const meshes = [];
+  let fileUv1 = false;
+  root.traverse((child) => {
+    if (!child.isMesh) return;
+    meshes.push(child);
+    if (child.geometry.getAttribute('uv1')) fileUv1 = true;
+  });
+  console.info('UV1_IN_FILE', fileUv1, 'meshes', meshes.length);
+
+  const areas = meshes.map((mesh) => {
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const triCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
+    const ab = new Vector3();
+    const ac = new Vector3();
+    mesh.updateWorldMatrix(true, false);
+    let area = 0;
+    for (let tri = 0; tri < triCount; tri++) {
+      const i0 = index ? index.getX(tri * 3) : tri * 3;
+      const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+      const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+      a.fromBufferAttribute(position, i0).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, i1).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, i2).applyMatrix4(mesh.matrixWorld);
+      ab.subVectors(b, a);
+      ac.subVectors(c, a);
+      area += ab.cross(ac).length() * 0.5;
+    }
+    return area;
+  });
+  const tiles = planAtlasTiles(areas, resolution);
+  const uvStart = performance.now();
+  for (let n = 0; n < meshes.length; n++) {
+    const mesh = meshes[n];
+    if (uv1IsValid(mesh.geometry, resolution)) {
+      console.info('UV1_KEPT', mesh.name);
+      continue;
+    }
+    const job = createUvJob(mesh.geometry, resolution, tiles[n]);
+    if (job == null) continue;
+    let last = performance.now();
+    while (!job.done) {
+      stepUvJob(job, 50);
+      if (performance.now() - last > 2000) {
+        console.info('UV_PHASE', mesh.name || n, job.phase, job.chartCursor, job.triCount);
+        last = performance.now();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    const next = applyUvJob(mesh.geometry, job);
+    if (next != null) mesh.geometry = next;
+    console.info('UV1_WRITTEN', mesh.name || n, uv1IsValid(mesh.geometry, resolution));
+  }
+  console.info('STAGE_UV', Math.round(performance.now() - uvStart));
+
+  const packed = packSurface(root, resolution);
+  console.info('STAGE_STAMP', packed.count);
+  const bake = new AtlasBake();
+  if (params.get('up') === '1') bake.useConstantUpRay();
+  bake.setSurface(packed.surface, packed.count, resolution);
+  const traceStart = performance.now();
+  bake.start(scene, 16, 4);
+  while (!bake.implemented && !bake.unavailable) {
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
+
+  let result = null;
+  let frames = 0;
+  let counted = 0;
+  while (result == null) {
+    await bake.syncFrame();
+    frames++;
+    if (bake.unavailable) {
+      throw new Error('atlas bake unavailable');
+    }
+    if (counted < 16 && frames % 4 === 0) {
+      counted = await bake.measure();
+      console.info('SAMPLES', counted, 'frames', frames);
+    }
+    const factor = bake.factor();
+    if (factor != null) {
+      result = {samples: counted, factor};
+      break;
+    }
+    if (frames > 6000) {
+      throw new Error('atlas frame budget exhausted at ' + frames);
+    }
+  }
+  const cleanMs = Math.round(performance.now() - traceStart);
+  const r8 = packFactorR8(result.factor, resolution);
+  console.info('ATLAS_DONE', JSON.stringify({
+    cleanMs,
+    samples: result.samples,
+    bytes: r8.length,
+    stages: bake.stages,
+    frames: bake.frames,
+    uv1InFile: fileUv1,
+  }));
+
+  const rgba = new Uint8Array(resolution * resolution * 4);
+  for (let i = 0; i < result.factor.length; i++) {
+    const sample = result.factor[i];
+    const byte = sample < 0 ? 255 : Math.round(Math.min(1, Math.max(0, sample)) * 255);
+    rgba[i * 4] = byte;
+    rgba[i * 4 + 1] = byte;
+    rgba[i * 4 + 2] = byte;
+    rgba[i * 4 + 3] = sample < 0 ? 0 : 255;
+  }
+  const ao = new DataTexture(rgba, resolution, resolution, RGBAFormat);
+  ao.colorSpace = NoColorSpace;
+  ao.magFilter = LinearFilter;
+  ao.minFilter = LinearFilter;
+  ao.flipY = false;
+  ao.channel = 1;
+  ao.needsUpdate = true;
+
+  const camera = new PerspectiveCamera(30, viewW / viewH, 0.05, 50);
+  const target = new Vector3(0, 0.38, 0);
+  const phi = 75 * Math.PI / 180;
+  const radius = 2.4;
+  camera.position.set(0, target.y + radius * Math.cos(phi), radius * Math.sin(phi));
+  camera.lookAt(target);
+  const gl = new WebGLRenderer({antialias: true});
+  gl.outputColorSpace = SRGBColorSpace;
+  gl.toneMapping = ACESFilmicToneMapping;
+  gl.setClearColor(0xd8d8d8, 1);
+  gl.setSize(viewW, viewH, false);
+  fitCameraAspect(camera, viewW, viewH);
+
+  const saved = meshes.map((mesh) => mesh.material);
+  const sheet = document.createElement('canvas');
+  sheet.id = 'sheet';
+  sheet.width = viewW * 3;
+  sheet.height = viewH;
+  const sheetCtx = sheet.getContext('2d');
+  sheetCtx.fillStyle = '#d8d8d8';
+  sheetCtx.fillRect(0, 0, sheet.width, sheet.height);
+  const draw = (index) => {
+    gl.setSize(viewW, viewH, false);
+    fitCameraAspect(camera, viewW, viewH);
+    gl.render(scene, camera);
+    sheetCtx.drawImage(gl.domElement, index * viewW, 0, viewW, viewH);
+  };
+  draw(0);
+  const factorMat = new MeshStandardMaterial({color: 0xffffff, roughness: 1, metalness: 0});
+  factorMat.aoMap = ao;
+  factorMat.aoMapIntensity = 1;
+  factorMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+        /texture2D\( aoMap, vAoMapUv \)\.r/g,
+        'texture2D( aoMap, vAoMapUv ).r');
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `{
+          vec4 ldFactor = texture2D( aoMap, vAoMapUv );
+          gl_FragColor.rgb = vec3( ldFactor.r );
+        }
+        #include <dithering_fragment>`);
+  };
+  factorMat.customProgramCacheKey = () => 'ld-bake-factor';
+  for (const mesh of meshes) mesh.material = factorMat;
+  const previousEnv = scene.environment;
+  draw(1);
+  scene.environment = previousEnv;
+  for (let n = 0; n < meshes.length; n++) {
+    const material = saved[n];
+    const list = Array.isArray(material) ? material : [material];
+    for (const entry of list) {
+      if (entry && entry.isMeshStandardMaterial) {
+        entry.aoMap = ao;
+        entry.aoMapIntensity = 1;
+        entry.needsUpdate = true;
+      }
+    }
+    meshes[n].material = material;
+  }
+  draw(2);
+
+  const atlas = document.createElement('canvas');
+  atlas.id = 'atlas';
+  atlas.width = resolution;
+  atlas.height = resolution;
+  const image = atlas.getContext('2d').createImageData(resolution, resolution);
+  image.data.set(rgba);
+  atlas.getContext('2d').putImageData(image, 0, 0);
+  document.body.appendChild(atlas);
+  document.body.appendChild(sheet);
+  window.__status = {
+    done: true,
+    cleanMs,
+    samples: result.samples,
+    bytes: r8.length,
+    stages: bake.stages,
+    frames: bake.frames,
+    uv1InFile: fileUv1,
+    aspect: camera.aspect,
+  };
+  console.info('PANELS_READY', JSON.stringify(window.__status));
+} catch (error) {
+  fail(error);
+}
+</script>
+</body>
+</html>

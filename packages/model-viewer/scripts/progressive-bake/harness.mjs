@@ -24,6 +24,7 @@ const types = {
   '.wasm': 'application/wasm',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
+  '.tza': 'application/octet-stream',
 };
 
 export async function loadScenes() {
@@ -73,6 +74,7 @@ export function chromeArgs(
       ...common,
       '--use-gl=angle',
       `--use-angle=${angle}`,
+      '--enable-unsafe-webgpu',
       '--disable-software-rasterizer',
     ];
   }
@@ -124,8 +126,27 @@ export function startServer() {
     const fromCache = pathname.startsWith('/bake-cache/');
     const rel = fromCache ? pathname.slice('/bake-cache/'.length) : pathname;
     const root = fromCache ? cacheDir : repoRoot;
-    const file = normalize(join(root, rel));
-    if (!inside(root, file) || !existsSync(file) || statSync(file).isDirectory()) {
+    let file = normalize(join(root, rel));
+    if (!inside(root, file)) {
+      res.writeHead(404);
+      res.end('not found');
+      return;
+    }
+    if (existsSync(file) && statSync(file).isDirectory()) {
+      const index = join(file, 'index.js');
+      file = existsSync(index) ? index : file;
+    }
+    if (!existsSync(file)) {
+      const withJs = file + '.js';
+      const withMjs = file + '.mjs';
+      if (existsSync(withJs)) {
+        file = withJs;
+      } else if (existsSync(withMjs)) {
+        file = withMjs;
+      }
+    }
+    if (!existsSync(file) || statSync(file).isDirectory()) {
+      console.log('MISS', pathname);
       res.writeHead(404);
       res.end('not found');
       return;
@@ -224,7 +245,8 @@ export async function launchBrowser() {
   console.log('GL_BACKEND', backend, executablePath || 'puppeteer-default');
   return puppeteer.launch({
     executablePath,
-    headless: 'new',
+    headless: process.env.HEADLESS === '0' ? false : 'new',
+    protocolTimeout: Number(process.env.PROTOCOL_TIMEOUT || 180000),
     args: chromeArgs(backend),
   });
 }

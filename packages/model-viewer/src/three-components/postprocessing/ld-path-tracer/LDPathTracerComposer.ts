@@ -23,6 +23,7 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
 import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
+import {fitCameraAspect} from './progressive/surface-bake.js';
 import {WebGPUBeautyTrace} from './progressive/webgpu-beauty-trace.js';
 
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -99,9 +100,9 @@ export interface PathTracerOptions {
 }
 
 export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
-  samples: 32,
+  samples: 16,
   samplesThreshold: 6,
-  bounces: 5,
+  bounces: 15,
   renderScale: 1,
   tiles: new Vector2(3, 3),
   depthOfField: false,
@@ -193,6 +194,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   setSize(width: number, height: number) {
+    if (this.camera != null) {
+      fitCameraAspect(this.camera, width, height);
+    }
     this.beautyTrace.reset();
     this.ambientOcclusionPreviewComposer?.setSize(width, height);
     this.requestRender();
@@ -481,6 +485,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       sampleTrace: () => this.sampleBeauty(),
       traceSamples: () => this.beautyTrace.samples,
       maxSamples: () => Math.max(1, this.options.samples),
+      traceSettled: () => this.beautyTrace.settled(),
       invalidateTrace: () => {
         this.invalidateReady();
         this.beautyTrace.reset();

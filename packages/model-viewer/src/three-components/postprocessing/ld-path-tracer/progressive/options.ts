@@ -21,6 +21,9 @@ export type PathTracerView = 'beauty'|'realtime'|'occlusion'|'bake';
 /** uniform white makes the path tracer output the occlusion factor. */
 export type OcclusionEnvironment = 'scene'|'uniform';
 
+/** Per-atlas side. auto is the packer's choice; the others are fixed sides. */
+export type BakeResolution = 'auto'|'0.5k'|'1k'|'2k'|'4k';
+
 export interface ContactShadowOptions {
   enabled: boolean;
   resolution: number;

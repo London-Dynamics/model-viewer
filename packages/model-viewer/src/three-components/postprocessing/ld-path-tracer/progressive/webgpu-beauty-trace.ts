@@ -16,15 +16,21 @@
 
 import {Camera, CanvasTexture, LinearSRGBColorSpace, Scene, Vector2, WebGLRenderer} from 'three';
 
+import {fitCameraAspect} from './surface-bake.js';
+
 /**
- * Guided OIDN weights shipped with three-gpu-pathtracer 0.0.27's viewer.
- * The library does not bundle them.
+ * Guided OIDN weights. Same-origin, served from the bake cache. A CDN fetch
+ * left the denoiser running forever, so the tracer never presented a clean frame.
  */
-const AUX_WEIGHTS_URL =
-    'https://cdn.jsdelivr.net/gh/gkjohnson/three-gpu-pathtracer@0.0.27/example/src/denoise/rt_hdr_alb_nrm.tza';
+const AUX_WEIGHTS_PATH = '/bake-cache/rt_hdr_alb_nrm.tza';
 
 /** Same budget the drag-and-drop viewer uses for a desktop frame. */
 const FRAME_BUDGET = 250000;
+
+type Denoiser = {
+  complete: boolean;
+  running: boolean;
+};
 
 type GpuTracer = {
   frameBudget: number;
@@ -34,6 +40,7 @@ type GpuTracer = {
   minSamples: number;
   renderDelay: number;
   setRandom(random: object): void;
+  setMultipleImportanceSampling(value: boolean): void;
   setDenoiser(denoiser: object|null): void;
   setUpscaler(upscaler: object|null): void;
   setScene(scene: Scene, camera: Camera): void;
@@ -59,8 +66,34 @@ export class WebGPUBeautyTrace {
   private disposed = false;
   private boundScene: Scene|null = null;
   private cameraStamp = '';
+  private denoise = true;
+  private denoiser: Denoiser|null = null;
   presented = false;
   samples = 0;
+
+  /** True once the sample cap is reached and OIDN, when enabled, has finished. */
+  settled(): boolean {
+    if (this.failed) {
+      return true;
+    }
+    if (this.tracer == null || this.samples < this.tracer.maxSamples) {
+      return false;
+    }
+    if (!this.denoise || this.denoiser == null) {
+      return true;
+    }
+    return this.denoiser.complete;
+  }
+
+  private denoiseBusy(): boolean {
+    if (this.denoiser == null || this.tracer == null) {
+      return false;
+    }
+    if (this.denoiser.running) {
+      return true;
+    }
+    return this.samples >= this.tracer.maxSamples && !this.denoiser.complete;
+  }
 
   canStart(): boolean {
     return !this.failed && typeof navigator !== 'undefined' &&
@@ -97,10 +130,26 @@ export class WebGPUBeautyTrace {
       import('oidn-web'),
       import('@pmndrs/upscaler'),
     ]);
+    const adapter = await navigator.gpu.requestAdapter();
+    const requiredLimits: Record<string, number> = {};
+    const limits = adapter?.limits;
+    if (limits != null) {
+      for (const key of ['maxBufferSize', 'maxStorageBufferBindingSize'] as const) {
+        const value = limits[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          requiredLimits[key] = value;
+        }
+      }
+    }
+    const info = (adapter as {info?: {description?: string; architecture?: string; vendor?: string;}}|null)?.info;
+    console.info(
+        '[model-viewer] WebGPU adapter',
+        info?.description ?? info?.architecture ?? info?.vendor ?? 'ready');
     const renderer = new WebGPURenderer({
       canvas: this.canvas,
       antialias: false,
-    });
+      requiredLimits,
+    } as object);
     await renderer.init();
     renderer.setSize(width, height, false);
     const pathTracer = new gpu.WebGPUPathTracer(renderer) as GpuTracer;
@@ -111,13 +160,18 @@ export class WebGPUBeautyTrace {
     pathTracer.minSamples = 1;
     pathTracer.renderDelay = 0;
     pathTracer.setRandom(gpu.RANDOM_BLUE_DITHER);
+    pathTracer.setMultipleImportanceSampling(true);
+    this.denoise = denoise;
     if (denoise) {
-      pathTracer.setDenoiser(new gpu.OIDNDenoiser({
+      const weights = new URL(AUX_WEIGHTS_PATH, location.href).toString();
+      const denoiser = new gpu.OIDNDenoiser({
         initUNetFromURL: oidn.initUNetFromURL,
-        auxWeightsUrl: AUX_WEIGHTS_URL,
+        auxWeightsUrl: weights,
         maxTileSize: 512,
         dynamicTile: false,
-      }));
+      });
+      this.denoiser = denoiser;
+      pathTracer.setDenoiser(denoiser);
     }
     pathTracer.setUpscaler(new gpu.FSRUpscaler({
       Upscaler: upscaler.Upscaler,
@@ -139,13 +193,13 @@ export class WebGPUBeautyTrace {
     camera.updateMatrixWorld();
     const world = camera.matrixWorld.elements;
     const projection = camera.projectionMatrix.elements;
-    return `${world[12]},${world[13]},${world[14]},${projection[0]},${projection[5]},${projection[10]}`;
+    const quantize = (value: number) => Math.round(value * 1000) / 1000;
+    return `${quantize(world[12])},${quantize(world[13])},${quantize(world[14])},${quantize(projection[0])},${quantize(projection[5])},${quantize(projection[10])}`;
   }
 
   private rememberCamera(camera: Camera) {
     const stamp = this.cameraKey(camera);
-    if (stamp === this.cameraStamp || this.tracer == null) {
-      this.cameraStamp = stamp;
+    if (stamp === this.cameraStamp || this.tracer == null || this.denoiseBusy()) {
       return;
     }
     this.cameraStamp = stamp;
@@ -161,6 +215,7 @@ export class WebGPUBeautyTrace {
     gl.getDrawingBufferSize(size);
     const width = Math.max(1, size.x);
     const height = Math.max(1, size.y);
+    fitCameraAspect(camera, width, height);
     this.start(width, height, bounces, samples, denoise, renderScale);
     if (this.tracer == null) {
       return -1;
@@ -176,11 +231,13 @@ export class WebGPUBeautyTrace {
     }
     this.tracer.renderScale = Math.min(1, Math.max(0.1, renderScale));
     if (this.boundScene !== scene) {
-      this.tracer.setScene(scene, camera);
-      this.boundScene = scene;
-      this.cameraStamp = this.cameraKey(camera);
-      this.presented = false;
-      this.samples = 0;
+      if (!this.denoiseBusy()) {
+        this.tracer.setScene(scene, camera);
+        this.boundScene = scene;
+        this.cameraStamp = this.cameraKey(camera);
+        this.presented = false;
+        this.samples = 0;
+      }
     } else {
       this.rememberCamera(camera);
     }
