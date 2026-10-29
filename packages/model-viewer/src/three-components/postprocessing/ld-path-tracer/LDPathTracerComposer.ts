@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, Light, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, ShaderMaterial, Side, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {Camera, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, Light, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, MultiplyBlending, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, ShaderMaterial, Side, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
 import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
 import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
@@ -26,7 +26,7 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
 import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
-import {installSurfaceBake} from './progressive/surface-bake.js';
+import {FactorEncoder, openLevel, usableFactorScale} from './progressive/surface-bake.js';
 
 const PATH_TRACER_FADE_DURATION_MS = 600;
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -185,6 +185,15 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private denoisedSample = -1;
   private traceHoldTarget: WebGLRenderTarget|null = null;
   private traceBlit: FullScreenQuad|null = null;
+  private shadowStage: 'shadow'|'full' = 'full';
+  private shadowHold: WebGLRenderTarget|null = null;
+  private shadowQuad: FullScreenQuad|null = null;
+  private shadowMaterial: ShaderMaterial|null = null;
+  private shadowStartedAt = 0;
+  private shadowReadyMs = 0;
+  private shadowScale = 1;
+  private shadowStale = false;
+  private readonly factorEncoder = new FactorEncoder();
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -339,6 +348,21 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const environmentChanged =
         settings.occlusionEnvironment !== this.progressiveSettings.occlusionEnvironment;
     this.progressiveSettings = cloneProgressiveSettings(settings);
+    if (this.usesShadowPass() && this.shadowHold == null) {
+      this.shadowStage = 'shadow';
+      this.shadowStartedAt = 0;
+      this.shadowStale = false;
+      this.traceSceneReady = false;
+      this.needsSceneUpdate = true;
+    } else if (!this.usesShadowPass() && this.shadowStage === 'shadow') {
+      this.shadowStage = 'full';
+      this.traceSceneReady = false;
+      this.needsSceneUpdate = true;
+    }
+    if ((settings.view === 'occlusion' || settings.view === 'bake') &&
+        !this.occlusionReady) {
+      this.needsSceneUpdate = true;
+    }
     if (environmentChanged) {
       this.occlusionReady = false;
       this.occlusionTracer?.reset();
@@ -399,6 +423,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.compositeOcclusion();
       return;
     }
+    this.compositeShadowHold();
     const fade = this.pipeline?.traceFadeValue ?? 0;
     if (fade <= 0.001 || this.pathTracer == null || this.renderer == null ||
         this.pathTracer.target == null) {
@@ -506,6 +531,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.traceBlit = null;
     this.traceHoldTarget?.dispose();
     this.traceHoldTarget = null;
+    this.shadowHold?.dispose();
+    this.shadowHold = null;
+    this.shadowQuad?.dispose();
+    this.shadowQuad = null;
+    this.shadowMaterial?.dispose();
+    this.shadowMaterial = null;
+    this.factorEncoder.dispose();
     this.disposeShadowCatcher();
     this.renderer = null;
     this.scene = null;
@@ -583,6 +615,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.scene?.element.dispatchEvent(new CustomEvent(name, {detail}));
       },
       buildTrace: () => {
+        if (this.sceneBuildInFlight || this.traceSceneReady) {
+          return;
+        }
         this.needsSceneUpdate = true;
         this.syncScene();
       },
@@ -602,6 +637,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       },
       occlusionSamples: () => this.occlusionTracer?.samples ?? 0,
       resetTrace: () => {
+        if (this.shadowStage === 'shadow') {
+          this.pathTracer?.reset();
+          return;
+        }
         if (this.pathTracer != null && this.pathTracer.samples > 0) {
           this.blitTrace(this.pathTracer.target, this.options.denoise);
         }
@@ -615,7 +654,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         }
         this.pathTracer.renderToCanvas = false;
         this.pathTracer.pausePathTracing = false;
-        this.clampPathTracerFireflies();
+        if (this.shadowStage !== 'shadow') {
+          this.clampPathTracerFireflies();
+        }
         const started = performance.now();
         try {
           this.pathTracer.renderSample();
@@ -625,14 +666,52 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           return -1;
         }
         const elapsed = performance.now() - started;
+        if (this.shadowStage === 'shadow' &&
+            this.pathTracer.samples >=
+                this.progressiveSettings.shadowPass.samples) {
+          this.finishShadowPass();
+        }
         this.maybeMarkReady();
         return elapsed;
       },
-      traceSamples: () => this.pathTracer?.samples ?? 0,
+      traceSamples: () => this.shadowStage === 'full' ?
+          (this.pathTracer?.samples ?? 0) :
+          0,
       maxSamples: () => Math.max(1, this.options.samples),
       invalidateTrace: () => {
         this.traceSceneReady = false;
         this.invalidateReady();
+        if (this.usesShadowPass()) {
+          this.shadowStage = 'shadow';
+          this.shadowStartedAt = 0;
+          this.shadowStale = false;
+        }
+      },
+      shadowLayerReady: () =>
+          this.shadowStage === 'full' && this.shadowHold != null,
+      shadowMs: () => this.shadowReadyMs,
+      shadowStale: () => this.shadowStale,
+      markShadowStale: () => {
+        if (!this.usesShadowPass()) {
+          return;
+        }
+        if (this.shadowStage === 'shadow') {
+          this.pathTracer?.reset();
+          return;
+        }
+        this.shadowStale = true;
+      },
+      restartShadow: () => {
+        if (!this.usesShadowPass()) {
+          this.shadowStale = false;
+          return;
+        }
+        this.shadowStale = false;
+        this.shadowStage = 'shadow';
+        this.shadowStartedAt = performance.now();
+        this.traceSceneReady = false;
+        this.needsSceneUpdate = true;
+        this.syncScene();
       },
     };
   }
@@ -910,8 +989,175 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
   }
 
+  private usesShadowPass(): boolean {
+    return this.progressiveSettings.mode === 'progressive' &&
+        this.progressiveSettings.view === 'beauty' &&
+        this.progressiveSettings.shadowPass.enabled;
+  }
+
+  private beautyMaterial(): PhysicalPathTracingMaterial|null {
+    const tracer = this.pathTracer as unknown as {
+      _pathTracer?: {material?: PhysicalPathTracingMaterial};
+    }|null;
+    return tracer?._pathTracer?.material ?? null;
+  }
+
+  private applyShadowPreset() {
+    const tracer = this.pathTracer;
+    if (tracer == null) {
+      return;
+    }
+    const pass = this.progressiveSettings.shadowPass;
+    tracer.bounces = Math.min(2, Math.max(1, Math.floor(pass.bounces)));
+    tracer.renderScale = Math.min(1, Math.max(0.1, pass.renderScale));
+    tracer.tiles.set(1, 1);
+    tracer.filterGlossyFactor = 0;
+    tracer.minSamples = 1;
+    this.setBackgroundAlpha(this.beautyMaterial(), 0);
+  }
+
+  private setBackgroundAlpha(
+      material: PhysicalPathTracingMaterial|null, value: number) {
+    const uniform = material?.uniforms?.backgroundAlpha;
+    if (uniform != null) {
+      uniform.value = value;
+    }
+  }
+
+  private finishShadowPass() {
+    this.captureShadow();
+    this.shadowReadyMs = Math.max(
+        1, performance.now() - (this.shadowStartedAt || performance.now()));
+    this.shadowStage = 'full';
+    this.shadowStale = false;
+    this.applyOptions(false);
+    this.setBackgroundAlpha(this.beautyMaterial(), 1);
+    this.traceSceneReady = false;
+    this.needsSceneUpdate = true;
+    this.pathTracer?.reset();
+    this.denoisedSample = -1;
+    this.syncScene();
+  }
+
+  private captureShadow() {
+    const source = this.pathTracer?.target;
+    const renderer = this.renderer;
+    if (source == null || renderer == null) {
+      return;
+    }
+    if (this.shadowHold == null || this.shadowHold.width !== source.width ||
+        this.shadowHold.height !== source.height) {
+      this.shadowHold?.dispose();
+      this.shadowHold = new WebGLRenderTarget(source.width, source.height, {
+        type: FloatType,
+        format: RGBAFormat,
+        depthBuffer: false,
+      });
+    }
+    const previous = renderer.getRenderTarget();
+    source.texture.colorSpace = LinearSRGBColorSpace;
+    renderer.setRenderTarget(this.shadowHold);
+    if (this.progressiveSettings.shadowPass.denoise) {
+      this.denoiseMaterial.map = source.texture;
+      this.denoiseMaterial.opacity = 1;
+      this.denoiseMaterial.transparent = false;
+      this.denoiseQuad.render(renderer);
+    } else {
+      const blit = this.ensureTraceBlit();
+      const blitMaterial = blit.material as MeshBasicMaterial;
+      blitMaterial.map = source.texture;
+      blitMaterial.opacity = 1;
+      blitMaterial.transparent = false;
+      blitMaterial.blending = NoBlending;
+      blit.render(renderer);
+    }
+    renderer.setRenderTarget(previous);
+    const bytes = this.factorEncoder.encode(
+        renderer, this.shadowHold, this.shadowHold.width, this.shadowHold.height);
+    const values = new Float32Array(this.shadowHold.width * this.shadowHold.height);
+    values.fill(-1);
+    let peak = 0;
+    for (let i = 0; i < values.length; i++) {
+      if (bytes[i * 4 + 3] < 128) {
+        continue;
+      }
+      const sample =
+          (bytes[i * 4] + bytes[i * 4 + 1] + bytes[i * 4 + 2]) / (3 * 255);
+      values[i] = sample;
+      if (sample > peak) {
+        peak = sample;
+      }
+    }
+    console.info(
+        '[model-viewer] Shadow layer readback peak', peak.toFixed(3),
+        'scale', usableFactorScale(openLevel(values)).toFixed(3));
+    if (!(peak > 0.02)) {
+      console.warn(
+          '[model-viewer] Shadow pass readback is black. The GPU path did not return texels.');
+      this.shadowScale = 1;
+      return;
+    }
+    this.shadowScale = usableFactorScale(openLevel(values));
+  }
+
+  private compositeShadowHold() {
+    const weight = this.pipeline?.shadowComposite ?? 0;
+    if (weight <= 0.001 || this.shadowHold == null || this.renderer == null) {
+      return;
+    }
+    if (this.shadowMaterial == null) {
+      this.shadowMaterial = new ShaderMaterial({
+        uniforms: {
+          tDiffuse: {value: null},
+          scale: {value: 1},
+          weight: {value: 1},
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float scale;
+          uniform float weight;
+          varying vec2 vUv;
+          void main() {
+            vec4 shadow = texture2D(tDiffuse, vUv);
+            float divisor = (scale > 0.02 && scale < 8.0) ? scale : 1.0;
+            vec3 factor = shadow.rgb / divisor;
+            float cover = shadow.a * weight;
+            gl_FragColor = vec4(mix(vec3(1.0), clamp(factor, 0.0, 1.0), cover), 1.0);
+          }
+        `,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+        blending: MultiplyBlending,
+        transparent: true,
+      });
+      this.shadowQuad = new FullScreenQuad(this.shadowMaterial);
+    }
+    const material = this.shadowMaterial;
+    material.uniforms.tDiffuse.value = this.shadowHold.texture;
+    this.shadowHold.texture.colorSpace = LinearSRGBColorSpace;
+    material.uniforms.scale.value = this.shadowScale;
+    material.uniforms.weight.value = weight;
+    material.blending = MultiplyBlending;
+    const previousClear = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+    this.shadowQuad!.render(this.renderer);
+    this.renderer.autoClear = previousClear;
+  }
+
   private applyOptions(reset: boolean = true) {
     if (this.pathTracer == null) {
+      return;
+    }
+    if (this.shadowStage === 'shadow') {
+      this.applyShadowPreset();
       return;
     }
 
@@ -965,8 +1211,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return false;
     }
     const view = this.progressiveSettings.view;
-    return view === 'occlusion' || view === 'bake' ||
-        this.progressiveSettings.bake.textureAO.enabled;
+    if (view === 'occlusion' || view === 'bake') {
+      return true;
+    }
+    if (this.usesShadowPass()) {
+      return false;
+    }
+    return this.progressiveSettings.bake.textureAO.enabled;
   }
 
   private ensureOcclusionTracer(): WebGLPathTracer|null {
@@ -988,12 +1239,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.occlusionTracer.tiles.copy(this.options.tiles);
     this.occlusionTracer.renderScale =
         Math.min(1, Math.max(0.1, this.options.renderScale));
-    const material = this.occlusionMaterial();
-    if (material != null) {
-      installSurfaceBake(material);
-      material.uniforms.ldBake.value = 0;
-      material.uniforms.ldUnoccluded.value = 0;
-    }
     return this.occlusionTracer;
   }
 
@@ -1031,11 +1276,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     tracer.pausePathTracing = false;
     tracer.bounces = Math.max(1, Math.floor(this.options.bounces));
     tracer.filterGlossyFactor = 0;
-    const material = this.occlusionMaterial();
-    if (material?.uniforms.ldBake != null) {
-      material.uniforms.ldBake.value = 0;
-      material.uniforms.ldUnoccluded.value = 0;
-    }
+    this.setBackgroundAlpha(this.occlusionMaterial(), 0);
     try {
       tracer.renderSample();
     } catch (error) {
@@ -1069,7 +1310,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           varying vec2 vUv;
           void main() {
             vec3 color = texture2D(tDiffuse, vUv).rgb;
-            gl_FragColor = vec4(color / max(scale, 1e-4), 1.0);
+            float divisor = (scale > 0.02 && scale < 8.0) ? scale : 1.0;
+            gl_FragColor = vec4(color / divisor, 1.0);
           }
         `,
         depthTest: false,
@@ -1080,8 +1322,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const divide = this.occlusionDivide;
     divide.uniforms.tDiffuse.value = target.texture;
     target.texture.colorSpace = LinearSRGBColorSpace;
-    divide.uniforms.scale.value =
-        this.occlusionScale > 0 ? this.occlusionScale : 1;
+    const scale = this.occlusionScale;
+    divide.uniforms.scale.value = scale > 0.02 && scale < 8 ? scale : 1;
     if (this.occlusionQuad == null) {
       this.occlusionQuad = new FullScreenQuad(divide);
     }
@@ -1199,6 +1441,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
+    if (!occlusion && this.shadowStage === 'shadow' && this.shadowStartedAt === 0) {
+      this.shadowStartedAt = performance.now();
+    }
     const generation = ++this.sceneBuildGeneration;
     const pathTracerCamera = this.getPathTracerCamera();
     this.invalidateReady();
@@ -1224,6 +1469,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       if (occlusion) {
         this.occlusionReady = true;
         this.occlusionBounces = Math.floor(this.options.bounces);
+        this.setBackgroundAlpha(this.occlusionMaterial(), 0);
         const view = this.progressiveSettings.view;
         if (view === 'beauty' || view === 'realtime') {
           this.needsSceneUpdate = true;
@@ -1234,9 +1480,17 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         return;
       }
       this.traceSceneReady = true;
-      this.withBakeEnvironment(() => {
-        this.pathTracer?.updateEnvironment();
-      });
+      if (this.shadowStage === 'shadow') {
+        this.withOcclusionEnvironment(() => {
+          this.pathTracer?.updateEnvironment();
+        });
+        this.applyShadowPreset();
+        this.pathTracer?.reset();
+      } else {
+        this.withBakeEnvironment(() => {
+          this.pathTracer?.updateEnvironment();
+        });
+      }
       if (this.needsSceneUpdate || this.sceneBuildQueued) {
         this.sceneBuildQueued = false;
         this.needsSceneUpdate = true;
@@ -1247,8 +1501,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     };
 
     const worker = this.ensureBvhWorker();
+    const whiteScene = occlusion || this.shadowStage === 'shadow';
     const snapshot = (build: () => void) => {
-      if (!occlusion) {
+      if (!whiteScene) {
         build();
         return;
       }

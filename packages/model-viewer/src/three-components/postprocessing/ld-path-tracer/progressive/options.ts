@@ -50,6 +50,19 @@ export interface ProbeOptions {
   resolution: number;
 }
 
+/**
+ * Fast shadow preset of the same path tracer: white diffuse, env only,
+ * a couple of samples, then denoise. Screen-space, so a camera move
+ * runs it again. The UV atlas stays the bake view.
+ */
+export interface ShadowPassOptions {
+  enabled: boolean;
+  samples: number;
+  bounces: number;
+  renderScale: number;
+  denoise: boolean;
+}
+
 export interface ProgressiveSettings {
   mode: PathTracerMode;
   view: PathTracerView;
@@ -65,6 +78,7 @@ export interface ProgressiveSettings {
   };
   lights: LightLayerOptions;
   probes: ProbeOptions;
+  shadowPass: ShadowPassOptions;
 }
 
 export interface ProgressiveOptionsPatch {
@@ -83,6 +97,7 @@ export interface ProgressiveOptionsPatch {
   };
   lights?: Partial<LightLayerOptions>;
   probes?: Partial<ProbeOptions>;
+  shadowPass?: Partial<ShadowPassOptions>;
 }
 
 export const DEFAULT_PROGRESSIVE_SETTINGS: ProgressiveSettings = {
@@ -111,6 +126,13 @@ export const DEFAULT_PROGRESSIVE_SETTINGS: ProgressiveSettings = {
   },
   lights: {include: true, separateLayers: true},
   probes: {enabled: true, count: 1, resolution: 64},
+  shadowPass: {
+    enabled: true,
+    samples: 4,
+    bounces: 1,
+    renderScale: 0.25,
+    denoise: true,
+  },
 };
 
 const clampInt =
@@ -146,6 +168,7 @@ export const cloneProgressiveSettings =
       },
       lights: {...settings.lights},
       probes: {...settings.probes},
+      shadowPass: {...settings.shadowPass},
     });
 
 export const resolveProgressiveSettings = (
@@ -244,6 +267,28 @@ export const resolveProgressiveSettings = (
   if (patch.probes?.resolution != null) {
     next.probes.resolution =
         clampInt(patch.probes.resolution, 8, 256, next.probes.resolution);
+  }
+
+  const shadow = patch.shadowPass;
+  if (shadow != null) {
+    if (typeof shadow.enabled === 'boolean') {
+      next.shadowPass.enabled = shadow.enabled;
+    }
+    if (shadow.samples != null) {
+      next.shadowPass.samples =
+          clampInt(shadow.samples, 1, 16, next.shadowPass.samples);
+    }
+    if (shadow.bounces != null) {
+      next.shadowPass.bounces =
+          clampInt(shadow.bounces, 1, 2, next.shadowPass.bounces);
+    }
+    if (shadow.renderScale != null) {
+      next.shadowPass.renderScale =
+          clampNum(shadow.renderScale, 0.1, 1, next.shadowPass.renderScale);
+    }
+    if (typeof shadow.denoise === 'boolean') {
+      next.shadowPass.denoise = shadow.denoise;
+    }
   }
 
   return next;

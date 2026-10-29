@@ -26,7 +26,7 @@ import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepC
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, PunctualSample} from './lighting.js';
-import {openLevel, SurfaceFactorBake} from './surface-bake.js';
+import {openLevel, SurfaceFactorBake, usableFactorScale} from './surface-bake.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
 import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
@@ -50,6 +50,11 @@ export interface ProgressiveHost {
   traceSamples(): number;
   maxSamples(): number;
   invalidateTrace(): void;
+  shadowLayerReady(): boolean;
+  shadowMs(): number;
+  shadowStale(): boolean;
+  markShadowStale(): void;
+  restartShadow(): void;
 }
 
 export interface LayerReadout {
@@ -179,7 +184,7 @@ export class ProgressivePipeline {
   private factorScale = 1;
   private occlusionScaleSent = false;
   private shadowMs = 0;
-  private readonly shadowStarted = performance.now();
+  private shadowNoted = false;
   /** A few path-tracer samples, then denoise. Not the old ray estimator. */
   private static readonly SHADOW_SAMPLES = 4;
   private boundAoView = '';
@@ -259,6 +264,20 @@ export class ProgressivePipeline {
         this.settings.environment !== this.customEnvUrl) {
       this.loadEnvironment(this.settings.environment);
     }
+    if (this.settings.view === 'bake' && previous.view !== 'bake' &&
+        this.settings.bake.textureAO.enabled && this.aoTexture == null) {
+      this.aoReady = false;
+      this.shadowNoted = false;
+      this.requestRestart();
+    }
+  }
+
+  get shadowComposite(): number {
+    if (!this.settings.shadowPass.enabled || this.settings.view !== 'beauty' ||
+        !this.host.shadowLayerReady()) {
+      return 0;
+    }
+    return this.aoFade.value * (1 - this.traceFade.value);
   }
 
   get traceFadeValue(): number {
@@ -355,11 +374,14 @@ export class ProgressivePipeline {
         this.phase = 'collect';
       }
     } else {
+      const shadowPending = this.shadowPending();
       const sliceStart = performance.now();
-      this.stepWork(this.settings.budgetMs);
+      if (!shadowPending) {
+        this.stepWork(this.settings.budgetMs);
+      }
       this.cpuLast = performance.now() - sliceStart;
       this.cpuMax = Math.max(this.cpuMax, this.cpuLast);
-      if (this.cpuLast < this.settings.budgetMs * 0.85) {
+      if (shadowPending || this.cpuLast < this.settings.budgetMs * 0.85) {
         this.stepGpu();
       }
     }
@@ -512,7 +534,10 @@ export class ProgressivePipeline {
     if (plan.restartFullTrace) {
       this.traceFade = {...this.traceFade, target: 0};
       this.host.resetTrace();
-      if (kind !== 'camera') {
+      if (kind === 'camera' && this.settings.shadowPass.enabled &&
+          this.settings.view === 'beauty') {
+        this.host.markShadowStale();
+      } else if (kind !== 'camera') {
         this.host.invalidateTrace();
         this.traceBuildRequested = false;
       }
@@ -541,6 +566,8 @@ export class ProgressivePipeline {
     this.host.resetTrace();
     this.host.invalidateTrace();
     this.traceBuildRequested = false;
+    this.shadowNoted = false;
+    this.shadowMs = 0;
     this.sent.clear();
     if (this.contactFade.value < 0.01 && this.aoFade.value < 0.01 &&
         this.lightFade.value < 0.01 && this.probeFade.value < 0.01 &&
@@ -726,8 +753,11 @@ export class ProgressivePipeline {
     } else {
       this.contactReady = true;
     }
-    const wantUv = this.settings.bake.textureAO.enabled ||
-        (this.settings.lights.include && this.sceneHasLights());
+    const ownsShadow = this.settings.shadowPass.enabled &&
+        this.settings.view === 'beauty';
+    const wantUv = !ownsShadow && (this.settings.bake.textureAO.enabled ||
+                                   (this.settings.lights.include &&
+                                    this.sceneHasLights()));
     this.uvTasks = [];
     this.uvPlaced.clear();
     this.geometryOwner.clear();
@@ -740,10 +770,16 @@ export class ProgressivePipeline {
     this.factorBake = null;
     this.factorScale = 1;
     this.occlusionScaleSent = false;
-    this.shadowMs = 0;
+    if (!ownsShadow) {
+      this.shadowMs = 0;
+    }
     this.uvReady = !wantUv;
-    if (!this.settings.bake.textureAO.enabled) {
+    if (ownsShadow) {
+      this.aoReady = this.shadowNoted;
+    } else if (!this.settings.bake.textureAO.enabled) {
       this.aoReady = true;
+    } else {
+      this.aoReady = false;
     }
     if (!this.settings.lights.include || !this.sceneHasLights()) {
       this.lightsReady = true;
@@ -1302,7 +1338,29 @@ export class ProgressivePipeline {
    * The texture is the path tracer, frozen. Each texel runs the same shader
    * as the shadow view. There is no separate occlusion heuristic.
    */
+  private shadowPending(): boolean {
+    return this.settings.shadowPass.enabled && this.settings.view === 'beauty' &&
+        !this.host.shadowLayerReady();
+  }
+
+  private noteShadowLayer() {
+    if (!this.settings.shadowPass.enabled || this.settings.view !== 'beauty' ||
+        this.shadowNoted || !this.host.shadowLayerReady()) {
+      return;
+    }
+    this.shadowNoted = true;
+    this.shadowMs = this.host.shadowMs();
+    this.aoReady = true;
+    this.aoFade = {...this.aoFade, target: 1};
+    console.info(
+        '[model-viewer] Shadow layer ready in', Math.round(this.shadowMs),
+        'ms');
+  }
+
   private stepAo(_budgetMs: number) {
+    if (this.settings.shadowPass.enabled && this.settings.view === 'beauty') {
+      return;
+    }
     if (this.surface == null || this.surfaceCount === 0) {
       this.aoReady = true;
       return;
@@ -1333,15 +1391,12 @@ export class ProgressivePipeline {
         console.warn('[model-viewer] Shadow denoise failed.', error);
       }
       const image = this.factorBake.read(renderer);
-      this.factorScale = Math.max(1e-4, openLevel(image));
+      this.factorScale = usableFactorScale(openLevel(image));
       if (!this.occlusionScaleSent) {
         this.host.setOcclusionScale(this.factorScale);
         this.occlusionScaleSent = true;
       }
-      this.shadowMs = performance.now() - this.shadowStarted;
-      console.info(
-          '[model-viewer] Shadow layer ready in',
-          Math.round(this.shadowMs), 'ms');
+      this.bakeMs.textureAO = performance.now() - this.aoStamp;
       this.publishFactor(image, image, resolution);
       this.factorBake.dispose();
       this.factorBake = null;
@@ -1580,9 +1635,13 @@ export class ProgressivePipeline {
     if (this.phase === 'probes') {
       this.stepProbes();
     }
-    // Shadows land first. The full-material trace starts once that layer
-    // is stored, and keeps accumulating from there.
-    if (this.aoReady || !this.settings.bake.textureAO.enabled) {
+    if (this.settings.view === 'beauty' && this.settings.shadowPass.enabled) {
+      this.noteShadowLayer();
+    }
+    // The screen-space shadow samples before the UV atlas. The full-material
+    // trace starts once that layer is stored.
+    if (this.shadowPending() || this.aoReady ||
+        !this.settings.bake.textureAO.enabled) {
       this.stepTrace();
     }
   }
@@ -1650,7 +1709,16 @@ export class ProgressivePipeline {
     if (view === 'occlusion' || view === 'bake' || view === 'realtime') {
       return;
     }
-    if (this.idleMs < this.settings.idleDelayMs) {
+    if (this.host.shadowStale() &&
+        this.idleMs >= this.settings.idleDelayMs) {
+      this.host.restartShadow();
+      this.shadowNoted = false;
+      this.aoFade = {...this.aoFade, target: 0};
+      this.aoReady = false;
+      return;
+    }
+    const shadowing = this.shadowPending();
+    if (!shadowing && this.idleMs < this.settings.idleDelayMs) {
       return;
     }
     if (!this.traceBuildRequested) {
@@ -1668,7 +1736,8 @@ export class ProgressivePipeline {
     if (ms >= 0) {
       this.cpuMax = Math.max(this.cpuMax, ms);
     }
-    if (this.host.traceSamples() >= this.settings.traceRevealSamples) {
+    if (!shadowing &&
+        this.host.traceSamples() >= this.settings.traceRevealSamples) {
       this.traceHold = true;
       this.traceFade = {...this.traceFade, target: 1};
     }
@@ -1740,7 +1809,7 @@ export class ProgressivePipeline {
   /** Ratio of path-traced irradiance to the unoccluded irradiance. No blur. */
   private publishFactor(
       front: Float32Array, back: Float32Array, resolution: number) {
-    const scale = Math.max(1e-4, this.factorScale);
+    const scale = usableFactorScale(this.factorScale);
     const ratio = (source: Float32Array) => {
       const out = new Float32Array(source.length);
       out.fill(-1);
@@ -2120,6 +2189,10 @@ export class ProgressivePipeline {
     const fading = !fadeSettled(this.contactFade) ||
         !fadeSettled(this.aoFade) || !fadeSettled(this.lightFade) ||
         !fadeSettled(this.probeFade) || !fadeSettled(this.traceFade);
+    if (this.settings.view === 'beauty' && this.settings.shadowPass.enabled &&
+        !this.host.shadowLayerReady()) {
+      return true;
+    }
     if (this.settings.view === 'occlusion') {
       return this.phase !== 'done' || fading ||
           this.host.occlusionSamples() < this.host.maxSamples();

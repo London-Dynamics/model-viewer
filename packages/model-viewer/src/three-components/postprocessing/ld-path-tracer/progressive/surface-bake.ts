@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {DataTexture, FloatType, LinearSRGBColorSpace, NearestFilter, NoColorSpace, RGBAFormat, WebGLRenderer, WebGLRenderTarget} from 'three';
+import {DataTexture, FloatType, LinearSRGBColorSpace, NearestFilter, NoColorSpace, RGBAFormat, ShaderMaterial, UnsignedByteType, WebGLRenderer, WebGLRenderTarget} from 'three';
 import {DenoiseMaterial} from 'three-gpu-pathtracer';
 import {PathTracingRenderer} from 'three-gpu-pathtracer/src/core/PathTracingRenderer.js';
 import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
@@ -42,52 +42,130 @@ export const installSurfaceBake = (material: PhysicalPathTracingMaterial) => {
   }
   material.fragmentShader = replaceOnce(
       material.fragmentShader,
-      'int traceScene(',
+      'void main() {',
       `uniform sampler2D ldPosition;
 uniform sampler2D ldNormal;
 uniform int ldBake;
-uniform int ldUnoccluded;
-int ldPrimaryDone = 0;
-int traceScene(`,
-      'traceScene');
-  material.fragmentShader = replaceOnce(
-      material.fragmentShader,
-      'int result = NO_HIT;',
-      `if ( ldUnoccluded == 1 && ldPrimaryDone == 1 ) {
-			surfaceHit.dist = 1e20;
-			return NO_HIT;
-		}
-		int result = NO_HIT;`,
-      'unoccluded miss');
+void main() {`,
+      'uniforms');
   material.fragmentShader = replaceOnce(
       material.fragmentShader,
       'Ray ray = getCameraRay();',
       `Ray ray;
-					ldPrimaryDone = 0;
 					if ( ldBake == 1 ) {
-						vec4 ldPos = texelFetch( ldPosition, ivec2( gl_FragCoord.xy ), 0 );
+						vec4 ldPos = texture2D( ldPosition, vUv );
 						if ( ldPos.w < 0.5 ) {
 							gl_FragColor = vec4( 0.0 );
 							return;
 						}
-						vec3 ldN = normalize( texelFetch( ldNormal, ivec2( gl_FragCoord.xy ), 0 ).xyz );
-						ray.origin = ldPos.xyz + ldN * 0.01;
+						vec3 ldN = normalize( texture2D( ldNormal, vUv ).xyz );
+						// Just outside the surface, aimed back at it, so the
+						// library shades that hit the same way a camera ray would.
+						ray.origin = ldPos.xyz + ldN * 0.02;
 						ray.direction = - ldN;
 					} else {
 						ray = getCameraRay();
 					}`,
       'camera ray');
-  material.fragmentShader = replaceOnce(
-      material.fragmentShader,
-      'int hitType = traceScene( ray, state.fogMaterial, surfaceHit );',
-      `int hitType = traceScene( ray, state.fogMaterial, surfaceHit );
-						if ( i == 0 ) ldPrimaryDone = 1;`,
-      'primary done');
   material.uniforms.ldPosition = {value: null};
   material.uniforms.ldNormal = {value: null};
   material.uniforms.ldBake = {value: 0};
-  material.uniforms.ldUnoccluded = {value: 0};
   material.needsUpdate = true;
+};
+
+/** A failed float readback used to become 0.0001 and blank the shadow. */
+export const usableFactorScale = (value: number): number =>
+    value > 0.02 && value < 8 ? value : 1;
+
+/**
+ * Blits a float path-tracer target to RGBA8. ANGLE Metal returns zeros from
+ * readPixels of a 32-bit float target; 8-bit readback does not.
+ */
+export class FactorEncoder {
+  private byteTarget: WebGLRenderTarget|null = null;
+  private quad: FullScreenQuad|null = null;
+
+  encode(
+      gl: WebGLRenderer, source: WebGLRenderTarget, width: number,
+      height: number): Uint8Array {
+    if (this.byteTarget == null || this.byteTarget.width !== width ||
+        this.byteTarget.height !== height) {
+      this.byteTarget?.dispose();
+      this.byteTarget = new WebGLRenderTarget(width, height, {
+        type: UnsignedByteType,
+        format: RGBAFormat,
+        depthBuffer: false,
+      });
+    }
+    if (this.quad == null) {
+      this.quad = new FullScreenQuad(new ShaderMaterial({
+        uniforms: {tDiffuse: {value: null}},
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          varying vec2 vUv;
+          void main() {
+            vec4 sample = texture2D(tDiffuse, vUv);
+            gl_FragColor = vec4(
+                clamp(sample.rgb, 0.0, 1.0),
+                sample.a > 0.5 ? 1.0 : 0.0);
+          }
+        `,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }));
+    }
+    const material = this.quad.material as ShaderMaterial;
+    source.texture.colorSpace = LinearSRGBColorSpace;
+    material.uniforms.tDiffuse.value = source.texture;
+    const previous = gl.getRenderTarget();
+    gl.setRenderTarget(this.byteTarget);
+    this.quad.render(gl);
+    gl.setRenderTarget(previous);
+    const bytes = new Uint8Array(width * height * 4);
+    gl.readRenderTargetPixels(this.byteTarget, 0, 0, width, height, bytes);
+    return bytes;
+  }
+
+  dispose() {
+    this.byteTarget?.dispose();
+    this.byteTarget = null;
+    this.quad?.dispose();
+    this.quad = null;
+  }
+}
+
+const KEEP_UNIFORM = new Set([
+  'resolution', 'seed', 'opacity', 'cameraWorldMatrix', 'invProjectionMatrix',
+  'physicalCamera', 'sobolTexture', 'stratifiedTexture',
+  'stratifiedOffsetTexture', 'ldPosition', 'ldNormal', 'ldBake',
+]);
+
+/** Copy the live scene uniforms onto the atlas material. The view stays stock. */
+export const sharePathTracerScene = (
+    source: PhysicalPathTracingMaterial,
+    dest: PhysicalPathTracingMaterial) => {
+  for (const key of Object.keys(source.uniforms)) {
+    if (KEEP_UNIFORM.has(key) || dest.uniforms[key] == null) {
+      continue;
+    }
+    dest.uniforms[key].value = source.uniforms[key].value;
+  }
+  dest.bounces = source.bounces;
+  dest.transmissiveBounces = source.transmissiveBounces;
+  dest.filterGlossyFactor = 0;
+  for (const key of Object.keys(source.defines)) {
+    if (key.startsWith('FEATURE_') || key === 'RANDOM_TYPE') {
+      dest.setDefine(key, source.defines[key]);
+    }
+  }
 };
 
 export type SurfaceBakePass = 'front'|'back'|'open';
@@ -105,18 +183,19 @@ export class SurfaceFactorBake {
   private denoised: WebGLRenderTarget|null = null;
   private denoiseMaterial: DenoiseMaterial|null = null;
   private denoiseQuad: FullScreenQuad|null = null;
+  private readonly encoder = new FactorEncoder();
   mask: Uint8Array;
 
-  constructor(gl: WebGLRenderer, source: PhysicalPathTracingMaterial) {
+  constructor(
+      gl: WebGLRenderer,
+      private readonly source: PhysicalPathTracingMaterial,
+  ) {
     this.renderer = new PathTracingRenderer(gl);
     this.renderer.tiles.set(1, 1);
     this.renderer.stableTiles = true;
-    installSurfaceBake(source);
-    const discarded = this.renderer.material;
-    this.renderer.material = source;
-    if (discarded !== source) {
-      discarded.dispose();
-    }
+    // Own copy of the shader. The camera view keeps the stock material so a
+    // bake uniform cannot blank it.
+    installSurfaceBake(this.renderer.material);
     this.position = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
     this.normal = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
     for (const texture of [this.position, this.normal]) {
@@ -131,7 +210,6 @@ export class SurfaceFactorBake {
     material.uniforms.ldPosition.value = this.position;
     material.uniforms.ldNormal.value = this.normal;
     material.uniforms.ldBake.value = 1;
-    material.uniforms.ldUnoccluded.value = 0;
   }
 
   get samples(): number {
@@ -174,7 +252,6 @@ export class SurfaceFactorBake {
   setPass(pass: SurfaceBakePass) {
     const material = this.renderer.material;
     material.uniforms.ldBake.value = 1;
-    material.uniforms.ldUnoccluded.value = pass === 'open' ? 1 : 0;
     const data = this.normal.image.data as Float32Array;
     const sign = pass === 'back' ? -1 : 1;
     for (let i = 0; i < this.mask.length; i++) {
@@ -190,6 +267,7 @@ export class SurfaceFactorBake {
   }
 
   step(): number {
+    sharePathTracerScene(this.source, this.renderer.material);
     this.renderer.material.uniforms.ldBake.value = 1;
     const before = this.renderer.samples;
     this.renderer.update();
@@ -228,16 +306,24 @@ export class SurfaceFactorBake {
 
   read(gl: WebGLRenderer): Float32Array {
     const resolution = this.resolution;
-    const pixels = new Float32Array(resolution * resolution * 4);
-    const target = this.denoised ?? this.renderer.target;
-    gl.readRenderTargetPixels(target, 0, 0, resolution, resolution, pixels);
+    const source = this.denoised ?? this.renderer.target;
+    const bytes = this.encoder.encode(gl, source, resolution, resolution);
     const value = new Float32Array(resolution * resolution);
     value.fill(-1);
+    let peak = 0;
     for (let i = 0; i < value.length; i++) {
       if (this.mask[i] !== 1) {
         continue;
       }
-      value[i] = (pixels[i * 4] + pixels[i * 4 + 1] + pixels[i * 4 + 2]) / 3;
+      const sample = (bytes[i * 4] + bytes[i * 4 + 1] + bytes[i * 4 + 2]) / (3 * 255);
+      value[i] = sample;
+      if (sample > peak) {
+        peak = sample;
+      }
+    }
+    if (!(peak > 0)) {
+      console.warn(
+          '[model-viewer] Shadow bake readback is black. The GPU path did not return texels.');
     }
     return value;
   }
@@ -248,6 +334,7 @@ export class SurfaceFactorBake {
     this.denoised?.dispose();
     this.denoiseQuad?.dispose();
     this.denoiseMaterial?.dispose();
+    this.encoder.dispose();
     this.renderer.dispose();
   }
 }
@@ -261,6 +348,16 @@ export const openLevel = (value: Float32Array): number => {
     }
   }
   if (samples.length === 0) {
+    return 1;
+  }
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    if (samples[i] > peak) {
+      peak = samples[i];
+    }
+  }
+  // A float readback that came back empty must not become a 0.0001 divisor.
+  if (!(peak > 0.02)) {
     return 1;
   }
   samples.sort((a, b) => a - b);

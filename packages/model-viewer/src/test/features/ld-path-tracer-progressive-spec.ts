@@ -25,7 +25,7 @@ import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-compon
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {applyUvJob, createUvJob, orientWindingToNormals, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
-import {installSurfaceBake} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
+import {installSurfaceBake, openLevel} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
 
@@ -61,9 +61,31 @@ suite('progressive path tracer options', () => {
     const material = new PhysicalPathTracingMaterial();
     installSurfaceBake(material);
     expect(material.fragmentShader).to.contain('uniform int ldBake;');
-    expect(material.fragmentShader).to.contain('ldUnoccluded == 1');
-    expect(material.fragmentShader).to.contain('ray.origin = ldPos.xyz + ldN * 0.01');
+    expect(material.fragmentShader).to.contain('ray.origin = ldPos.xyz + ldN * 0.02');
+    expect(material.fragmentShader).to.contain('texture2D( ldPosition, vUv )');
+    expect(material.fragmentShader).to.contain('ldBake == 1');
     expect(material.uniforms.ldBake.value).to.equal(0);
+    installSurfaceBake(material);
+    expect(material.fragmentShader.match(/uniform int ldBake;/g)?.length).to.equal(1);
+  });
+
+  test('an empty open level stays 1 so the shadow quad is not divided away', () => {
+    expect(openLevel(new Float32Array(16))).to.equal(1);
+    expect(openLevel(new Float32Array([-1, -1, -1]))).to.equal(1);
+    const faint = new Float32Array(32);
+    faint.fill(0.01);
+    expect(openLevel(faint)).to.equal(1);
+  });
+
+  test('shadow pass clamps to a short preset', () => {
+    const next = resolveProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS, {
+      shadowPass: {samples: 99, bounces: 8, renderScale: 0.01, denoise: false},
+    });
+    expect(next.shadowPass.enabled).to.equal(true);
+    expect(next.shadowPass.samples).to.equal(16);
+    expect(next.shadowPass.bounces).to.equal(2);
+    expect(next.shadowPass.renderScale).to.equal(0.1);
+    expect(next.shadowPass.denoise).to.equal(false);
   });
 
   test('clamps probe count and keeps a null environment', () => {
@@ -432,6 +454,7 @@ suite('progressive path tracer integration', function() {
             fadeMs: 0,
             budgetMs: 12,
             idleDelayMs: 1e9,
+            shadowPass: {enabled: false},
             bake: {
               contactShadow: {enabled: false, resolution: 16, softness: 0},
               textureAO: {enabled: false},
@@ -495,6 +518,7 @@ suite('progressive path tracer integration', function() {
         fadeMs: 0,
         budgetMs: 12,
         idleDelayMs: 1e9,
+        shadowPass: {enabled: false},
         bake: {
           contactShadow: {enabled: true, resolution: 24, softness: 0},
           textureAO: {enabled: false},
