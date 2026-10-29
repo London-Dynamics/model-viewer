@@ -34,7 +34,7 @@ const bake = {
     traceRevealSamples: 99,
     bake: {
       contactShadow: {enabled: true, resolution: 128, softness: 0.08, opacity: 0.7},
-      textureAO: {enabled: true, resolution: 256, samples: 16, distance: 0},
+      textureAO: {enabled: true, resolution: 512, samples: 64, distance: 0},
     },
     lights: {include: false},
     probes: {enabled: false},

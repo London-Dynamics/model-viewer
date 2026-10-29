@@ -24,10 +24,11 @@ import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepContactRays} from './contact-shadow.js';
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
+import {GpuAmbientOcclusion} from './gpu-ao.js';
 import {directAtPoint, emissiveAtPoint, EmissiveSample, finalizeAmbientOcclusion, occlusionAtPoint, PunctualSample} from './lighting.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
-import {applyUvJob, createUvJob, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
+import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
 
 export interface ProgressiveHost {
   renderer(): WebGLRenderer|null;
@@ -159,6 +160,13 @@ export class ProgressivePipeline {
   private uvCursor = 0;
   private uvReady = false;
   private tileOf = new Map<Mesh, UvTile>();
+  private tilesReady = false;
+  private areaMesh = 0;
+  private areaTri = 0;
+  private areaPartial = 0;
+  private meshAreas: number[] = [];
+  private gpuAo: GpuAmbientOcclusion|null = null;
+  private gpuAoFailed = false;
   private uvPlaced = new Set<Mesh>();
   private geometryOwner = new Map<BufferGeometry, Mesh>();
   private overlapSkips = 0;
@@ -695,22 +703,15 @@ export class ProgressivePipeline {
     this.uvTasks = [];
     this.uvPlaced.clear();
     this.geometryOwner.clear();
-    this.planTiles();
-    if (wantUv) {
-      const resolution = this.settings.bake.textureAO.resolution;
-      for (const mesh of this.meshes) {
-        this.exclusiveGeometry(mesh);
-        const source = mesh.geometry;
-        if (uv1IsValid(source, resolution) && !uvMustBeGenerated(mesh)) {
-          continue;
-        }
-        const job = createUvJob(source, resolution, this.tileOf.get(mesh) ?? null);
-        if (job != null) {
-          this.uvTasks.push({mesh, job});
-        }
-      }
-    }
-    this.uvReady = this.uvTasks.length === 0;
+    this.tilesReady = !wantUv;
+    this.areaMesh = 0;
+    this.areaTri = 0;
+    this.areaPartial = 0;
+    this.meshAreas = new Array(this.meshes.length).fill(0);
+    this.gpuAo?.dispose();
+    this.gpuAo = null;
+    this.gpuAoFailed = false;
+    this.uvReady = !wantUv;
     if (!this.settings.bake.textureAO.enabled) {
       this.aoReady = true;
     }
@@ -793,6 +794,18 @@ export class ProgressivePipeline {
 
   private stepUv(budgetMs: number) {
     const start = performance.now();
+    if (!this.tilesReady) {
+      this.stepMeshAreas(budgetMs);
+      if (!this.tilesReady) {
+        return;
+      }
+      this.planTiles();
+      this.createUvJobs();
+      if (this.uvTasks.length === 0) {
+        this.uvReady = true;
+        return;
+      }
+    }
     while (this.uvCursor < this.uvTasks.length) {
       if (performance.now() - start >= budgetMs) {
         return;
@@ -809,85 +822,103 @@ export class ProgressivePipeline {
     this.uvReady = true;
   }
 
-  /**
-   * Each mesh gets a disjoint atlas rectangle. Charts are packed inside
-   * that rectangle in pixels, so the gutter survives. Meshes that already
-   * had a valid UV2 are scaled into the same rectangle here.
-   */
-  private planTiles() {
-    this.tileOf.clear();
-    const items: {mesh: Mesh; weight: number}[] = [];
-    for (const mesh of this.meshes) {
+  /** World-space area, a few triangles at a time, so the atlas can be sized in texels per metre. */
+  private stepMeshAreas(budgetMs: number) {
+    const start = performance.now();
+    while (this.areaMesh < this.meshes.length) {
+      const mesh = this.meshes[this.areaMesh];
       const position = mesh.geometry.getAttribute('position');
+      const index = mesh.geometry.getIndex();
       if (position == null) {
+        this.meshAreas[this.areaMesh] = 0;
+        this.areaMesh++;
+        this.areaTri = 0;
+        this.areaPartial = 0;
         continue;
       }
-      const index = mesh.geometry.getIndex();
-      const tris = index != null ? index.count / 3 : position.count / 3;
-      items.push({mesh, weight: Math.max(1, tris)});
+      mesh.updateWorldMatrix(true, false);
+      const e = mesh.matrixWorld.elements;
+      const triCount = index != null ? Math.floor(index.count / 3) :
+                                       Math.floor(position.count / 3);
+      const world = (vertex: number): [number, number, number] => {
+        const x = position.getX(vertex);
+        const y = position.getY(vertex);
+        const z = position.getZ(vertex);
+        return [
+          e[0] * x + e[4] * y + e[8] * z + e[12],
+          e[1] * x + e[5] * y + e[9] * z + e[13],
+          e[2] * x + e[6] * y + e[10] * z + e[14],
+        ];
+      };
+      while (this.areaTri < triCount) {
+        if (performance.now() - start >= budgetMs) {
+          return;
+        }
+        const tri = this.areaTri++;
+        const i0 = index != null ? index.getX(tri * 3) : tri * 3;
+        const i1 = index != null ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+        const i2 = index != null ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+        const a = world(i0);
+        const b = world(i1);
+        const c = world(i2);
+        const abx = b[0] - a[0];
+        const aby = b[1] - a[1];
+        const abz = b[2] - a[2];
+        const acx = c[0] - a[0];
+        const acy = c[1] - a[1];
+        const acz = c[2] - a[2];
+        const cx = aby * acz - abz * acy;
+        const cy = abz * acx - abx * acz;
+        const cz = abx * acy - aby * acx;
+        this.areaPartial += 0.5 * Math.hypot(cx, cy, cz);
+      }
+      this.meshAreas[this.areaMesh] = this.areaPartial;
+      this.areaPartial = 0;
+      this.areaTri = 0;
+      this.areaMesh++;
     }
-    if (items.length === 0) {
-      return;
-    }
+    this.tilesReady = true;
+  }
+
+  private planTiles() {
+    this.tileOf.clear();
     const resolution = Math.max(8, this.settings.bake.textureAO.resolution);
-    const pad = 4;
-    if (items.length === 1) {
-      this.tileOf.set(items[0].mesh, {
-        x: pad,
-        y: pad,
-        w: resolution - pad * 2,
-        h: resolution - pad * 2,
-      });
-      return;
-    }
-    items.sort((a, b) => b.weight - a.weight);
-    const total = items.reduce((sum, item) => sum + item.weight, 0);
-    let scale = 0.92;
-    let placed = false;
-    const rects: UvTile[] = [];
-    for (let attempt = 0; attempt < 8 && !placed; attempt++) {
-      let x = pad;
-      let y = pad;
-      let rowH = 0;
-      placed = true;
-      rects.length = 0;
-      for (let n = 0; n < items.length; n++) {
-        const side = Math.max(
-            4,
-            Math.floor(Math.sqrt(items[n].weight / total) * scale *
-                (resolution - pad * 2)));
-        if (x + side > resolution - pad) {
-          x = pad;
-          y += rowH + pad;
-          rowH = 0;
-        }
-        if (y + side > resolution - pad) {
-          placed = false;
-          scale *= 0.72;
-          break;
-        }
-        rects.push({x, y, w: side, h: side});
-        x += side + pad;
-        rowH = Math.max(rowH, side);
+    const weights = this.meshes.map((_, index) => this.meshAreas[index] || 0);
+    const tiles = planAtlasTiles(weights, resolution);
+    let minDensity = Infinity;
+    let maxDensity = 0;
+    for (let n = 0; n < this.meshes.length; n++) {
+      const tile = tiles[n];
+      if (tile == null) {
+        continue;
       }
+      this.tileOf.set(this.meshes[n], tile);
+      const metres = Math.sqrt(Math.max(this.meshAreas[n] || 0, 1e-8));
+      const density = tile.w / metres;
+      minDensity = Math.min(minDensity, density);
+      maxDensity = Math.max(maxDensity, density);
     }
-    if (!placed) {
-      const cols = Math.max(1, Math.ceil(Math.sqrt(items.length)));
-      const cell = Math.max(
-          2, Math.floor((resolution - pad * (cols + 1)) / cols));
-      for (let n = 0; n < items.length; n++) {
-        const col = n % cols;
-        const row = Math.floor(n / cols);
-        rects[n] = {
-          x: pad + col * (cell + pad),
-          y: pad + row * (cell + pad),
-          w: cell,
-          h: cell,
-        };
+    if (this.meshes.length > 0) {
+      console.info(
+          'AO texels/m',
+          Number.isFinite(minDensity) ? minDensity.toFixed(1) : '0',
+          'to',
+          maxDensity.toFixed(1));
+    }
+  }
+
+  private createUvJobs() {
+    const resolution = this.settings.bake.textureAO.resolution;
+    for (const mesh of this.meshes) {
+      this.exclusiveGeometry(mesh);
+      const source = mesh.geometry;
+      if (uv1IsValid(source, resolution) && !uvMustBeGenerated(mesh)) {
+        continue;
       }
-    }
-    for (let n = 0; n < items.length; n++) {
-      this.tileOf.set(items[n].mesh, rects[n]);
+      const job = createUvJob(source, resolution, this.tileOf.get(mesh) ?? null);
+      if (job != null) {
+        this.uvTasks.push({mesh, job});
+      }
     }
   }
 
@@ -1244,6 +1275,9 @@ export class ProgressivePipeline {
         Math.max(sceneSize?.length() ?? 1, 0.5);
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
+    if (this.stepGpuAo(resolution, distance)) {
+      return;
+    }
     const start = performance.now();
     while (this.aoCursor < this.surfaceCount) {
       if (performance.now() - start >= budgetMs) {
@@ -1273,6 +1307,69 @@ export class ProgressivePipeline {
       this.aoCursor++;
     }
     this.publishAo(resolution);
+  }
+
+  /**
+   * Trace every written texel on the GPU. Returns false when the GPU path
+   * is unavailable and the CPU loop should run instead.
+   */
+  private stepGpuAo(resolution: number, distance: number): boolean {
+    const renderer = this.host.renderer();
+    if (this.gpuAoFailed || renderer == null || this.aoData == null ||
+        this.surface == null || this.bvh == null) {
+      return false;
+    }
+    if (renderer.capabilities.isWebGL2 !== true) {
+      this.gpuAoFailed = true;
+      return false;
+    }
+    if (this.gpuAo == null) {
+      this.gpuAo = new GpuAmbientOcclusion();
+      const ready = this.gpuAo.prepare(
+          this.bvh, this.surface, this.surfaceCount, resolution, distance);
+      if (!ready) {
+        this.gpuAoFailed = true;
+        this.gpuAo.dispose();
+        this.gpuAo = null;
+        return false;
+      }
+      // The BVH upload is its own slice. The first draw compiles the shader.
+      return true;
+    }
+    try {
+      const done = this.gpuAo.step(renderer);
+      if (!done) {
+        return true;
+      }
+      const pixels = this.gpuAo.read(renderer);
+      let written = 0;
+      for (let i = 0; i < resolution * resolution; i++) {
+        if (pixels[i * 4 + 3] > 0.5) {
+          this.aoData[i * 4] = pixels[i * 4];
+          this.aoData[i * 4 + 3] = 1;
+          written++;
+        }
+      }
+      this.gpuAo.dispose();
+      this.gpuAo = null;
+      if (written === 0 && this.surfaceCount > 0) {
+        console.warn(
+            '[model-viewer] GPU ambient occlusion wrote no texels. Falling back to the CPU.');
+        this.gpuAoFailed = true;
+        return false;
+      }
+      console.info('AO gpu samples', 64, 'texels', written);
+      this.publishAo(resolution);
+      return true;
+    } catch (error) {
+      console.warn(
+          '[model-viewer] GPU ambient occlusion failed. Falling back to the CPU.',
+          error);
+      this.gpuAo?.dispose();
+      this.gpuAo = null;
+      this.gpuAoFailed = true;
+      return false;
+    }
   }
 
   private buildLightList(resolution: number) {
@@ -2142,6 +2239,14 @@ export class ProgressivePipeline {
     this.uvCursor = 0;
     this.uvReady = false;
     this.tileOf.clear();
+    this.tilesReady = false;
+    this.areaMesh = 0;
+    this.areaTri = 0;
+    this.areaPartial = 0;
+    this.meshAreas = [];
+    this.gpuAo?.dispose();
+    this.gpuAo = null;
+    this.gpuAoFailed = false;
     this.uvPlaced.clear();
     this.geometryOwner.clear();
     this.overlapSkips = 0;

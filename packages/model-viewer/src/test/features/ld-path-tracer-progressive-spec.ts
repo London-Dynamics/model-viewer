@@ -23,7 +23,7 @@ import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../thr
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
 import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
-import {applyUvJob, createUvJob, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
+import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
@@ -264,6 +264,17 @@ suite('progressive contact shadow rays', () => {
         new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.02);
     expect(under).to.be.lessThan(0.55);
     expect(far).to.be.greaterThan(0.9);
+  });
+
+  test('atlas tiles follow surface area, not triangle count', () => {
+    const tiles = planAtlasTiles([4, 0.01], 128);
+    expect(tiles).to.have.length(2);
+    expect(tiles[0].w * tiles[0].h).to.be.greaterThan(tiles[1].w * tiles[1].h * 8);
+    const overlap = tiles[0].x < tiles[1].x + tiles[1].w &&
+        tiles[1].x < tiles[0].x + tiles[0].w &&
+        tiles[0].y < tiles[1].y + tiles[1].h &&
+        tiles[1].y < tiles[0].y + tiles[0].h;
+    expect(overlap).to.equal(false);
   });
 
   test('charts packed into an atlas tile do not share texels', () => {

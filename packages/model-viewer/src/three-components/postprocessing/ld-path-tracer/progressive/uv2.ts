@@ -130,6 +130,30 @@ export interface UvTile {
   h: number;
 }
 
+interface PackWork {
+  stage: 'seed'|'basis'|'bounds'|'place'|'corners'|'emit';
+  cursor: number;
+  minX: Float32Array;
+  minY: Float32Array;
+  maxX: Float32Array;
+  maxY: Float32Array;
+  nx: Float32Array;
+  ny: Float32Array;
+  nz: Float32Array;
+  seen: Uint8Array;
+  tx: Float32Array;
+  ty: Float32Array;
+  tz: Float32Array;
+  bx: Float32Array;
+  by: Float32Array;
+  bz: Float32Array;
+  place: Float32Array|null;
+  map: Map<number, number>|null;
+  unique: number;
+  corners: Int32Array|null;
+  keys: Float64Array|null;
+}
+
 export interface UvJob {
   done: boolean;
   resolution: number;
@@ -157,6 +181,7 @@ export interface UvJob {
   source: Uint32Array|null;
   uv1: Float32Array|null;
   outIndex: Uint32Array|null;
+  pack: PackWork|null;
 }
 
 const hashEdge = (a: number, b: number, mask: number): number => {
@@ -242,6 +267,7 @@ export const createUvJob = (
     source: null,
     uv1: null,
     outIndex: null,
+    pack: null,
   };
 };
 
@@ -289,95 +315,123 @@ const neighbor =
       return -1;
     };
 
-const packCharts = (job: UvJob) => {
-  const {triCount, chartCount, normals, indices, positions, resolution} = job;
+export const planAtlasTiles = (weights: number[], resolution: number): UvTile[] => {
+  const count = weights.length;
+  const safe = Math.max(8, resolution);
+  const pad = 4;
+  if (count === 0) {
+    return [];
+  }
+  if (count === 1) {
+    return [{x: pad, y: pad, w: safe - pad * 2, h: safe - pad * 2}];
+  }
+  const order = weights.map((weight, index) => ({
+    index,
+    weight: Math.max(1e-6, weight),
+  }));
+  order.sort((a, b) => b.weight - a.weight);
+  const total = order.reduce((sum, item) => sum + item.weight, 0);
+  let scale = 0.92;
+  let placed = false;
+  const rects: UvTile[] = new Array(count);
+  for (let attempt = 0; attempt < 8 && !placed; attempt++) {
+    let x = pad;
+    let y = pad;
+    let rowH = 0;
+    placed = true;
+    for (let n = 0; n < count; n++) {
+      const side = Math.max(
+          4,
+          Math.floor(Math.sqrt(order[n].weight / total) * scale * (safe - pad * 2)));
+      if (x + side > safe - pad) {
+        x = pad;
+        y += rowH + pad;
+        rowH = 0;
+      }
+      if (y + side > safe - pad) {
+        placed = false;
+        scale *= 0.72;
+        break;
+      }
+      rects[order[n].index] = {x, y, w: side, h: side};
+      x += side + pad;
+      rowH = Math.max(rowH, side);
+    }
+  }
+  if (!placed) {
+    const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
+    const cell = Math.max(2, Math.floor((safe - pad * (cols + 1)) / cols));
+    for (let n = 0; n < count; n++) {
+      const col = n % cols;
+      const row = Math.floor(n / cols);
+      rects[order[n].index] = {
+        x: pad + col * (cell + pad),
+        y: pad + row * (cell + pad),
+        w: cell,
+        h: cell,
+      };
+    }
+  }
+  return rects;
+};
+
+const beginPack = (job: UvJob): PackWork => {
+  const chartCount = Math.max(0, job.chartCount);
   const minX = new Float32Array(chartCount);
   const minY = new Float32Array(chartCount);
   const maxX = new Float32Array(chartCount);
   const maxY = new Float32Array(chartCount);
-  const nx = new Float32Array(chartCount);
-  const ny = new Float32Array(chartCount);
-  const nz = new Float32Array(chartCount);
-  const seen = new Uint8Array(chartCount);
   minX.fill(Infinity);
   minY.fill(Infinity);
   maxX.fill(-Infinity);
   maxY.fill(-Infinity);
-  for (let tri = 0; tri < triCount; tri++) {
-    const chart = job.chartOf[tri];
-    if (chart < 0) {
-      continue;
-    }
-    if (seen[chart] === 0) {
-      nx[chart] = normals[tri * 3];
-      ny[chart] = normals[tri * 3 + 1];
-      nz[chart] = normals[tri * 3 + 2];
-      seen[chart] = 1;
-    }
-  }
-  const tx = new Float32Array(chartCount);
-  const ty = new Float32Array(chartCount);
-  const tz = new Float32Array(chartCount);
-  const bx = new Float32Array(chartCount);
-  const by = new Float32Array(chartCount);
-  const bz = new Float32Array(chartCount);
-  for (let c = 0; c < chartCount; c++) {
-    const ax = Math.abs(nx[c]);
-    const ay = Math.abs(ny[c]);
-    const az = Math.abs(nz[c]);
-    let ux = 0, uy = 1, uz = 0;
-    if (ay > ax && ay > az) {
-      ux = 1;
-      uy = 0;
-      uz = 0;
-    }
-    let x = uy * nz[c] - uz * ny[c];
-    let y = uz * nx[c] - ux * nz[c];
-    let z = ux * ny[c] - uy * nx[c];
-    let len = Math.hypot(x, y, z) || 1;
-    tx[c] = x / len;
-    ty[c] = y / len;
-    tz[c] = z / len;
-    x = ny[c] * tz[c] - nz[c] * ty[c];
-    y = nz[c] * tx[c] - nx[c] * tz[c];
-    z = nx[c] * ty[c] - ny[c] * tx[c];
-    len = Math.hypot(x, y, z) || 1;
-    bx[c] = x / len;
-    by[c] = y / len;
-    bz[c] = z / len;
-  }
-  const project = (chart: number, vertex: number) => {
-    const p = vertex * 3;
-    const dx = positions[p];
-    const dy = positions[p + 1];
-    const dz = positions[p + 2];
-    return [
-      dx * tx[chart] + dy * ty[chart] + dz * tz[chart],
-      dx * bx[chart] + dy * by[chart] + dz * bz[chart],
-    ];
+  return {
+    stage: 'seed',
+    cursor: 0,
+    minX,
+    minY,
+    maxX,
+    maxY,
+    nx: new Float32Array(chartCount),
+    ny: new Float32Array(chartCount),
+    nz: new Float32Array(chartCount),
+    seen: new Uint8Array(chartCount),
+    tx: new Float32Array(chartCount),
+    ty: new Float32Array(chartCount),
+    tz: new Float32Array(chartCount),
+    bx: new Float32Array(chartCount),
+    by: new Float32Array(chartCount),
+    bz: new Float32Array(chartCount),
+    place: null,
+    map: null,
+    unique: 0,
+    corners: null,
+    keys: null,
   };
-  for (let tri = 0; tri < triCount; tri++) {
-    const chart = job.chartOf[tri];
-    if (chart < 0) {
-      continue;
-    }
-    for (let k = 0; k < 3; k++) {
-      const [u, v] = project(chart, indices[tri * 3 + k]);
-      minX[chart] = Math.min(minX[chart], u);
-      minY[chart] = Math.min(minY[chart], v);
-      maxX[chart] = Math.max(maxX[chart], u);
-      maxY[chart] = Math.max(maxY[chart], v);
-    }
-  }
+};
+
+const projectChart = (
+    job: UvJob, pack: PackWork, chart: number, vertex: number,
+    ): [number, number] => {
+  const p = vertex * 3;
+  const dx = job.positions[p];
+  const dy = job.positions[p + 1];
+  const dz = job.positions[p + 2];
+  return [
+    dx * pack.tx[chart] + dy * pack.ty[chart] + dz * pack.tz[chart],
+    dx * pack.bx[chart] + dy * pack.by[chart] + dz * pack.bz[chart],
+  ];
+};
+
+const placePackedCharts = (job: UvJob, pack: PackWork): Float32Array => {
+  const {chartCount, resolution} = job;
+  const widthOf = (c: number) => Math.max(1e-6, pack.maxX[c] - pack.minX[c]);
+  const heightOf = (c: number) => Math.max(1e-6, pack.maxY[c] - pack.minY[c]);
   const order = new Int32Array(chartCount);
   for (let i = 0; i < chartCount; i++) {
     order[i] = i;
   }
-  const widthOf = (c: number) => Math.max(1e-6, maxX[c] - minX[c]);
-  const heightOf = (c: number) => Math.max(1e-6, maxY[c] - minY[c]);
   order.sort((a, b) => heightOf(b) - heightOf(a));
-  // Gutters are in final atlas pixels. Scaling a full-texture pack down
-  // into a mesh tile used to collapse those gutters and let charts overlap.
   const gutter = 4;
   const originX = job.tile?.x ?? gutter;
   const originY = job.tile?.y ?? gutter;
@@ -386,15 +440,13 @@ const packCharts = (job: UvJob) => {
   const pad = Math.min(
       gutter, Math.max(1, Math.floor(Math.min(spanX, spanY) / 8)));
   let maxExtent = 1e-6;
-  for (let i = 0; i < chartCount; i++) {
-    maxExtent = Math.max(maxExtent, widthOf(i), heightOf(i));
-  }
   let areaSum = 0;
   for (let i = 0; i < chartCount; i++) {
+    maxExtent = Math.max(maxExtent, widthOf(i), heightOf(i));
     areaSum += widthOf(i) * heightOf(i);
   }
   const areaScale = Math.sqrt(
-      Math.max(1, (spanX - pad * 2) * (spanY - pad * 2)) * 0.62 /
+      Math.max(1, (spanX - pad * 2) * (spanY - pad * 2)) * 0.8 /
       Math.max(areaSum, 1e-6));
   let scale = Math.min((Math.min(spanX, spanY) * 0.9) / maxExtent, areaScale);
   if (!Number.isFinite(scale) || scale <= 0) {
@@ -434,14 +486,14 @@ const packCharts = (job: UvJob) => {
     scale *= 0.62;
   }
   if (place == null) {
-    // One cell per chart. Cells do not share texels even when the shelf failed.
     place = new Float32Array(chartCount * 4);
     const cols = Math.max(
         1, Math.ceil(Math.sqrt(chartCount * spanX / Math.max(spanY, 1))));
-    const rows = Math.max(1, Math.ceil(chartCount / cols));
+    const rows = Math.max(1, Math.ceil(Math.max(chartCount, 1) / cols));
     const cellW = spanX / cols;
     const cellH = spanY / rows;
-    const gap = Math.min(pad, Math.max(0, Math.floor(Math.min(cellW, cellH) / 4)));
+    const gap = Math.min(
+        pad, Math.max(0, Math.floor(Math.min(cellW, cellH) / 4)));
     for (let n = 0; n < chartCount; n++) {
       const c = order[n];
       const col = n % cols;
@@ -452,55 +504,169 @@ const packCharts = (job: UvJob) => {
       place[c * 4 + 3] = Math.max(1, cellH - gap * 2);
     }
   }
-  const map = new Map<number, number>();
-  let unique = 0;
-  const cornerSource = new Int32Array(triCount * 3);
-  for (let tri = 0; tri < triCount; tri++) {
-    const chart = job.chartOf[tri];
-    for (let k = 0; k < 3; k++) {
-      const vertex = indices[tri * 3 + k];
-      const key = chart < 0 ? vertex : vertex + (chart + 1) * job.vertexCount;
-      let id = map.get(key);
-      if (id == null) {
-        id = unique++;
-        map.set(key, id);
-      }
-      cornerSource[tri * 3 + k] = id;
-    }
+  return place;
+};
+
+/** True when packing has finished. Large meshes yield across frames. */
+export const stepPack = (job: UvJob, budgetMs: number): boolean => {
+  const start = performance.now();
+  const expired = () => performance.now() - start >= budgetMs;
+  if (job.pack == null) {
+    job.pack = beginPack(job);
   }
-  const source = new Uint32Array(unique);
-  const uv1 = new Float32Array(unique * 2);
-  map.forEach((id, key) => {
-    const chart =
-        key < job.vertexCount ? -1 : Math.floor(key / job.vertexCount) - 1;
-    const vertex = chart < 0 ? key : key - (chart + 1) * job.vertexCount;
-    source[id] = vertex;
+  const pack = job.pack;
+  const {triCount, chartCount, indices, resolution} = job;
+  if (pack.stage === 'seed') {
+    while (pack.cursor < triCount) {
+      if (expired()) {
+        return false;
+      }
+      const tri = pack.cursor++;
+      const chart = job.chartOf[tri];
+      if (chart < 0 || pack.seen[chart] !== 0) {
+        continue;
+      }
+      pack.nx[chart] = job.normals[tri * 3];
+      pack.ny[chart] = job.normals[tri * 3 + 1];
+      pack.nz[chart] = job.normals[tri * 3 + 2];
+      pack.seen[chart] = 1;
+    }
+    pack.stage = 'basis';
+    pack.cursor = 0;
+  }
+  if (pack.stage === 'basis') {
+    while (pack.cursor < chartCount) {
+      if (expired()) {
+        return false;
+      }
+      const c = pack.cursor++;
+      const ax = Math.abs(pack.nx[c]);
+      const ay = Math.abs(pack.ny[c]);
+      const az = Math.abs(pack.nz[c]);
+      let ux = 0;
+      let uy = 1;
+      let uz = 0;
+      if (ay > ax && ay > az) {
+        ux = 1;
+        uy = 0;
+        uz = 0;
+      }
+      let x = uy * pack.nz[c] - uz * pack.ny[c];
+      let y = uz * pack.nx[c] - ux * pack.nz[c];
+      let z = ux * pack.ny[c] - uy * pack.nx[c];
+      let len = Math.hypot(x, y, z) || 1;
+      pack.tx[c] = x / len;
+      pack.ty[c] = y / len;
+      pack.tz[c] = z / len;
+      x = pack.ny[c] * pack.tz[c] - pack.nz[c] * pack.ty[c];
+      y = pack.nz[c] * pack.tx[c] - pack.nx[c] * pack.tz[c];
+      z = pack.nx[c] * pack.ty[c] - pack.ny[c] * pack.tx[c];
+      len = Math.hypot(x, y, z) || 1;
+      pack.bx[c] = x / len;
+      pack.by[c] = y / len;
+      pack.bz[c] = z / len;
+    }
+    pack.stage = 'bounds';
+    pack.cursor = 0;
+  }
+  if (pack.stage === 'bounds') {
+    while (pack.cursor < triCount) {
+      if (expired()) {
+        return false;
+      }
+      const tri = pack.cursor++;
+      const chart = job.chartOf[tri];
+      if (chart < 0) {
+        continue;
+      }
+      for (let k = 0; k < 3; k++) {
+        const [u, v] = projectChart(job, pack, chart, indices[tri * 3 + k]);
+        pack.minX[chart] = Math.min(pack.minX[chart], u);
+        pack.minY[chart] = Math.min(pack.minY[chart], v);
+        pack.maxX[chart] = Math.max(pack.maxX[chart], u);
+        pack.maxY[chart] = Math.max(pack.maxY[chart], v);
+      }
+    }
+    pack.place = placePackedCharts(job, pack);
+    pack.map = new Map();
+    pack.unique = 0;
+    pack.corners = new Int32Array(triCount * 3);
+    pack.keys = new Float64Array(Math.max(1, triCount * 3));
+    pack.stage = 'corners';
+    pack.cursor = 0;
+  }
+  if (pack.stage === 'corners' && pack.map != null && pack.corners != null &&
+      pack.keys != null) {
+    while (pack.cursor < triCount) {
+      if (expired()) {
+        return false;
+      }
+      const tri = pack.cursor++;
+      const chart = job.chartOf[tri];
+      for (let k = 0; k < 3; k++) {
+        const vertex = indices[tri * 3 + k];
+        const key = chart < 0 ? vertex : vertex + (chart + 1) * job.vertexCount;
+        let id = pack.map.get(key);
+        if (id == null) {
+          id = pack.unique++;
+          pack.map.set(key, id);
+          pack.keys[id] = key;
+        }
+        pack.corners[tri * 3 + k] = id;
+      }
+    }
+    const source = new Uint32Array(pack.unique);
+    const uv1 = new Float32Array(pack.unique * 2);
+    job.source = source;
+    job.uv1 = uv1;
+    job.outIndex = new Uint32Array(triCount * 3);
+    job.outIndex.set(pack.corners);
+    job.rects = pack.place ?? new Float32Array(0);
+    pack.stage = 'emit';
+    pack.cursor = 0;
+  }
+  if (pack.stage === 'emit' && job.uv1 != null && job.source != null &&
+      pack.keys != null && pack.place != null) {
+    const place = pack.place;
+    const gutter = 4;
+    const originX = job.tile?.x ?? gutter;
+    const originY = job.tile?.y ?? gutter;
+    const spanX = Math.max(1, job.tile?.w ?? resolution - gutter * 2);
+    const spanY = Math.max(1, job.tile?.h ?? resolution - gutter * 2);
     const minU = originX / resolution;
     const minV = originY / resolution;
     const maxU = Math.max(minU, (originX + spanX - 0.5) / resolution);
     const maxV = Math.max(minV, (originY + spanY - 0.5) / resolution);
-    if (chart < 0) {
-      uv1[id * 2] = minU;
-      uv1[id * 2 + 1] = minV;
-      return;
+    const widthOf = (c: number) => Math.max(1e-6, pack.maxX[c] - pack.minX[c]);
+    const heightOf = (c: number) => Math.max(1e-6, pack.maxY[c] - pack.minY[c]);
+    while (pack.cursor < pack.unique) {
+      if (expired()) {
+        return false;
+      }
+      const id = pack.cursor++;
+      const key = pack.keys[id];
+      const chart = key < job.vertexCount ? -1 :
+                                            Math.floor(key / job.vertexCount) - 1;
+      const vertex = chart < 0 ? key : key - (chart + 1) * job.vertexCount;
+      job.source[id] = vertex;
+      if (chart < 0) {
+        job.uv1[id * 2] = minU;
+        job.uv1[id * 2 + 1] = minV;
+        continue;
+      }
+      const [u, v] = projectChart(job, pack, chart, vertex);
+      const px = place[chart * 4] +
+          ((u - pack.minX[chart]) / widthOf(chart)) * place[chart * 4 + 2];
+      const py = place[chart * 4 + 1] +
+          ((v - pack.minY[chart]) / heightOf(chart)) * place[chart * 4 + 3];
+      job.uv1[id * 2] = Math.min(maxU, Math.max(minU, px / resolution));
+      job.uv1[id * 2 + 1] = Math.min(maxV, Math.max(minV, py / resolution));
     }
-    const [u, v] = project(chart, vertex);
-    const spanU = widthOf(chart);
-    const spanV = heightOf(chart);
-    const px =
-        place[chart * 4] + ((u - minX[chart]) / spanU) * place[chart * 4 + 2];
-    const py = place[chart * 4 + 1] +
-        ((v - minY[chart]) / spanV) * place[chart * 4 + 3];
-    uv1[id * 2] = Math.min(maxU, Math.max(minU, px / resolution));
-    uv1[id * 2 + 1] = Math.min(maxV, Math.max(minV, py / resolution));
-  });
-  const outIndex = new Uint32Array(triCount * 3);
-  outIndex.set(cornerSource);
-  job.source = source;
-  job.uv1 = uv1;
-  job.outIndex = outIndex;
-  job.rects = place;
+    return true;
+  }
+  return pack.stage === 'emit' && pack.unique === 0;
 };
+
 
 export const stepUvJob = (job: UvJob, budgetMs: number) => {
   if (job.done) {
@@ -645,7 +811,9 @@ export const stepUvJob = (job: UvJob, budgetMs: number) => {
     return;
   }
   if (job.phase === 'pack') {
-    packCharts(job);
+    if (!stepPack(job, Math.max(0, budgetMs - (performance.now() - start)))) {
+      return;
+    }
     job.phase = 'emit';
     job.done = true;
   }

@@ -25,7 +25,7 @@ const bakedOptions = {
   traceRevealSamples: 99,
   bake: {
     contactShadow: {enabled: false},
-    textureAO: {enabled: true, resolution: 256, samples: 24, distance: 0},
+    textureAO: {enabled: true, resolution: 512, samples: 64, distance: 0},
   },
   lights: {include: false},
   probes: {enabled: false},
