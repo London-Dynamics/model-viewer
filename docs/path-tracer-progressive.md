@@ -172,8 +172,10 @@ Lights are:
   `PointLight` / `SpotLight` / `DirectionalLight`)
 - one layer per emissive material (`emissive` × `emissiveIntensity`)
 
-Each layer is direct irradiance only, normalized to intensity 1, into its
-own texture on the same UV2 layout as AO. A blocked ray contributes 0.
+Each layer is direct irradiance into its own texture on the same UV2 layout
+as AO. Punctual texels include the intensity captured at bake time. The fade
+is `current / baked`, so it stays in 0..1 while the half-float map holds the
+brightness. A blocked ray contributes 0.
 Emissive layers sample a fixed set of area-weighted points on that
 material's triangles.
 

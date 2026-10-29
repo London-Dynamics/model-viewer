@@ -89,6 +89,8 @@ export interface PunctualSample {
   distance: number;
   angle: number;
   decay: number;
+  /** Intensity captured at bake time. The layer fade is current/this. */
+  intensity: number;
 }
 
 export const directAtPoint = (
@@ -153,7 +155,7 @@ export const directAtPoint = (
   if (bvh.raycastFirst(ray, DoubleSide, 0, far) != null) {
     return [0, 0, 0];
   }
-  const scale = ndotl * attenuation;
+  const scale = ndotl * attenuation * light.intensity;
   return [light.colorR * scale, light.colorG * scale, light.colorB * scale];
 };
 

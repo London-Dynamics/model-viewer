@@ -994,10 +994,11 @@ export class ProgressivePipeline {
       };
       if (light.isPointLight || light.isSpotLight || light.isDirectionalLight) {
         const sample = this.punctualSample(light);
+        const baked = Math.max(1e-4, sample.intensity);
         const bake: LightBake = {
           id: `punctual:${light.uuid}`,
           fade: createFade(0, 0),
-          weight: () => light.visible ? light.intensity : 0,
+          weight: () => light.visible ? Math.max(0, light.intensity) / baked : 0,
           data: new Float32Array(texels),
           cursor: 0,
           done: false,
@@ -1093,6 +1094,7 @@ export class ProgressivePipeline {
       distance: light.distance ?? 0,
       angle: light.angle ?? Math.PI / 3,
       decay: light.decay ?? 2,
+      intensity: Math.max(0, light.intensity),
     };
   }
 
