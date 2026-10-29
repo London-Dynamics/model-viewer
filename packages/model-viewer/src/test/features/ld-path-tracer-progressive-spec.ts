@@ -298,7 +298,7 @@ suite('progressive contact shadow rays', () => {
     expect(out[0]).to.be.closeTo(0.2, 0.05);
     expect(out[1]).to.be.greaterThan(0);
     expect(out[1]).to.be.lessThan(1);
-    expect(out[resolution * resolution - 1]).to.equal(1);
+    expect(out[resolution * resolution - 1]).to.equal(-1);
   });
 
   test('the penumbra scales with clearance and stays lighter than the core', () => {

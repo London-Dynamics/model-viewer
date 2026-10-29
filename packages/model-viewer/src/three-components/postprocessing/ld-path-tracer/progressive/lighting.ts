@@ -176,7 +176,8 @@ export const finalizeAmbientOcclusion = (
           }
         }
       }
-      out[y * resolution + x] = n > 0 ? sum / n : 1;
+      // -1 stays unwritten. A real open face is 1, so the two are not confused.
+      out[y * resolution + x] = n > 0 ? sum / n : -1;
     }
   }
   return out;

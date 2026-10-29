@@ -1576,11 +1576,18 @@ export class ProgressivePipeline {
     console.info('AO written', written, 'dark', dark, 'of', filtered.length);
     const data = new Uint8Array(resolution * resolution * 4);
     for (let i = 0; i < filtered.length; i++) {
-      const byte = Math.round(Math.min(1, Math.max(0, filtered[i])) * 255);
-      data[i * 4] = byte;
-      data[i * 4 + 1] = byte;
-      data[i * 4 + 2] = byte;
-      data[i * 4 + 3] = 255;
+      if (filtered[i] < 0) {
+        data[i * 4] = 255;
+        data[i * 4 + 1] = 255;
+        data[i * 4 + 2] = 255;
+        data[i * 4 + 3] = 0;
+      } else {
+        const byte = Math.round(Math.min(1, Math.max(0, filtered[i])) * 255);
+        data[i * 4] = byte;
+        data[i * 4 + 1] = byte;
+        data[i * 4 + 2] = byte;
+        data[i * 4 + 3] = 255;
+      }
     }
     this.aoTexture?.dispose();
     this.aoTexture = new DataTexture(data, resolution, resolution, RGBAFormat);
