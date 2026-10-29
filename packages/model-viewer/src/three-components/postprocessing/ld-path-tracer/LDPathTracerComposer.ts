@@ -605,17 +605,17 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       material.transparent = false;
       blit.render(this.renderer);
     }
-    this.clampHeldRadiance();
+    this.sanitizeHeldRadiance();
     this.renderer.setRenderTarget(previous);
   }
 
   /**
-   * A single indirect sample can be orders of magnitude above the picture
-   * (the white blob under a chrome wheel). Scale that spike. A cap near
-   * 0.5 clamped every well-lit pixel and made the whole trace darker
-   * than the real-time view of the same environment.
+   * Fireflies are clamped on the sample, before it is blended in.
+   * This pass only drops NaN and inf that survived that clamp. Scaling the
+   * averaged picture here would leave the specks in place and darken
+   * whatever had already converged.
    */
-  private clampHeldRadiance() {
+  private sanitizeHeldRadiance() {
     if (this.renderer == null || this.traceHoldTarget == null) {
       return;
     }
@@ -634,7 +634,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.fireflyClamp = new ShaderMaterial({
         uniforms: {
           tDiffuse: {value: null},
-          limit: {value: 24},
         },
         vertexShader: `
           varying vec2 vUv;
@@ -645,15 +644,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         `,
         fragmentShader: `
           uniform sampler2D tDiffuse;
-          uniform float limit;
           varying vec2 vUv;
           void main() {
             vec4 color = texture2D(tDiffuse, vUv);
             float peak = max(color.r, max(color.g, color.b));
-            // NaN and inf fail a plain greater-than and show up white.
-            if (!(peak <= limit)) {
-              color.rgb = peak > limit ? color.rgb * (limit / peak) : vec3(limit);
-            }
+            // NaN and inf fail a plain less-than and show up white.
+            if (!(peak < 1e8)) color.rgb = vec3(0.0);
             gl_FragColor = color;
           }
         `,
@@ -817,19 +813,23 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       if (material == null || material.fragmentShader.includes('ldFireflyClamp')) {
         continue;
       }
-      const pattern = /gl_FragColor\.rgb \+= ([^;]+);/g;
-      if (!pattern.test(material.fragmentShader)) {
+      const needle = 'gl_FragColor.a *= opacity;';
+      if (!material.fragmentShader.includes(needle)) {
         continue;
       }
+      // Direct samples of a white surface in the studio HDR sit near
+      // luminance 2.7. 8 leaves that distribution alone and cuts the
+      // indirect spike before the 1/(n+1) blend.
       material.fragmentShader = material.fragmentShader.replace(
-          /gl_FragColor\.rgb \+= ([^;]+);/g,
+          needle,
           `{
-            // ldFireflyClamp: one indirect spike must not cap the whole picture.
-            vec3 ldSample = $1;
-            float ldPeak = max( ldSample.r, max( ldSample.g, ldSample.b ) );
-            if ( ldPeak > 24.0 ) ldSample *= 24.0 / ldPeak;
-            gl_FragColor.rgb += ldSample;
-          }`);
+            // ldFireflyClamp: finished sample, before the accumulation weight.
+            float ldLum = dot( gl_FragColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+            if ( !( ldLum <= 8.0 ) ) {
+              gl_FragColor.rgb *= ldLum > 8.0 ? ( 8.0 / ldLum ) : 0.0;
+            }
+          }
+          ${needle}`);
       material.needsUpdate = true;
     }
   }
