@@ -1,0 +1,105 @@
+{
+  "passBar": {"mean": 0.08, "p95": 0.18},
+  "scenes": [
+    {
+      "id": "aquila",
+      "label": "Aquila 45 Sport",
+      "model": "https://assets.v2.londondynamics.com/019e4651-0c20-7aa0-a5f4-789b9df05fd0/puzzle/49cdcf76-f547-483d-60d6-640a65b436e3.glb",
+      "environment": "https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/photo_studio_01_1k.hdr",
+      "nightEnvironment": "https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/evening_road_01_puresky_4k.hdr",
+      "attrs": {
+        "tone-mapping": "neutral",
+        "shadow-intensity": "1",
+        "shadow-softness": "1",
+        "camera-orbit": "0.6503468063646036rad 1.2467046763680913rad 14.725606916893865m",
+        "camera-target": "-0.02472647152503387m 0.3m -0.08125509455546603m",
+        "field-of-view": "45deg",
+        "min-field-of-view": "10deg",
+        "max-field-of-view": "45deg",
+        "min-camera-orbit": "auto 0deg 5m",
+        "max-camera-orbit": "auto 180deg 20m",
+        "ambient-occlusion": "",
+        "ao-algorithm": "ssao",
+        "ao-samples": "24",
+        "ao-radius": "7.4",
+        "ao-intensity": "1",
+        "ao-bias": "0.01",
+        "ao-thickness": "50",
+        "ao-noise": "magic-square",
+        "ao-output": "default",
+        "ao-screen-space-radius": "false",
+        "ao-distance-falloff": "0.5",
+        "ao-distance-exponent": "0.5",
+        "ao-denoise-rings": "2",
+        "ao-denoise-radius": "4",
+        "ao-denoise-samples": "16",
+        "ao-denoise-luma-phi": "10",
+        "ao-denoise-depth-phi": "2",
+        "ao-denoise-normal-phi": "3",
+        "ao-denoise-radius-exponent": "1"
+      },
+      "shaderAo": null,
+      "cameras": {
+        "hero": ["0.650rad 1.247rad 14.73m", "0m 0.8m 0m"],
+        "side": ["2.4rad 1.35rad 12m", "0m 1.2m 0m"],
+        "close": ["0.35rad 1.2rad 5.5m", "0.2m 1.7m 0.4m"]
+      },
+      "crops": {
+        "close": [{"name": "cockpit", "x": 280, "y": 180, "w": 520, "h": 360}]
+      }
+    },
+    {
+      "id": "triton",
+      "label": "Triton Master Scene V3",
+      "model": "https://assets.v2.londondynamics.com/547e0656-5fe2-4a43-aae0-6b39d3a4ee3a/puzzle/7a414066-17c9-a339-a068-ea4c8c37fbb5.glb",
+      "environment": "https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr",
+      "attrs": {
+        "tone-mapping": "neutral",
+        "shadow-intensity": "1",
+        "shadow-softness": "1",
+        "camera-orbit": "-2.181661565rad 1.5324700492309054rad 10.981873072979292m",
+        "camera-target": "0.08663253613139332m 0.9694585343506754m 0.0010930215135023236m",
+        "field-of-view": "30deg",
+        "max-camera-orbit": "auto 95deg auto",
+        "animation-name": "MitsubishiTriton_static"
+      },
+      "shaderAo": {
+        "ambient-occlusion": "",
+        "ao-algorithm": "ssao"
+      },
+      "cameras": {
+        "hero": ["-2.182rad 1.532rad 10.98m", "0.09m 0.97m 0m"],
+        "side": ["-0.4rad 1.45rad 8m", "0m 1m 0m"],
+        "close": ["-1.15rad 1.25rad 3.6m", "-0.15m 1.15m 0.35m"]
+      },
+      "crops": {
+        "hero": [{"name": "door", "x": 520, "y": 300, "w": 340, "h": 280}],
+        "close": [{"name": "roof", "x": 360, "y": 180, "w": 480, "h": 280}]
+      }
+    },
+    {
+      "id": "montana",
+      "label": "Montana 001112 (2027)",
+      "model": "https://assets.v2.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/puzzledefault/8daea_4e25777e-91ff-80c3-872f-c722d4937c36.glb",
+      "environment": "https://d1mepjfmhz5ui7.cloudfront.net/centurion/Centurion-2.hdr",
+      "attrs": {
+        "tone-mapping": "neutral",
+        "shadow-intensity": "1",
+        "shadow-softness": "1"
+      },
+      "shaderAo": {
+        "ambient-occlusion": "",
+        "ao-algorithm": "ssao"
+      },
+      "cameras": {
+        "hero": ["0deg 75deg 2.4m", "0m 0.38m 0m"],
+        "side": ["90deg 78deg 2.2m", "0m 0.38m 0m"],
+        "close": ["18deg 82deg 1.15m", "0.08m 0.32m 0.02m"]
+      },
+      "crops": {
+        "close": [{"name": "shelf", "x": 200, "y": 250, "w": 700, "h": 270}],
+        "hero": [{"name": "bay", "x": 360, "y": 180, "w": 560, "h": 420}]
+      }
+    }
+  ]
+}
