@@ -102,10 +102,9 @@ const castOcclusion = (
       self++;
       continue;
     }
-    // A wall blocks the environment whether it is 5 cm or 40 cm away.
-    // Squared falloff was dropping cabinet bays that the trace still shades.
-    const t = Math.min(1, hit.distance / distance);
-    occ += 1 - t * t * t;
+    // A blocked direction contributes no environment light, same as a
+    // one-bounce trace. Distance only limits how far a wall still counts.
+    occ += 1;
   }
   return {ao: Math.max(0, 1 - occ / count), selfRatio: self / count};
 };
@@ -156,7 +155,7 @@ export const finalizeAmbientOcclusion = (
     }
   }
   const out = new Float32Array(count);
-  const radius = 1;
+  const radius = 2;
   for (let y = 0; y < resolution; y++) {
     for (let x = 0; x < resolution; x++) {
       let sum = 0;
