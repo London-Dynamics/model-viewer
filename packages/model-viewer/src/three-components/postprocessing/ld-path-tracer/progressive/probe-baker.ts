@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, FloatType, LinearSRGBColorSpace, NoToneMapping, PerspectiveCamera, PMREMGenerator, RGBAFormat, Scene, Texture, Vector3, WebGLCubeRenderTarget, WebGLRenderer, WebGLRenderTarget} from 'three';
+import {Camera, DataUtils, FloatType, HalfFloatType, LinearSRGBColorSpace, NoToneMapping, PerspectiveCamera, PMREMGenerator, RGBAFormat, Scene, Texture, Vector3, WebGLCubeRenderTarget, WebGLRenderer, WebGLRenderTarget} from 'three';
 
 const FACES = [
   {x: 1, y: 0, z: 0, ux: 0, uy: -1, uz: 0},
@@ -33,6 +33,11 @@ export class ProbeBaker {
   private emptyMap: WebGLRenderTarget|null = null;
   private face = 0;
   private pass: 'product'|'empty'|'pmrem'|'done' = 'product';
+  /**
+   * HDR zenith ÷ captured sky. Applied with environmentIntensity so the
+   * probe sky matches the viewer's environment instead of a dim cubemap.
+   */
+  skyScale = 1;
   readonly position = new Vector3();
 
   constructor(readonly resolution: number) {
@@ -78,6 +83,7 @@ export class ProbeBaker {
       this.empty = new WebGLCubeRenderTarget(this.resolution, options);
     }
     if (this.pass === 'pmrem') {
+      this.skyScale = this.measureSkyScale(renderer, background);
       this.pmrem = this.pmrem ?? new PMREMGenerator(renderer);
       this.productMap = this.pmrem.fromCubemap(this.product!.texture);
       this.emptyMap = this.pmrem.fromCubemap(this.empty!.texture);
@@ -113,6 +119,8 @@ export class ProbeBaker {
     });
     if (background != null) {
       scene.background = background;
+      // Raw equirect, same sampling the viewer PMREMs. Intensity is applied
+      // when the probe is assigned, not by baking exposure into the cube.
       scene.backgroundIntensity = 1;
     }
     renderer.toneMapping = NoToneMapping;
@@ -139,6 +147,39 @@ export class ProbeBaker {
     return true;
   }
 
+  /**
+   * Ratio of the HDR zenith to the captured +Y face. A low-res cube or a
+   * color-space miss leaves the sky dim; this brings it back to the file.
+   */
+  private measureSkyScale(renderer: WebGLRenderer, hdr: Texture|null): number {
+    const cube = this.faceLuminance(renderer, this.empty, 2);
+    const file = hdrZenithLuminance(hdr);
+    if (cube == null || file == null || cube < 1e-4) {
+      return 1;
+    }
+    const scale = file / cube;
+    if (!Number.isFinite(scale) || scale < 0.25 || scale > 8) {
+      return 1;
+    }
+    return scale;
+  }
+
+  private faceLuminance(
+      renderer: WebGLRenderer,
+      target: WebGLCubeRenderTarget|null,
+      face: number,
+      ): number|null {
+    if (target == null) {
+      return null;
+    }
+    const buf = new Float32Array(4);
+    const x = Math.floor(target.width / 2);
+    const y = Math.floor(target.height / 2);
+    renderer.readRenderTargetPixels(target, x, y, 1, 1, buf, face);
+    const lum = (buf[0] + buf[1] + buf[2]) / 3;
+    return Number.isFinite(lum) ? lum : null;
+  }
+
   dispose() {
     this.product?.dispose();
     this.empty?.dispose();
@@ -153,6 +194,34 @@ export class ProbeBaker {
     this.pass = 'done';
   }
 }
+
+/** Mean of the brightest zenith candidate in a half-float equirect. */
+export const hdrZenithLuminance = (hdr: Texture|null): number|null => {
+  if (hdr == null || hdr.type !== HalfFloatType) {
+    return null;
+  }
+  const image = hdr.image as
+      {width?: number; height?: number; data?: Uint16Array}|undefined;
+  if (image?.data == null || image.width == null || image.height == null) {
+    return null;
+  }
+  const width = image.width;
+  const height = image.height;
+  const x = Math.floor(width / 2);
+  const rows = [0, 1, height - 1, height - 2];
+  let best = 0;
+  for (const y of rows) {
+    if (y < 0 || y >= height) {
+      continue;
+    }
+    const i = (y * width + x) * 4;
+    const r = DataUtils.fromHalfFloat(image.data[i] ?? 0);
+    const g = DataUtils.fromHalfFloat(image.data[i + 1] ?? 0);
+    const b = DataUtils.fromHalfFloat(image.data[i + 2] ?? 0);
+    best = Math.max(best, (r + g + b) / 3);
+  }
+  return best > 0 ? best : null;
+};
 
 export const placeProbe = (
     center: Vector3,

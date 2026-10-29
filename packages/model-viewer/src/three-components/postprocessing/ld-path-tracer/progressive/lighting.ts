@@ -78,7 +78,9 @@ export const occlusionAtPoint = (
       occ += falloff;
     }
   }
-  return 1 - occ / count;
+  // A power above 1 deepens corners without greying open faces (those stay 1).
+  const ao = Math.max(0, 1 - occ / count);
+  return Math.pow(ao, 1.4);
 };
 
 /**
@@ -225,7 +227,12 @@ export const directAtPoint = (
   origin.set(x + nx * bias, y + ny * bias, z + nz * bias);
   direction.set(lx, ly, lz);
   ray.set(origin, direction);
-  const far = light.kind === 'directional' ? 1e6 : Math.max(0, dist - bias);
+  // Stop short of the lamp so the housing does not shadow its own light.
+  const clearance = light.kind === 'directional' ?
+      0 :
+      Math.min(0.15, Math.max(0.02, dist * 0.35));
+  const far = light.kind === 'directional' ? 1e6 :
+                                           Math.max(0, dist - clearance);
   if (bvh.raycastFirst(ray, DoubleSide, 0, far) != null) {
     return [0, 0, 0];
   }
@@ -280,7 +287,8 @@ export const emissiveAtPoint = (
     origin.set(x + nx * bias, y + ny * bias, z + nz * bias);
     direction.set(lx, ly, lz);
     ray.set(origin, direction);
-    if (bvh.raycastFirst(ray, DoubleSide, 0, Math.max(0, dist - bias)) !=
+    // Stop a couple of centimetres short so the emitter does not occlude itself.
+    if (bvh.raycastFirst(ray, DoubleSide, 0, Math.max(0, dist - 0.02)) !=
         null) {
       continue;
     }

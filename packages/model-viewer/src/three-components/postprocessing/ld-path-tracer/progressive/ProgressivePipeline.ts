@@ -158,6 +158,7 @@ export class ProgressivePipeline {
     lightMap: Texture|null;
     lightMapIntensity: number;
     envMap: Texture|null;
+    envMapIntensity: number;
   }
   > ();
   private probes: ProbeBaker[] = [];
@@ -1040,7 +1041,7 @@ export class ProgressivePipeline {
     // multi-metre ray greys every panel that can see another part.
     const distance = this.settings.bake.textureAO.distance > 0 ?
         this.settings.bake.textureAO.distance :
-        Math.min(1.25, Math.max(0.08, diagonal * 0.035));
+        Math.min(1.1, Math.max(0.45, diagonal * 0.045));
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
     const start = performance.now();
@@ -1231,9 +1232,9 @@ export class ProgressivePipeline {
           nx: cross.x,
           ny: cross.y,
           nz: cross.z,
-          r: color.r,
-          g: color.g,
-          b: color.b,
+          r: color.r * (material.emissiveIntensity ?? 1),
+          g: color.g * (material.emissiveIntensity ?? 1),
+          b: color.b * (material.emissiveIntensity ?? 1),
           area: area * stride,
         });
       }
@@ -1346,6 +1347,7 @@ export class ProgressivePipeline {
     probe.step(
         renderer, scene, this.captureSky, (hide) => this.hideProduct(hide));
     if (probe.done) {
+      console.info('PROBE skyScale', probe.skyScale.toFixed(3));
       this.probeIndex++;
       if (this.probeIndex >= this.probes.length) {
         this.finishProbes();
@@ -1557,19 +1559,28 @@ export class ProgressivePipeline {
         }
       }
     }
-    // The cube capture's sky is much darker than the viewer's filtered
-    // environment. Assigning it (raw cube or its PMREM) turns glossy upward
-    // surfaces nearly black. Keep the viewer's environment.
+    const probeMap = nearest?.productMapTarget?.texture ?? null;
+    const show = this.probeFade.value > 0.5 && probeMap != null;
+    const scene = this.host.scene();
+    // Exposure stays on the tone mapper. This matches environmentIntensity
+    // and corrects a cubemap sky that came out dimmer than the HDR.
+    const intensity =
+        (scene?.environmentIntensity ?? 1) * (nearest?.skyScale ?? 1);
     this.forStandardMaterials((material) => {
       this.remember(material);
       const saved = this.savedMaterials.get(material);
-      const next = saved?.envMap ?? null;
-      if (material.envMap !== next) {
+      const next = show ? probeMap : (saved?.envMap ?? null);
+      if (material.envMap !== next ||
+          (show && material.envMapIntensity !== intensity)) {
         material.envMap = next;
+        if (show) {
+          material.envMapIntensity = intensity;
+        } else if (saved != null) {
+          material.envMapIntensity = saved.envMapIntensity;
+        }
         material.needsUpdate = true;
       }
     });
-    void nearest;
   }
 
   private syncRealtimeShadow() {
@@ -1615,6 +1626,7 @@ export class ProgressivePipeline {
       lightMap: material.lightMap ?? null,
       lightMapIntensity: material.lightMapIntensity,
       envMap: material.envMap ?? null,
+      envMapIntensity: material.envMapIntensity,
     });
   }
 
@@ -1872,6 +1884,7 @@ export class ProgressivePipeline {
       material.lightMap = saved.lightMap;
       material.lightMapIntensity = saved.lightMapIntensity;
       material.envMap = saved.envMap;
+      material.envMapIntensity = saved.envMapIntensity;
       material.needsUpdate = true;
     });
     this.savedMaterials.clear();

@@ -211,10 +211,11 @@ textures.
 - Each cubemap is rendered one face per frame, with the viewer's skybox
   (the equirect, not the PMREM) as the background, so the capture is lit by
   the same environment as realtime. A second cubemap hides the product.
-- The capture is kept, but it is not assigned as `envMap`. Its sky is
-  much darker than the viewer's filtered environment, and putting it on
-  the material turns glossy upward surfaces (the hardtop, the deck) nearly
-  black. The model stays on `scene.environment`.
+- The cubemap is rendered with the equirect HDR as the background, not the
+  PMREM skybox mesh. Its sky is scaled to the HDR zenith and assigned as
+  `envMap` with `envMapIntensity = environmentIntensity * skyScale`.
+  Exposure stays on the tone mapper. The product in the cube is what adds
+  local reflections (a hardtop in the glass, the ground in the paint).
 - While the camera moves, the nearest baked probe is selected. A change of
   nearest probe crossfades the same way. Probes do not follow the camera.
 - The full trace does not use `material.envMap` (three-gpu-pathtracer

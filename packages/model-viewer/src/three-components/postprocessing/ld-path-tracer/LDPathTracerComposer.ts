@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, DoubleSide, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {Camera, DoubleSide, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, ShaderMaterial, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
 import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
 import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -132,6 +132,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private readonly physicalCamera = new PhysicalCamera();
   private readonly denoiseMaterial = new DenoiseMaterial();
   private readonly denoiseQuad = new FullScreenQuad(this.denoiseMaterial);
+  private fireflyClamp: ShaderMaterial|null = null;
+  private fireflyQuad: FullScreenQuad|null = null;
+  private fireflyTarget: WebGLRenderTarget|null = null;
   private pathTracer: WebGLPathTracer|null = null;
   private ambientOcclusionPreviewComposer: LDAmbientOcclusionComposer|null =
       null;
@@ -444,6 +447,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.ambientOcclusionPreviewComposer = null;
     this.currentAmbientOcclusionPreviewOptions = null;
     this.denoiseQuad.dispose();
+    this.fireflyQuad?.dispose();
+    this.fireflyClamp?.dispose();
+    this.fireflyTarget?.dispose();
     this.pipeline?.dispose();
     this.pipeline = null;
     this.traceBlit?.dispose();
@@ -598,7 +604,68 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       material.transparent = false;
       blit.render(this.renderer);
     }
+    this.clampHeldRadiance();
     this.renderer.setRenderTarget(previous);
+  }
+
+  /**
+   * A single indirect sample can be orders of magnitude above the picture
+   * (the white blob under a chrome wheel). Keep highlights, drop the spike.
+   */
+  private clampHeldRadiance() {
+    if (this.renderer == null || this.traceHoldTarget == null) {
+      return;
+    }
+    if (this.fireflyTarget == null ||
+        this.fireflyTarget.width !== this.traceHoldTarget.width ||
+        this.fireflyTarget.height !== this.traceHoldTarget.height) {
+      this.fireflyTarget?.dispose();
+      this.fireflyTarget = new WebGLRenderTarget(
+          this.traceHoldTarget.width, this.traceHoldTarget.height, {
+            type: this.traceHoldTarget.texture.type,
+            format: RGBAFormat,
+            depthBuffer: false,
+          });
+    }
+    if (this.fireflyClamp == null) {
+      this.fireflyClamp = new ShaderMaterial({
+        uniforms: {
+          tDiffuse: {value: null},
+          limit: {value: 2.2},
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float limit;
+          varying vec2 vUv;
+          void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            float peak = max(color.r, max(color.g, color.b));
+            if (peak > limit) color.rgb *= limit / peak;
+            gl_FragColor = color;
+          }
+        `,
+        depthTest: false,
+        depthWrite: false,
+      });
+      this.fireflyQuad = new FullScreenQuad(this.fireflyClamp);
+    }
+    this.fireflyClamp.uniforms.tDiffuse.value = this.traceHoldTarget.texture;
+    this.renderer.setRenderTarget(this.fireflyTarget);
+    this.fireflyQuad!.render(this.renderer);
+    const blit = this.ensureTraceBlit();
+    const material = blit.material as MeshBasicMaterial;
+    material.map = this.fireflyTarget.texture;
+    material.opacity = 1;
+    material.transparent = false;
+    this.renderer.setRenderTarget(this.traceHoldTarget);
+    blit.render(this.renderer);
   }
 
   private withBakeEnvironment(fn: () => void) {
@@ -740,6 +807,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.pathTracer.bounces = Math.max(1, Math.floor(this.options.bounces));
+    // Secondary glossy hits are what blow out into fireflies at low sample
+    // counts. Roughen them a little.
+    this.pathTracer.filterGlossyFactor = Math.max(
+        this.pathTracer.filterGlossyFactor, 0.45);
     this.pathTracer.minSamples =
         Math.max(1, Math.floor(this.options.samplesThreshold));
     this.pathTracer.renderScale =
