@@ -688,7 +688,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   private concealOverlays() {
     this.scene?.traverse((object) => {
-      if (object.userData?.progressiveOverlay === true && object.visible) {
+      const hide = object.userData?.progressiveOverlay === true ||
+          object.userData?.noHit === true ||
+          object.userData?.pathTracerShadowCatcher === true;
+      if (hide && object.visible) {
         object.userData.progressiveOverlayWasVisible = true;
         object.visible = false;
       }

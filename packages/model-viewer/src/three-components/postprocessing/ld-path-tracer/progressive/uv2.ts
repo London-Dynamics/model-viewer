@@ -692,12 +692,15 @@ export const stepPack = (job: UvJob, budgetMs: number): boolean => {
       const y0 = place[target * 4 + 1];
       const rw = place[target * 4 + 2];
       const rh = place[target * 4 + 3];
-      // Stay inside the chart. A sliver projected past the panel used to
-      // clamp to the far side of the atlas and paint a spike.
-      const px = Math.min(x0 + rw, Math.max(x0, x0 +
-          ((u - pack.minX[target]) / widthOf(target)) * rw));
-      const py = Math.min(y0 + rh, Math.max(y0, y0 +
-          ((v - pack.minY[target]) / heightOf(target)) * rh));
+      // Stay in [x0, x0+rw). The exclusive edge floors onto the gutter,
+      // and that unwritten texel is what Aquila started missing.
+      const inset = 1e-3;
+      const px = Math.min(
+          x0 + Math.max(inset, rw - inset),
+          Math.max(x0, x0 + ((u - pack.minX[target]) / widthOf(target)) * rw));
+      const py = Math.min(
+          y0 + Math.max(inset, rh - inset),
+          Math.max(y0, y0 + ((v - pack.minY[target]) / heightOf(target)) * rh));
       job.uv1[id * 2] = Math.min(maxU, Math.max(minU, px / resolution));
       job.uv1[id * 2 + 1] = Math.min(maxV, Math.max(minV, py / resolution));
     }

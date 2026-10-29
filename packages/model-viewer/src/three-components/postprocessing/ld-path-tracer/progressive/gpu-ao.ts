@@ -39,12 +39,62 @@ float halton(int index, int base) {
   return result;
 }
 
+vec3 cosineDir(vec3 n, float u, float v) {
+  vec3 normal = normalize(n);
+  vec3 helper = abs(normal.y) > 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+  vec3 tangent = normalize(cross(helper, normal));
+  vec3 bitangent = cross(normal, tangent);
+  float phi = 6.28318530718 * u;
+  float cosTheta = sqrt(max(0.0, 1.0 - v));
+  float sinTheta = sqrt(max(0.0, v));
+  return normalize(
+      tangent * (cos(phi) * sinTheta) + bitangent * (sin(phi) * sinTheta) +
+      normal * cosTheta);
+}
+
+bool traceHit(
+    vec3 rayOrigin, vec3 dir, out vec3 faceNormal, out float dist) {
+  uvec4 faceIndices = uvec4(0u);
+  vec3 bary = vec3(0.0);
+  float side = 1.0;
+  dist = 1e20;
+  faceNormal = vec3(0.0);
+  return bvhIntersectFirstHit(
+      bvh, rayOrigin, dir, faceIndices, faceNormal, bary, side, dist);
+}
+
+// A ray that exits the shell it started in is not an occluder.
+bool ownShell(vec3 dir, vec3 faceNormal, float dist) {
+  return dist <= 0.008 || (dist < 0.02 && dot(faceNormal, dir) > 0.0);
+}
+
+// Sky seen by one more diffuse bounce off the surface we hit.
+float bouncedSky(vec3 hitPoint, vec3 hitNormal, int seed) {
+  vec3 n = normalize(hitNormal);
+  int sky = 0;
+  int valid = 0;
+  for (int j = 0; j < 4; j++) {
+    vec3 dir = cosineDir(n, halton(seed + j, 5), halton(seed + j, 7));
+    vec3 faceNormal = vec3(0.0);
+    float dist = 1e20;
+    bool hit = traceHit(hitPoint + n * 0.004, dir, faceNormal, dist);
+    if (hit && ownShell(dir, faceNormal, dist)) {
+      continue;
+    }
+    valid++;
+    if (!hit || dist >= maxDistance) {
+      sky++;
+    }
+  }
+  if (valid <= 0) {
+    return 1.0;
+  }
+  return float(sky) / float(valid);
+}
+
 float castRays(vec3 origin, vec3 normal) {
   vec3 n = normalize(normal);
-  vec3 helper = abs(n.y) > 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
-  vec3 tangent = normalize(cross(helper, n));
-  vec3 bitangent = cross(n, tangent);
-  int occ = 0;
+  float sky = 0.0;
   int selfHits = 0;
   int count = sampleCount;
   if (count < 1) {
@@ -57,38 +107,29 @@ float castRays(vec3 origin, vec3 normal) {
     if (i >= count) {
       break;
     }
-    float u = halton(i + 1, 2);
-    float v = halton(i + 1, 3);
-    float phi = 6.28318530718 * u;
-    float cosTheta = sqrt(max(0.0, 1.0 - v));
-    float sinTheta = sqrt(max(0.0, v));
-    vec3 dir = tangent * (cos(phi) * sinTheta) +
-        bitangent * (sin(phi) * sinTheta) + n * cosTheta;
-    dir = normalize(dir);
-    vec3 rayOrigin = origin + n * 0.0015;
-    uvec4 faceIndices = uvec4(0u);
+    vec3 dir = cosineDir(n, halton(i + 1, 2), halton(i + 1, 3));
     vec3 faceNormal = vec3(0.0);
-    vec3 bary = vec3(0.0);
-    float side = 1.0;
     float dist = 1e20;
-    bool hit = bvhIntersectFirstHit(
-        bvh, rayOrigin, dir, faceIndices, faceNormal, bary, side, dist);
-    if (!hit) {
-      continue;
-    }
-    if (dist <= 0.003) {
+    bool hit = traceHit(origin + n * 0.004, dir, faceNormal, dist);
+    if (hit && ownShell(dir, faceNormal, dist)) {
       selfHits++;
       continue;
     }
-    if (dist < maxDistance) {
-      occ++;
+    if (!hit || dist >= maxDistance) {
+      sky += 1.0;
+      continue;
     }
+    vec3 hitN = faceNormal;
+    if (dot(hitN, dir) > 0.0) {
+      hitN = -hitN;
+    }
+    sky += bouncedSky(origin + n * 0.004 + dir * dist, hitN, i + 17);
   }
   int valid = count - selfHits;
   if (valid <= 0) {
     return 1.0;
   }
-  return 1.0 - float(occ) / float(valid);
+  return sky / float(valid);
 }
 
 void main() {

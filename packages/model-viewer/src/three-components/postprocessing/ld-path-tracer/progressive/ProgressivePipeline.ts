@@ -1196,6 +1196,7 @@ export class ProgressivePipeline {
     if (grid == null || this.surface == null) {
       return;
     }
+    let surface: Float32Array = this.surface;
     for (const mesh of this.meshes) {
       const uv = mesh.geometry.getAttribute('uv1');
       const position = mesh.geometry.getAttribute('position');
@@ -1216,9 +1217,14 @@ export class ProgressivePipeline {
         if (grid[slot] !== -1) {
           continue;
         }
-        const o = this.surfaceCount * 8;
-        if (o + 8 > this.surface.length) {
-          return;
+        let o = this.surfaceCount * 8;
+        if (o + 8 > surface.length) {
+          const grown: Float32Array =
+              new Float32Array(Math.max(surface.length * 2, o + 8));
+          grown.set(surface);
+          surface = grown;
+          this.surface = grown;
+          o = this.surfaceCount * 8;
         }
         tmp.fromBufferAttribute(position as BufferAttribute, vertex)
             .applyMatrix4(mesh.matrixWorld);
@@ -1229,14 +1235,14 @@ export class ProgressivePipeline {
         } else {
           tmpN.set(0, 1, 0);
         }
-        this.surface[o] = tmp.x;
-        this.surface[o + 1] = tmp.y;
-        this.surface[o + 2] = tmp.z;
-        this.surface[o + 3] = tmpN.x;
-        this.surface[o + 4] = tmpN.y;
-        this.surface[o + 5] = tmpN.z;
-        this.surface[o + 6] = (x + 0.5) / resolution;
-        this.surface[o + 7] = (y + 0.5) / resolution;
+        surface[o] = tmp.x;
+        surface[o + 1] = tmp.y;
+        surface[o + 2] = tmp.z;
+        surface[o + 3] = tmpN.x;
+        surface[o + 4] = tmpN.y;
+        surface[o + 5] = tmpN.z;
+        surface[o + 6] = (x + 0.5) / resolution;
+        surface[o + 7] = (y + 0.5) / resolution;
         grid[slot] = this.surfaceCount;
         this.surfaceCount++;
       }

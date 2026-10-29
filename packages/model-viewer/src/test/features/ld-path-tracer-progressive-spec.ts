@@ -252,18 +252,31 @@ suite('progressive contact shadow rays', () => {
     expect(contactGroundY(positions, 0.04)).to.equal(1);
   });
 
-  test('open sky stays white and a close surface occludes', () => {
+  test('a lit panel bounces light and a closed gap stays dark', () => {
     const cover = new BufferGeometry();
     cover.setAttribute(
         'position',
         new Float32BufferAttribute(
             [-1, 0.05, -1, 1, 0.05, -1, 0, 0.05, 1], 3));
-    const under = occlusionAtPoint(
+    const bounced = occlusionAtPoint(
         new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.4);
     const far = occlusionAtPoint(
         new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.02);
-    expect(under).to.be.lessThan(0.55);
+    // The panel blocks the sky, then its underside sees the open
+    // hemisphere and bounces that light back.
+    expect(bounced).to.be.greaterThan(0.65);
     expect(far).to.be.greaterThan(0.9);
+    const closed = new BufferGeometry();
+    closed.setAttribute(
+        'position',
+        new Float32BufferAttribute([
+          -1, 0.05, -1, 1, 0.05, -1, 0, 0.05, 1,
+          -1, -0.05, -1, 0, -0.05, 1, 1, -0.05, -1,
+        ], 3));
+    const gap = occlusionAtPoint(
+        new MeshBVH(closed), 0, 0, 0, 0, 1, 0, 24, 0.4);
+    expect(gap).to.be.lessThan(bounced);
+    expect(gap).to.be.lessThan(0.55);
   });
 
   test('atlas tiles follow surface area, not triangle count', () => {

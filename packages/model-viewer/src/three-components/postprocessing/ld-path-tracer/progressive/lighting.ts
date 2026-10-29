@@ -54,6 +54,66 @@ export const occlusionAtPoint = (
   return castOcclusion(bvh, x, y, z, nx, ny, nz, samples, distance).ao;
 };
 
+const BIAS = 0.004;
+const SELF_DISTANCE = 0.008;
+// One extra diffuse bounce. A hit on a white wall is not black: that wall
+// still sees the sky. Two bounces matches the trace the scores use.
+const SECOND_SAMPLES = 4;
+
+const cosineDirection = (
+    nx: number, ny: number, nz: number, u: number, v: number) => {
+  orient(nx, ny, nz);
+  const phi = Math.PI * 2 * u;
+  const cosTheta = Math.sqrt(Math.max(0, 1 - v));
+  const sinTheta = Math.sqrt(Math.max(0, v));
+  direction.set(0, 0, 0);
+  direction.addScaledVector(tangent, Math.cos(phi) * sinTheta);
+  direction.addScaledVector(bitangent, Math.sin(phi) * sinTheta);
+  direction.addScaledVector(origin.set(nx, ny, nz), cosTheta).normalize();
+};
+
+/** True when the ray left the surface it started inside, not a real occluder. */
+const leavesOwnShell = (
+    faceNormal: Vector3|undefined, dist: number) => {
+  if (faceNormal == null || !(dist < 0.02)) {
+    return false;
+  }
+  return faceNormal.dot(direction) > 0;
+};
+
+const skyFraction = (
+    bvh: MeshBVH,
+    x: number,
+    y: number,
+    z: number,
+    nx: number,
+    ny: number,
+    nz: number,
+    samples: number,
+    distance: number,
+    salt: number,
+    ): number => {
+  let sky = 0;
+  let valid = 0;
+  const count = Math.max(1, samples);
+  for (let i = 0; i < count; i++) {
+    cosineDirection(nx, ny, nz, halton(i + 1 + salt, 2), halton(i + 1 + salt, 3));
+    origin.set(x + nx * BIAS, y + ny * BIAS, z + nz * BIAS);
+    ray.set(origin, direction);
+    const hit = bvh.raycastFirst(ray, DoubleSide, 0, distance);
+    if (hit != null &&
+        (hit.distance <= SELF_DISTANCE ||
+         leavesOwnShell(hit.face?.normal, hit.distance))) {
+      continue;
+    }
+    valid++;
+    if (hit == null || hit.distance >= distance) {
+      sky++;
+    }
+  }
+  return valid > 0 ? sky / valid : 1;
+};
+
 const castOcclusion = (
     bvh: MeshBVH,
     x: number,
@@ -65,43 +125,40 @@ const castOcclusion = (
     samples: number,
     distance: number,
     ): {ao: number; selfRatio: number} => {
-  orient(nx, ny, nz);
-  const bias = 0.0015;
-  // Anything closer than this is the surface we started on, or a
-  // coplanar shell, not a wall across the bay.
-  const selfDistance = 0.003;
-  let occ = 0;
+  let sky = 0;
   let self = 0;
   const count = Math.max(1, samples);
   for (let i = 0; i < count; i++) {
-    const u = halton(i + 1, 2);
-    const v = halton(i + 1, 3);
-    const phi = Math.PI * 2 * u;
-    // Cosine-weighted hemisphere, matching irradiance from the environment.
-    const cosTheta = Math.sqrt(1 - v);
-    const sinTheta = Math.sqrt(v);
-    const lx = Math.cos(phi) * sinTheta;
-    const ly = Math.sin(phi) * sinTheta;
-    const lz = cosTheta;
-    direction.set(0, 0, 0);
-    direction.addScaledVector(tangent, lx);
-    direction.addScaledVector(bitangent, ly);
-    direction.addScaledVector(origin.set(nx, ny, nz), lz).normalize();
-    origin.set(x + nx * bias, y + ny * bias, z + nz * bias);
+    cosineDirection(nx, ny, nz, halton(i + 1, 2), halton(i + 1, 3));
+    origin.set(x + nx * BIAS, y + ny * BIAS, z + nz * BIAS);
     ray.set(origin, direction);
     const hit = bvh.raycastFirst(ray, DoubleSide, 0, distance);
-    if (hit == null) {
-      continue;
-    }
-    if (hit.distance <= selfDistance) {
+    if (hit != null &&
+        (hit.distance <= SELF_DISTANCE ||
+         leavesOwnShell(hit.face?.normal, hit.distance))) {
       self++;
       continue;
     }
-    // A hit past the surface itself blocks that direction fully.
-    occ += 1;
+    if (hit == null || hit.distance >= distance) {
+      sky += 1;
+      continue;
+    }
+    const face = hit.face?.normal;
+    let hx = face?.x ?? nx;
+    let hy = face?.y ?? ny;
+    let hz = face?.z ?? nz;
+    if (hx * direction.x + hy * direction.y + hz * direction.z > 0) {
+      hx = -hx;
+      hy = -hy;
+      hz = -hz;
+    }
+    const point = hit.point;
+    sky += skyFraction(
+        bvh, point.x, point.y, point.z, hx, hy, hz, SECOND_SAMPLES, distance,
+        17 + i);
   }
   const valid = count - self;
-  const ao = valid > 0 ? Math.max(0, 1 - occ / valid) : 1;
+  const ao = valid > 0 ? Math.max(0, sky / valid) : 1;
   return {ao, selfRatio: self / count};
 };
 
