@@ -15,6 +15,7 @@
 
 import {AdditiveBlending, BufferAttribute, BufferGeometry, Camera, ClampToEdgeWrapping, Color, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, LinearFilter, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, RGBAFormat, Texture, Vector3, WebGLRenderer, WebGLRenderTarget} from 'three';
 import {SAH} from 'three-mesh-bvh';
+import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -24,8 +25,8 @@ import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 import {blurOcclusion, contactGroundY, ContactJob, expandPenumbraByHeight, stepContactRays} from './contact-shadow.js';
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
-import {GpuAmbientOcclusion} from './gpu-ao.js';
-import {directAtPoint, emissiveAtPoint, EmissiveSample, finalizeAmbientOcclusion, occlusionAtPoint, PunctualSample} from './lighting.js';
+import {directAtPoint, emissiveAtPoint, EmissiveSample, PunctualSample} from './lighting.js';
+import {dilateFactor, meanFactor, SurfaceBakePass, SurfaceFactorBake} from './surface-bake.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
 import {applyUvJob, createUvJob, planAtlasTiles, stepUvJob, uv1IsValid, UvJob, UvTile} from './uv2.js';
@@ -38,6 +39,12 @@ export interface ProgressiveHost {
   dispatch(name: string, detail: Record<string, unknown>): void;
   buildTrace(): void;
   traceReady(): boolean;
+  prepareOcclusion(): void;
+  occlusionReady(): boolean;
+  occlusionMaterial(): PhysicalPathTracingMaterial|null;
+  bounces(): number;
+  setOcclusionScale(value: number): void;
+  occlusionSamples(): number;
   resetTrace(): void;
   sampleTrace(): number;
   traceSamples(): number;
@@ -58,6 +65,8 @@ export interface ProgressiveReadout {
   probes: LayerReadout;
   fullTrace:
       {samples: number; fade: number; revealed: boolean; idleMs: number;};
+  occlusionSamples: number;
+  occlusionScale: number;
   frameMs:
       {last: number; mean: number; max: number; p95: number; count: number;};
   cpuSliceMs: {last: number; max: number;};
@@ -165,8 +174,12 @@ export class ProgressivePipeline {
   private areaTri = 0;
   private areaPartial = 0;
   private meshAreas: number[] = [];
-  private gpuAo: GpuAmbientOcclusion|null = null;
-  private gpuAoFailed = false;
+  private factorBake: SurfaceFactorBake|null = null;
+  private factorPass: SurfaceBakePass = 'front';
+  private factorFront: Float32Array|null = null;
+  private factorScale = 1;
+  private occlusionScaleSent = false;
+  private boundAoView = '';
   private uvPlaced = new Set<Mesh>();
   private geometryOwner = new Map<BufferGeometry, Mesh>();
   private overlapSkips = 0;
@@ -178,7 +191,6 @@ export class ProgressivePipeline {
   private surfaceMesh = 0;
   private surfaceTri = 0;
   private surfacePass = 0;
-  private aoData: Float32Array|null = null;
   private aoCursor = 0;
   private aoFade = createFade();
   private aoReady = false;
@@ -303,6 +315,8 @@ export class ProgressivePipeline {
         revealed: this.traceHold && this.traceFade.value > 0.98,
         idleMs: this.idleMs,
       },
+      occlusionSamples: this.host.occlusionSamples(),
+      occlusionScale: this.occlusionScaleSent ? this.factorScale : 0,
       frameMs: {
         last: frames.length ? frames[frames.length - 1] : 0,
         mean: frames.length ? sum / frames.length : 0,
@@ -710,9 +724,12 @@ export class ProgressivePipeline {
     this.areaTri = 0;
     this.areaPartial = 0;
     this.meshAreas = new Array(this.meshes.length).fill(0);
-    this.gpuAo?.dispose();
-    this.gpuAo = null;
-    this.gpuAoFailed = false;
+    this.factorBake?.dispose();
+    this.factorBake = null;
+    this.factorPass = 'front';
+    this.factorFront = null;
+    this.factorScale = 1;
+    this.occlusionScaleSent = false;
     this.uvReady = !wantUv;
     if (!this.settings.bake.textureAO.enabled) {
       this.aoReady = true;
@@ -771,7 +788,7 @@ export class ProgressivePipeline {
       this.stepSurface(Math.max(0.4, budgetMs - (performance.now() - start)));
     }
     if (this.surfaceDone && this.settings.bake.textureAO.enabled &&
-        !this.aoReady && this.bvh != null) {
+        !this.aoReady) {
       this.stepAo(Math.max(0.4, budgetMs - (performance.now() - start)));
     }
     if ((this.aoReady || !this.settings.bake.textureAO.enabled) &&
@@ -1257,7 +1274,6 @@ export class ProgressivePipeline {
     if (!this.settings.bake.textureAO.enabled) {
       this.aoReady = true;
     } else {
-      this.aoData = new Float32Array(resolution * resolution * 4);
       this.aoCursor = 0;
     }
     if (this.settings.lights.include) {
@@ -1271,124 +1287,64 @@ export class ProgressivePipeline {
     }
   }
 
-  private stepAo(budgetMs: number) {
-    if (this.aoData == null || this.surface == null || this.bvh == null) {
+  /**
+   * The texture is the path tracer, frozen. Each texel runs the same shader
+   * as the shadow view. There is no separate occlusion heuristic.
+   */
+  private stepAo(_budgetMs: number) {
+    if (this.surface == null || this.surfaceCount === 0) {
       this.aoReady = true;
       return;
     }
-    const sceneSize = this.host.scene()?.size;
-    // Same reach as the trace: a ray stops only when it leaves the scene.
-    const distance = this.settings.bake.textureAO.distance > 0 ?
-        this.settings.bake.textureAO.distance :
-        Math.max(sceneSize?.length() ?? 1, 0.5);
-    const samples = this.settings.bake.textureAO.samples;
-    const resolution = this.settings.bake.textureAO.resolution;
-    if (this.stepGpuAo(resolution, distance)) {
+    const renderer = this.host.renderer();
+    const source = this.host.occlusionMaterial();
+    if (renderer == null || source == null || !this.host.occlusionReady()) {
+      this.host.prepareOcclusion();
       return;
     }
-    const start = performance.now();
-    while (this.aoCursor < this.surfaceCount) {
-      if (performance.now() - start >= budgetMs) {
-        return;
-      }
-      const o = this.aoCursor * 8;
-      const front = occlusionAtPoint(
-          this.bvh,
-          this.surface[o],
-          this.surface[o + 1],
-          this.surface[o + 2],
-          this.surface[o + 3],
-          this.surface[o + 4],
-          this.surface[o + 5],
-          samples,
-          distance);
-      const back = occlusionAtPoint(
-          this.bvh,
-          this.surface[o],
-          this.surface[o + 1],
-          this.surface[o + 2],
-          -this.surface[o + 3],
-          -this.surface[o + 4],
-          -this.surface[o + 5],
-          samples,
-          distance);
-      const x = Math.min(
-          resolution - 1, Math.floor(this.surface[o + 6] * resolution));
-      const y = Math.min(
-          resolution - 1, Math.floor(this.surface[o + 7] * resolution));
-      const texel = (y * resolution + x) * 4;
-      // One triangle owns the texel. Later samples do not merge or replace it.
-      if (this.aoData[texel + 3] === 0) {
-        this.aoData[texel] = front;
-        this.aoData[texel + 1] = back;
-        this.aoData[texel + 3] = 1;
-      }
-      this.aoCursor++;
-    }
-    this.publishAo(resolution);
-  }
-
-  /**
-   * Trace every written texel on the GPU. Returns false when the GPU path
-   * is unavailable and the CPU loop should run instead.
-   */
-  private stepGpuAo(resolution: number, distance: number): boolean {
-    const renderer = this.host.renderer();
-    if (this.gpuAoFailed || renderer == null || this.aoData == null ||
-        this.surface == null || this.bvh == null) {
-      return false;
-    }
-    if (renderer.capabilities.isWebGL2 !== true) {
-      this.gpuAoFailed = true;
-      return false;
-    }
-    if (this.gpuAo == null) {
-      this.gpuAo = new GpuAmbientOcclusion();
-      const ready = this.gpuAo.prepare(
-          this.bvh, this.surface, this.surfaceCount, resolution, distance);
-      if (!ready) {
-        this.gpuAoFailed = true;
-        this.gpuAo.dispose();
-        this.gpuAo = null;
-        return false;
-      }
-      // The BVH upload is its own slice. The first draw compiles the shader.
-      return true;
+    const samples = this.settings.bake.textureAO.samples;
+    const resolution = this.settings.bake.textureAO.resolution;
+    if (this.factorBake == null) {
+      this.factorBake = new SurfaceFactorBake(renderer, source);
+      this.factorBake.setSurfaces(this.surface, this.surfaceCount, resolution);
+      this.factorPass = 'front';
+      this.aoCursor = 0;
+      return;
     }
     try {
-      const done = this.gpuAo.step(renderer);
-      if (!done) {
-        return true;
+      const done = this.factorBake.step();
+      this.aoCursor = Math.min(samples, Math.floor(done));
+      if (done + 1e-3 < samples) {
+        return;
       }
-      const pixels = this.gpuAo.read(renderer);
-      let written = 0;
-      for (let i = 0; i < resolution * resolution; i++) {
-        if (pixels[i * 4 + 3] > 0.5) {
-          this.aoData[i * 4] = pixels[i * 4];
-          this.aoData[i * 4 + 1] = pixels[i * 4 + 1];
-          this.aoData[i * 4 + 3] = 1;
-          written++;
+      const image = this.factorBake.read(renderer);
+      if (this.factorPass === 'front') {
+        this.factorFront = image;
+        this.factorPass = 'open';
+        this.factorBake.setPass('open');
+        this.aoCursor = 0;
+        return;
+      }
+      if (this.factorPass === 'open') {
+        this.factorScale = Math.max(1e-4, meanFactor(image));
+        if (!this.occlusionScaleSent) {
+          this.host.setOcclusionScale(this.factorScale);
+          this.occlusionScaleSent = true;
         }
+        this.factorPass = 'back';
+        this.factorBake.setPass('back');
+        this.aoCursor = 0;
+        return;
       }
-      this.gpuAo.dispose();
-      this.gpuAo = null;
-      if (written === 0 && this.surfaceCount > 0) {
-        console.warn(
-            '[model-viewer] GPU ambient occlusion wrote no texels. Falling back to the CPU.');
-        this.gpuAoFailed = true;
-        return false;
-      }
-      console.info('AO gpu samples', 64, 'texels', written, 'distance', distance);
-      this.publishAo(resolution);
-      return true;
+      this.publishFactor(this.factorFront ?? image, image, resolution);
+      this.factorBake.dispose();
+      this.factorBake = null;
     } catch (error) {
       console.warn(
-          '[model-viewer] GPU ambient occlusion failed. Falling back to the CPU.',
-          error);
-      this.gpuAo?.dispose();
-      this.gpuAo = null;
-      this.gpuAoFailed = true;
-      return false;
+          '[model-viewer] Surface factor bake failed.', error);
+      this.factorBake?.dispose();
+      this.factorBake = null;
+      this.aoReady = true;
     }
   }
 
@@ -1683,6 +1639,10 @@ export class ProgressivePipeline {
   }
 
   private stepTrace() {
+    const view = this.settings.view;
+    if (view === 'occlusion' || view === 'bake' || view === 'realtime') {
+      return;
+    }
     if (this.idleMs < this.settings.idleDelayMs) {
       return;
     }
@@ -1770,31 +1730,31 @@ export class ProgressivePipeline {
     this.bakeMs.contactShadow = performance.now() - this.contactStamp;
   }
 
-  private publishAo(resolution: number) {
-    if (this.aoData == null) {
-      this.aoReady = true;
-      return;
-    }
-    const texels = resolution * resolution;
-    const frontSrc = new Float32Array(texels * 4);
-    const backSrc = new Float32Array(texels * 4);
-    for (let i = 0; i < texels; i++) {
-      frontSrc[i * 4] = this.aoData[i * 4];
-      frontSrc[i * 4 + 3] = this.aoData[i * 4 + 3];
-      backSrc[i * 4] = this.aoData[i * 4 + 1];
-      backSrc[i * 4 + 3] = this.aoData[i * 4 + 3];
-    }
-    const front = finalizeAmbientOcclusion(frontSrc, resolution);
-    const back = finalizeAmbientOcclusion(backSrc, resolution);
+  /** Ratio of path-traced irradiance to the unoccluded irradiance. No blur. */
+  private publishFactor(
+      front: Float32Array, back: Float32Array, resolution: number) {
+    const scale = Math.max(1e-4, this.factorScale);
+    const ratio = (source: Float32Array) => {
+      const out = new Float32Array(source.length);
+      out.fill(-1);
+      for (let i = 0; i < source.length; i++) {
+        if (source[i] >= 0) {
+          out[i] = source[i] / scale;
+        }
+      }
+      return dilateFactor(out, resolution, 4);
+    };
+    const frontRatio = ratio(front);
+    const backRatio = ratio(back);
     const data = new Uint8Array(resolution * resolution * 4);
-    for (let i = 0; i < front.length; i++) {
-      const frontByte = front[i] < 0 ?
+    for (let i = 0; i < frontRatio.length; i++) {
+      const frontByte = frontRatio[i] < 0 ?
           255 :
-          Math.round(Math.min(1, Math.max(0, front[i])) * 255);
-      const backByte = back[i] < 0 ?
+          Math.round(Math.min(1, Math.max(0, frontRatio[i])) * 255);
+      const backByte = backRatio[i] < 0 ?
           frontByte :
-          Math.round(Math.min(1, Math.max(0, back[i])) * 255);
-      if (front[i] < 0 && back[i] < 0) {
+          Math.round(Math.min(1, Math.max(0, backRatio[i])) * 255);
+      if (frontRatio[i] < 0 && backRatio[i] < 0) {
         data[i * 4] = 255;
         data[i * 4 + 1] = 255;
         data[i * 4 + 2] = 255;
@@ -1806,6 +1766,10 @@ export class ProgressivePipeline {
         data[i * 4 + 3] = 255;
       }
     }
+    this.uploadAo(data, resolution);
+  }
+
+  private uploadAo(data: Uint8Array, resolution: number) {
     this.aoTexture?.dispose();
     this.aoTexture = new DataTexture(data, resolution, resolution, RGBAFormat);
     this.aoTexture.colorSpace = LinearSRGBColorSpace;
@@ -1816,19 +1780,7 @@ export class ProgressivePipeline {
     this.aoTexture.generateMipmaps = false;
     this.aoTexture.channel = 1;
     this.aoTexture.needsUpdate = true;
-    this.forStandardMaterials((material) => {
-      this.remember(material);
-      material.aoMap = this.aoTexture;
-      const prior = material.onBeforeCompile;
-      material.onBeforeCompile = (shader, renderer) => {
-        prior?.call(material, shader, renderer);
-        shader.fragmentShader = shader.fragmentShader.replace(
-            /texture2D\( aoMap, vAoMapUv \)\.r/g,
-            '( gl_FrontFacing ? texture2D( aoMap, vAoMapUv ).r : texture2D( aoMap, vAoMapUv ).g )');
-      };
-      material.customProgramCacheKey = () => 'ld-ao-front-back';
-      material.needsUpdate = true;
-    });
+    this.bindAoView();
     this.aoReady = true;
     this.aoFade = {...this.aoFade, target: 1};
     this.bakeMs.textureAO = performance.now() - this.aoStamp;
@@ -1954,9 +1906,7 @@ export class ProgressivePipeline {
     }
     this.syncRealtimeShadow();
     if (this.aoTexture != null) {
-      this.forStandardMaterials((standard) => {
-        standard.aoMapIntensity = this.aoFade.value;
-      });
+      this.bindAoView();
     }
     if (this.lights.some((light) => light.texture != null)) {
       this.compositeLights();
@@ -1964,6 +1914,57 @@ export class ProgressivePipeline {
     if (this.probesReady) {
       this.applyProbeEnv();
     }
+  }
+
+  /**
+   * beauty multiplies the factor onto realtime lighting. bake shows the
+   * factor itself on white. realtime and the shadow view leave the model
+   * unoccluded so the path tracer picture is the only occlusion.
+   */
+  private bindAoView() {
+    const view = this.settings.view;
+    const token = view + (this.aoTexture?.uuid ?? '');
+    if (token === this.boundAoView) {
+      if (view === 'beauty' && this.aoTexture != null) {
+        this.forStandardMaterials((material) => {
+          material.aoMapIntensity = this.aoFade.value;
+        });
+      }
+      return;
+    }
+    this.boundAoView = token;
+    const showFactor = view === 'bake';
+    const hide = view === 'realtime' || view === 'occlusion';
+    this.forStandardMaterials((material) => {
+      this.remember(material);
+      const saved = this.savedMaterials.get(material);
+      material.aoMap = hide ? (saved?.aoMap ?? null) : this.aoTexture;
+      material.aoMapIntensity = hide ? (saved?.aoMapIntensity ?? 1) : (
+          showFactor ? 1 : this.aoFade.value);
+      material.toneMapped = view !== 'bake';
+      const key = showFactor ? 'ld-bake-factor' : 'ld-ao-front-back';
+      material.onBeforeCompile = (shader, renderer) => {
+        saved?.onBeforeCompile?.call(material, shader, renderer);
+        if (hide || material.aoMap == null) {
+          return;
+        }
+        shader.fragmentShader = shader.fragmentShader.replace(
+            /texture2D\( aoMap, vAoMapUv \)\.r/g,
+            '( gl_FrontFacing ? texture2D( aoMap, vAoMapUv ).r : texture2D( aoMap, vAoMapUv ).g )');
+        if (showFactor) {
+          shader.fragmentShader = shader.fragmentShader.replace(
+              '#include <dithering_fragment>',
+              `{
+                vec4 ldFactor = texture2D( aoMap, vAoMapUv );
+                float ldF = gl_FrontFacing ? ldFactor.r : ldFactor.g;
+                gl_FragColor.rgb = vec3( ldF );
+              }
+              #include <dithering_fragment>`);
+        }
+      };
+      material.customProgramCacheKey = () => key;
+      material.needsUpdate = true;
+    });
   }
 
   private remember(material: MeshStandardMaterial) {
@@ -2082,7 +2083,9 @@ export class ProgressivePipeline {
     if (this.surfaceCount === 0) {
       return 0.45;
     }
-    return 0.45 + 0.55 * (this.aoCursor / this.surfaceCount);
+    const samples = Math.max(1, this.settings.bake.textureAO.samples);
+    const phase = this.factorPass === 'front' ? 0 : this.factorPass === 'open' ? 1 : 2;
+    return 0.45 + 0.55 * ((phase + this.aoCursor / samples) / 3);
   }
 
   private lightProgress(): number {
@@ -2108,9 +2111,17 @@ export class ProgressivePipeline {
   }
 
   private needsFrame(): boolean {
-    return this.phase !== 'done' || !fadeSettled(this.contactFade) ||
+    const fading = !fadeSettled(this.contactFade) ||
         !fadeSettled(this.aoFade) || !fadeSettled(this.lightFade) ||
-        !fadeSettled(this.probeFade) || !fadeSettled(this.traceFade) ||
+        !fadeSettled(this.probeFade) || !fadeSettled(this.traceFade);
+    if (this.settings.view === 'occlusion') {
+      return this.phase !== 'done' || fading ||
+          this.host.occlusionSamples() < this.host.maxSamples();
+    }
+    if (this.settings.view === 'bake' || this.settings.view === 'realtime') {
+      return this.phase !== 'done' || fading;
+    }
+    return this.phase !== 'done' || fading ||
         (this.phase === 'done' && this.idleMs >= this.settings.idleDelayMs &&
          this.host.traceSamples() < this.host.maxSamples());
   }
@@ -2280,9 +2291,8 @@ export class ProgressivePipeline {
     this.areaTri = 0;
     this.areaPartial = 0;
     this.meshAreas = [];
-    this.gpuAo?.dispose();
-    this.gpuAo = null;
-    this.gpuAoFailed = false;
+    this.factorBake?.dispose();
+    this.factorBake = null;
     this.uvPlaced.clear();
     this.geometryOwner.clear();
     this.overlapSkips = 0;
@@ -2290,7 +2300,6 @@ export class ProgressivePipeline {
     this.surface = null;
     this.surfaceDone = false;
     this.surfaceCount = 0;
-    this.aoData = null;
     this.aoCursor = 0;
     this.aoReady = false;
     this.lights = [];

@@ -16,6 +16,7 @@
 import {expect} from 'chai';
 import {BufferGeometry, Float32BufferAttribute} from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
+import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
@@ -25,6 +26,7 @@ import {planInvalidation} from '../../three-components/postprocessing/ld-path-tr
 import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
 import {applyUvJob, createUvJob, orientWindingToNormals, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
+import {installSurfaceBake} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
 
@@ -44,6 +46,25 @@ suite('progressive path tracer options', () => {
     expect(next.bake.contactShadow.softness)
         .to.equal(DEFAULT_PROGRESSIVE_SETTINGS.bake.contactShadow.softness);
     expect(next.bake.textureAO.samples).to.equal(16);
+  });
+
+  test('occlusion view is an opt-in path tracer setting', () => {
+    const next = resolveProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS, {
+      view: 'occlusion',
+      occlusionEnvironment: 'uniform',
+    });
+    expect(next.view).to.equal('occlusion');
+    expect(next.occlusionEnvironment).to.equal('uniform');
+    expect(DEFAULT_PROGRESSIVE_SETTINGS.view).to.equal('beauty');
+  });
+
+  test('surface bake patches the path tracer shader in place', () => {
+    const material = new PhysicalPathTracingMaterial();
+    installSurfaceBake(material);
+    expect(material.fragmentShader).to.contain('uniform int ldBake;');
+    expect(material.fragmentShader).to.contain('ldUnoccluded == 1');
+    expect(material.fragmentShader).to.contain('ray.origin = ldPos.xyz + ldN * 0.01');
+    expect(material.uniforms.ldBake.value).to.equal(0);
   });
 
   test('clamps probe count and keeps a null environment', () => {

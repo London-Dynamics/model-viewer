@@ -15,6 +15,12 @@
 
 export type PathTracerMode = 'immediate'|'progressive';
 
+/** beauty is the product. The other three are review views. */
+export type PathTracerView = 'beauty'|'realtime'|'occlusion'|'bake';
+
+/** uniform white makes the path tracer output the occlusion factor. */
+export type OcclusionEnvironment = 'scene'|'uniform';
+
 export interface ContactShadowOptions {
   enabled: boolean;
   resolution: number;
@@ -46,6 +52,8 @@ export interface ProbeOptions {
 
 export interface ProgressiveSettings {
   mode: PathTracerMode;
+  view: PathTracerView;
+  occlusionEnvironment: OcclusionEnvironment;
   fadeMs: number;
   traceRevealSamples: number;
   idleDelayMs: number;
@@ -61,6 +69,8 @@ export interface ProgressiveSettings {
 
 export interface ProgressiveOptionsPatch {
   mode?: PathTracerMode;
+  view?: PathTracerView;
+  occlusionEnvironment?: OcclusionEnvironment;
   fadeMs?: number;
   traceRevealSamples?: number;
   idleDelayMs?: number;
@@ -77,6 +87,8 @@ export interface ProgressiveOptionsPatch {
 
 export const DEFAULT_PROGRESSIVE_SETTINGS: ProgressiveSettings = {
   mode: 'immediate',
+  view: 'beauty',
+  occlusionEnvironment: 'uniform',
   fadeMs: 600,
   traceRevealSamples: 6,
   idleDelayMs: 500,
@@ -120,6 +132,8 @@ const clampNum =
 export const cloneProgressiveSettings =
     (settings: ProgressiveSettings): ProgressiveSettings => ({
       mode: settings.mode,
+      view: settings.view,
+      occlusionEnvironment: settings.occlusionEnvironment,
       fadeMs: settings.fadeMs,
       traceRevealSamples: settings.traceRevealSamples,
       idleDelayMs: settings.idleDelayMs,
@@ -145,6 +159,14 @@ export const resolveProgressiveSettings = (
 
   if (patch.mode === 'immediate' || patch.mode === 'progressive') {
     next.mode = patch.mode;
+  }
+  if (patch.view === 'beauty' || patch.view === 'realtime' ||
+      patch.view === 'occlusion' || patch.view === 'bake') {
+    next.view = patch.view;
+  }
+  if (patch.occlusionEnvironment === 'scene' ||
+      patch.occlusionEnvironment === 'uniform') {
+    next.occlusionEnvironment = patch.occlusionEnvironment;
   }
   if (patch.fadeMs != null) {
     next.fadeMs = clampNum(patch.fadeMs, 0, 10000, next.fadeMs);
@@ -237,4 +259,5 @@ export const progressiveBakeKey = (settings: ProgressiveSettings): string =>
         resolution: settings.probes.resolution,
       },
       environment: settings.environment,
+      occlusionEnvironment: settings.occlusionEnvironment,
     });

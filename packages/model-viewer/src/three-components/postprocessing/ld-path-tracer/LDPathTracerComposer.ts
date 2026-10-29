@@ -13,8 +13,9 @@
  * limitations under the License.
  */
 
-import {Camera, DoubleSide, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, ShaderMaterial, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {Camera, DataTexture, DoubleSide, EquirectangularReflectionMapping, FloatType, FrontSide, Light, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, ShaderMaterial, Side, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
 import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
+import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -136,6 +137,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private fireflyQuad: FullScreenQuad|null = null;
   private fireflyTarget: WebGLRenderTarget|null = null;
   private pathTracer: WebGLPathTracer|null = null;
+  private occlusionTracer: WebGLPathTracer|null = null;
+  private occlusionReady = false;
+  private occlusionScale = 0;
+  private occlusionBounces = -1;
+  private occlusionDivide: ShaderMaterial|null = null;
+  private occlusionQuad: FullScreenQuad|null = null;
+  private uniformEnv: DataTexture|null = null;
+  private whiteMaterial = new Map<Side, MeshPhysicalMaterial>();
+  private savedMeshMaterials: Array<{mesh: Mesh; material: Mesh['material']}> =
+      [];
+  private hiddenLights: Light[] = [];
+  private sceneBuildKind: 'beauty'|'occlusion' = 'beauty';
   private ambientOcclusionPreviewComposer: LDAmbientOcclusionComposer|null =
       null;
   private currentAmbientOcclusionPreviewOptions: AmbientOcclusionOptions|null =
@@ -322,7 +335,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   setProgressiveSettings(settings: ProgressiveSettings) {
+    const environmentChanged =
+        settings.occlusionEnvironment !== this.progressiveSettings.occlusionEnvironment;
     this.progressiveSettings = cloneProgressiveSettings(settings);
+    if (environmentChanged) {
+      this.occlusionReady = false;
+      this.occlusionTracer?.reset();
+      this.needsSceneUpdate = true;
+    }
     if (settings.mode !== 'progressive') {
       this.pipeline?.dispose();
       this.pipeline = null;
@@ -334,6 +354,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           this.progressiveHost(), this.progressiveSettings);
     } else {
       this.pipeline.setSettings(this.progressiveSettings);
+    }
+    if (this.needsSceneUpdate) {
+      this.syncScene();
     }
     this.requestRender();
   }
@@ -367,6 +390,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   compositeProgressiveTrace() {
+    const view = this.progressiveSettings.view;
+    if (view === 'realtime' || view === 'bake') {
+      return;
+    }
+    if (view === 'occlusion') {
+      this.compositeOcclusion();
+      return;
+    }
     const fade = this.pipeline?.traceFadeValue ?? 0;
     if (fade <= 0.001 || this.pathTracer == null || this.renderer == null ||
         this.pathTracer.target == null) {
@@ -423,9 +454,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   markSceneDirty() {
     this.invalidateReady();
+    this.occlusionReady = false;
     this.needsSceneUpdate = true;
     this.meshWorldMatrices.clear();
     this.pathTracer?.reset();
+    this.occlusionTracer?.reset();
     this.requestRender();
   }
 
@@ -443,6 +476,22 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       // model-viewer; swallow that package bug during feature teardown.
     }
     this.pathTracer = null;
+    try {
+      this.occlusionTracer?.dispose();
+    } catch {
+      // Same private-dispose bug as the beauty tracer.
+    }
+    this.occlusionTracer = null;
+    this.occlusionQuad?.dispose();
+    this.occlusionQuad = null;
+    this.occlusionDivide?.dispose();
+    this.occlusionDivide = null;
+    this.uniformEnv?.dispose();
+    this.uniformEnv = null;
+    for (const material of this.whiteMaterial.values()) {
+      material.dispose();
+    }
+    this.whiteMaterial.clear();
     this.ambientOcclusionPreviewComposer?.dispose();
     this.ambientOcclusionPreviewComposer = null;
     this.currentAmbientOcclusionPreviewOptions = null;
@@ -490,6 +539,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.applyOutputState();
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.scene.getCamera());
+    if (this.progressiveSettings.view === 'occlusion') {
+      this.sampleOcclusionView();
+    }
     this.compositeProgressiveTrace();
     this.pipeline?.noteFrame(performance.now() - started);
     if (this.pipeline?.keepRendering()) {
@@ -501,7 +553,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (this.renderer == null || this.scene == null) {
       return;
     }
-    this.renderer.toneMapping = this.scene.toneMapping;
+    const review = this.progressiveSettings.view === 'occlusion' ||
+        this.progressiveSettings.view === 'bake';
+    this.renderer.toneMapping = review ? NoToneMapping : this.scene.toneMapping;
     this.renderer.outputColorSpace = SRGBColorSpace;
     const {element, exposure} = this.scene;
     const exposureIsNumber =
@@ -510,7 +564,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const sky = element.skyboxImage;
     const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
         (env === 'neutral' || env === 'legacy' || (!env && !sky));
-    this.renderer.toneMappingExposure =
+    this.renderer.toneMappingExposure = review ?
+        1 :
         (exposureIsNumber ? exposure : 1.0) * (compensateExposure ? 1.3 : 1.0);
   }
 
@@ -528,6 +583,20 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.syncScene();
       },
       traceReady: () => this.traceSceneReady && !this.sceneBuildInFlight,
+      prepareOcclusion: () => {
+        if (this.occlusionReady || this.sceneBuildInFlight) {
+          return;
+        }
+        this.needsSceneUpdate = true;
+        this.syncScene();
+      },
+      occlusionReady: () => this.occlusionReady && !this.sceneBuildInFlight,
+      occlusionMaterial: () => this.occlusionMaterial(),
+      bounces: () => Math.max(1, Math.floor(this.options.bounces)),
+      setOcclusionScale: (value: number) => {
+        this.occlusionScale = value;
+      },
+      occlusionSamples: () => this.occlusionTracer?.samples ?? 0,
       resetTrace: () => {
         if (this.pathTracer != null && this.pathTracer.samples > 0) {
           this.blitTrace(this.pathTracer.target, this.options.denoise);
@@ -863,6 +932,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (reset) {
       this.cameraStateInitialized = false;
       this.pathTracer.reset();
+      if (this.occlusionBounces !== Math.floor(this.options.bounces)) {
+        this.occlusionReady = false;
+        this.occlusionTracer?.reset();
+        this.needsSceneUpdate = true;
+      }
     }
   }
 
@@ -878,11 +952,224 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
+    this.sceneBuildKind = this.shouldBuildOcclusion() ? 'occlusion' : 'beauty';
     this.beginSceneBuild();
   }
 
+  private shouldBuildOcclusion(): boolean {
+    if (this.occlusionReady) {
+      return false;
+    }
+    const view = this.progressiveSettings.view;
+    return view === 'occlusion' || view === 'bake' ||
+        this.progressiveSettings.bake.textureAO.enabled;
+  }
+
+  private ensureOcclusionTracer(): WebGLPathTracer|null {
+    if (this.renderer == null) {
+      return null;
+    }
+    if (this.occlusionTracer == null) {
+      const tracer = new WebGLPathTracer(this.renderer);
+      tracer.renderToCanvas = false;
+      tracer.renderDelay = 0;
+      tracer.fadeDuration = 0;
+      tracer.minSamples = 1;
+      tracer.filterGlossyFactor = 0;
+      this.occlusionTracer = tracer;
+      this.applyBuildOptionsTo(tracer);
+    }
+    this.occlusionTracer.bounces = Math.max(1, Math.floor(this.options.bounces));
+    this.occlusionTracer.filterGlossyFactor = 0;
+    this.occlusionTracer.tiles.copy(this.options.tiles);
+    this.occlusionTracer.renderScale =
+        Math.min(1, Math.max(0.1, this.options.renderScale));
+    return this.occlusionTracer;
+  }
+
+  private applyBuildOptionsTo(tracer: WebGLPathTracer) {
+    const generator = (tracer as unknown as {
+                        _generator?: {bvhOptions?: Record<string, unknown>;};
+                      })._generator;
+    if (generator == null) {
+      return;
+    }
+    generator.bvhOptions = {
+      ...generator.bvhOptions,
+      strategy: BVH_STRATEGY[this.buildOptions.strategy],
+      maxLeafTris: this.buildOptions.maxLeafTris,
+    };
+  }
+
+  private occlusionMaterial(): PhysicalPathTracingMaterial|null {
+    const tracer = this.occlusionTracer as unknown as {
+      _pathTracer?: {material?: PhysicalPathTracingMaterial};
+    }|null;
+    return tracer?._pathTracer?.material ?? null;
+  }
+
+  private sampleOcclusionView() {
+    const tracer = this.occlusionTracer;
+    if (tracer == null || !this.occlusionReady || this.sceneBuildInFlight ||
+        this.renderer == null) {
+      return;
+    }
+    if (tracer.samples >= this.options.samples) {
+      return;
+    }
+    tracer.renderToCanvas = false;
+    tracer.pausePathTracing = false;
+    tracer.bounces = Math.max(1, Math.floor(this.options.bounces));
+    tracer.filterGlossyFactor = 0;
+    try {
+      tracer.renderSample();
+    } catch (error) {
+      console.warn('[model-viewer] Occlusion view sample failed.', error);
+    }
+  }
+
+  private compositeOcclusion() {
+    const tracer = this.occlusionTracer;
+    const target = tracer?.target;
+    if (tracer == null || target == null || this.renderer == null ||
+        tracer.samples < 1) {
+      return;
+    }
+    if (this.occlusionDivide == null) {
+      this.occlusionDivide = new ShaderMaterial({
+        uniforms: {
+          tDiffuse: {value: null},
+          scale: {value: 1},
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float scale;
+          varying vec2 vUv;
+          void main() {
+            vec3 color = texture2D(tDiffuse, vUv).rgb;
+            gl_FragColor = vec4(color / max(scale, 1e-4), 1.0);
+          }
+        `,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+    }
+    const divide = this.occlusionDivide;
+    divide.uniforms.tDiffuse.value = target.texture;
+    target.texture.colorSpace = LinearSRGBColorSpace;
+    divide.uniforms.scale.value =
+        this.occlusionScale > 0 ? this.occlusionScale : 1;
+    if (this.occlusionQuad == null) {
+      this.occlusionQuad = new FullScreenQuad(divide);
+    }
+    const previousClear = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+    this.occlusionQuad.render(this.renderer);
+    this.renderer.autoClear = previousClear;
+  }
+
+  private ensureUniformEnv(): DataTexture {
+    if (this.uniformEnv != null) {
+      return this.uniformEnv;
+    }
+    const data = new Float32Array(32 * 16 * 4);
+    data.fill(1);
+    const texture = new DataTexture(data, 32, 16, RGBAFormat, FloatType);
+    texture.mapping = EquirectangularReflectionMapping;
+    texture.colorSpace = LinearSRGBColorSpace;
+    texture.needsUpdate = true;
+    this.uniformEnv = texture;
+    return texture;
+  }
+
+  private withOcclusionEnvironment(build: () => void) {
+    const scene = this.scene;
+    if (scene == null ||
+        this.progressiveSettings.occlusionEnvironment !== 'uniform') {
+      build();
+      return;
+    }
+    const previous = scene.environment;
+    const previousIntensity = scene.environmentIntensity;
+    scene.environment = this.ensureUniformEnv();
+    scene.environmentIntensity = 1;
+    try {
+      build();
+    } finally {
+      scene.environment = previous;
+      scene.environmentIntensity = previousIntensity;
+    }
+  }
+
+  private whiteFor(side: Side): MeshPhysicalMaterial {
+    const cached = this.whiteMaterial.get(side);
+    if (cached != null) {
+      return cached;
+    }
+    const material = new MeshPhysicalMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      metalness: 0,
+      clearcoat: 0,
+      transmission: 0,
+      sheen: 0,
+      iridescence: 0,
+      specularIntensity: 0,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+      side,
+    });
+    this.whiteMaterial.set(side, material);
+    return material;
+  }
+
+  private pushWhiteMaterials() {
+    this.savedMeshMaterials = [];
+    this.hiddenLights = [];
+    this.scene?.traverse((object) => {
+      const light = object as Light;
+      if (light.isLight && light.visible) {
+        light.visible = false;
+        this.hiddenLights.push(light);
+      }
+      const mesh = object as Mesh;
+      if (!mesh.isMesh || mesh.userData?.noHit === true ||
+          mesh.userData?.pathTracerShadowCatcher === true) {
+        return;
+      }
+      this.savedMeshMaterials.push({mesh, material: mesh.material});
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map((entry) => this.whiteFor(
+            (entry as MeshStandardMaterial)?.side ?? FrontSide));
+      } else {
+        const side = (mesh.material as MeshStandardMaterial)?.side ?? FrontSide;
+        mesh.material = this.whiteFor(side);
+      }
+    });
+  }
+
+  private popWhiteMaterials() {
+    for (const entry of this.savedMeshMaterials) {
+      entry.mesh.material = entry.material;
+    }
+    this.savedMeshMaterials = [];
+    for (const light of this.hiddenLights) {
+      light.visible = true;
+    }
+    this.hiddenLights = [];
+  }
+
   private beginSceneBuild() {
-    const pathTracer = this.pathTracer;
+    const occlusion = this.sceneBuildKind === 'occlusion';
+    const pathTracer = occlusion ? this.ensureOcclusionTracer() : this.pathTracer;
     const scene = this.scene;
     if (pathTracer == null || scene == null || this.camera == null ||
         this.disposed) {
@@ -919,6 +1206,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.rememberGeometryState();
       this.rememberCameraState(pathTracerCamera);
       this.sceneBuildInFlight = false;
+      if (occlusion) {
+        this.occlusionReady = true;
+        this.occlusionBounces = Math.floor(this.options.bounces);
+        const view = this.progressiveSettings.view;
+        if (view === 'beauty' || view === 'realtime') {
+          this.needsSceneUpdate = true;
+          this.syncScene();
+          return;
+        }
+        this.requestRender();
+        return;
+      }
       this.traceSceneReady = true;
       this.withBakeEnvironment(() => {
         this.pathTracer?.updateEnvironment();
@@ -933,9 +1232,24 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     };
 
     const worker = this.ensureBvhWorker();
+    const snapshot = (build: () => void) => {
+      if (!occlusion) {
+        build();
+        return;
+      }
+      this.pushWhiteMaterials();
+      try {
+        this.withOcclusionEnvironment(build);
+      } finally {
+        this.popWhiteMaterials();
+      }
+    };
     if (worker != null) {
       pathTracer.setBVHWorker(worker);
-      const pending = pathTracer.setSceneAsync(scene, pathTracerCamera);
+      let pending: Promise<unknown> = Promise.resolve();
+      snapshot(() => {
+        pending = pathTracer.setSceneAsync(scene, pathTracerCamera);
+      });
       this.revealOverlays();
       pending
           .then(() => {
@@ -958,7 +1272,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
-    pathTracer.setScene(scene, pathTracerCamera);
+    snapshot(() => {
+      pathTracer.setScene(scene, pathTracerCamera);
+    });
     this.revealOverlays();
     settle();
   }

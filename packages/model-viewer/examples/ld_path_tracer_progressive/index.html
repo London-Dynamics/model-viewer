@@ -49,6 +49,20 @@
     <details open>
       <summary>Path tracer</summary>
       <div class="rows">
+        <label><span>Picture</span>
+          <select id="picture">
+            <option value="beauty" selected>beauty</option>
+            <option value="realtime">real-time</option>
+            <option value="occlusion">path tracer shadow</option>
+            <option value="bake">bake only</option>
+          </select>
+        </label>
+        <label><span>Shadow env</span>
+          <select id="occ-env">
+            <option value="uniform" selected>uniform white</option>
+            <option value="scene">scene HDR</option>
+          </select>
+        </label>
         <label><span>On</span><input id="pt-on" type="checkbox" checked /></label>
         <label><span>Mode</span>
           <select id="mode">
@@ -124,7 +138,7 @@
       <button id="reset-cam" type="button">Reset camera</button>
       <button id="geom" type="button">Change geometry</button>
     </div>
-    <p class="hint">Baked atlas, UV2 checker, and trace-error views are not on the mixin. Shader AO output “ao” is the realtime debug view.</p>
+    <p class="hint">Path tracer shadow and bake only are the same white-diffuse path trace. Uniform white makes that picture the occlusion factor. Shader AO output “ao” is the old screen-space debug view.</p>
   </aside>
   <script type="module" src="../../dist/model-viewer.js"></script>
   <script type="module">
@@ -165,6 +179,8 @@
       const bakeUrl = bakeEnv.value;
       mv.setPathTracerOptions({
         mode: val('mode'),
+        view: val('picture'),
+        occlusionEnvironment: val('occ-env'),
         fadeMs: val('fade'),
         idleDelayMs: val('idle'),
         budgetMs: val('budget'),
@@ -233,6 +249,8 @@
             'trace ' + trace.samples + ' samples' +
             (trace.revealed ? ' faded' : ' baking') +
             ' ' + Math.round((trace.fade || 0) * 100) + '%',
+        'shadow ' + ((state && state.occlusionSamples) || 0) + ' samples' +
+            (state && state.occlusionScale ? '  scale ' + state.occlusionScale.toFixed(3) : ''),
         frame == null ? 'frame —' :
             'frame mean ' + frame.mean.toFixed(1) + 'ms  p95 ' + frame.p95.toFixed(1) + 'ms',
         bake == null ? 'bake —' :
