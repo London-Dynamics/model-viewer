@@ -26,6 +26,7 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
 import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
+import {installSurfaceBake} from './progressive/surface-bake.js';
 
 const PATH_TRACER_FADE_DURATION_MS = 600;
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -984,6 +985,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.occlusionTracer.tiles.copy(this.options.tiles);
     this.occlusionTracer.renderScale =
         Math.min(1, Math.max(0.1, this.options.renderScale));
+    const material = this.occlusionMaterial();
+    if (material != null) {
+      installSurfaceBake(material);
+      material.uniforms.ldBake.value = 0;
+      material.uniforms.ldUnoccluded.value = 0;
+    }
     return this.occlusionTracer;
   }
 
@@ -1021,6 +1028,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     tracer.pausePathTracing = false;
     tracer.bounces = Math.max(1, Math.floor(this.options.bounces));
     tracer.filterGlossyFactor = 0;
+    const material = this.occlusionMaterial();
+    if (material?.uniforms.ldBake != null) {
+      material.uniforms.ldBake.value = 0;
+      material.uniforms.ldUnoccluded.value = 0;
+    }
     try {
       tracer.renderSample();
     } catch (error) {

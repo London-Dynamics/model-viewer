@@ -31,6 +31,7 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
   private rasterDelegate: EffectComposerInterface|null = null;
   private options: LDRenderPipelineOptions;
   private outlineSelection: Object3D[] = [];
+  private appliedShaderAo = Number.NaN;
 
   constructor(
       private readonly host: BloomPipelineHost,
@@ -127,7 +128,12 @@ export class LDRenderPipelineComposer implements EffectComposerInterface {
     const authored = this.options.ambientOcclusion?.intensity ?? 1;
     const composer = this.options.pathTracer.composer;
     const mix = composer?.isProgressiveMode() ? composer.shaderAoMix() : 1;
-    this.rasterDelegate.setRuntimeIntensity(authored * mix);
+    const intensity = authored * mix;
+    if (intensity === this.appliedShaderAo) {
+      return;
+    }
+    this.appliedShaderAo = intensity;
+    this.rasterDelegate.updateOptions({intensity});
   }
 
   render(deltaTime?: DOMHighResTimeStamp): void {

@@ -17,22 +17,6 @@ import {DataTexture, FloatType, NearestFilter, NoColorSpace, RGBAFormat, WebGLRe
 import {PathTracingRenderer} from 'three-gpu-pathtracer/src/core/PathTracingRenderer.js';
 import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 
-const KEEP_UNIFORM = new Set([
-  'resolution',
-  'seed',
-  'opacity',
-  'cameraWorldMatrix',
-  'invProjectionMatrix',
-  'physicalCamera',
-  'sobolTexture',
-  'stratifiedTexture',
-  'stratifiedOffsetTexture',
-  'ldPosition',
-  'ldNormal',
-  'ldBake',
-  'ldUnoccluded',
-]);
-
 const replaceOnce = (
     source: string, needle: string, next: string, label: string): string => {
   const at = source.indexOf(needle);
@@ -46,10 +30,9 @@ const replaceOnce = (
 };
 
 /**
- * The bake is the path tracer's own shader. The first ray starts just
- * outside the texel and aims back at it, so the hit, the BSDF and the
- * bounces are the library code. A second pass disables hits after that
- * first surface so the result can be divided by the unoccluded value.
+ * Same path-tracing shader the shadow view runs. ldBake 0 keeps the
+ * camera ray. ldBake 1 starts that ray just outside a texel. The hit,
+ * BSDF, BVH and bounces are untouched library code.
  */
 export const installSurfaceBake = (material: PhysicalPathTracingMaterial) => {
   if (material.fragmentShader.includes('uniform int ldBake;')) {
@@ -105,31 +88,11 @@ int traceScene(`,
   material.needsUpdate = true;
 };
 
-export const sharePathTracerScene = (
-    source: PhysicalPathTracingMaterial,
-    dest: PhysicalPathTracingMaterial) => {
-  for (const key of Object.keys(source.uniforms)) {
-    if (KEEP_UNIFORM.has(key) || dest.uniforms[key] == null) {
-      continue;
-    }
-    dest.uniforms[key].value = source.uniforms[key].value;
-  }
-  dest.bounces = source.bounces;
-  dest.transmissiveBounces = source.transmissiveBounces;
-  dest.filterGlossyFactor = 0;
-  for (const key of Object.keys(source.defines)) {
-    if (key.startsWith('FEATURE_') || key === 'RANDOM_TYPE') {
-      dest.setDefine(key, source.defines[key]);
-    }
-  }
-};
-
 export type SurfaceBakePass = 'front'|'back'|'open';
 
 /**
- * One sample of the path tracer per texel. `front` and `back` are the two
- * hemispheres. `open` is the same rays with the scene ignored after the
- * first hit, which is the unoccluded divisor.
+ * Atlas samples of the shadow view's path tracer. The renderer is given
+ * that material, so the bake cannot drift onto a second shader.
  */
 export class SurfaceFactorBake {
   private readonly renderer: PathTracingRenderer;
@@ -139,14 +102,16 @@ export class SurfaceFactorBake {
   private frontNormal = new Float32Array(4);
   mask: Uint8Array;
 
-  constructor(
-      gl: WebGLRenderer,
-      private readonly source: PhysicalPathTracingMaterial,
-  ) {
+  constructor(gl: WebGLRenderer, source: PhysicalPathTracingMaterial) {
     this.renderer = new PathTracingRenderer(gl);
     this.renderer.tiles.set(1, 1);
     this.renderer.stableTiles = true;
-    installSurfaceBake(this.renderer.material);
+    installSurfaceBake(source);
+    const discarded = this.renderer.material;
+    this.renderer.material = source;
+    if (discarded !== source) {
+      discarded.dispose();
+    }
     this.position = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
     this.normal = new DataTexture(new Float32Array(4), 1, 1, RGBAFormat, FloatType);
     for (const texture of [this.position, this.normal]) {
@@ -220,7 +185,7 @@ export class SurfaceFactorBake {
   }
 
   step(): number {
-    sharePathTracerScene(this.source, this.renderer.material);
+    this.renderer.material.uniforms.ldBake.value = 1;
     const before = this.renderer.samples;
     this.renderer.update();
     if (this.renderer.samples === before && !this.renderer.isCompiling) {
