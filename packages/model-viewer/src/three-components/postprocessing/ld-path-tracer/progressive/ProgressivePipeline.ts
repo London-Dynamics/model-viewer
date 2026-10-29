@@ -630,7 +630,6 @@ export class ProgressivePipeline {
     const center = box.getCenter(tmp);
     if (this.settings.bake.contactShadow.enabled) {
       const resolution = this.settings.bake.contactShadow.resolution;
-      const span = Math.max(Math.min(size.x, size.z), 0.05);
       const softness = this.settings.bake.contactShadow.softness;
       // How high above the ground still counts as the footprint. The
       // penumbra radius is this clearance times heightScale, so a wheel
