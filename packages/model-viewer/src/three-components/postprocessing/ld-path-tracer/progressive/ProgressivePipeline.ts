@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {AdditiveBlending, BufferAttribute, BufferGeometry, Camera, ClampToEdgeWrapping, Color, DataTexture, EquirectangularReflectionMapping, FloatType, FrontSide, LinearFilter, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, RGBAFormat, ShaderMaterial, Texture, Vector3, WebGLRenderer, WebGLRenderTarget} from 'three';
+import {AdditiveBlending, BufferAttribute, BufferGeometry, Camera, ClampToEdgeWrapping, Color, DataTexture, EquirectangularReflectionMapping, FloatType, FrontSide, LinearFilter, LinearSRGBColorSpace, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, RGBAFormat, Texture, Vector3, WebGLRenderer, WebGLRenderTarget} from 'three';
 import {SAH} from 'three-mesh-bvh';
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -24,7 +24,7 @@ import {PathTracerBVHWorker} from '../PathTracerBVHWorker.js';
 import {blurOcclusion, contactGroundY, ContactJob, expandPenumbra, stepContactRays} from './contact-shadow.js';
 import {createFade, fadeSettled, FadeState, shaderAoMix as mixShaderAo, stepFade} from './fade.js';
 import {ChangeKind, planInvalidation} from './invalidation.js';
-import {directAtPoint, emissiveAtPoint, EmissiveSample, occlusionAtPoint, PunctualSample} from './lighting.js';
+import {directAtPoint, emissiveAtPoint, EmissiveSample, finalizeAmbientOcclusion, occlusionAtPoint, PunctualSample} from './lighting.js';
 import {cloneProgressiveSettings, progressiveBakeKey, ProgressiveSettings} from './options.js';
 import {placeProbe, ProbeBaker} from './probe-baker.js';
 import {applyUvJob, createUvJob, stepUvJob, uv1IsValid, UvJob} from './uv2.js';
@@ -164,9 +164,6 @@ export class ProgressivePipeline {
   private probeIndex = 0;
   private probeFade = createFade();
   private probesReady = false;
-  private blendMaterial: ShaderMaterial|null = null;
-  private blendQuad: FullScreenQuad|null = null;
-  private blendTarget: WebGLRenderTarget|null = null;
   private traceFade = createFade();
   private traceHold = false;
   private traceBuildRequested = false;
@@ -633,7 +630,7 @@ export class ProgressivePipeline {
       // typical orbit, so it is wider than the core and always lighter.
       const falloff = Math.max(size.y * 0.12, span * 0.1, 0.05);
       const penumbraDistance = Math.max(falloff * 2, size.y * 0.28);
-      const softnessRadius = Math.max(span * softness * 2.4, size.y * 0.12);
+      const softnessRadius = Math.max(span * softness * 5, size.y * 0.4);
       const width = Math.max(size.x, 0.05) + softnessRadius * 2;
       const depth = Math.max(size.z, 0.05) + softnessRadius * 2;
       const groundY = this.positions != null ?
@@ -922,7 +919,6 @@ export class ProgressivePipeline {
       this.aoReady = true;
     } else {
       this.aoData = new Float32Array(resolution * resolution * 4);
-      this.aoData.fill(1);
       this.aoCursor = 0;
     }
     if (this.settings.lights.include) {
@@ -941,9 +937,13 @@ export class ProgressivePipeline {
       this.aoReady = true;
       return;
     }
+    const sceneSize = this.host.scene()?.size;
+    const diagonal = Math.max(sceneSize?.length() ?? 1, 0.05);
+    // Crevice scale, not a fraction of the whole boat. A 14 m hull with a
+    // multi-metre ray greys every panel that can see another part.
     const distance = this.settings.bake.textureAO.distance > 0 ?
         this.settings.bake.textureAO.distance :
-        Math.max(this.host.scene()?.size.length() ?? 1, 0.1) * 0.35;
+        Math.min(1.25, Math.max(0.08, diagonal * 0.035));
     const samples = this.settings.bake.textureAO.samples;
     const resolution = this.settings.bake.textureAO.resolution;
     const start = performance.now();
@@ -967,10 +967,8 @@ export class ProgressivePipeline {
       const y = Math.min(
           resolution - 1, Math.floor(this.surface[o + 7] * resolution));
       const texel = (y * resolution + x) * 4;
-      this.aoData[texel] = ao;
-      this.aoData[texel + 1] = ao;
-      this.aoData[texel + 2] = ao;
-      this.aoData[texel + 3] = 1;
+      this.aoData[texel] += ao;
+      this.aoData[texel + 3] += 1;
       this.aoCursor++;
     }
     this.publishAo(resolution);
@@ -1139,7 +1137,7 @@ export class ProgressivePipeline {
           r: color.r,
           g: color.g,
           b: color.b,
-          area,
+          area: area * stride,
         });
       }
     }
@@ -1244,7 +1242,7 @@ export class ProgressivePipeline {
       this.finishProbes();
       return;
     }
-    const background = this.customEnv ?? scene.environment ?? null;
+    const background = this.customEnv ?? scene.skyboxTexture ?? null;
     probe.step(renderer, scene, background, (hide) => this.hideProduct(hide));
     if (probe.done) {
       this.probeIndex++;
@@ -1297,7 +1295,7 @@ export class ProgressivePipeline {
           this.contact.width,
           this.contact.depth,
           this.contact.softnessRadius,
-          0.62);
+          0.95);
     }
     const radius = this.contact.softnessRadius > 0 ? 1 : 0;
     const grid =
@@ -1356,31 +1354,14 @@ export class ProgressivePipeline {
       this.aoReady = true;
       return;
     }
-    const blurred = new Float32Array(this.aoData.length);
-    const radius = 1;
-    for (let y = 0; y < resolution; y++) {
-      for (let x = 0; x < resolution; x++) {
-        let sum = 0;
-        let n = 0;
-        for (let ky = -radius; ky <= radius; ky++) {
-          for (let kx = -radius; kx <= radius; kx++) {
-            const sx = Math.min(resolution - 1, Math.max(0, x + kx));
-            const sy = Math.min(resolution - 1, Math.max(0, y + ky));
-            sum += this.aoData[(sy * resolution + sx) * 4];
-            n++;
-          }
-        }
-        const value = sum / n;
-        const texel = (y * resolution + x) * 4;
-        blurred[texel] = value;
-        blurred[texel + 1] = value;
-        blurred[texel + 2] = value;
-        blurred[texel + 3] = 1;
-      }
-    }
-    const data = new Uint8Array(blurred.length);
-    for (let i = 0; i < blurred.length; i++) {
-      data[i] = Math.round(Math.min(1, Math.max(0, blurred[i])) * 255);
+    const filtered = finalizeAmbientOcclusion(this.aoData, resolution);
+    const data = new Uint8Array(resolution * resolution * 4);
+    for (let i = 0; i < filtered.length; i++) {
+      const byte = Math.round(Math.min(1, Math.max(0, filtered[i])) * 255);
+      data[i * 4] = byte;
+      data[i * 4 + 1] = byte;
+      data[i * 4 + 2] = byte;
+      data[i * 4 + 3] = 255;
     }
     this.aoTexture?.dispose();
     this.aoTexture = new DataTexture(data, resolution, resolution, RGBAFormat);
@@ -1464,52 +1445,6 @@ export class ProgressivePipeline {
   }
 
   private applyProbeEnv() {
-    const probe = this.probes[0];
-    const renderer = this.host.renderer();
-    if (probe == null || !probe.done || renderer == null ||
-        probe.environmentMap == null || probe.productMapTarget == null) {
-      return;
-    }
-    if (this.blendMaterial == null) {
-      this.blendMaterial = new ShaderMaterial({
-        uniforms: {
-          mapA: {value: probe.environmentMap.texture},
-          mapB: {value: probe.productMapTarget.texture},
-          mixAmount: {value: 0},
-        },
-        vertexShader: `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          uniform sampler2D mapA;
-          uniform sampler2D mapB;
-          uniform float mixAmount;
-          varying vec2 vUv;
-          void main() {
-            gl_FragColor = mix(texture2D(mapA, vUv), texture2D(mapB, vUv), mixAmount);
-          }
-        `,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-      });
-      this.blendQuad = new FullScreenQuad(this.blendMaterial);
-      const image = probe.productMapTarget.texture.image;
-      const width = image?.width ?? 256;
-      const height = image?.height ?? 256;
-      this.blendTarget = new WebGLRenderTarget(width, height, {
-        type: FloatType,
-        format: RGBAFormat,
-        depthBuffer: false,
-        colorSpace: LinearSRGBColorSpace,
-      });
-      this.blendTarget.texture.mapping = probe.productMapTarget.texture.mapping;
-      this.blendTarget.texture.colorSpace = LinearSRGBColorSpace;
-    }
     let nearest = this.probes[0];
     const camera = this.host.camera();
     if (camera != null && this.probes.length > 1) {
@@ -1523,20 +1458,14 @@ export class ProgressivePipeline {
         }
       }
     }
-    if (nearest.environmentMap == null || nearest.productMapTarget == null) {
-      return;
-    }
-    this.blendMaterial.uniforms.mapA.value = nearest.environmentMap.texture;
-    this.blendMaterial.uniforms.mapB.value = nearest.productMapTarget.texture;
-    this.blendMaterial.uniforms.mixAmount.value = this.probeFade.value;
-    const previous = renderer.getRenderTarget();
-    renderer.setRenderTarget(this.blendTarget);
-    this.blendQuad!.render(renderer);
-    renderer.setRenderTarget(previous);
+    const probeMap = nearest?.productMapTarget?.texture ?? null;
+    const show = this.probeFade.value > 0.5 && probeMap != null;
     this.forStandardMaterials((material) => {
       this.remember(material);
-      if (material.envMap !== this.blendTarget!.texture) {
-        material.envMap = this.blendTarget!.texture;
+      const saved = this.savedMaterials.get(material);
+      const next = show ? probeMap : (saved?.envMap ?? null);
+      if (material.envMap !== next) {
+        material.envMap = next;
         material.needsUpdate = true;
       }
     });
@@ -1877,8 +1806,6 @@ export class ProgressivePipeline {
     this.lightQuad = null;
     this.lightMaterial?.dispose();
     this.lightMaterial = null;
-    this.blendTarget?.dispose();
-    this.blendTarget = null;
     this.restoreMaterials();
   }
 }

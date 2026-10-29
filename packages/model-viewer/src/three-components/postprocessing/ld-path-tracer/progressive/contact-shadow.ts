@@ -162,7 +162,7 @@ export const stepContactRays = (
     const soft = penumbraSamples > 0 ? penumbra / penumbraSamples : 0;
     // A hit on the center ray is the core. Extra samples only fill texels
     // the center ray missed, and at a lower weight.
-    job.grid[job.cursor] = core > 0 ? core : soft * 0.55;
+    job.grid[job.cursor] = core > 0 ? core : soft * 0.75;
     job.cursor++;
   }
   return true;
@@ -196,7 +196,7 @@ export const expandPenumbra = (
       if (core < 0.2) {
         continue;
       }
-      const cap = Math.min(strength, core * 0.62);
+      const cap = Math.min(strength, core * 0.9);
       for (let dj = -rz; dj <= rz; dj++) {
         const y = j + dj;
         if (y < 0 || y >= resolution) {
@@ -212,7 +212,9 @@ export const expandPenumbra = (
             continue;
           }
           const t = 1 - dist / radiusMeters;
-          const skirt = cap * t * t;
+          // Gentler than a square so the ground under the hull stays dark
+          // and the edge still fades out.
+          const skirt = cap * Math.pow(t, 0.55);
           const idx = y * resolution + x;
           if (skirt > grid[idx]) {
             grid[idx] = skirt;

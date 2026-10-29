@@ -87,7 +87,7 @@ export const DEFAULT_PROGRESSIVE_SETTINGS: ProgressiveSettings = {
       enabled: true,
       resolution: 192,
       softness: 0.08,
-      opacity: 0.7,
+      opacity: 0.92,
     },
     textureAO: {
       enabled: true,

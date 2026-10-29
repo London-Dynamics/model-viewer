@@ -121,11 +121,12 @@ Cheapest layer, and it does not need UVs.
   underside instead of starting inside the mesh. Sample 0 is unjittered.
   Its falloff is `max(size.y * 0.12, span * 0.1, 0.05)`, and the weight is
   `(1 - distance / falloff)²`. That is the dark core, tight to the bottom.
-- Later samples only fill texels the center ray missed, at 0.55× the
-  weight, inside a disk of about `softness × 2.4 ×` the smaller horizontal
-  size (at least `0.12 × height`). A distance falloff then spreads the core
-  across that same disk at 0.62×, quadratic in distance, so the ground
-  beside the hull is a lighter skirt and not a second flat blob.
+- Later samples only fill texels the center ray missed, at 0.75× the
+  weight, inside a disk of about `softness × 5 ×` the smaller horizontal
+  size (at least `0.4 × height`). A distance falloff then spreads the core
+  across that same disk at 0.9×, with a gentle power curve, so the ground
+  beside the hull is darker than the realtime blob and still lighter than
+  the core.
 - The built-in soft-shadow floor fades out with the same contact fade, so
   the realtime blob and the bake are not both drawn.
 - The texture is black RGB with occlusion in alpha. Opacity is
@@ -157,12 +158,21 @@ Missing UVs are generated per mesh, time-sliced:
   geometry is kept on the mesh and restored when the pipeline disposes or
   the mode leaves progressive.
 
-AO is cosine-weighted hemisphere occlusion, ray length `distance` or 0.35×
-the bounds diagonal when `distance` is 0, with a normal bias so a surface
-does not shadow itself. The value is stored in the red channel. Fade is
-`aoMapIntensity` from 0 to 1, which matches three.js's AO formula (intensity
-0 leaves the shading unchanged). The GPU upload happens once; the fade does
-not reallocate.
+AO is cosine-weighted hemisphere occlusion. When `distance` is 0 the ray
+is about 3.5% of the bounds diagonal, clamped to 0.08–1.25 m, so a 14 m
+hull does not grey every panel that can see another part. A hit contributes
+`(1 - distance / rayLength)²`. The normal bias is a few millimetres. Overlapping
+writes are averaged, one texel of gutter is dilated from neighbours, then a
+1px blur. Unwritten texels stay white. Fade is `aoMapIntensity` from 0 to 1,
+which matches three.js's AO formula (intensity 0 leaves the shading unchanged).
+The GPU upload happens once; the fade does not reallocate.
+
+UV2 is a CPU chart unwrap and shelf pack, not xatlas, and there is no GPU
+packer. It runs once per geometry change and stays on the mesh until dispose.
+`packCharts` is one synchronous pass per mesh, which is the multi-second
+frame on a large hull. The headless review pays that cost again every stage
+because each stage loads a fresh page. A real GPU speeds the beauty pass and
+the path trace. It does not remove the UV2 time. Chart gutters are two texels.
 
 ### 3. Light layers
 
@@ -199,12 +209,14 @@ textures.
 
 - `probes.count` probes (clamped 1–4) sit just outside the bounds, the
   first along the view direction at bake time, the rest on a ring around Y.
-- Each cubemap is rendered one face per frame. A second cubemap hides the
-  product and keeps the background, at the same resolution.
-- Both become PMREMs. A fullscreen blend of those two same-size PMREMs is
-  the `envMap`. Fade 0 matches the background-only probe (close to the
-  realtime IBL when the skybox and the environment agree). Fade 1 includes
-  the product in the reflections.
+- Each cubemap is rendered one face per frame, with the viewer's skybox
+  (the equirect, not the PMREM) as the background, so the capture is lit by
+  the same environment as realtime. A second cubemap hides the product.
+- The product cubemap's PMREM is assigned directly as `envMap` once the
+  fade passes halfway. Resampling a PMREM atlas through a fullscreen UV
+  blend scrambles the lighting and turns the model black. Below that fade
+  the material keeps its previous env map, which is usually none, so
+  `scene.environment` lights the model.
 - While the camera moves, the nearest baked probe is selected. A change of
   nearest probe crossfades the same way. Probes do not follow the camera.
 - The full trace does not use `material.envMap` (three-gpu-pathtracer

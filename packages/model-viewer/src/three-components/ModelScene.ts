@@ -818,6 +818,18 @@ export class ModelScene extends Scene {
     return { width: this.width, height: this.height };
   }
 
+  /**
+   * The equirect the viewer is showing. Grounded skyboxes clear
+   * `scene.background`, so probe captures read this instead of the PMREM.
+   */
+  get skyboxTexture(): Texture | null {
+    const background = this.background;
+    if (background != null && (background as Texture).isTexture === true) {
+      return background as Texture;
+    }
+    return this.groundedSkybox.map;
+  }
+
   setEnvironmentAndSkybox(environment: Texture | null, skybox: Texture | null) {
     if (this.element[$renderer].arRenderer.presentedScene === this) {
       return;

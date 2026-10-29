@@ -49,13 +49,16 @@ export const occlusionAtPoint = (
     distance: number,
     ): number => {
   orient(nx, ny, nz);
-  const bias = Math.max(2e-3, distance * 0.015);
+  // A few millimetres, not a fraction of a long ray. A large bias starts
+  // the sample inside neighbouring geometry and greys open panels.
+  const bias = Math.max(5e-4, Math.min(0.004, distance * 0.004));
   let occ = 0;
   const count = Math.max(1, samples);
   for (let i = 0; i < count; i++) {
     const u = halton(i + 1, 2);
     const v = halton(i + 1, 3);
     const phi = Math.PI * 2 * u;
+    // Cosine-weighted hemisphere: more rays near the normal.
     const cosTheta = Math.sqrt(1 - v);
     const sinTheta = Math.sqrt(v);
     const lx = Math.cos(phi) * sinTheta;
@@ -67,12 +70,82 @@ export const occlusionAtPoint = (
     direction.addScaledVector(origin.set(nx, ny, nz), lz).normalize();
     origin.set(x + nx * bias, y + ny * bias, z + nz * bias);
     ray.set(origin, direction);
-    const hit = bvh.raycastFirst(ray, DoubleSide, bias, distance);
+    const hit = bvh.raycastFirst(ray, DoubleSide, 0, distance);
     if (hit != null) {
-      occ += 1 - Math.min(1, hit.distance / distance);
+      const t = Math.min(1, hit.distance / distance);
+      // Only nearby hits darken. A graze at the far end of the ray does not.
+      const falloff = (1 - t) * (1 - t);
+      occ += falloff;
     }
   }
   return 1 - occ / count;
+};
+
+/**
+ * Average overlapping writes, bleed one texel into unwritten gutters, then
+ * a 1px blur. Unwritten texels stay white so chart padding does not go grey.
+ */
+export const finalizeAmbientOcclusion = (
+    sumAndCount: Float32Array,
+    resolution: number,
+    ): Float32Array => {
+  const count = resolution * resolution;
+  const value = new Float32Array(count);
+  value.fill(-1);
+  for (let i = 0; i < count; i++) {
+    const n = sumAndCount[i * 4 + 3];
+    if (n > 0) {
+      value[i] = sumAndCount[i * 4] / n;
+    }
+  }
+  const dilated = value.slice();
+  for (let y = 0; y < resolution; y++) {
+    for (let x = 0; x < resolution; x++) {
+      const idx = y * resolution + x;
+      if (value[idx] >= 0) {
+        continue;
+      }
+      let sum = 0;
+      let n = 0;
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const sx = x + kx;
+          const sy = y + ky;
+          if (sx < 0 || sy < 0 || sx >= resolution || sy >= resolution) {
+            continue;
+          }
+          const neighbor = value[sy * resolution + sx];
+          if (neighbor >= 0) {
+            sum += neighbor;
+            n++;
+          }
+        }
+      }
+      if (n > 0) {
+        dilated[idx] = sum / n;
+      }
+    }
+  }
+  const out = new Float32Array(count);
+  for (let y = 0; y < resolution; y++) {
+    for (let x = 0; x < resolution; x++) {
+      let sum = 0;
+      let n = 0;
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const sx = Math.min(resolution - 1, Math.max(0, x + kx));
+          const sy = Math.min(resolution - 1, Math.max(0, y + ky));
+          const sample = dilated[sy * resolution + sx];
+          if (sample >= 0) {
+            sum += sample;
+            n++;
+          }
+        }
+      }
+      out[y * resolution + x] = n > 0 ? sum / n : 1;
+    }
+  }
+  return out;
 };
 
 export interface PunctualSample {
@@ -210,7 +283,7 @@ export const emissiveAtPoint = (
         null) {
       continue;
     }
-    const scale = sample.area * ndotl * facing / (dist * dist * samples.length);
+    const scale = sample.area * ndotl * facing / (dist * dist);
     r += sample.r * scale;
     g += sample.g * scale;
     b += sample.b * scale;

@@ -22,6 +22,7 @@ import {ModelViewerElement} from '../../model-viewer.js';
 import {contactGroundY, expandPenumbra, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
+import {finalizeAmbientOcclusion, occlusionAtPoint} from '../../three-components/postprocessing/ld-path-tracer/progressive/lighting.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
@@ -232,7 +233,7 @@ suite('progressive contact shadow rays', () => {
     }
     expect(core).to.be.greaterThan(0.7);
     expect(skirt).to.be.greaterThan(0.02);
-    expect(skirt).to.be.lessThan(core * 0.5);
+    expect(skirt).to.be.lessThan(core * 0.85);
     expect(far).to.equal(0);
   });
 
@@ -242,6 +243,32 @@ suite('progressive contact shadow rays', () => {
       positions[i * 3 + 1] = i === 0 ? -4 : 1;
     }
     expect(contactGroundY(positions, 0.04)).to.equal(1);
+  });
+
+  test('open sky stays white and a close surface occludes', () => {
+    const cover = new BufferGeometry();
+    cover.setAttribute(
+        'position',
+        new Float32BufferAttribute(
+            [-1, 0.05, -1, 1, 0.05, -1, 0, 0.05, 1], 3));
+    const under = occlusionAtPoint(
+        new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.4);
+    const far = occlusionAtPoint(
+        new MeshBVH(cover), 0, 0, 0, 0, 1, 0, 16, 0.02);
+    expect(under).to.be.lessThan(0.55);
+    expect(far).to.be.greaterThan(0.9);
+  });
+
+  test('unwritten AO texels stay white and gutters copy a neighbor', () => {
+    const resolution = 4;
+    const data = new Float32Array(resolution * resolution * 4);
+    data[0] = 0.2;
+    data[3] = 1;
+    const out = finalizeAmbientOcclusion(data, resolution);
+    expect(out[0]).to.be.closeTo(0.2, 0.05);
+    expect(out[1]).to.be.greaterThan(0);
+    expect(out[1]).to.be.lessThan(1);
+    expect(out[resolution * resolution - 1]).to.equal(1);
   });
 
   test('the penumbra spread stays lighter than the core', () => {
