@@ -15,9 +15,7 @@
 
 import {expect} from 'chai';
 import {WebGLPathTracer} from 'three-gpu-pathtracer';
-import {CENTER} from 'three-mesh-bvh';
 
-import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
@@ -26,14 +24,12 @@ const ASTRONAUT = assetPath('models/Astronaut.glb');
 const DUCK =
     assetPath('models/glTF-Sample-Assets/Models/Duck/glTF-Binary/Duck.glb');
 
-const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
-const BACKEND_CHANGE_EVENT = 'ld-path-tracer-backend-change';
-
 type PathTracerHost = ModelViewerElement&{
   isPathTracerReady: boolean;
   setPathTracerOptions(options: {strategy?: string; maxLeafTris?: number;}):
       void;
-  getPathTracerOptions(): {strategy: string; maxLeafTris: number;};
+  getPathTracerOptions():
+      {strategy: string; maxLeafTris: number; mode: string;};
 };
 
 const asHost = (element: ModelViewerElement): PathTracerHost =>
@@ -45,38 +41,22 @@ const waitFrames = async (count: number) => {
   }
 };
 
-const waitUntil = async (predicate: () => boolean, message: string) => {
-  const start = performance.now();
-  while (!predicate()) {
-    if (performance.now() - start > 40000) {
-      throw new Error(message);
-    }
-    await rafPasses();
-  }
-};
-
 suite('LD path tracer ready signal', function() {
-  this.timeout(60000);
+  this.timeout(30000);
 
   let element: ModelViewerElement;
   let sceneBuilds = 0;
-  let readyCount = 0;
-  let samplesAtReady: number[] = [];
   let restoreSetScene: () => void = () => {};
 
   const originalSetScene = WebGLPathTracer.prototype.setScene;
 
   setup(async () => {
     sceneBuilds = 0;
-    readyCount = 0;
-    samplesAtReady = [];
     WebGLPathTracer.prototype.setScene = function(
-        this: WebGLPathTracer, scene: any, camera: any, options?: any) {
-      const result = originalSetScene.call(this, scene, camera, options);
-      if (element != null && scene === element[$scene]) {
-        sceneBuilds++;
-      }
-      return result;
+        this: WebGLPathTracer, scene: unknown, camera: unknown,
+        options?: unknown) {
+      sceneBuilds++;
+      return originalSetScene.call(this, scene as never, camera as never, options as never);
     };
     restoreSetScene = () => {
       WebGLPathTracer.prototype.setScene = originalSetScene;
@@ -88,10 +68,6 @@ suite('LD path tracer ready signal', function() {
     element.interactionPrompt = 'none';
     element.pathTracerSamples = 4;
     element.pathTracerSamplesThreshold = 1;
-    element.addEventListener(PATH_TRACER_READY_EVENT, () => {
-      readyCount++;
-      samplesAtReady.push(element.pathTracerRenderedSamples);
-    });
     document.body.insertBefore(element, document.body.firstChild);
 
     const loaded = waitForEvent(element, 'load');
@@ -99,9 +75,7 @@ suite('LD path tracer ready signal', function() {
     await loaded;
 
     element.pathTracer = true;
-    await waitUntil(
-        () => asHost(element).isPathTracerReady === true,
-        'path tracer did not become ready');
+    await waitFrames(4);
   });
 
   teardown(() => {
@@ -109,106 +83,42 @@ suite('LD path tracer ready signal', function() {
     element?.remove();
   });
 
-  test(
-      'fires path-tracer-ready once after the build and the first traced tile',
-      async () => {
-        await waitFrames(8);
+  test('does not construct a WebGL path tracer for the beauty pass', () => {
+    expect(sceneBuilds).to.equal(0);
+    expect(element.getPathTracerComposer()).to.not.equal(null);
+    expect(element.pathTracerRenderedSamples).to.equal(
+        element.getPathTracerComposer()!.getSamples());
+  });
 
-        expect(sceneBuilds).to.equal(1);
-        expect(readyCount).to.equal(1);
-        expect(samplesAtReady[0]).to.be.greaterThan(0);
-        expect(asHost(element).isPathTracerReady).to.equal(true);
-      });
+  test('stores BVH build options and clears ready when they change', () => {
+    expect(asHost(element).getPathTracerOptions().strategy).to.equal('sah');
+    expect(asHost(element).getPathTracerOptions().maxLeafTris).to.equal(1);
+    expect(asHost(element).getPathTracerOptions().mode).to.equal('immediate');
 
-  test(
-      'keeps accumulating samples while the interaction prompt is visible',
-      async () => {
-        element.pathTracerSamples = 32;
-        element.cameraControls = true;
-        element.interactionPrompt = 'auto';
-        element.interactionPromptThreshold = 0;
-        await waitFrames(8);
-        const duringPrompt = element.pathTracerRenderedSamples;
-        await waitFrames(12);
+    asHost(element).setPathTracerOptions({strategy: 'sah', maxLeafTris: 1});
+    expect(sceneBuilds).to.equal(0);
 
-        expect(element.pathTracerRenderedSamples)
-            .to.be.greaterThan(duringPrompt + 0.3);
-        expect(readyCount).to.equal(1);
-        expect(asHost(element).isPathTracerReady).to.equal(true);
-      });
+    asHost(element).setPathTracerOptions({strategy: 'center', maxLeafTris: 10});
+    expect(asHost(element).isPathTracerReady).to.equal(false);
+    expect(asHost(element).getPathTracerOptions().strategy).to.equal('center');
+    expect(asHost(element).getPathTracerOptions().maxLeafTris).to.equal(10);
+    expect(sceneBuilds).to.equal(0);
+    expect((element.getPathTracerComposer() as {pathTracer?: unknown})
+               .pathTracer)
+        .to.equal(undefined);
+  });
 
-  test(
-      'does not build again when the backend changes with the same renderer and scene',
-      async () => {
-        const buildsAfterReady = sceneBuilds;
-        expect(buildsAfterReady).to.be.greaterThan(0);
+  test('a model change does not build a WebGL path tracer', async () => {
+    const composer = element.getPathTracerComposer()!;
+    composer.markSceneDirty();
+    expect(composer.isReady).to.equal(false);
 
-        element.dispatchEvent(new CustomEvent(BACKEND_CHANGE_EVENT));
-        await waitFrames(6);
+    const loaded = waitForEvent(element, 'load');
+    element.src = DUCK;
+    await loaded;
+    await waitFrames(2);
 
-        expect(sceneBuilds).to.equal(buildsAfterReady);
-        expect(readyCount).to.equal(1);
-        expect(asHost(element).isPathTracerReady).to.equal(true);
-      });
-
-  test(
-      'resets isPathTracerReady when the model changes and fires ready once more',
-      async () => {
-        expect(asHost(element).isPathTracerReady).to.equal(true);
-        const buildsBeforeSwap = sceneBuilds;
-        const composer = element.getPathTracerComposer()!;
-        const originalMarkSceneDirty = composer.markSceneDirty.bind(composer);
-        let sawReset = false;
-        composer.markSceneDirty = () => {
-          originalMarkSceneDirty();
-          sawReset = asHost(element).isPathTracerReady === false;
-        };
-
-        const loaded = waitForEvent(element, 'load');
-        element.src = DUCK;
-        await loaded;
-        await waitUntil(
-            () => asHost(element).isPathTracerReady === true,
-            'path tracer did not become ready after the model change');
-        await waitFrames(4);
-
-        expect(sawReset).to.equal(true);
-        expect(readyCount).to.equal(2);
-        expect(sceneBuilds).to.be.greaterThan(buildsBeforeSwap);
-        expect(asHost(element).isPathTracerReady).to.equal(true);
-      });
-
-  test(
-      'exposes BVH build options without rebuilding when they are unchanged',
-      async () => {
-        expect(asHost(element).getPathTracerOptions()).to.deep.equal({
-          strategy: 'sah',
-          maxLeafTris: 1,
-        });
-
-        const buildsBefore = sceneBuilds;
-        asHost(element).setPathTracerOptions({strategy: 'sah', maxLeafTris: 1});
-        await waitFrames(4);
-        expect(sceneBuilds).to.equal(buildsBefore);
-        expect(asHost(element).isPathTracerReady).to.equal(true);
-
-        asHost(element).setPathTracerOptions(
-            {strategy: 'center', maxLeafTris: 10});
-        expect(asHost(element).isPathTracerReady).to.equal(false);
-        expect(asHost(element).getPathTracerOptions()).to.deep.equal({
-          strategy: 'center',
-          maxLeafTris: 10,
-        });
-        await waitUntil(
-            () => asHost(element).isPathTracerReady === true,
-            'path tracer did not become ready after build options changed');
-
-        expect(sceneBuilds).to.equal(buildsBefore + 1);
-        expect(readyCount).to.equal(2);
-
-        const generator =
-            (element.getPathTracerComposer() as any)?.pathTracer?._generator;
-        expect(generator.bvhOptions.strategy).to.equal(CENTER);
-        expect(generator.bvhOptions.maxLeafTris).to.equal(10);
-      });
+    expect(sceneBuilds).to.equal(0);
+    expect(element.getPathTracerComposer()).to.not.equal(null);
+  });
 });

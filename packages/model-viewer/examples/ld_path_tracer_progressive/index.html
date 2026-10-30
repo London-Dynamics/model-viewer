@@ -1,0 +1,596 @@
+<!--
+  Progressive path tracer bench.
+  Serve the repo, then open:
+  http://127.0.0.1:8080/packages/model-viewer/examples/ld_path_tracer_progressive/
+  npm run serve
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Progressive path tracer</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #e8e8e8; font: 11px/1.25 ui-sans-serif, system-ui, sans-serif; }
+    body { display: flex; }
+    model-viewer { flex: 1 1 auto; min-width: 0; height: 100%; background: #c8c8c8; }
+    aside { box-sizing: border-box; width: 320px; height: 100%; overflow: auto; background: #1c1c1c; border-left: 1px solid #333; padding: 4px 6px 8px; }
+    details { border-bottom: 1px solid #2a2a2a; }
+    summary { cursor: pointer; font-weight: 650; padding: 3px 0; }
+    .rows { display: flex; flex-direction: column; gap: 2px; padding: 0 0 4px; }
+    label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 18px; }
+    label span { flex: 0 0 46%; }
+    input, select, button { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #444; border-radius: 2px; padding: 1px 4px; min-width: 0; }
+    input[type="checkbox"] { min-width: auto; }
+    input[type="number"], input[type="text"], select { width: 54%; }
+    button { cursor: pointer; padding: 2px 6px; }
+    .actions { display: flex; gap: 4px; padding: 4px 0; }
+    .actions button { flex: 1; }
+    #status { white-space: pre-wrap; font: 10px/1.3 ui-monospace, monospace; color: #cfcfcf; margin: 0; }
+    .hint { color: #9a9a9a; margin: 0 0 3px; }
+  </style>
+</head>
+<body>
+  <model-viewer id="mv" bounds="tight" camera-controls interaction-prompt="none"></model-viewer>
+  <aside>
+    <details open>
+      <summary>Scene</summary>
+      <div class="rows">
+        <label><span>Model</span><select id="scene"></select></label>
+        <label><span>Camera</span>
+          <select id="camera">
+            <option value="front" selected>front 3/4</option>
+            <option value="side">side</option>
+            <option value="rear">rear 3/4</option>
+            <option value="close">close-up (glass)</option>
+          </select>
+        </label>
+      </div>
+    </details>
+    <details open>
+      <summary>Trace composite</summary>
+      <p class="hint">No baking. The trace runs in immediate mode and is mixed with the real-time render. Attributes: path-tracer-mode, -view, -shadow-quality, -ao-distance, -exclude, -excluded-cast-shadow, -material-roles, -ground-shadow, -samples-mode, -adaptive-threshold, -fade-ms. The trace turns off on the first camera move (real-time + burned ground stay) and fades in once settled.</p>
+      <div class="rows">
+        <label><span>Mode</span>
+          <select id="tmode">
+            <option value="realtime">real-time (trace off)</option>
+            <option value="full">full trace</option>
+            <option value="shadows" selected>trace shadows</option>
+            <option value="lighting">trace lights + shadows</option>
+            <option value="ground">burned ground shadow only</option>
+          </select>
+        </label>
+        <label><span>Shadow quality</span>
+          <select id="shadow-quality">
+            <option value="normal" selected>normal (full trace)</option>
+            <option value="fast">fast (short-range AO)</option>
+          </select>
+        </label>
+        <label><span>AO distance m</span><input id="ao-distance" type="number" min="0.005" max="2" step="0.005" value="0.05" />
+        </label>
+        <label><span>View</span>
+          <select id="tview">
+            <option value="composite" selected>composite</option>
+            <option value="trace">trace raw</option>
+            <option value="realtime">real-time</option>
+          </select>
+        </label>
+        <label><span>Exclude</span>
+          <select id="exclude-preset">
+            <option value="" selected>nothing</option>
+            <option value="semi-transparent">semi-transparent</option>
+          </select>
+        </label>
+        <label><span>+ names</span><input id="exclude-names" type="text" placeholder="glass*, material:Chrome" /></label>
+        <label><span>Excluded cast shadow</span><input id="excluded-cast" type="checkbox" /></label>
+        <label><span>Material roles</span><input id="material-roles" type="text" placeholder="Glass*: exclude; Tyre*: no-receive; Floor: receive-only" /></label>
+        <label><span>Ground shadow</span><input id="ground-shadow" type="number" min="0" max="2" step="0.05" value="1" /></label>
+        <label><span>Samples mode</span>
+          <select id="samples-mode">
+            <option value="fixed" selected>fixed</option>
+            <option value="adaptive">adaptive (stop on converge)</option>
+          </select>
+        </label>
+        <label><span>Adaptive threshold</span><input id="adaptive-threshold" type="number" min="0" max="20" step="0.1" value="1" /></label>
+        <label><span>Fade-in ms</span><input id="fade-ms" type="number" min="0" max="2000" step="10" value="150" /></label>
+      </div>
+    </details>
+    <details open>
+      <summary>Environment</summary>
+      <div class="rows">
+        <label><span>View</span><select id="view-env"></select></label>
+        <label><span>Bake</span><select id="bake-env"></select></label>
+      </div>
+    </details>
+    <details open>
+      <summary>Look</summary>
+      <p class="hint">One set of values for the real-time view and the WebGPU trace, applied live.</p>
+      <div class="rows">
+        <label><span>Exposure</span><input id="exposure" type="number" min="0" max="8" step="0.05" value="1" /></label>
+        <input id="exposure-range" type="range" min="0" max="4" step="0.01" value="1" />
+        <label><span>Tone mapping</span>
+          <select id="tone">
+            <option value="auto" selected>auto (neutral)</option>
+            <option value="neutral">neutral</option>
+            <option value="commerce">commerce</option>
+            <option value="aces">ACES filmic</option>
+            <option value="agx">AgX</option>
+            <option value="reinhard">Reinhard</option>
+            <option value="cineon">Cineon</option>
+            <option value="linear">linear</option>
+            <option value="none">none</option>
+          </select>
+        </label>
+        <label><span>Env intensity</span><input id="env-intensity" type="number" min="0" max="8" step="0.05" value="1" /></label>
+        <input id="env-intensity-range" type="range" min="0" max="4" step="0.01" value="1" />
+        <label><span>Env rotation °</span><input id="env-rotation" type="number" min="-180" max="180" step="1" value="0" /></label>
+        <input id="env-rotation-range" type="range" min="-180" max="180" step="1" value="0" />
+      </div>
+    </details>
+    <details open>
+      <summary>Path tracer</summary>
+      <div class="rows">
+        <label><span>Samples</span><input id="samples" type="number" min="1" max="1024" value="64" /></label>
+        <label><span>Reveal samples</span><input id="reveal" type="number" min="1" max="256" value="4" /></label>
+        <label><span>Bounces</span><input id="bounces" type="number" min="1" max="8" value="3" /></label>
+        <label><span>Render scale</span><input id="scale" type="number" min="0.25" max="1" step="0.05" value="1" /></label>
+      </div>
+    </details>
+    <details>
+      <summary>Bake (parked)</summary>
+      <p class="hint">The progressive bake pipeline. Trace composite needs mode immediate.</p>
+      <div class="rows">
+        <label><span>Picture</span>
+          <select id="picture">
+            <option value="beauty" selected>beauty</option>
+            <option value="realtime">real-time</option>
+            <option value="occlusion">path tracer shadow</option>
+            <option value="bake">bake only</option>
+          </select>
+        </label>
+        <label><span>Shadow env</span>
+          <select id="occ-env">
+            <option value="uniform" selected>uniform white</option>
+            <option value="scene">scene HDR</option>
+          </select>
+        </label>
+
+        <label><span>Mode</span>
+          <select id="mode">
+            <option value="progressive">progressive</option>
+            <option value="immediate" selected>immediate</option>
+          </select>
+        </label>
+        <label><span>Tiles</span><input id="tiles" type="text" value="3 3" /></label>
+        <label><span>Fade ms</span><input id="fade" type="number" min="0" max="5000" value="400" /></label>
+        <label><span>Idle ms</span><input id="idle" type="number" min="0" max="20000" value="400" /></label>
+        <label><span>Budget ms</span><input id="budget" type="number" min="0.5" max="32" step="0.5" value="6" /></label>
+        <label><span>Contact shadow</span><input id="contact" type="checkbox" checked /></label>
+        <label><span>Contact res</span><input id="contact-res" type="number" min="8" max="1024" step="8" value="192" /></label>
+        <label><span>Softness</span><input id="softness" type="number" min="0" max="1" step="0.01" value="0.08" /></label>
+        <label><span>Opacity</span><input id="opacity" type="number" min="0" max="1" step="0.01" value="0.62" /></label>
+        <label><span>Texture AO</span><input id="ao" type="checkbox" checked /></label>
+        <label><span>Texel res</span><input id="ao-res" type="number" min="8" max="1024" step="8" value="256" /></label>
+        <label><span>AO samples</span><input id="ao-samples" type="number" min="1" max="128" value="24" /></label>
+        <label><span>AO distance</span><input id="ao-distance" type="number" min="0" max="100" step="0.1" value="0" /></label>
+        <label><span>Light map</span><input id="lightmap" type="checkbox" /></label>
+        <label><span>Light layers</span><input id="lights" type="checkbox" checked /></label>
+        <label><span>Separate lights</span><input id="separate" type="checkbox" checked /></label>
+        <label><span>Probes</span><input id="probes" type="checkbox" checked /></label>
+        <label><span>Probe count</span><input id="probe-count" type="number" min="1" max="4" value="1" /></label>
+        <label><span>Probe res</span><input id="probe-res" type="number" min="8" max="256" step="8" value="128" /></label>
+        <label><span>Full trace</span><input id="trace" type="checkbox" checked /></label>
+      </div>
+    </details>
+    <details>
+      <summary>Shader AO</summary>
+      <p class="hint">Real-time phase. Fades out as baked AO or the trace fades in.</p>
+      <div class="rows">
+        <label><span>On</span><input id="shader-ao" type="checkbox" /></label>
+        <label><span>Output</span>
+          <select id="ao-output">
+            <option>default</option>
+            <option>ao</option>
+            <option>diffuse</option>
+            <option>depth</option>
+            <option>normal</option>
+            <option>denoise</option>
+          </select>
+        </label>
+        <label><span>Samples</span><input id="sao-samples" type="number" min="1" max="64" value="16" /></label>
+        <label><span>Radius</span><input id="sao-radius" type="number" min="0" step="0.1" value="1" /></label>
+        <label><span>Intensity</span><input id="sao-intensity" type="number" min="0" step="0.05" value="1" /></label>
+      </div>
+    </details>
+    <details>
+      <summary>Denoise</summary>
+      <div class="rows">
+        <label><span>On</span><input id="denoise" type="checkbox" checked /></label>
+        <label><span>Sigma</span><input id="sigma" type="number" min="0" step="0.1" value="5" /></label>
+        <label><span>Threshold</span><input id="threshold" type="number" min="0" step="0.01" value="0.1" /></label>
+        <label><span>K sigma</span><input id="ksigma" type="number" min="0" step="0.1" value="1" /></label>
+      </div>
+    </details>
+    <details open>
+      <summary>Status</summary>
+      <pre id="status">loading scenes</pre>
+    </details>
+    <div class="actions">
+      <button id="rebake" type="button">Rebake</button>
+      <button id="reset-cam" type="button">Reset camera</button>
+      <button id="geom" type="button">Change geometry</button>
+    </div>
+    <p class="hint">Path tracer shadow and bake only are the same white-diffuse path trace. Uniform white makes that picture the occlusion factor. Shader AO output “ao” is the old screen-space debug view.</p>
+  </aside>
+  <script type="module" src="../../dist/model-viewer.js"></script>
+  <script type="module">
+    const mv = document.querySelector('#mv');
+    const statusEl = document.querySelector('#status');
+    const sceneSelect = document.querySelector('#scene');
+    const viewEnv = document.querySelector('#view-env');
+    const bakeEnv = document.querySelector('#bake-env');
+    let scenes = [];
+    let current = null;
+    let traceWanted = true;
+    let revealSamples = 8;
+
+    const $ = (id) => document.getElementById(id);
+
+    function val(id) {
+      const el = $(id);
+      if (el.type === 'checkbox') return el.checked;
+      if (el.type === 'number') return Number(el.value);
+      return el.value;
+    }
+
+    function applyOptions() {
+      mv.pathTracerSamples = val('samples');
+      mv.pathTracerSamplesThreshold = val('reveal');
+      mv.pathTracerBounces = val('bounces');
+      mv.pathTracerRenderScale = val('scale');
+      mv.pathTracerTiles = val('tiles');
+      mv.pathTracerDenoise = val('denoise');
+      mv.pathTracerDenoiseSigma = val('sigma');
+      mv.pathTracerDenoiseThreshold = val('threshold');
+      mv.pathTracerDenoiseKSigma = val('ksigma');
+      mv.ambientOcclusion = val('shader-ao');
+      mv.aoOutput = val('ao-output');
+      mv.aoSamples = val('sao-samples');
+      mv.aoRadius = val('sao-radius');
+      mv.aoIntensity = val('sao-intensity');
+      const bakeUrl = bakeEnv.value;
+      mv.setPathTracerOptions({
+        mode: val('mode'),
+        view: val('picture'),
+        occlusionEnvironment: val('occ-env'),
+        fadeMs: val('fade'),
+        idleDelayMs: val('idle'),
+        budgetMs: val('budget'),
+        traceRevealSamples: traceWanted ? val('reveal') : 10000,
+        environment: bakeUrl ? bakeUrl : null,
+        bake: {
+          contactShadow: {
+            enabled: val('contact'),
+            resolution: val('contact-res'),
+            softness: val('softness'),
+            opacity: val('opacity'),
+          },
+          textureAO: {
+            enabled: val('ao'),
+            resolution: val('ao-res'),
+            samples: val('ao-samples'),
+            distance: val('ao-distance'),
+          },
+          lightmap: {enabled: val('lightmap')},
+        },
+        lights: {include: val('lights'), separateLayers: val('separate')},
+        probes: {
+          enabled: val('probes'),
+          count: val('probe-count'),
+          resolution: val('probe-res'),
+        },
+        shadowPass: {
+          enabled: val('picture') === 'beauty',
+          samples: 4,
+          bounces: 1,
+          renderScale: 0.25,
+          denoise: true,
+        },
+      });
+      const tmode = val('tmode');
+      if (tmode !== 'realtime') {
+        mv.pathTracerMode = tmode;
+      }
+      mv.pathTracerView = val('tview');
+      mv.pathTracerExclude = [val('exclude-preset'), val('exclude-names')].filter(Boolean).join(',');
+      mv.pathTracerExcludedCastShadow = val('excluded-cast');
+      mv.pathTracerGroundShadow = val('ground-shadow');
+      mv.pathTracerShadowQuality = val('shadow-quality');
+      mv.pathTracerAoDistance = val('ao-distance');
+      mv.pathTracerMaterialRoles = val('material-roles');
+      mv.pathTracerSamplesMode = val('samples-mode');
+      mv.pathTracerAdaptiveThreshold = val('adaptive-threshold');
+      mv.pathTracerFadeMs = val('fade-ms');
+      mv.pathTracer = tmode !== 'realtime';
+      traceClock.start = performance.now();
+      traceClock.settledMs = null;
+    }
+
+    // Look: exposure and tone mapping are element properties; the WebGPU
+    // trace copies them from the WebGL renderer on every present. Environment
+    // intensity has no element attribute, so the demo sets it on the scene;
+    // the trace sees the change and re-traces with the same BVH.
+    const sceneKey = Object.getOwnPropertySymbols(mv).find((key) => key.description === 'scene');
+    function applyLook() {
+      mv.exposure = val('exposure');
+      mv.toneMapping = val('tone');
+      mv.skyboxRotation = `0deg 0deg ${val('env-rotation')}deg`;
+      const scene = sceneKey ? mv[sceneKey] : null;
+      if (scene) {
+        scene.environmentIntensity = val('env-intensity');
+        scene.queueRender();
+      }
+    }
+
+    function pairLook(numberId, rangeId) {
+      const number = $(numberId);
+      const range = $(rangeId);
+      range.addEventListener('input', () => {
+        number.value = range.value;
+        applyLook();
+      });
+      number.addEventListener('input', () => {
+        range.value = number.value;
+        applyLook();
+      });
+    }
+
+    function layerLine(name, enabled, layer) {
+      if (!enabled) return name + ' off';
+      if (layer == null) return name + ' pending';
+      const pct = Math.round((layer.progress || 0) * 100);
+      if (layer.ready && layer.fade >= 0.95) return name + ' faded';
+      if (layer.ready) return name + ' ready ' + Math.round(layer.fade * 100) + '%';
+      if (pct > 0) return name + ' baking ' + pct + '%';
+      return name + ' pending';
+    }
+
+    function phaseOf(state) {
+      if (!mv.pathTracer) return 'off';
+      if (val('mode') === 'immediate') return 'immediate';
+      if (state == null) return 'starting';
+      const mode = val('mode');
+      if (mode !== 'progressive') return 'immediate';
+      if (val('contact') && !state.contactShadow.ready) return 'contact';
+      if (val('ao') && !state.textureAO.ready) return 'texture AO';
+      if (val('lights') && !state.lightLayers.ready) return 'lights';
+      if (val('probes') && !state.probes.ready) return 'probes';
+      if (traceWanted && !state.fullTrace.revealed) return 'trace';
+      return 'done';
+    }
+
+    // Time from the last change to the trace settling (all samples done).
+    const traceClock = {start: performance.now(), settledMs: null, samples: 0};
+    function compositeLines() {
+      const samples = mv.pathTracerRenderedSamples || 0;
+      if (samples < traceClock.samples) {
+        traceClock.start = performance.now();
+        traceClock.settledMs = null;
+      }
+      traceClock.samples = samples;
+      const settled = mv.isPathTracerSettled;
+      if (settled && traceClock.settledMs == null) {
+        traceClock.settledMs = performance.now() - traceClock.start;
+      }
+      const excluded = mv.getPathTracerExcludedMeshes ? mv.getPathTracerExcludedMeshes() : [];
+      const stats = mv.pathTracerStats;
+      const ms = (v) => v == null ? '–' : Math.round(v) + 'ms';
+      return [
+        'composite ' + val('tmode') + ' / ' + val('tview') +
+            (val('tmode') === 'shadows' ? ' / ' + val('shadow-quality') : '') + ' / ' + val('samples-mode'),
+        stats ? 'ground ' + (stats.groundReady ? 'burned ' + ms(stats.burnMs) : 'pending') +
+            '  first ' + ms(stats.firstSnapshotMs) + '  final ' + ms(stats.settledMs) +
+            '  spp ' + stats.samples + (stats.converged ? ' (converged)' : '') +
+            '  fade ' + stats.fade.toFixed(2) : 'stats –',
+        'trace ' + samples + '/' + val('samples') + ' samples  ' +
+            (settled ? 'settled ' + Math.round(traceClock.settledMs || 0) + 'ms' :
+                       'running ' + Math.round(performance.now() - traceClock.start) + 'ms'),
+        'excluded ' + excluded.length + (excluded.length ? ': ' + excluded.slice(0, 6).join(', ') + (excluded.length > 6 ? ' …' : '') : ''),
+      ];
+    }
+
+    function paintStatus() {
+      const state = mv.getPathTracerProgressiveState();
+      const frame = state && state.frameMs;
+      const bake = state && state.bakeMs;
+      const trace = state && state.fullTrace;
+      const lines = [
+        ...compositeLines(),
+        'phase ' + phaseOf(state),
+        'look exposure ' + val('exposure') + '  tone ' + val('tone') +
+            '  env ' + val('env-intensity') + ' @ ' + val('env-rotation') + '°',
+        layerLine('contact', val('contact'), state && state.contactShadow),
+        layerLine('texture AO', val('ao'), state && state.textureAO),
+        layerLine('lights', val('lights'), state && state.lightLayers),
+        layerLine('probes', val('probes'), state && state.probes),
+        trace == null ? 'trace pending' :
+            'trace ' + trace.samples + ' samples' +
+            (trace.revealed ? ' faded' : ' baking') +
+            ' ' + Math.round((trace.fade || 0) * 100) + '%',
+        'shadow ' + ((state && state.occlusionSamples) || 0) + ' samples' +
+            (state && state.occlusionScale ? '  scale ' + state.occlusionScale.toFixed(3) : '') +
+            (state && state.shadowMs ? '  ready ' + Math.round(state.shadowMs) + 'ms' : ''),
+        frame == null ? 'frame —' :
+            'frame mean ' + frame.mean.toFixed(1) + 'ms  p95 ' + frame.p95.toFixed(1) + 'ms',
+        bake == null ? 'bake —' :
+            'bakeMs contact ' + Math.round(bake.contactShadow) +
+            '  ao ' + Math.round(bake.textureAO) +
+            '  lights ' + Math.round(bake.lightLayers) +
+            '  probes ' + Math.round(bake.probes),
+      ];
+      statusEl.textContent = lines.join('\n');
+    }
+
+    function parseOrbit(text) {
+      const parts = String(text).trim().split(/\s+/);
+      const angle = (part) => part.endsWith('rad') ? parseFloat(part) : parseFloat(part) * Math.PI / 180;
+      return {theta: angle(parts[0]), phi: angle(parts[1]), radius: parts[2]};
+    }
+
+    // front 3/4 = the scene hero; rear 3/4 = hero rotated half a turn.
+    function presetOf(scene, name) {
+      const cams = scene.cameras || {};
+      const hero = cameraOf(scene);
+      if (name === 'side' && cams.side) return {orbit: cams.side[0], target: cams.side[1] || hero.target};
+      if (name === 'close' && cams.close) return {orbit: cams.close[0], target: cams.close[1] || hero.target};
+      if (name === 'rear' && hero.orbit) {
+        const o = parseOrbit(hero.orbit);
+        return {orbit: (o.theta + Math.PI).toFixed(3) + 'rad ' + o.phi.toFixed(3) + 'rad ' + o.radius, target: hero.target};
+      }
+      return hero;
+    }
+
+    function applyCamera() {
+      if (current == null) return;
+      const cam = presetOf(current, val('camera'));
+      if (cam.orbit) mv.cameraOrbit = cam.orbit;
+      if (cam.target) mv.cameraTarget = cam.target;
+      if (typeof mv.jumpCameraToGoal === 'function') mv.jumpCameraToGoal();
+    }
+
+    function cameraOf(scene) {
+      const orbit = scene.attrs['camera-orbit'] || (scene.cameras.hero && scene.cameras.hero[0]);
+      const target = scene.attrs['camera-target'] || (scene.cameras.hero && scene.cameras.hero[1]) || 'auto';
+      return {orbit, target};
+    }
+
+    function applyScene(scene) {
+      current = scene;
+      const managed = new Set();
+      for (const item of scenes) {
+        Object.keys(item.attrs || {}).forEach((key) => managed.add(key));
+      }
+      managed.forEach((key) => mv.removeAttribute(key));
+      mv.setAttribute('bounds', 'tight');
+      mv.setAttribute('camera-controls', '');
+      mv.setAttribute('interaction-prompt', 'none');
+      mv.setAttribute('src', scene.model);
+      mv.setAttribute('environment-image', viewEnv.value || scene.environment);
+      for (const [key, value] of Object.entries(scene.attrs || {})) {
+        mv.setAttribute(key, value);
+      }
+      $('shader-ao').checked = mv.hasAttribute('ambient-occlusion');
+      if (mv.hasAttribute('ao-output')) $('ao-output').value = mv.getAttribute('ao-output');
+      if (mv.hasAttribute('ao-samples')) $('sao-samples').value = mv.getAttribute('ao-samples');
+      if (mv.hasAttribute('ao-radius')) $('sao-radius').value = mv.getAttribute('ao-radius');
+      if (mv.hasAttribute('ao-intensity')) $('sao-intensity').value = mv.getAttribute('ao-intensity');
+      const cam = presetOf(scene, val('camera'));
+      if (cam.orbit) mv.setAttribute('camera-orbit', cam.orbit);
+      if (cam.target) mv.setAttribute('camera-target', cam.target);
+      if (typeof mv.jumpCameraToGoal === 'function') mv.jumpCameraToGoal();
+      applyOptions();
+      applyLook();
+    }
+
+    function fillEnvs() {
+      const urls = [];
+      const add = (url, label) => {
+        if (url && !urls.some((item) => item.url === url)) urls.push({url, label});
+      };
+      for (const scene of scenes) {
+        add(scene.environment, scene.label);
+        add(scene.nightEnvironment, scene.label + ' night');
+      }
+      // HDR presets: changing the preset is changing the HDR.
+      for (const name of ['neutral', 'lightroom_14b', 'spruit_sunrise_1k_HDR', 'aircraft_workshop_01_1k',
+                          'whipple_creek_regional_park_04_1k', 'pillars_1k', 'music_hall_01_1k', 'lebombo_1k',
+                          'moon_1k', 'white_furnace']) {
+        add(`../../../shared-assets/environments/${name}.hdr`, 'preset: ' + name.replace(/_1k|_HDR|_04/g, ''));
+      }
+      viewEnv.replaceChildren();
+      bakeEnv.replaceChildren();
+      const match = document.createElement('option');
+      match.value = '';
+      match.textContent = 'Match view';
+      bakeEnv.append(match);
+      for (const item of urls) {
+        const view = document.createElement('option');
+        view.value = item.url;
+        view.textContent = item.label;
+        viewEnv.append(view);
+        const bake = document.createElement('option');
+        bake.value = item.url;
+        bake.textContent = item.label;
+        bakeEnv.append(bake);
+      }
+    }
+
+    function selectScene(id) {
+      const scene = scenes.find((item) => item.id === id) || scenes[0];
+      viewEnv.value = scene.environment;
+      bakeEnv.value = '';
+      applyScene(scene);
+    }
+
+    const response = await fetch('../../scripts/progressive-bake/scenes.json');
+    const config = await response.json();
+    scenes = config.scenes;
+    for (const scene of scenes) {
+      const option = document.createElement('option');
+      option.value = scene.id;
+      option.textContent = scene.label;
+      sceneSelect.append(option);
+    }
+    fillEnvs();
+    sceneSelect.addEventListener('change', () => selectScene(sceneSelect.value));
+    viewEnv.addEventListener('change', () => {
+      mv.setAttribute('environment-image', viewEnv.value);
+      if (!bakeEnv.value) applyOptions();
+    });
+    bakeEnv.addEventListener('change', applyOptions);
+    asideControls();
+    pairLook('exposure', 'exposure-range');
+    pairLook('env-intensity', 'env-intensity-range');
+    pairLook('env-rotation', 'env-rotation-range');
+    $('tone').addEventListener('change', applyLook);
+    mv.addEventListener('load', applyLook);
+    $('rebake').addEventListener('click', () => {
+      const samples = val('ao-samples');
+      const next = samples >= 128 ? samples - 1 : samples + 1;
+      mv.setPathTracerOptions({bake: {textureAO: {samples: next}}});
+      mv.setPathTracerOptions({bake: {textureAO: {samples}}});
+    });
+    $('reset-cam').addEventListener('click', applyCamera);
+    $('camera').addEventListener('change', applyCamera);
+    $('geom').addEventListener('click', () => {
+      if (current == null) return;
+      const url = new URL(current.model);
+      url.searchParams.set('rev', String(Date.now()));
+      mv.src = url.toString();
+    });
+    $('trace').addEventListener('change', () => {
+      traceWanted = $('trace').checked;
+      applyOptions();
+    });
+    $('reveal').addEventListener('change', () => {
+      revealSamples = val('reveal');
+      applyOptions();
+    });
+    const query = new URLSearchParams(location.search);
+    for (const [key, id] of [['camera', 'camera'], ['mode', 'tmode'], ['view', 'tview'], ['exclude', 'exclude-preset'], ['quality', 'shadow-quality'], ['samplesmode', 'samples-mode'], ['roles', 'material-roles']]) {
+      if (query.has(key)) $(id).value = query.get(key);
+    }
+    selectScene(query.get('model') || 'aquila');
+    sceneSelect.value = current.id;
+    setInterval(paintStatus, 250);
+
+    function asideControls() {
+      for (const el of document.querySelectorAll('aside input, aside select')) {
+        if (el.id === 'scene' || el.id === 'camera' || el.id === 'view-env' || el.id === 'bake-env' || el.id === 'trace') continue;
+        if (el.closest('details') && el.closest('details').querySelector('#exposure')) continue;
+        el.addEventListener('change', applyOptions);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+--- a/src/webgpu/compute/wavefront/TraceRayKernel.js
++++ b/src/webgpu/compute/wavefront/TraceRayKernel.js
+@@ -1,6 +1,6 @@
+ import { StorageBufferAttribute } from 'three/webgpu';
+ import { ComputeKernel } from '../ComputeKernel.js';
+-import { storage, globalId } from 'three/tsl';
++import { storage, globalId, uniform } from 'three/tsl';
+ import { proxy, wgslTagFn } from 'three-mesh-bvh/webgpu';
+ import { rngInit } from '../../nodes/random.wgsl.js';
+ import { rayQueueStruct, intersectionResultStruct } from './structs.js';
+@@ -17,6 +17,9 @@
+ 			rayQueue: storage( new StorageBufferAttribute( 1, 1 ), rayQueueStruct ),
+ 			rayIntersectionsStorage: storage( new StorageBufferAttribute( 1, 1 ), intersectionResultStruct ),
+ 
++			// [model-viewer patch] max length of bounce rays, 0 = unbounded. Camera rays keep theirs.
++			maxRayDistance: uniform( 0 ),
++
+ 			globalId: globalId,
+ 		};
+ 
+@@ -25,7 +28,7 @@
+ 
+ 		const fn = wgslTagFn /* wgsl */`
+ 
+-			fn compute( globalId: vec3u ) -> void {
++			fn compute( maxRayDistance: f32, globalId: vec3u ) -> void {
+ 
+ 				let rayQueue = &${ params.rayQueue };
+ 				let rayIntersectionsStorage = &${ params.rayIntersectionsStorage };
+@@ -41,7 +44,14 @@
+ 				let indexUV = vec2u( queuedRay.pixelIndex >> 16, queuedRay.pixelIndex & 0xFFFF );
+ 				${ rngInit }( indexUV, queuedRay.seed, queuedRay.currentBounce + queuedRay.alphaDepth );
+ 
+-				let ray = Ray( queuedRay.origin, queuedRay.direction, queuedRay.maxDist );
++				var rayMaxDist = queuedRay.maxDist;
++				if ( maxRayDistance > 0.0 && queuedRay.currentBounce > 0u ) {
++
++					rayMaxDist = select( maxRayDistance, min( rayMaxDist, maxRayDistance ), rayMaxDist > 0.0 );
++
++				}
++
++				let ray = Ray( queuedRay.origin, queuedRay.direction, rayMaxDist );
+ 				var hitResult: ${ raycastOutput };
+ 				if ( ${ raycastFirstHitFn }( ray, &hitResult ) ) {
+ 
+--- a/src/webgpu/compute/wavefront/TraceShadowRayKernel.js
++++ b/src/webgpu/compute/wavefront/TraceShadowRayKernel.js
+@@ -1,6 +1,6 @@
+ import { StorageBufferAttribute } from 'three/webgpu';
+ import { ComputeKernel } from '../ComputeKernel.js';
+-import { storage, globalId } from 'three/tsl';
++import { storage, globalId, uniform } from 'three/tsl';
+ import { proxy, wgslTagFn } from 'three-mesh-bvh/webgpu';
+ import { rngInit } from '../../nodes/random.wgsl.js';
+ import { rayQueueStruct, intersectionResultStruct } from './structs.js';
+@@ -18,6 +18,9 @@
+ 			shadowRayQueue: storage( new StorageBufferAttribute( 1, 1 ), rayQueueStruct ),
+ 			shadowRayIntersectionsStorage: storage( new StorageBufferAttribute( 1, 1 ), intersectionResultStruct ),
+ 
++			// [model-viewer patch] max length of shadow rays, 0 = unbounded.
++			maxRayDistance: uniform( 0 ),
++
+ 			globalId: globalId,
+ 		};
+ 
+@@ -26,7 +29,7 @@
+ 
+ 		const fn = wgslTagFn /* wgsl */`
+ 
+-			fn compute( globalId: vec3u ) -> void {
++			fn compute( maxRayDistance: f32, globalId: vec3u ) -> void {
+ 
+ 				let shadowRayQueue = &${ params.shadowRayQueue };
+ 				let shadowRayIntersectionsStorage = &${ params.shadowRayIntersectionsStorage };
+@@ -42,7 +45,14 @@
+ 				let indexUV = vec2u( queuedRay.pixelIndex >> 16, queuedRay.pixelIndex & 0xFFFF );
+ 				${ rngInit }( indexUV, queuedRay.seed, queuedRay.currentBounce + queuedRay.alphaDepth );
+ 
+-				let ray = Ray( queuedRay.origin, queuedRay.direction, queuedRay.maxDist );
++				var rayMaxDist = queuedRay.maxDist;
++				if ( maxRayDistance > 0.0 ) {
++
++					rayMaxDist = select( maxRayDistance, min( rayMaxDist, maxRayDistance ), rayMaxDist > 0.0 );
++
++				}
++
++				let ray = Ray( queuedRay.origin, queuedRay.direction, rayMaxDist );
+ 				var hitResult: ${ raycastOutput };
+ 				if ( ${ raycastShadowFn }( ray, &hitResult ) ) {
+ 
+--- a/src/webgpu/WaveFrontPathTracer.js
++++ b/src/webgpu/WaveFrontPathTracer.js
+@@ -172,6 +172,17 @@
+ 
+ 	}
+ 
++	// [model-viewer patch] short range occlusion: bounce and shadow rays stop at this distance
++	// and count as misses, so a uniform environment yields range limited ambient occlusion.
++	setMaxRayDistance( value ) {
++
++		const distance = Math.max( 0, Number( value ) || 0 );
++		this.traceRayKernel.maxRayDistance = distance;
++		this.traceShadowRayKernel.maxRayDistance = distance;
++		this.reset();
++
++	}
++
+ 	setClamping( direct, indirect ) {
+ 
+ 		this.logicKernel.clampDirect = direct;
+--- a/src/webgpu/WebGPUPathTracer.js
++++ b/src/webgpu/WebGPUPathTracer.js
+@@ -412,7 +412,30 @@
+ 	get textureAtlas() {
+ 
+ 		return this._bvhData.textureAtlas;
++
++	}
++
++	/**
++	 * [model-viewer patch] Max length of bounce and shadow rays in world units, 0 = unbounded.
++	 * Only the wavefront backend honors it.
++	 * @type {number}
++	 */
++	get maxRayDistance() {
++
++		return this._maxRayDistance || 0;
++
++	}
+ 
++	set maxRayDistance( v ) {
++
++		v = Math.max( 0, Number( v ) || 0 );
++		if ( v !== this.maxRayDistance ) {
++
++			this._maxRayDistance = v;
++			this._pathTracer.setMaxRayDistance?.( v );
++
++		}
++
+ 	}
+ 
+ 	/**
+@@ -436,6 +459,7 @@
+ 		this._pathTracer.setTransmissiveBackground( this._transmissiveBackground );
+ 		this._pathTracer.setFilterGlossy( this._filterGlossyFactor );
+ 		this._pathTracer.setClamping( this._clampDirect, this._clampIndirect );
++		this._pathTracer.setMaxRayDistance?.( this._maxRayDistance || 0 );
+ 		this.setCamera( this.camera );
+ 
+ 		// the new tracer has default environment and background maps so apply the cached scene textures

@@ -153,7 +153,8 @@ export class Renderer extends
 
       this.threeRenderer.debug = {
         checkShaderErrors: !!options.debug,
-        onShaderError: null
+        onShaderError: null,
+        diagnostics: {keywords: false},
       };
 
       // ACESFilmicToneMapping appears to be the most "saturated",

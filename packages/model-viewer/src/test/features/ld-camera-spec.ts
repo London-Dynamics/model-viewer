@@ -14,9 +14,9 @@ import { assetPath } from '../helpers.js';
 
 function worldTargetToModel(scene: any, worldTarget: Vector3): Vector3 {
   const modelTarget = worldTarget.clone();
-  if (scene?.pivot?.worldToLocal) {
+  if (scene?.modelPivot?.worldToLocal) {
     scene.updateMatrixWorld(true);
-    scene.pivot.worldToLocal(modelTarget);
+    scene.modelPivot.worldToLocal(modelTarget);
   }
   return modelTarget;
 }

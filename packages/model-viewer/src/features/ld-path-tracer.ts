@@ -18,7 +18,10 @@ import {Vector2} from 'three';
 
 import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
-import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions, TraceStats,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveOptionsPatch, ProgressiveSettings, resolveProgressiveSettings,} from '../three-components/postprocessing/ld-path-tracer/progressive/options.js';
+import {ProgressiveReadout} from '../three-components/postprocessing/ld-path-tracer/progressive/ProgressivePipeline.js';
+import {parseSamplesMode, parseShadowQuality, parseTraceMode, parseTraceView, TraceMode, TraceSamplesMode, TraceShadowQuality, TraceView} from '../three-components/postprocessing/ld-path-tracer/progressive/trace-composite.js';
 import {Constructor} from '../utilities.js';
 
 import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
@@ -44,11 +47,32 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseSigma: number;
   pathTracerDenoiseThreshold: number;
   pathTracerDenoiseKSigma: number;
+  pathTracerMode: TraceMode;
+  pathTracerView: TraceView;
+  pathTracerExclude: string;
+  pathTracerExcludedCastShadow: boolean;
+  pathTracerGroundShadow: number;
+  pathTracerShadowQuality: TraceShadowQuality;
+  pathTracerAoDistance: number;
+  pathTracerMaterialRoles: string;
+  pathTracerSamplesMode: TraceSamplesMode;
+  pathTracerAdaptiveThreshold: number;
+  pathTracerMinSamples: number;
+  pathTracerFadeMs: number;
+  readonly pathTracerStats: TraceStats|null;
   readonly pathTracerRenderedSamples: number;
+  readonly isPathTracerSettled: boolean;
+  getPathTracerExcludedMeshes(): string[];
   readonly isPathTracerReady: boolean;
+  readonly isContactShadowReady: boolean;
+  readonly isTextureAoReady: boolean;
+  readonly isLightLayersReady: boolean;
+  readonly isProbesReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
-  setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
-  getPathTracerOptions(): PathTracerBuildOptions;
+  setPathTracerOptions(options: Partial<PathTracerBuildOptions>&
+                       ProgressiveOptionsPatch): void;
+  getPathTracerOptions(): PathTracerBuildOptions&ProgressiveSettings;
+  getPathTracerProgressiveState(): ProgressiveReadout|null;
 }
 
 const parseTiles = (value: string): Vector2 => {
@@ -115,10 +139,79 @@ export const LDPathTracerMixin = <
     @property({type: Number, attribute: 'path-tracer-denoise-k-sigma'})
     pathTracerDenoiseKSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseKSigma;
 
+    /**
+     * full: the trace is the picture. shadows: a white-diffuse trace darkens
+     * the real-time render and a ground catcher. lighting: a diffuse-proxy
+     * trace replaces the real-time diffuse lighting.
+     */
+    @property({type: String, attribute: 'path-tracer-mode'})
+    pathTracerMode: TraceMode = DEFAULT_PATH_TRACER_OPTIONS.traceMode;
+
+    /** composite, trace (the raw traced pass) or realtime. */
+    @property({type: String, attribute: 'path-tracer-view'})
+    pathTracerView: TraceView = DEFAULT_PATH_TRACER_OPTIONS.traceView;
+
+    /**
+     * Comma separated: `semi-transparent`, and mesh or material names with
+     * `*` wildcards (`mesh:` / `material:` prefixes narrow a token). Excluded
+     * meshes render real-time on top of the result.
+     */
+    @property({type: String, attribute: 'path-tracer-exclude'})
+    pathTracerExclude = DEFAULT_PATH_TRACER_OPTIONS.traceExclude;
+
+    /** Excluded meshes still block light in the trace. */
+    @property({type: Boolean, attribute: 'path-tracer-excluded-cast-shadow'})
+    pathTracerExcludedCastShadow =
+        DEFAULT_PATH_TRACER_OPTIONS.traceExcludedCastShadow;
+
+    /** Traced ground shadow strength in shadows and lighting modes. */
+    @property({type: Number, attribute: 'path-tracer-ground-shadow'})
+    pathTracerGroundShadow = DEFAULT_PATH_TRACER_OPTIONS.traceGroundShadow;
+
+    /**
+     * Shadows mode: normal traces full shadows and bounces; fast traces one
+     * bounce under a uniform white sky with rays cut at path-tracer-ao-distance.
+     */
+    @property({type: String, attribute: 'path-tracer-shadow-quality'})
+    pathTracerShadowQuality: TraceShadowQuality =
+        DEFAULT_PATH_TRACER_OPTIONS.traceShadowQuality;
+
+    /** Fast shadow ray length in metres. */
+    @property({type: Number, attribute: 'path-tracer-ao-distance'})
+    pathTracerAoDistance = DEFAULT_PATH_TRACER_OPTIONS.traceAoDistance;
+
+    /**
+     * Per-material roles, `;` separated: `pattern[, pattern]: role` with role
+     * trace, exclude, no-receive or receive-only. Patterns as in
+     * path-tracer-exclude. Later entries win.
+     */
+    @property({type: String, attribute: 'path-tracer-material-roles'})
+    pathTracerMaterialRoles = DEFAULT_PATH_TRACER_OPTIONS.traceMaterialRoles;
+
+    /** fixed: trace the full sample count; adaptive: stop on convergence. */
+    @property({type: String, attribute: 'path-tracer-samples-mode'})
+    pathTracerSamplesMode: TraceSamplesMode =
+        DEFAULT_PATH_TRACER_OPTIONS.traceSamplesMode;
+
+    /** Adaptive stop threshold: mean luminance change, 0-255. */
+    @property({type: Number, attribute: 'path-tracer-adaptive-threshold'})
+    pathTracerAdaptiveThreshold =
+        DEFAULT_PATH_TRACER_OPTIONS.traceAdaptiveThreshold;
+
+    /** Adaptive mode never stops before this many samples (default 16). */
+    @property({type: Number, attribute: 'path-tracer-min-samples'})
+    pathTracerMinSamples = DEFAULT_PATH_TRACER_OPTIONS.traceMinSamples;
+
+    /** Fade-in after the camera stops, ms. The trace turns off instantly. */
+    @property({type: Number, attribute: 'path-tracer-fade-ms'})
+    pathTracerFadeMs = DEFAULT_PATH_TRACER_OPTIONS.traceFadeMs;
+
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
     private pathTracerBuildOptions: PathTracerBuildOptions = {
       ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
     };
+    private progressiveSettings: ProgressiveSettings =
+        cloneProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS);
 
     get pathTracerRenderedSamples() {
       if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
@@ -128,8 +221,40 @@ export const LDPathTracerMixin = <
       return 0;
     }
 
+    get pathTracerStats(): TraceStats|null {
+      return this.getPathTracerComposer()?.getTraceStats() ?? null;
+    }
+
+    getPathTracerRoles() {
+      return this.getPathTracerComposer()?.getTraceRoles() ?? null;
+    }
+
+    get isPathTracerSettled() {
+      return this.getPathTracerComposer()?.isTraceSettled() === true;
+    }
+
+    getPathTracerExcludedMeshes(): string[] {
+      return this.getPathTracerComposer()?.getExcludedMeshNames() ?? [];
+    }
+
     get isPathTracerReady() {
       return this.getPathTracerComposer()?.isReady === true;
+    }
+
+    get isContactShadowReady() {
+      return this.getPathTracerComposer()?.isContactShadowReady() === true;
+    }
+
+    get isTextureAoReady() {
+      return this.getPathTracerComposer()?.isTextureAoReady() === true;
+    }
+
+    get isLightLayersReady() {
+      return this.getPathTracerComposer()?.isLightLayersReady() === true;
+    }
+
+    get isProbesReady() {
+      return this.getPathTracerComposer()?.isProbesReady() === true;
     }
 
     getPathTracerComposer(): LDPathTracerComposer|null {
@@ -138,16 +263,29 @@ export const LDPathTracerMixin = <
           null;
     }
 
-    setPathTracerOptions(options: Partial<PathTracerBuildOptions>) {
+    setPathTracerOptions(options: Partial<PathTracerBuildOptions>&
+                         ProgressiveOptionsPatch) {
       this.pathTracerBuildOptions =
           resolvePathTracerBuildOptions(this.pathTracerBuildOptions, options);
-      this.getPathTracerComposer()?.setBuildOptions(
-          this.pathTracerBuildOptions);
+      this.progressiveSettings =
+          resolveProgressiveSettings(this.progressiveSettings, options);
+      const composer = this.getPathTracerComposer();
+      composer?.setBuildOptions(this.pathTracerBuildOptions);
+      composer?.setProgressiveSettings(this.progressiveSettings);
+      // Progressive mode replaces shader AO. The render pipeline reads the
+      // mode from the composer and drops the AO pass.
+      this.dispatchEvent(new CustomEvent(PATH_TRACER_BACKEND_CHANGE_EVENT));
     }
 
-    getPathTracerOptions(): PathTracerBuildOptions {
-      return this.getPathTracerComposer()?.getBuildOptions() ??
-          {...this.pathTracerBuildOptions};
+    getPathTracerOptions(): PathTracerBuildOptions&ProgressiveSettings {
+      return this.getPathTracerComposer()?.getRuntimeOptions() ?? {
+        ...this.pathTracerBuildOptions,
+        ...cloneProgressiveSettings(this.progressiveSettings),
+      };
+    }
+
+    getPathTracerProgressiveState(): ProgressiveReadout|null {
+      return this.getPathTracerComposer()?.getProgressiveReadout() ?? null;
     }
 
     override connectedCallback() {
@@ -190,6 +328,18 @@ export const LDPathTracerMixin = <
         'pathTracerDenoiseSigma',
         'pathTracerDenoiseThreshold',
         'pathTracerDenoiseKSigma',
+        'pathTracerMode',
+        'pathTracerView',
+        'pathTracerExclude',
+        'pathTracerExcludedCastShadow',
+        'pathTracerGroundShadow',
+        'pathTracerShadowQuality',
+        'pathTracerAoDistance',
+        'pathTracerMaterialRoles',
+        'pathTracerSamplesMode',
+        'pathTracerAdaptiveThreshold',
+        'pathTracerMinSamples',
+        'pathTracerFadeMs',
         'ambientOcclusion',
         'aoAlgorithm',
         'aoRadius',
@@ -245,6 +395,7 @@ export const LDPathTracerMixin = <
         const composer =
             new LDPathTracerComposer(this.readAttributePathTracerOptions());
         composer.setBuildOptions(this.pathTracerBuildOptions);
+        composer.setProgressiveSettings(this.progressiveSettings);
         this[$pathTracerComposer] = composer;
       }
       if (!this.isRenderPipeline(currentEffect)) {
@@ -286,6 +437,28 @@ export const LDPathTracerMixin = <
         denoiseSigma: this.pathTracerDenoiseSigma,
         denoiseThreshold: this.pathTracerDenoiseThreshold,
         denoiseKSigma: this.pathTracerDenoiseKSigma,
+        traceMode: parseTraceMode(this.pathTracerMode),
+        traceView: parseTraceView(this.pathTracerView),
+        traceExclude: this.pathTracerExclude ?? '',
+        traceExcludedCastShadow: this.pathTracerExcludedCastShadow === true,
+        traceGroundShadow: Number.isFinite(this.pathTracerGroundShadow) ?
+            Math.max(0, this.pathTracerGroundShadow) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceGroundShadow,
+        traceShadowQuality: parseShadowQuality(this.pathTracerShadowQuality),
+        traceAoDistance: Number.isFinite(this.pathTracerAoDistance) ?
+            Math.max(0.001, this.pathTracerAoDistance) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceAoDistance,
+        traceMaterialRoles: this.pathTracerMaterialRoles ?? '',
+        traceSamplesMode: parseSamplesMode(this.pathTracerSamplesMode),
+        traceAdaptiveThreshold: Number.isFinite(this.pathTracerAdaptiveThreshold) ?
+            Math.max(0, this.pathTracerAdaptiveThreshold) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceAdaptiveThreshold,
+        traceMinSamples: Number.isFinite(this.pathTracerMinSamples) ?
+            Math.max(1, Math.floor(this.pathTracerMinSamples)) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceMinSamples,
+        traceFadeMs: Number.isFinite(this.pathTracerFadeMs) ?
+            Math.max(0, this.pathTracerFadeMs) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceFadeMs,
         ambientOcclusionPreviewOptions:
             this.getAmbientOcclusionPreviewOptions(),
       };

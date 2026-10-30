@@ -53,6 +53,7 @@ const createModelViewerOutput =
           file,
           format,
           sourcemap: true,
+          inlineDynamicImports: true,
           name: 'ModelViewerElement',
           globals
         },

@@ -2579,7 +2579,7 @@
       {
         "name": "isPathTracerReady",
         "htmlName": "isPathTracerReady",
-        "description": "Read-only. True after the BVH build and the first traced tile. With the default 3\u00d73 tile grid, <code>pathTracerRenderedSamples</code> is about 1/9 at that moment, not a whole sample. Becomes false when the model or scene contents change, when BVH build options change, and while path tracing is disabled. Camera motion restarts accumulation and does not clear this flag.",
+        "description": "Read-only. True after the BVH build and the first traced tile. With the default 3\u00d73 tile grid, <code>pathTracerRenderedSamples</code> is about 1/9 at that moment, not a whole sample. Becomes false when the model or scene contents change, when BVH build options change, and while path tracing is disabled. Camera motion restarts accumulation and does not clear this flag. In <code>mode: 'progressive'</code> the first tile is traced after the camera has been idle, not at load.",
         "default": {
           "default": "false",
           "options": "true, false"
@@ -2587,23 +2587,60 @@
         "links": [
           "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
         ]
+      },
+      {
+        "name": "isContactShadowReady",
+        "htmlName": "isContactShadowReady",
+        "description": "Read-only. True in progressive mode after the contact-shadow texture is uploaded. False while that bake is running, after the layer fades out, and when the layer is disabled.",
+        "default": {"default": "false", "options": "true, false"},
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
+      },
+      {
+        "name": "isTextureAoReady",
+        "htmlName": "isTextureAoReady",
+        "description": "Read-only. True after progressive texture AO has been assigned on UV channel 1. False when texture AO is disabled.",
+        "default": {"default": "false", "options": "true, false"},
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
+      },
+      {
+        "name": "isLightLayersReady",
+        "htmlName": "isLightLayersReady",
+        "description": "Read-only. True after every included punctual light and emissive material has its own baked layer.",
+        "default": {"default": "false", "options": "true, false"},
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
+      },
+      {
+        "name": "isProbesReady",
+        "htmlName": "isProbesReady",
+        "description": "Read-only. True after the reflection-probe PMREM blend is assigned. False when probes are disabled.",
+        "default": {"default": "false", "options": "true, false"},
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
       }
     ],
     "Methods": [
       {
-        "name": "setPathTracerOptions({ strategy, maxLeafTris })",
+        "name": "setPathTracerOptions(options)",
         "htmlName": "setPathTracerOptions",
-        "description": "Sets BVH construction options used the next time the path tracer builds the scene. <code>strategy</code> is <code>sah</code> (default, slowest build, tightest tree), <code>center</code>, or <code>average</code>. <code>maxLeafTris</code> is the maximum triangles stored in a leaf (default <code>1</code>); larger leaves build faster and can trace slower. Passing the current values does not rebuild. Unknown strategy names are ignored. Values are not HTML attributes.",
+        "description": "Sets BVH options and, in the same object, the progressive quality pipeline. <code>strategy</code> is <code>sah</code> (default), <code>center</code>, or <code>average</code>. <code>maxLeafTris</code> defaults to <code>1</code>. Passing the current BVH values does not rebuild. <code>mode</code> is <code>immediate</code> (default, today's tracer) or <code>progressive</code>. Progressive settings are <code>fadeMs</code>, <code>traceRevealSamples</code>, <code>idleDelayMs</code>, <code>budgetMs</code>, <code>environment</code> (null uses the realtime HDR), <code>bake.contactShadow</code>, <code>bake.textureAO</code>, <code>bake.lightmap</code> (reserved), <code>lights</code>, and <code>probes</code>. Nested objects merge. None of these are HTML attributes. Progressive mode also requires the <code>path-tracer</code> attribute.",
         "links": [
-          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>",
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Quality pipeline</a>"
         ]
       },
       {
         "name": "getPathTracerOptions()",
         "htmlName": "getPathTracerOptions",
-        "description": "Returns the current BVH build options: <code>{ strategy, maxLeafTris }</code>.",
+        "description": "Returns the BVH fields and the progressive settings: mode, fade, bake, lights, probes, and environment.",
         "links": [
-          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"
+        ]
+      },
+      {
+        "name": "getPathTracerProgressiveState()",
+        "htmlName": "getPathTracerProgressiveState",
+        "description": "Returns per-layer ready, fade, and progress, the full-trace fade, and frame-time plus per-layer bake milliseconds. Null until progressive mode is running.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"
         ]
       }
     ],
@@ -2611,10 +2648,34 @@
       {
         "name": "path-tracer-ready",
         "htmlName": "pathTracerReady",
-        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the BVH build, when the first tile of a frame has been traced. <code>event.detail.samples</code> is the path tracer's sample count then. The default tile grid is 3\u00d73, and each <code>renderSample()</code> traces one tile, so the first event usually carries about 1/9 rather than a finished sample. It does not wait for <span class=\"attribute\">path-tracer-samples</span> or <span class=\"attribute\">path-tracer-samples-threshold</span>. The event fires again only after the model changes or BVH options change, once the new build has traced a tile. Camera moves, including orbit changes, restart accumulation (the count can fall back to one tile) and do not fire the event again. The default interaction-prompt wiggle does not orbit the camera while path tracing is on, so that hint does not keep resetting the count. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the backend is registered and can happen while the BVH build is running. BVH construction runs in <code>path-tracer-bvh.worker.js</code> (one worker). A cross-origin script is fetched and started from a blob URL when the host sends Access-Control-Allow-Origin. Geometry merging stays on the main thread. If the worker cannot be loaded, the build falls back to the main thread.",
+        "description": "Fired once on <span class=\"attribute\">&lt;model-viewer&gt;</span> after the BVH build, when the first tile of a frame has been traced. <code>event.detail.samples</code> is the path tracer's sample count then. The default tile grid is 3\u00d73, and each <code>renderSample()</code> traces one tile, so the first event usually carries about 1/9 rather than a finished sample. It does not wait for <span class=\"attribute\">path-tracer-samples</span> or <span class=\"attribute\">path-tracer-samples-threshold</span>. The event fires again only after the model changes or BVH options change, once the new build has traced a tile. Camera moves, including orbit changes, restart accumulation (the count can fall back to one tile) and do not fire the event again. In progressive mode the first tile is traced after <code>idleDelayMs</code>, and the on-screen reveal waits for <code>traceRevealSamples</code> plus denoise. The default interaction-prompt wiggle does not orbit the camera while path tracing is on, so that hint does not keep resetting the count. <span class=\"attribute\">ld-path-tracer-backend-change</span> still fires when the backend is registered and can happen while the BVH build is running. BVH construction runs in <code>path-tracer-bvh.worker.js</code> (one worker). A cross-origin script is fetched and started from a blob URL when the host sends Access-Control-Allow-Origin. Geometry merging stays on the main thread. If the worker cannot be loaded, the build falls back to the main thread.",
         "links": [
           "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
         ]
+      },
+      {
+        "name": "contact-shadow-ready",
+        "htmlName": "contactShadowReady",
+        "description": "Fired on the element while the progressive contact shadow bakes, and once with <code>detail.ready === true</code> when the texture is uploaded. <code>detail</code> is <code>{progress, ready, fade, elapsedMs}</code>. Progress events are throttled. A geometry restart can fire it again.",
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
+      },
+      {
+        "name": "ao-ready",
+        "htmlName": "aoReady",
+        "description": "Same shape as <code>contact-shadow-ready</code>, for the texture AO layer.",
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
+      },
+      {
+        "name": "light-layers-ready",
+        "htmlName": "lightLayersReady",
+        "description": "Same shape as <code>contact-shadow-ready</code>, fired when every included light layer has been baked.",
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
+      },
+      {
+        "name": "probes-ready",
+        "htmlName": "probesReady",
+        "description": "Same shape as <code>contact-shadow-ready</code>, fired when the reflection probes have a PMREM blend.",
+        "links": ["<a href=\"../examples/ld_path_tracer/#ld-path-tracer-quality\">Related examples</a>"]
       }
     ]
   },

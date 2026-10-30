@@ -1,0 +1,668 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>WebGPU atlas bake</title>
+<style>
+  html, body { margin: 0; background: #d8d8d8; }
+  canvas { display: block; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/node_modules/three/build/three.module.js",
+    "three/webgpu": "/node_modules/three/build/three.webgpu.js",
+    "three/tsl": "/node_modules/three/build/three.tsl.js",
+    "three/addons/": "/node_modules/three/examples/jsm/",
+    "three/examples/": "/node_modules/three/examples/",
+    "three-gpu-pathtracer/webgpu": "/packages/model-viewer/node_modules/three-gpu-pathtracer/src/webgpu/index.js",
+    "three-mesh-bvh": "/node_modules/three-mesh-bvh/src/index.js",
+    "three-mesh-bvh/webgpu": "/node_modules/three-mesh-bvh/src/webgpu/index.js",
+    "oidn-web": "/node_modules/oidn-web/lib/main.js",
+    "@petamoriken/float16": "/node_modules/@petamoriken/float16/src/index.mjs",
+    "@pmndrs/upscaler": "/packages/model-viewer/node_modules/@pmndrs/upscaler/dist/index.js"
+  }
+}
+</script>
+</head>
+<body>
+<script type="module">
+import {
+  ACESFilmicToneMapping,
+  ClampToEdgeWrapping,
+  DataTexture,
+  EquirectangularReflectionMapping,
+  LinearFilter,
+  LinearSRGBColorSpace,
+  Mesh,
+  MeshStandardMaterial,
+  NoColorSpace,
+  PerspectiveCamera,
+  PlaneGeometry,
+  RGBAFormat,
+  Scene,
+  SRGBColorSpace,
+  Vector3,
+  BufferAttribute,
+  BufferGeometry,
+  Box3,
+  Matrix3,
+  MeshBasicMaterial,
+  NeutralToneMapping,
+  NoBlending,
+  NormalBlending,
+  WebGLRenderer,
+} from 'three';
+import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
+import {WebGPUBeautyTrace} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/webgpu-beauty-trace.js';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
+import {HDRLoader} from 'three/addons/loaders/HDRLoader.js';
+import {
+  applyUvJob,
+  createUvJob,
+  planAtlasTiles,
+  stepUvJob,
+  uv1IsValid,
+} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
+import {insetChartUv, packFactorR8} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/atlas-plan.js';
+import {
+  AtlasBake,
+  fitCameraAspect,
+  packSurface,
+} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
+
+const params = new URLSearchParams(location.search);
+const resolution = Number(params.get('resolution') || 2048);
+// Every panel renders at this size, the trace included.
+const viewW = 960;
+const viewH = 720;
+const bakeSamples = Number(params.get('samples') || 16);
+window.__status = {done: false};
+
+async function applyLightmap(url, meshes) {
+  const buf = await fetch(url).then((response) => {
+    if (!response.ok) throw new Error('lightmap ' + response.status);
+    return response.arrayBuffer();
+  });
+  const view = new DataView(buf);
+  if (view.getUint32(0, true) !== 0x3156554c) throw new Error('bad lightmap');
+  const headerLen = view.getUint32(4, true);
+  const headerText = new TextDecoder().decode(new Uint8Array(buf, 8, headerLen)).replace(/\0+$/, '');
+  const header = JSON.parse(headerText);
+  let offset = 8 + headerLen;
+  const take = (count, Type) => {
+    const out = new Type(buf, offset, count);
+    offset += count * Type.BYTES_PER_ELEMENT;
+    return out;
+  };
+  if (header.meshes.length !== meshes.length) {
+    throw new Error('lightmap mesh count ' + header.meshes.length);
+  }
+  let colorMeshes = 0;
+  let colorMissed = 0;
+  for (let n = 0; n < meshes.length; n++) {
+    const spec = header.meshes[n];
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(take(spec.vertexCount * 3, Float32Array), 3));
+    geometry.setAttribute('normal', new BufferAttribute(take(spec.vertexCount * 3, Float32Array), 3));
+    geometry.setAttribute('uv', new BufferAttribute(take(spec.vertexCount * 2, Float32Array), 2));
+    geometry.setAttribute('uv1', new BufferAttribute(take(spec.vertexCount * 2, Float32Array), 2));
+    geometry.setIndex(new BufferAttribute(take(spec.indexCount, Uint32Array), 1));
+    // The unwrap keeps position, normal and uvs only. Carry COLOR_0 across by
+    // position, or WebGL reads the missing attribute as black.
+    const oldColor = meshes[n].geometry.getAttribute('color');
+    if (oldColor) {
+      const oldPos = meshes[n].geometry.getAttribute('position');
+      const key = (x, y, z) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+      const lookup = new Map();
+      for (let i = 0; i < oldPos.count; i++) {
+        lookup.set(key(oldPos.getX(i), oldPos.getY(i), oldPos.getZ(i)), i);
+      }
+      const pos = geometry.getAttribute('position');
+      const size = oldColor.itemSize;
+      const colors = new Float32Array(pos.count * size).fill(1);
+      let missed = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const at = lookup.get(key(pos.getX(i), pos.getY(i), pos.getZ(i)));
+        if (at == null) {
+          missed++;
+          continue;
+        }
+        for (let c = 0; c < size; c++) colors[i * size + c] = oldColor.getComponent(at, c);
+      }
+      geometry.setAttribute('color', new BufferAttribute(colors, size));
+      colorMeshes++;
+      colorMissed += missed;
+    }
+    meshes[n].geometry = geometry;
+  }
+  console.info('VERTEX_COLORS', colorMeshes, 'missed', colorMissed);
+  window.__lightmap = header;
+  console.info('LIGHTMAP', JSON.stringify({
+    unwrapMs: header.unwrapMs,
+    texelsPerCm: header.texelsPerCm,
+    atlas: [header.atlasWidth, header.atlasHeight],
+    meshes: header.meshes.length,
+  }));
+}
+
+function bakeTexture(rgba, resolution, channel) {
+  const texture = new DataTexture(rgba, resolution, resolution, RGBAFormat);
+  texture.colorSpace = NoColorSpace;
+  texture.magFilter = LinearFilter;
+  texture.minFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  texture.anisotropy = 1;
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  texture.flipY = false;
+  texture.channel = channel;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function writeInsetUv(mesh, resolution) {
+  const uv = mesh.geometry.getAttribute('uv1');
+  if (uv == null) return;
+  const index = mesh.geometry.getIndex();
+  const source = uv.array instanceof Float32Array ? uv.array : new Float32Array(uv.array);
+  const inset = insetChartUv(source, index, index ? index.count : uv.count, resolution);
+  mesh.geometry.setAttribute('uv2', new BufferAttribute(inset, 2));
+}
+
+function paintCropCanvas(crop, id) {
+  if (crop == null) return;
+  const canvas = document.createElement('canvas');
+  canvas.id = id;
+  canvas.width = crop.size;
+  canvas.height = crop.size;
+  const image = new ImageData(crop.rgba, crop.size, crop.size);
+  canvas.getContext('2d').putImageData(image, 0, 0);
+  document.body.appendChild(canvas);
+}
+
+const fail = (error) => {
+  console.error('ATLAS_FAIL', error);
+  window.__status = {done: true, error: String(error && error.stack || error)};
+};
+
+try {
+  const adapter = await navigator.gpu.requestAdapter();
+  const info = adapter && adapter.info;
+  console.info('GPU', JSON.stringify({
+    description: info && info.description,
+    architecture: info && info.architecture,
+    vendor: info && info.vendor,
+  }));
+
+  const planeMode = params.get('plane') === '1';
+  const envMap = await new HDRLoader().loadAsync(params.get('env'));
+  envMap.mapping = EquirectangularReflectionMapping;
+  const scene = new Scene();
+  scene.environment = envMap;
+  // Same values drive WebGL and the WebGPU trace (it copies tone mapping and
+  // exposure from gl and reads environment intensity and rotation from scene).
+  scene.environmentIntensity = Number(params.get('envIntensity') || 1);
+  scene.environmentRotation.set(0, Number(params.get('envRotation') || 0) * Math.PI / 180, 0);
+  scene.background = null;
+  let root;
+  if (planeMode) {
+    const geometry = new PlaneGeometry(1, 1);
+    geometry.setAttribute('uv1', geometry.getAttribute('uv').clone());
+    const mesh = new Mesh(geometry, new MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      metalness: 0,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.name = 'plane';
+    scene.add(mesh);
+    root = mesh;
+    console.info('PLANE', 'up', 'uv1', true);
+  } else {
+    const draco = new DRACOLoader();
+    draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+    const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(params.get('model'));
+    draco.dispose();
+    root = gltf.scene;
+    scene.add(root);
+  }
+  root.updateMatrixWorld(true);
+
+  const meshes = [];
+  let fileUv1 = false;
+  root.traverse((child) => {
+    if (!child.isMesh) return;
+    meshes.push(child);
+    if (child.geometry.getAttribute('uv1')) fileUv1 = true;
+  });
+  console.info('UV1_IN_FILE', fileUv1, 'meshes', meshes.length);
+  if (params.get('lightmap')) {
+    await applyLightmap(params.get('lightmap'), meshes);
+  }
+
+  const areas = meshes.map((mesh) => {
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const triCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
+    const ab = new Vector3();
+    const ac = new Vector3();
+    mesh.updateWorldMatrix(true, false);
+    let area = 0;
+    for (let tri = 0; tri < triCount; tri++) {
+      const i0 = index ? index.getX(tri * 3) : tri * 3;
+      const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+      const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+      a.fromBufferAttribute(position, i0).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, i1).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, i2).applyMatrix4(mesh.matrixWorld);
+      ab.subVectors(b, a);
+      ac.subVectors(c, a);
+      area += ab.cross(ac).length() * 0.5;
+    }
+    return area;
+  });
+  const tiles = planAtlasTiles(areas, resolution);
+  const uvStart = performance.now();
+  if (params.get('lightmap')) {
+    console.info('STAGE_UV', 'xatlas-file');
+  }
+  for (let n = 0; n < meshes.length && !params.get('lightmap'); n++) {
+    const mesh = meshes[n];
+    if (uv1IsValid(mesh.geometry, resolution)) {
+      console.info('UV1_KEPT', mesh.name);
+      continue;
+    }
+    const job = createUvJob(mesh.geometry, resolution, tiles[n]);
+    if (job == null) continue;
+    let last = performance.now();
+    while (!job.done) {
+      stepUvJob(job, 50);
+      if (performance.now() - last > 2000) {
+        console.info('UV_PHASE', mesh.name || n, job.phase, job.chartCursor, job.triCount);
+        last = performance.now();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    const next = applyUvJob(mesh.geometry, job);
+    if (next != null) mesh.geometry = next;
+    console.info('UV1_WRITTEN', mesh.name || n, uv1IsValid(mesh.geometry, resolution));
+  }
+  console.info('STAGE_UV', Math.round(performance.now() - uvStart));
+
+  for (const mesh of meshes) writeInsetUv(mesh, resolution);
+  // Ground shadow planes are receivers only: bake their upward side and keep
+  // them out of the occluders, so the contact shadow is the model's alone.
+  const modelBox = new Box3().setFromObject(root);
+  const grounds = meshes.filter((mesh) => {
+    const b = new Box3().setFromObject(mesh);
+    const size = b.getSize(new Vector3());
+    const flat = size.y < 0.01 * Math.max(size.x, size.z);
+    return /shadow/i.test(mesh.name) || (flat && b.max.y <= modelBox.min.y + 0.02 * (modelBox.max.y - modelBox.min.y));
+  });
+  for (const mesh of grounds) {
+    const normal = mesh.geometry.getAttribute('normal');
+    const up = new Vector3();
+    const toLocal = new Matrix3().getNormalMatrix(mesh.matrixWorld).invert();
+    for (let i = 0; i < normal.count; i++) {
+      up.set(0, 1, 0).applyMatrix3(toLocal).normalize();
+      normal.setXYZ(i, up.x, up.y, up.z);
+    }
+    normal.needsUpdate = true;
+  }
+  console.info('GROUND_PLANES', JSON.stringify(grounds.map((mesh) => mesh.name)));
+  const packed = packSurface(root, resolution);
+  console.info('STAGE_STAMP', packed.count);
+  const bake = new AtlasBake();
+  if (params.get('up') === '1') bake.useConstantUpRay();
+  if (params.get('normals')) bake.normalMode = params.get('normals');
+  if (params.get('normalize')) bake.normalize = params.get('normalize');
+  if (params.get('sides')) bake.sides = Number(params.get('sides'));
+  if (params.get('bias')) bake.normalBias = Number(params.get('bias'));
+  // Glass keeps its own material in the atlas trace, so light reaches the cabin.
+  let glass = 0;
+  for (const mesh of meshes) {
+    const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    if (list.some((m) => m && (m.transparent || (m.transmission || 0) > 0))) {
+      mesh.userData.noHit = true;
+      glass++;
+    }
+  }
+  console.info('GLASS_PASSTHROUGH', glass);
+  bake.setSurface(packed.surface, packed.count, resolution);
+  for (const mesh of grounds) mesh.visible = false;
+  const traceStart = performance.now();
+  bake.start(scene, bakeSamples, 4);
+  while (!bake.implemented && !bake.unavailable) {
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
+
+  let result = null;
+  let frames = 0;
+  let counted = 0;
+  while (result == null) {
+    await bake.syncFrame();
+    frames++;
+    if (bake.unavailable) {
+      throw new Error('atlas bake unavailable');
+    }
+    if (counted < bakeSamples && frames % 4 === 0) {
+      counted = await bake.measure();
+      console.info('SAMPLES', counted, 'frames', frames);
+    }
+    const factor = bake.factor();
+    if (factor != null) {
+      result = {samples: counted, factor};
+      break;
+    }
+    if (frames > 6000 + 200 * bakeSamples) {
+      throw new Error('atlas frame budget exhausted at ' + frames);
+    }
+  }
+  const cleanMs = Math.round(performance.now() - traceStart);
+  for (const mesh of grounds) mesh.visible = true;
+  {
+    // Per-mesh mean factor at its uv1 vertices, biggest meshes first.
+    const rows = meshes.map((mesh, n) => {
+      const uv = mesh.geometry.getAttribute('uv2') || mesh.geometry.getAttribute('uv1');
+      let sum = 0;
+      let k = 0;
+      for (let i = 0; i < uv.count; i += Math.max(1, Math.floor(uv.count / 400))) {
+        const x = Math.min(resolution - 1, Math.floor(uv.getX(i) * resolution));
+        const y = Math.min(resolution - 1, Math.floor(uv.getY(i) * resolution));
+        const f = result.factor[y * resolution + x];
+        if (f >= 0) { sum += f; k++; }
+      }
+      const m = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      return [mesh.name, Math.round(areas[n] * 100) / 100, k ? Math.round(sum / k * 100) / 100 : -1, m && m.name, m && m.side, m && m.transparent];
+    }).sort((x, y) => y[1] - x[1]);
+    console.info('MESH_FACTOR', JSON.stringify(rows.slice(0, 40)));
+  }
+  const r8 = packFactorR8(result.factor, resolution);
+  console.info('ATLAS_DONE', JSON.stringify({
+    cleanMs,
+    samples: result.samples,
+    bytes: r8.length,
+    stages: bake.stages,
+    frames: bake.frames,
+    uv1InFile: fileUv1,
+  }));
+
+  const rgba = new Uint8Array(resolution * resolution * 4);
+  for (let i = 0; i < result.factor.length; i++) {
+    const sample = result.factor[i];
+    const byte = sample < 0 ? 255 : Math.round(Math.min(1, Math.max(0, sample)) * 255);
+    rgba[i * 4] = byte;
+    rgba[i * 4 + 1] = byte;
+    rgba[i * 4 + 2] = byte;
+    rgba[i * 4 + 3] = sample < 0 ? 0 : 255;
+  }
+  const ao = bakeTexture(rgba, resolution, 2);
+  const crackRgba = new Uint8Array(resolution * resolution * 4);
+  const crack = bake.crackFactor;
+  for (let i = 0; i < (crack ? crack.length : 0); i++) {
+    const sample = crack[i];
+    const byte = sample < 0 ? 255 : Math.round(Math.min(1, Math.max(0, sample)) * 255);
+    crackRgba[i * 4] = byte;
+    crackRgba[i * 4 + 1] = byte;
+    crackRgba[i * 4 + 2] = byte;
+    crackRgba[i * 4 + 3] = sample < 0 ? 0 : 255;
+  }
+  const crackTex = bakeTexture(crackRgba, resolution, 1);
+
+  // cam=thetaDeg,phiDeg,radiusM like a model-viewer camera-orbit; target=x,y,z or the box centre.
+  const [thetaDeg, phiDeg, radius] = (params.get('cam') || '0,75,2.4').split(',').map(Number);
+  const box = new Box3().setFromObject(root);
+  const target = params.get('target') ?
+      new Vector3(...params.get('target').split(',').map(Number)) :
+      box.getCenter(new Vector3());
+  const theta = thetaDeg * Math.PI / 180;
+  const phi = phiDeg * Math.PI / 180;
+  const camera = new PerspectiveCamera(Number(params.get('fov') || 30), viewW / viewH, Math.max(0.01, radius / 100), radius * 20);
+  camera.position.set(
+      target.x + radius * Math.sin(phi) * Math.sin(theta),
+      target.y + radius * Math.cos(phi),
+      target.z + radius * Math.sin(phi) * Math.cos(theta));
+  camera.lookAt(target);
+  console.info('CAMERA', JSON.stringify({target: target.toArray(), position: camera.position.toArray(), box: [box.min.toArray(), box.max.toArray()]}));
+  const gl = new WebGLRenderer({antialias: true});
+  gl.outputColorSpace = SRGBColorSpace;
+  // Same tone mapping the scenes use in the viewer (tone-mapping="neutral").
+  gl.toneMapping = params.get('tone') === 'aces' ? ACESFilmicToneMapping : NeutralToneMapping;
+  gl.toneMappingExposure = Number(params.get('exposure') || 1);
+  gl.setClearColor(0xd8d8d8, 1);
+  gl.setSize(viewW, viewH, false);
+  fitCameraAspect(camera, viewW, viewH);
+
+  const saved = meshes.map((mesh) => mesh.material);
+  const savedAo = [];
+  for (const material of saved) {
+    for (const entry of (Array.isArray(material) ? material : [material])) {
+      if (entry) savedAo.push([entry, entry.aoMap, entry.aoMapIntensity]);
+    }
+  }
+  const sheet = document.createElement('canvas');
+  sheet.id = 'sheet';
+  const headerH = 44;
+  sheet.width = viewW * 2;
+  sheet.height = headerH + viewH * 2;
+  const sheetCtx = sheet.getContext('2d');
+  sheetCtx.fillStyle = '#d8d8d8';
+  sheetCtx.fillRect(0, 0, sheet.width, sheet.height);
+  const draw = (index) => {
+    gl.setSize(viewW, viewH, false);
+    fitCameraAspect(camera, viewW, viewH);
+    gl.render(scene, camera);
+    sheetCtx.drawImage(gl.domElement, (index % 2) * viewW, headerH + Math.floor(index / 2) * viewH, viewW, viewH);
+  };
+  const label = (index, text) => {
+    const x = (index % 2) * viewW + 10;
+    const y = headerH + Math.floor(index / 2) * viewH + 10;
+    sheetCtx.font = '15px -apple-system, Helvetica, sans-serif';
+    const w = sheetCtx.measureText(text).width + 14;
+    sheetCtx.fillStyle = 'rgba(255,255,255,0.85)';
+    sheetCtx.fillRect(x, y, w, 24);
+    sheetCtx.fillStyle = '#111';
+    sheetCtx.fillText(text, x + 7, y + 17);
+  };
+  draw(0);
+  const factorMat = new MeshStandardMaterial({color: 0xffffff, roughness: 1, metalness: 0});
+  factorMat.aoMap = ao;
+  factorMat.aoMapIntensity = 1;
+  factorMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `{
+          // uv2 is uv1 pulled half a texel into the chart. Linear, no mips.
+          vec2 ldUv = vAoMapUv;
+          vec4 ldFactor = texture2D( aoMap, ldUv );
+          gl_FragColor.rgb = vec3( ldFactor.r );
+        }
+        #include <dithering_fragment>`);
+  };
+  factorMat.customProgramCacheKey = () => 'ld-bake-factor';
+  for (const mesh of meshes) mesh.material = factorMat;
+  const previousEnv = scene.environment;
+  draw(1);
+  scene.environment = previousEnv;
+  for (let n = 0; n < meshes.length; n++) {
+    const material = saved[n];
+    const list = Array.isArray(material) ? material : [material];
+    for (const entry of list) {
+      if (entry && entry.isMeshStandardMaterial) {
+        entry.aoMap = ao;
+        entry.aoMapIntensity = 1;
+        entry.needsUpdate = true;
+      }
+    }
+    meshes[n].material = material;
+  }
+  const shadowMat = new MeshBasicMaterial({color: 0x000000, transparent: true, depthWrite: false});
+  shadowMat.aoMap = ao;
+  shadowMat.aoMapIntensity = 1;
+  shadowMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `{
+          float ldShade = 1.0 - texture2D( aoMap, vAoMapUv ).r;
+          // Small open-sky residue is noise, not shadow: keep the plane clear there.
+          gl_FragColor = vec4( 0.0, 0.0, 0.0, clamp( ( ldShade - 0.06 ) * 1.2, 0.0, 0.92 ) );
+        }
+        #include <dithering_fragment>`);
+  };
+  shadowMat.customProgramCacheKey = () => 'ld-bake-ground';
+  for (const mesh of grounds) mesh.material = shadowMat;
+  draw(2);
+  // Close-up of the bake alone, for leak checks (Montana bottom shelf).
+  if (params.get('closeCam')) {
+    const [cx, cy, cz] = params.get('closeCam').split(',').map(Number);
+    const [tx, ty, tz] = params.get('closeTarget').split(',').map(Number);
+    const close = new PerspectiveCamera(Number(params.get('closeFov') || 40), viewW / viewH, 0.01, 50);
+    close.position.set(cx, cy, cz);
+    close.lookAt(tx, ty, tz);
+    for (const mesh of meshes) mesh.material = factorMat;
+    gl.setSize(viewW, viewH, false);
+    gl.render(scene, close);
+    const canvas = document.createElement('canvas');
+    canvas.id = 'closeup';
+    canvas.width = viewW;
+    canvas.height = viewH;
+    canvas.getContext('2d').drawImage(gl.domElement, 0, 0);
+    document.body.appendChild(canvas);
+    for (let n = 0; n < meshes.length; n++) meshes[n].material = saved[n];
+    for (const mesh of grounds) mesh.material = shadowMat;
+  }
+
+  const atlas = document.createElement('canvas');
+  atlas.id = 'atlas';
+  atlas.width = resolution;
+  atlas.height = resolution;
+  const image = atlas.getContext('2d').createImageData(resolution, resolution);
+  image.data.set(rgba);
+  atlas.getContext('2d').putImageData(image, 0, 0);
+  document.body.appendChild(atlas);
+  document.body.appendChild(sheet);
+  paintCropCanvas(bake.beforeCrop, 'crop-before');
+  paintCropCanvas(bake.afterCrop, 'crop-after');
+  const seamCam = camera.clone();
+  seamCam.position.set(0.02, 0.58, 0.92);
+  seamCam.lookAt(0, 0.46, 0);
+  const seamSize = {w: 640, h: 480};
+  const paintSeam = (id, material) => {
+    for (const mesh of meshes) mesh.material = material;
+    gl.setSize(seamSize.w, seamSize.h, false);
+    fitCameraAspect(seamCam, seamSize.w, seamSize.h);
+    gl.render(scene, seamCam);
+    const canvas = document.createElement('canvas');
+    canvas.id = id;
+    canvas.width = seamSize.w;
+    canvas.height = seamSize.h;
+    canvas.getContext('2d').drawImage(gl.domElement, 0, 0);
+    document.body.appendChild(canvas);
+  };
+  const crackMat = new MeshStandardMaterial({color: 0xffffff, roughness: 1, metalness: 0});
+  crackMat.aoMap = crackTex;
+  crackMat.aoMapIntensity = 1;
+  crackMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `{
+          vec4 ldFactor = texture2D( aoMap, vAoMapUv );
+          gl_FragColor.rgb = vec3( ldFactor.r );
+        }
+        #include <dithering_fragment>`);
+  };
+  crackMat.customProgramCacheKey = () => 'ld-bake-crack';
+  paintSeam('seam-before', crackMat);
+  paintSeam('seam-after', factorMat);
+
+  // Panel 4: full WebGPU beauty trace with the viewer's own defaults
+  // (WebGPUBeautyTrace, 16 samples, 15 bounces, scale 1, OIDN, FSR), no bake.
+  const fill = bake.frames.filled / bake.frames.pixels;
+  const bakeStages = {...bake.stages};
+  bake.dispose();
+  for (let n = 0; n < meshes.length; n++) meshes[n].material = saved[n];
+  for (const [entry, map, intensity] of savedAo) {
+    entry.aoMap = map;
+    entry.aoMapIntensity = intensity;
+    entry.needsUpdate = true;
+  }
+  gl.setSize(viewW, viewH, false);
+  fitCameraAspect(camera, viewW, viewH);
+  const traceSamples = Number(params.get('traceSamples') || 16);
+  const traceBounces = Number(params.get('traceBounces') || 15);
+  const trace = new WebGPUBeautyTrace();
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+  const t0 = performance.now();
+  const traceTimes = {bootMs: -1, samplesMs: -1, settledMs: -1, frames: 0};
+  while (!trace.settled()) {
+    trace.sample(scene, camera, gl, traceBounces, traceSamples, true, 1);
+    traceTimes.frames++;
+    const now = performance.now() - t0;
+    if (trace.active && traceTimes.bootMs < 0) traceTimes.bootMs = Math.round(now);
+    if (trace.samples >= traceSamples && traceTimes.samplesMs < 0) traceTimes.samplesMs = Math.round(now);
+    if (now > 300000) throw new Error('full trace did not settle in 300 s at ' + trace.samples + ' samples');
+    await nextFrame();
+  }
+  traceTimes.settledMs = Math.round(performance.now() - t0);
+  // One more present so the canvas holds the denoised frame.
+  trace.sample(scene, camera, gl, traceBounces, traceSamples, true, 1);
+  await nextFrame();
+  await nextFrame();
+  traceTimes.samples = trace.samples;
+  console.info('TRACE_DONE', JSON.stringify(traceTimes));
+  const traceTex = trace.outputTexture();
+  const quad = new FullScreenQuad(new MeshBasicMaterial({map: traceTex, toneMapped: false, transparent: true, depthTest: false, depthWrite: false, blending: NormalBlending}));
+  gl.setSize(viewW, viewH, false);
+  gl.setClearColor(0xd8d8d8, 1);
+  gl.autoClear = false;
+  gl.clear();
+  quad.render(gl);
+  gl.autoClear = true;
+  sheetCtx.drawImage(gl.domElement, viewW, headerH + viewH, viewW, viewH);
+  const raw = document.createElement('canvas');
+  raw.id = 'trace-raw';
+  raw.width = trace.canvas.width;
+  raw.height = trace.canvas.height;
+  raw.getContext('2d').drawImage(trace.canvas, 0, 0);
+  document.body.appendChild(raw);
+  trace.dispose();
+
+  const lm = window.__lightmap || {};
+  const sec = (ms) => (ms / 1000).toFixed(2) + ' s';
+  label(0, 'Real-time (no bake)');
+  label(1, 'Baked shadow / AO alone');
+  label(2, grounds.length ? 'Real-time + bake (ground: baked contact shadow)' : 'Real-time + bake');
+  label(3, `Full WebGPU path trace (${traceSamples} spp, ${traceBounces} bounces, OIDN)`);
+  sheetCtx.fillStyle = '#f4f4f4';
+  sheetCtx.fillRect(0, 0, sheet.width, headerH);
+  sheetCtx.fillStyle = '#111';
+  sheetCtx.font = 'bold 15px -apple-system, Helvetica, sans-serif';
+  sheetCtx.fillText(params.get('title') || 'bake', 10, 18);
+  sheetCtx.font = '13px -apple-system, Helvetica, sans-serif';
+  sheetCtx.fillText(`bake ${sec(cleanMs)} (BVH ${sec(bakeStages.bvh)}, ${result.samples} spp ${sec(bakeStages.samples)}, OIDN ${sec(bakeStages.denoise)}, readback ${sec(bakeStages.readback)}) · unwrap ${sec(lm.unwrapMs || 0)} ahead of time · ${(lm.texelsPerCm || 0).toFixed(2)} texels/cm · atlas ${resolution}² texel fill ${(fill * 100).toFixed(1)}% · full trace ${sec(traceTimes.settledMs)} (boot+BVH ${sec(traceTimes.bootMs)})`, 10, 36);
+  window.__status = {
+    done: true,
+    cleanMs,
+    samples: result.samples,
+    bytes: r8.length,
+    stages: bake.stages,
+    frames: bake.frames,
+    uv1InFile: fileUv1,
+    aspect: camera.aspect,
+    stages: bakeStages,
+    fill,
+    trace: traceTimes,
+    lightmap: {unwrapMs: lm.unwrapMs, texelsPerCm: lm.texelsPerCm, coverage: lm.coverage, attempts: lm.attempts, areaM2: lm.areaM2},
+  };
+  console.info('PANELS_READY', JSON.stringify(window.__status));
+} catch (error) {
+  fail(error);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!doctype html>
+<html><head><meta charset="utf-8" />
+<style>
+  html, body { margin: 0; background: #ffffff; }
+  model-viewer { width: 960px; height: 720px; display: block; background: #c8c8c8; }
+</style></head>
+<body>
+<model-viewer id="mv" interaction-prompt="none" bounds="tight"></model-viewer>
+<script type="module" src="/packages/model-viewer/dist/model-viewer.js"></script>
+<script type="module">
+// Driver for the trace composite tests: local copies of the scenes.json models.
+const mv = document.getElementById('mv');
+const sceneKey = () => Object.getOwnPropertySymbols(mv).find((k) => k.description === 'scene');
+const frame = () => new Promise((r) => requestAnimationFrame(r));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+await customElements.whenDefined('model-viewer');
+const cfg = await (await fetch('/packages/model-viewer/scripts/progressive-bake/scenes.json')).json();
+mv.setPathTracerOptions({
+  mode: 'immediate', view: 'beauty',
+  bake: {contactShadow: {enabled: false}, textureAO: {enabled: false}, lightmap: {enabled: false}},
+  probes: {enabled: false}, shadowPass: {enabled: false},
+});
+window.__api = {
+  async load(id, opts) {
+    const s = cfg.scenes.find((x) => x.id === id);
+    for (const [k, v] of Object.entries(s.attrs || {})) mv.setAttribute(k, v);
+    mv.removeAttribute('camera-orbit'); mv.removeAttribute('camera-target');
+    mv.pathTracer = false;
+    mv.pathTracerSamples = opts.samples;
+    mv.pathTracerSamplesThreshold = 1;
+    mv.pathTracerBounces = opts.bounces;
+    mv.pathTracerRenderScale = 1;
+    mv.pathTracerDenoise = true;
+    mv.environmentImage = `/bake-cache/${id}.hdr`;
+    const loaded = new Promise((r) => mv.addEventListener('load', r, {once: true}));
+    mv.src = `/bake-cache/${id}.glb`;
+    await loaded;
+    const scene = mv[sceneKey()];
+    const t = performance.now();
+    while (scene.environment == null && performance.now() - t < 60000) await sleep(50);
+    await sleep(500);
+    const cams = s.cameras;
+    const hero = cams.hero;
+    const ang = (p) => p.endsWith('rad') ? parseFloat(p) : parseFloat(p) * Math.PI / 180;
+    const h = hero[0].trim().split(/\s+/);
+    const rear = [(ang(h[0]) + Math.PI).toFixed(3) + 'rad ' + ang(h[1]).toFixed(3) + 'rad ' + h[2], hero[1]];
+    window.__cams = {front: hero, side: [cams.side[0], cams.side[1] || hero[1]], rear, close: [cams.close[0], cams.close[1] || hero[1]]};
+    return {attrs: s.attrs, cams: window.__cams};
+  },
+  async camera(name) {
+    const [orbit, target] = window.__cams[name];
+    mv.cameraOrbit = orbit; if (target) mv.cameraTarget = target;
+    mv.jumpCameraToGoal();
+    for (let i = 0; i < 4; i++) await frame();
+    await sleep(300);
+    return {orbit, target};
+  },
+  async realtime() {
+    mv.pathTracer = true;
+    mv.pathTracerView = 'realtime';
+    mv[sceneKey()].queueRender();
+    for (let i = 0; i < 6; i++) await frame();
+    await sleep(300);
+  },
+  // cfg: {mode, view, quality, aoDistance, exclude, cast, roles, samplesMode, samples, threshold, ground, fadeMs}
+  async trace(cfg) {
+    mv.pathTracerMode = cfg.mode;
+    mv.pathTracerShadowQuality = cfg.quality || 'normal';
+    mv.pathTracerAoDistance = cfg.aoDistance ?? 0.05;
+    mv.pathTracerExclude = cfg.exclude || '';
+    mv.pathTracerExcludedCastShadow = !!cfg.cast;
+    mv.pathTracerMaterialRoles = cfg.roles || '';
+    mv.pathTracerSamplesMode = cfg.samplesMode || 'fixed';
+    mv.pathTracerAdaptiveThreshold = cfg.threshold ?? 1;
+    if (cfg.samples) mv.pathTracerSamples = cfg.samples;
+    mv.pathTracerGroundShadow = cfg.ground ?? 1;
+    mv.pathTracerFadeMs = cfg.fadeMs ?? 150;
+    mv.pathTracerView = cfg.view || 'composite';
+    const start = performance.now();
+    mv.pathTracer = true;
+    const scene = mv[sceneKey()];
+    scene.queueRender();
+    let stall = performance.now(), nudges = 0, lastFade = -1;
+    await frame(); await frame();
+    while (true) {
+      await frame();
+      const st = mv.pathTracerStats;
+      if (mv.isPathTracerSettled) break;
+      const f = st ? st.fade + st.samples + (st.groundReady ? 1000 : 0) : 0;
+      if (f !== lastFade) { lastFade = f; stall = performance.now(); }
+      if (performance.now() - stall > 4000) { nudges++; stall = performance.now(); scene.queueRender(); }
+      if (performance.now() - start > 120000) return {error: 'timeout', stats: st};
+    }
+    const wallMs = performance.now() - start;
+    for (let i = 0; i < 3; i++) await frame();
+    return {wallMs: Math.round(wallMs), nudges, stats: mv.pathTracerStats,
+      excluded: mv.getPathTracerExcludedMeshes(), roles: mv.getPathTracerRoles()};
+  },
+  async view(v) {
+    mv.pathTracerView = v;
+    mv[sceneKey()].queueRender();
+    for (let i = 0; i < 6; i++) await frame();
+    await sleep(200);
+  },
+  // Continuous orbit: theta advances every frame until stopOrbit().
+  startOrbit(degPerFrame) {
+    const o = mv.getCameraOrbit();
+    const state = window.__orbit = {run: true, theta: o.theta, phi: o.phi, r: o.radius, maxFade: 0, frames: 0, settledDuring: 0};
+    const tick = () => {
+      if (!state.run) return;
+      state.theta += degPerFrame * Math.PI / 180;
+      mv.cameraOrbit = `${state.theta}rad ${state.phi}rad ${state.r}m`;
+      mv.jumpCameraToGoal();
+      const st = mv.pathTracerStats;
+      state.frames++;
+      if (state.frames > 2 && st) state.maxFade = Math.max(state.maxFade, st.fade);
+      if (state.frames > 2 && mv.isPathTracerSettled) state.settledDuring++;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    return true;
+  },
+  probeOrbit() {
+    const st = mv.pathTracerStats;
+    return {fade: st.fade, groundReady: st.groundReady, burns: st.burns, maxFade: window.__orbit.maxFade, frames: window.__orbit.frames};
+  },
+  stopOrbit() {
+    window.__orbit.run = false;
+    return {...window.__orbit};
+  },
+  async env(url, intensity) {
+    if (url) {
+      const scene = mv[sceneKey()];
+      const before = scene.environment;
+      mv.environmentImage = url;
+      const t = performance.now();
+      while (scene.environment === before && performance.now() - t < 30000) await sleep(50);
+    }
+    if (intensity != null) { mv[sceneKey()].environmentIntensity = intensity; mv[sceneKey()].queueRender(); }
+    await sleep(300);
+  },
+};
+window.__ready = true;
+</script>
+</body></html>
