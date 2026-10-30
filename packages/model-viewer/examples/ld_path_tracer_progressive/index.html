@@ -47,6 +47,31 @@
       </div>
     </details>
     <details open>
+      <summary>Look</summary>
+      <p class="hint">One set of values for the real-time view and the WebGPU trace, applied live.</p>
+      <div class="rows">
+        <label><span>Exposure</span><input id="exposure" type="number" min="0" max="8" step="0.05" value="1" /></label>
+        <input id="exposure-range" type="range" min="0" max="4" step="0.01" value="1" />
+        <label><span>Tone mapping</span>
+          <select id="tone">
+            <option value="auto" selected>auto (neutral)</option>
+            <option value="neutral">neutral</option>
+            <option value="commerce">commerce</option>
+            <option value="aces">ACES filmic</option>
+            <option value="agx">AgX</option>
+            <option value="reinhard">Reinhard</option>
+            <option value="cineon">Cineon</option>
+            <option value="linear">linear</option>
+            <option value="none">none</option>
+          </select>
+        </label>
+        <label><span>Env intensity</span><input id="env-intensity" type="number" min="0" max="8" step="0.05" value="1" /></label>
+        <input id="env-intensity-range" type="range" min="0" max="4" step="0.01" value="1" />
+        <label><span>Env rotation °</span><input id="env-rotation" type="number" min="-180" max="180" step="1" value="0" /></label>
+        <input id="env-rotation-range" type="range" min="-180" max="180" step="1" value="0" />
+      </div>
+    </details>
+    <details open>
       <summary>Path tracer</summary>
       <div class="rows">
         <label><span>Picture</span>
@@ -218,6 +243,35 @@
       mv.pathTracer = val('pt-on');
     }
 
+    // Look: exposure and tone mapping are element properties; the WebGPU
+    // trace copies them from the WebGL renderer on every present. Environment
+    // intensity has no element attribute, so the demo sets it on the scene;
+    // the trace sees the change and re-traces with the same BVH.
+    const sceneKey = Object.getOwnPropertySymbols(mv).find((key) => key.description === 'scene');
+    function applyLook() {
+      mv.exposure = val('exposure');
+      mv.toneMapping = val('tone');
+      mv.skyboxRotation = `0deg 0deg ${val('env-rotation')}deg`;
+      const scene = sceneKey ? mv[sceneKey] : null;
+      if (scene) {
+        scene.environmentIntensity = val('env-intensity');
+        scene.queueRender();
+      }
+    }
+
+    function pairLook(numberId, rangeId) {
+      const number = $(numberId);
+      const range = $(rangeId);
+      range.addEventListener('input', () => {
+        number.value = range.value;
+        applyLook();
+      });
+      number.addEventListener('input', () => {
+        range.value = number.value;
+        applyLook();
+      });
+    }
+
     function layerLine(name, enabled, layer) {
       if (!enabled) return name + ' off';
       if (layer == null) return name + ' pending';
@@ -248,6 +302,8 @@
       const trace = state && state.fullTrace;
       const lines = [
         'phase ' + phaseOf(state),
+        'look exposure ' + val('exposure') + '  tone ' + val('tone') +
+            '  env ' + val('env-intensity') + ' @ ' + val('env-rotation') + '°',
         layerLine('contact', val('contact'), state && state.contactShadow),
         layerLine('texture AO', val('ao'), state && state.textureAO),
         layerLine('lights', val('lights'), state && state.lightLayers),
@@ -301,6 +357,7 @@
       if (cam.target) mv.setAttribute('camera-target', cam.target);
       if (typeof mv.jumpCameraToGoal === 'function') mv.jumpCameraToGoal();
       applyOptions();
+      applyLook();
     }
 
     function fillEnvs() {
@@ -354,6 +411,11 @@
     });
     bakeEnv.addEventListener('change', applyOptions);
     asideControls();
+    pairLook('exposure', 'exposure-range');
+    pairLook('env-intensity', 'env-intensity-range');
+    pairLook('env-rotation', 'env-rotation-range');
+    $('tone').addEventListener('change', applyLook);
+    mv.addEventListener('load', applyLook);
     $('rebake').addEventListener('click', () => {
       const samples = val('ao-samples');
       const next = samples >= 128 ? samples - 1 : samples + 1;
@@ -387,6 +449,7 @@
     function asideControls() {
       for (const el of document.querySelectorAll('aside input, aside select')) {
         if (el.id === 'scene' || el.id === 'view-env' || el.id === 'bake-env' || el.id === 'trace') continue;
+        if (el.closest('details') && el.closest('details').querySelector('#exposure')) continue;
         el.addEventListener('change', applyOptions);
       }
     }
