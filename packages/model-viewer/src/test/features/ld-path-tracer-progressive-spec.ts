@@ -14,7 +14,7 @@
  */
 
 import {expect} from 'chai';
-import {BufferGeometry, Float32BufferAttribute} from 'three';
+import {BufferGeometry, Float32BufferAttribute, PerspectiveCamera} from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
 import {PhysicalPathTracingMaterial} from 'three-gpu-pathtracer/src/materials/pathtracing/PhysicalPathTracingMaterial.js';
 
@@ -23,6 +23,7 @@ import {ModelViewerElement} from '../../model-viewer.js';
 import {contactGroundY, expandPenumbraByHeight, stepContactRays} from '../../three-components/postprocessing/ld-path-tracer/progressive/contact-shadow.js';
 import {createFade, fadeSettled, shaderAoMix, stepFade} from '../../three-components/postprocessing/ld-path-tracer/progressive/fade.js';
 import {planInvalidation} from '../../three-components/postprocessing/ld-path-tracer/progressive/invalidation.js';
+import {ProgressiveHost, ProgressivePipeline} from '../../three-components/postprocessing/ld-path-tracer/progressive/ProgressivePipeline.js';
 import {applyUvJob, createUvJob, orientWindingToNormals, planAtlasTiles, stepUvJob, uv1IsValid} from '../../three-components/postprocessing/ld-path-tracer/progressive/uv2.js';
 import {DEFAULT_PROGRESSIVE_SETTINGS, resolveProgressiveSettings} from '../../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {installSurfaceBake, openLevel} from '../../three-components/postprocessing/ld-path-tracer/progressive/surface-bake.js';
@@ -159,6 +160,56 @@ suite('progressive path tracer invalidation', () => {
     expect(plan.fadeOut).to.deep.equal(['fullTrace']);
     expect(plan.restartProbes).to.equal(false);
     expect(plan.restartBakes).to.equal(false);
+  });
+
+  test('camera motion drops the held trace on the first changed frame', () => {
+    const camera = new PerspectiveCamera();
+    let resets = 0;
+    const host: ProgressiveHost = {
+      renderer: () => null,
+      scene: () => null,
+      camera: () => camera,
+      requestRender: () => {},
+      dispatch: () => {},
+      buildTrace: () => {},
+      traceReady: () => false,
+      prepareOcclusion: () => {},
+      occlusionReady: () => false,
+      occlusionMaterial: () => null,
+      bounces: () => 1,
+      setOcclusionScale: () => {},
+      occlusionSamples: () => 0,
+      resetTrace: () => {
+        resets++;
+      },
+      sampleTrace: () => -1,
+      traceSamples: () => 0,
+      maxSamples: () => 16,
+      invalidateTrace: () => {},
+      shadowLayerReady: () => true,
+      shadowMs: () => 0,
+      shadowStale: () => false,
+      markShadowStale: () => {},
+      restartShadow: () => {},
+    };
+    const pipeline = new ProgressivePipeline(host, {
+      ...DEFAULT_PROGRESSIVE_SETTINGS,
+      fadeMs: 400,
+      view: 'beauty',
+    });
+    pipeline.tick(1000);
+    (pipeline as unknown as {traceFade: {value: number; target: number}})
+        .traceFade = {value: 1, target: 1};
+    camera.position.set(1, 0, 3);
+    camera.updateMatrixWorld();
+    pipeline.tick(1016);
+    expect(pipeline.readout().fullTrace.fade).to.equal(0);
+    expect(resets).to.equal(1);
+    camera.position.set(2, 0.4, 3);
+    camera.updateMatrixWorld();
+    pipeline.tick(1032);
+    expect(pipeline.readout().fullTrace.fade).to.equal(0);
+    expect(resets).to.equal(1);
   });
 });
 

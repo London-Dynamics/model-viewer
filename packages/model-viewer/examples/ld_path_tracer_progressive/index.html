@@ -19,6 +19,7 @@
     summary { cursor: pointer; font-weight: 650; padding: 3px 0; }
     .rows { display: flex; flex-direction: column; gap: 2px; padding: 0 0 4px; }
     label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 18px; }
+    [hidden] { display: none !important; }
     label span { flex: 0 0 46%; }
     input, select, button { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #444; border-radius: 2px; padding: 1px 4px; min-width: 0; }
     input[type="checkbox"] { min-width: auto; }
@@ -28,10 +29,22 @@
     .actions button { flex: 1; }
     #status { white-space: pre-wrap; font: 10px/1.3 ui-monospace, monospace; color: #cfcfcf; margin: 0; }
     .hint { color: #9a9a9a; margin: 0 0 3px; }
+    #hud { position: fixed; left: 12px; top: 12px; z-index: 5; width: min(420px, calc(100vw - 344px)); padding: 8px 10px; background: rgba(0,0,0,.78); color: #fff; border-radius: 6px; pointer-events: none; font: 13px/1.35 ui-sans-serif, system-ui, sans-serif; }
+    #hud strong { display: block; font-size: 14px; }
+    #hud .track { height: 6px; margin: 6px 0 4px; background: #333; border-radius: 3px; overflow: hidden; }
+    #hud .track > div { height: 100%; width: 0; background: #4ea1ff; }
+    #hud.busy .track > div { width: 40%; animation: hud-slide 1.1s ease-in-out infinite; }
+    #hud small { color: #c8c8c8; }
+    @keyframes hud-slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(280%); } }
   </style>
 </head>
 <body>
   <model-viewer id="mv" bounds="tight" camera-controls interaction-prompt="none"></model-viewer>
+  <div id="hud">
+    <strong id="hud-title">starting</strong>
+    <div class="track"><div id="hud-bar"></div></div>
+    <small id="hud-detail"></small>
+  </div>
   <aside>
     <details open>
       <summary>Scene</summary>
@@ -47,41 +60,43 @@
       </div>
     </details>
     <details open>
-      <summary>Path tracer</summary>
+      <summary>Pass</summary>
       <div class="rows">
-        <label><span>Picture</span>
-          <select id="picture">
-            <option value="beauty" selected>beauty</option>
-            <option value="realtime">real-time</option>
-            <option value="occlusion">path tracer shadow</option>
-            <option value="bake">bake only</option>
+        <label><span>Show</span>
+          <select id="pass">
+            <option value="trace" selected>Path trace</option>
+            <option value="realtime">Realtime</option>
+            <option value="beauty">Beauty</option>
+            <option value="shadow">Shadow</option>
+            <option value="bake">Bake</option>
           </select>
         </label>
-        <label><span>Shadow env</span>
+        <p class="hint" id="pass-hint"></p>
+        <label id="occ-row" hidden><span>Shadow env</span>
           <select id="occ-env">
             <option value="uniform" selected>uniform white</option>
             <option value="scene">scene HDR</option>
           </select>
         </label>
-        <label><span>On</span><input id="pt-on" type="checkbox" checked /></label>
-        <label><span>Mode</span>
-          <select id="mode">
-            <option value="progressive" selected>progressive</option>
-            <option value="immediate">immediate</option>
-          </select>
-        </label>
-        <label><span>Samples</span><input id="samples" type="number" min="1" max="256" value="16" /></label>
-        <label><span>Reveal samples</span><input id="reveal" type="number" min="1" max="256" value="8" /></label>
-        <label><span>Bounces</span><input id="bounces" type="number" min="1" max="8" value="2" /></label>
-        <label><span>Render scale</span><input id="scale" type="number" min="0.25" max="1" step="0.05" value="1" /></label>
-        <label><span>Tiles</span><input id="tiles" type="text" value="3 3" /></label>
-        <label><span>Fade ms</span><input id="fade" type="number" min="0" max="5000" value="400" /></label>
-        <label><span>Idle ms</span><input id="idle" type="number" min="0" max="20000" value="400" /></label>
-        <label><span>Budget ms</span><input id="budget" type="number" min="0.5" max="32" step="0.5" value="6" /></label>
+        <label><span>Tracer</span><input id="pt-on" type="checkbox" checked /></label>
       </div>
     </details>
     <details open>
-      <summary>Layers</summary>
+      <summary>Path tracer</summary>
+      <p class="hint">Changing these restarts the trace.</p>
+      <div class="rows">
+        <label><span>Samples</span><input id="samples" type="number" min="1" max="256" value="32" /></label>
+        <label><span>Threshold</span><input id="reveal" type="number" min="1" max="256" value="6" /></label>
+        <label><span>Bounces</span><input id="bounces" type="number" min="1" max="8" value="5" /></label>
+        <label><span>Render scale</span><input id="scale" type="number" min="0.25" max="1" step="0.05" value="1" /></label>
+        <label><span>Tiles</span><input id="tiles" type="text" value="3 3" /></label>
+        <label class="progressive-only" hidden><span>Fade ms</span><input id="fade" type="number" min="0" max="5000" value="400" /></label>
+        <label class="progressive-only" hidden><span>Idle ms</span><input id="idle" type="number" min="0" max="20000" value="400" /></label>
+        <label class="progressive-only" hidden><span>Budget ms</span><input id="budget" type="number" min="0.5" max="32" step="0.5" value="6" /></label>
+      </div>
+    </details>
+    <details id="layers-box" hidden>
+      <summary>Beauty layers</summary>
       <div class="rows">
         <label><span>Contact shadow</span><input id="contact" type="checkbox" checked /></label>
         <label><span>Contact res</span><input id="contact-res" type="number" min="8" max="1024" step="8" value="192" /></label>
@@ -138,19 +153,55 @@
       <button id="reset-cam" type="button">Reset camera</button>
       <button id="geom" type="button">Change geometry</button>
     </div>
-    <p class="hint">Path tracer shadow and bake only are the same white-diffuse path trace. Uniform white makes that picture the occlusion factor. Shader AO output “ao” is the old screen-space debug view.</p>
+    <p class="hint">Path trace is the stock tracer. Beauty adds the baked layers under it. Shadow and bake are review pictures.</p>
   </aside>
   <script type="module" src="../../dist/model-viewer.js"></script>
   <script type="module">
     const mv = document.querySelector('#mv');
     const statusEl = document.querySelector('#status');
+    const hud = document.querySelector('#hud');
+    const hudTitle = document.querySelector('#hud-title');
+    const hudBar = document.querySelector('#hud-bar');
+    const hudDetail = document.querySelector('#hud-detail');
     const sceneSelect = document.querySelector('#scene');
     const viewEnv = document.querySelector('#view-env');
     const bakeEnv = document.querySelector('#bake-env');
     let scenes = [];
     let current = null;
     let traceWanted = true;
-    let revealSamples = 8;
+
+    const PASSES = {
+      trace: {
+        mode: 'immediate',
+        view: 'beauty',
+        shadow: false,
+        hint: 'Path tracing only. Same tracer as the stock example: full materials, scene lighting, no bake on top.',
+      },
+      realtime: {
+        mode: 'progressive',
+        view: 'realtime',
+        shadow: false,
+        hint: 'The live raster. Nothing from the path tracer is drawn on top.',
+      },
+      beauty: {
+        mode: 'progressive',
+        view: 'beauty',
+        shadow: true,
+        hint: 'Raster, then the baked layers, then the path trace fades in after the camera rests.',
+      },
+      shadow: {
+        mode: 'progressive',
+        view: 'occlusion',
+        shadow: false,
+        hint: 'White-diffuse path trace. This is the occlusion factor, not the beauty picture.',
+      },
+      bake: {
+        mode: 'progressive',
+        view: 'bake',
+        shadow: false,
+        hint: 'Baked occlusion on white.',
+      },
+    };
 
     const $ = (id) => document.getElementById(id);
 
@@ -161,7 +212,24 @@
       return el.value;
     }
 
+    function currentPass() {
+      return PASSES[val('pass')] || PASSES.trace;
+    }
+
+    function syncPassChrome() {
+      const id = val('pass');
+      const pass = currentPass();
+      $('layers-box').hidden = id !== 'beauty';
+      $('occ-row').hidden = id !== 'beauty' && id !== 'shadow';
+      $('pass-hint').textContent = pass.hint;
+      for (const el of document.querySelectorAll('.progressive-only')) {
+        el.hidden = id === 'trace';
+      }
+    }
+
     function applyOptions() {
+      syncPassChrome();
+      const pass = currentPass();
       mv.pathTracerSamples = val('samples');
       mv.pathTracerSamplesThreshold = val('reveal');
       mv.pathTracerBounces = val('bounces');
@@ -178,13 +246,13 @@
       mv.aoIntensity = val('sao-intensity');
       const bakeUrl = bakeEnv.value;
       mv.setPathTracerOptions({
-        mode: val('mode'),
-        view: val('picture'),
+        mode: pass.mode,
+        view: pass.view,
         occlusionEnvironment: val('occ-env'),
         fadeMs: val('fade'),
         idleDelayMs: val('idle'),
         budgetMs: val('budget'),
-        traceRevealSamples: traceWanted ? val('reveal') : 10000,
+        traceRevealSamples: pass.view === 'beauty' && traceWanted ? val('reveal') : 10000,
         environment: bakeUrl ? bakeUrl : null,
         bake: {
           contactShadow: {
@@ -208,7 +276,7 @@
           resolution: val('probe-res'),
         },
         shadowPass: {
-          enabled: val('picture') === 'beauty',
+          enabled: pass.shadow,
           samples: 4,
           bounces: 1,
           renderScale: 0.25,
@@ -228,46 +296,65 @@
       return name + ' pending';
     }
 
-    function phaseOf(state) {
-      if (!mv.pathTracer) return 'off';
-      if (state == null) return 'starting';
-      const mode = val('mode');
-      if (mode !== 'progressive') return 'immediate';
-      if (val('contact') && !state.contactShadow.ready) return 'contact';
-      if (val('ao') && !state.textureAO.ready) return 'texture AO';
-      if (val('lights') && !state.lightLayers.ready) return 'lights';
-      if (val('probes') && !state.probes.ready) return 'probes';
-      if (traceWanted && !state.fullTrace.revealed) return 'trace';
-      return 'done';
+    function formatSamples(n) {
+      if (!Number.isFinite(n)) return '0';
+      return Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1);
+    }
+
+    function paintTraceStatus() {
+      const n = mv.pathTracerRenderedSamples || 0;
+      const max = val('samples');
+      const title = mv.pathTracer ? 'path trace ' + formatSamples(n) + ' / ' + max : 'off';
+      hudTitle.textContent = title;
+      hudBar.style.width = max ? Math.min(100, Math.round(n / max * 100)) + '%' : '0';
+      hud.classList.toggle('busy', mv.pathTracer && n < max);
+      hudDetail.textContent = 'full materials · scene lighting';
+      statusEl.textContent = title + '\n' + hudDetail.textContent;
     }
 
     function paintStatus() {
-      const state = mv.getPathTracerProgressiveState();
+      if (val('pass') === 'trace') {
+        paintTraceStatus();
+        return;
+      }
+      const state = typeof mv.getPathTracerProgressiveState === 'function' ?
+          mv.getPathTracerProgressiveState() :
+          null;
       const frame = state && state.frameMs;
       const bake = state && state.bakeMs;
       const trace = state && state.fullTrace;
+      const passName = $('pass').selectedOptions[0].textContent;
       const lines = [
-        'phase ' + phaseOf(state),
+        passName + (state && state.activity ? ' · ' + state.activity : ''),
         layerLine('contact', val('contact'), state && state.contactShadow),
         layerLine('texture AO', val('ao'), state && state.textureAO),
         layerLine('lights', val('lights'), state && state.lightLayers),
         layerLine('probes', val('probes'), state && state.probes),
         trace == null ? 'trace pending' :
-            'trace ' + trace.samples + ' samples' +
-            (trace.revealed ? ' faded' : ' baking') +
+            'trace ' + formatSamples(trace.samples) + ' / ' + val('samples') +
+            (trace.revealed ? ' on screen' : ' hidden') +
             ' ' + Math.round((trace.fade || 0) * 100) + '%',
-        'shadow ' + ((state && state.occlusionSamples) || 0) + ' samples' +
-            (state && state.occlusionScale ? '  scale ' + state.occlusionScale.toFixed(3) : '') +
-            (state && state.shadowMs ? '  ready ' + Math.round(state.shadowMs) + 'ms' : ''),
-        frame == null ? 'frame —' :
-            'frame mean ' + frame.mean.toFixed(1) + 'ms  p95 ' + frame.p95.toFixed(1) + 'ms',
-        bake == null ? 'bake —' :
+      ];
+      if (val('pass') === 'shadow' || val('pass') === 'beauty') {
+        lines.push('shadow ' + formatSamples((state && state.occlusionSamples) || 0) + ' samples');
+      }
+      if (frame != null) {
+        lines.push('frame mean ' + frame.mean.toFixed(1) + 'ms  p95 ' + frame.p95.toFixed(1) + 'ms');
+      }
+      if (bake != null && val('pass') === 'beauty') {
+        lines.push(
             'bakeMs contact ' + Math.round(bake.contactShadow) +
             '  ao ' + Math.round(bake.textureAO) +
             '  lights ' + Math.round(bake.lightLayers) +
-            '  probes ' + Math.round(bake.probes),
-      ];
+            '  probes ' + Math.round(bake.probes));
+      }
       statusEl.textContent = lines.join('\n');
+      const title = lines[0] || passName;
+      hudTitle.textContent = title;
+      const step = state && typeof state.step === 'number' ? state.step : -1;
+      hud.classList.toggle('busy', step < 0 && title !== 'off');
+      hudBar.style.width = step < 0 ? '' : Math.round(Math.min(1, step) * 100) + '%';
+      hudDetail.textContent = lines.slice(1, 5).join(' · ');
     }
 
     function cameraOf(scene) {
@@ -377,12 +464,15 @@
       traceWanted = $('trace').checked;
       applyOptions();
     });
-    $('reveal').addEventListener('change', () => {
-      revealSamples = val('reveal');
-      applyOptions();
-    });
-    selectScene('aquila');
-    setInterval(paintStatus, 250);
+    setInterval(paintStatus, 200);
+    try {
+      selectScene('aquila');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      statusEl.textContent = message;
+      hudTitle.textContent = message;
+      hudDetail.textContent = 'The viewer bundle is missing setPathTracerOptions. Rebuild dist/model-viewer.js.';
+    }
 
     function asideControls() {
       for (const el of document.querySelectorAll('aside input, aside select')) {

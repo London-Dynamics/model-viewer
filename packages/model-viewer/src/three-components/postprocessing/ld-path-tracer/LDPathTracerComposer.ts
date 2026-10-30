@@ -75,6 +75,8 @@ export const resolvePathTracerBuildOptions = (
   return {strategy, maxLeafTris};
 };
 const PATH_TRACER_RESET_OPTION_KEYS = [
+  'samples',
+  'samplesThreshold',
   'bounces',
   'renderScale',
   'tiles',
@@ -85,6 +87,10 @@ const PATH_TRACER_RESET_OPTION_KEYS = [
   'apertureBlades',
   'apertureRotation',
   'anamorphicRatio',
+  'denoise',
+  'denoiseSigma',
+  'denoiseThreshold',
+  'denoiseKSigma',
 ] as const;
 
 export interface PathTracerOptions {
@@ -318,6 +324,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.options = nextOptions;
     this.syncAmbientOcclusionPreview();
     this.applyOptions(shouldReset);
+    if (shouldReset) {
+      this.restartTraceAfterSettingsChange();
+    }
     this.requestRender();
   }
 
@@ -345,10 +354,51 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   setProgressiveSettings(settings: ProgressiveSettings) {
-    const environmentChanged =
-        settings.occlusionEnvironment !== this.progressiveSettings.occlusionEnvironment;
+    const previous = this.progressiveSettings;
+    const viewChanged = settings.view !== previous.view;
+    const modeChanged = settings.mode !== previous.mode;
+    const shadowChanged =
+        settings.shadowPass.enabled !== previous.shadowPass.enabled;
+    const environmentChanged = settings.occlusionEnvironment !==
+        previous.occlusionEnvironment;
     this.progressiveSettings = cloneProgressiveSettings(settings);
-    if (this.usesShadowPass() && this.shadowHold == null) {
+
+    if (settings.mode !== 'progressive') {
+      this.pipeline?.dispose();
+      this.pipeline = null;
+      const enteringBare = previous.mode === 'progressive' ||
+          this.shadowStage !== 'full' || this.sceneBuildKind !== 'beauty';
+      if (enteringBare) {
+        this.useBarePathTracer();
+      } else if (this.pathTracer != null) {
+        this.pathTracer.renderToCanvas = true;
+        this.requestRender();
+      }
+      return;
+    }
+
+    if (viewChanged || modeChanged || shadowChanged) {
+      this.clearTraceHold();
+      this.pipeline?.discardPresentation();
+      this.pathTracer?.reset();
+      this.traceSceneReady = false;
+      this.shadowStale = false;
+      this.denoisedSample = -1;
+      if (settings.view === 'occlusion' || settings.view === 'bake') {
+        this.shadowStage = 'full';
+        this.occlusionReady = false;
+        this.needsSceneUpdate = true;
+      } else if (this.usesShadowPass()) {
+        this.shadowHold?.dispose();
+        this.shadowHold = null;
+        this.shadowStage = 'shadow';
+        this.shadowStartedAt = 0;
+        this.needsSceneUpdate = true;
+      } else {
+        this.shadowStage = 'full';
+        this.needsSceneUpdate = true;
+      }
+    } else if (this.usesShadowPass() && this.shadowHold == null) {
       this.shadowStage = 'shadow';
       this.shadowStartedAt = 0;
       this.shadowStale = false;
@@ -368,12 +418,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.occlusionTracer?.reset();
       this.needsSceneUpdate = true;
     }
-    if (settings.mode !== 'progressive') {
-      this.pipeline?.dispose();
-      this.pipeline = null;
-      this.requestRender();
-      return;
-    }
     if (this.pipeline == null) {
       this.pipeline = new ProgressivePipeline(
           this.progressiveHost(), this.progressiveSettings);
@@ -384,6 +428,62 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.syncScene();
     }
     this.requestRender();
+  }
+
+  /**
+   * Stock path tracer: full materials, scene HDR, samples drawn by the
+   * tracer itself. No progressive composite and no white shadow preset.
+   */
+  private useBarePathTracer() {
+    this.clearTraceHold();
+    this.shadowHold?.dispose();
+    this.shadowHold = null;
+    this.shadowStage = 'full';
+    this.shadowStale = false;
+    this.traceSceneReady = false;
+    this.needsSceneUpdate = true;
+    if (this.pathTracer != null) {
+      this.pathTracer.renderToCanvas = true;
+      this.pathTracer.pausePathTracing = false;
+    }
+    this.applyOptions(true);
+    this.syncScene();
+    this.requestRender();
+  }
+
+  private restartTraceAfterSettingsChange() {
+    this.clearTraceHold();
+    this.denoisedSample = -1;
+    if (!this.isProgressiveMode()) {
+      if (this.pathTracer != null) {
+        this.pathTracer.renderToCanvas = true;
+      }
+      return;
+    }
+    this.pipeline?.discardPresentation();
+    const view = this.progressiveSettings.view;
+    if (view === 'occlusion' || view === 'bake') {
+      this.occlusionTracer?.reset();
+      return;
+    }
+    if (view === 'realtime') {
+      return;
+    }
+    this.traceSceneReady = false;
+    if (this.usesShadowPass()) {
+      this.shadowHold?.dispose();
+      this.shadowHold = null;
+      this.shadowStage = 'shadow';
+      this.shadowStartedAt = 0;
+      this.shadowStale = false;
+    }
+    this.needsSceneUpdate = true;
+    this.syncScene();
+  }
+
+  private clearTraceHold() {
+    this.traceHoldTarget?.dispose();
+    this.traceHoldTarget = null;
   }
 
   getProgressiveReadout() {
@@ -1207,7 +1307,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private shouldBuildOcclusion(): boolean {
-    if (this.occlusionReady) {
+    if (this.progressiveSettings.mode !== 'progressive' || this.occlusionReady) {
       return false;
     }
     const view = this.progressiveSettings.view;

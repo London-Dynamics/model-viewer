@@ -64,6 +64,13 @@ export interface LayerReadout {
 }
 
 export interface ProgressiveReadout {
+  /** What the pipeline is doing right now, for on-screen progress. */
+  activity: string;
+  /**
+   * Progress of the current step, 0–1. Negative when the step has no
+   * measurable cursor (BVH build).
+   */
+  step: number;
   contactShadow: LayerReadout;
   textureAO: LayerReadout;
   lightLayers: LayerReadout;
@@ -270,11 +277,21 @@ export class ProgressivePipeline {
       this.shadowNoted = false;
       this.requestRestart();
     }
+    if (previous.view !== this.settings.view) {
+      this.discardPresentation();
+    }
+  }
+
+  /** Drop the on-screen trace so the next samples start from the raster. */
+  discardPresentation() {
+    this.traceFade = {value: 0, target: 0};
+    this.traceHold = false;
+    this.traceBuildRequested = false;
   }
 
   get shadowComposite(): number {
     if (!this.settings.shadowPass.enabled || this.settings.view !== 'beauty' ||
-        !this.host.shadowLayerReady()) {
+        !this.host.shadowLayerReady() || this.host.shadowStale()) {
       return 0;
     }
     return this.aoFade.value * (1 - this.traceFade.value);
@@ -323,7 +340,10 @@ export class ProgressivePipeline {
     const p95 = sorted.length === 0 ?
         0 :
         sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    const activity = this.describeActivity();
     return {
+      activity: activity.label,
+      step: activity.step,
       contactShadow: this.layer(
           this.contactReady, this.contactFade.value, this.contactProgress()),
       textureAO: this.layer(this.aoReady, this.aoFade.value, this.aoProgress()),
@@ -532,12 +552,14 @@ export class ProgressivePipeline {
       return;
     }
     if (plan.restartFullTrace) {
-      this.traceFade = {...this.traceFade, target: 0};
-      this.host.resetTrace();
-      if (kind === 'camera' && this.settings.shadowPass.enabled &&
-          this.settings.view === 'beauty') {
-        this.host.markShadowStale();
-      } else if (kind !== 'camera') {
+      if (kind === 'camera') {
+        // The held trace and shadow are screen-space. A fade would leave the
+        // old view stuck while the camera moves, so drop them on this frame
+        // and show the raster until the camera is idle again.
+        this.dropTraceForCamera();
+      } else {
+        this.traceFade = {...this.traceFade, target: 0};
+        this.host.resetTrace();
         this.host.invalidateTrace();
         this.traceBuildRequested = false;
       }
@@ -554,6 +576,18 @@ export class ProgressivePipeline {
       if (this.phase === 'done' || this.phase === 'probes') {
         this.phase = 'probes';
       }
+    }
+  }
+
+  private dropTraceForCamera() {
+    const hidden = this.traceFade.target === 0 && this.traceFade.value < 0.01;
+    this.traceFade = {value: 0, target: 0};
+    this.traceHold = false;
+    if (!hidden) {
+      this.host.resetTrace();
+    }
+    if (this.settings.shadowPass.enabled && this.settings.view === 'beauty') {
+      this.host.markShadowStale();
     }
   }
 
@@ -2134,6 +2168,114 @@ export class ProgressivePipeline {
     }
     this.lastProgress.set(name, now);
     this.host.dispatch(name, {progress, ready, fade, elapsedMs});
+  }
+
+  private describeActivity(): {label: string; step: number;} {
+    if (this.phase === 'fadeout') {
+      return {label: 'fading previous bake', step: 0};
+    }
+    if (this.phase === 'collect') {
+      const total = this.meshes.length;
+      if (this.positions == null || total === 0) {
+        return {label: 'waiting for scene', step: 0};
+      }
+      return {
+        label: `collecting geometry ${this.fillMesh}/${total} meshes`,
+        step: this.fillMesh / total,
+      };
+    }
+    if (this.phase === 'bvh') {
+      return {label: 'building BVH', step: -1};
+    }
+    if (this.phase === 'probes') {
+      const step = this.probeProgress();
+      return {label: `probes ${Math.round(step * 100)}%`, step};
+    }
+    if (this.phase === 'done') {
+      const samples = this.host.traceSamples();
+      const max = this.host.maxSamples();
+      if (this.idleMs >= this.settings.idleDelayMs && samples < max) {
+        return {
+          label: `full trace ${samples}/${max} samples`,
+          step: max === 0 ? 1 : samples / max,
+        };
+      }
+      return {label: 'idle', step: 1};
+    }
+    if (this.contact != null && !this.contactReady) {
+      const step = this.contactProgress();
+      return {label: `contact shadow ${Math.round(step * 100)}%`, step};
+    }
+    if (!this.uvReady) {
+      if (!this.tilesReady) {
+        const total = Math.max(1, this.meshes.length);
+        return {
+          label: `measuring surface ${this.areaMesh}/${this.meshes.length}`,
+          step: this.areaMesh / total,
+        };
+      }
+      const total = Math.max(1, this.uvTasks.length);
+      const task = this.uvTasks[this.uvCursor];
+      const job = task?.job;
+      const mesh = task?.mesh.name ? ` ${task.mesh.name}` : '';
+      if (job == null) {
+        return {
+          label: `UV2 ${this.uvCursor}/${this.uvTasks.length}`,
+          step: this.uvCursor / total,
+        };
+      }
+      const slice = this.uvSlice(job);
+      return {
+        label: `UV2 ${job.phase}${mesh} ${this.uvCursor + 1}/${
+            this.uvTasks.length} · ${slice.label}`,
+        step: (this.uvCursor + slice.step) / total,
+      };
+    }
+    if (!this.surfaceDone &&
+        (this.settings.bake.textureAO.enabled ||
+         this.settings.lights.include)) {
+      return {label: 'sampling surface', step: -1};
+    }
+    if (this.settings.bake.textureAO.enabled && !this.aoReady) {
+      const step = this.aoProgress();
+      return {label: `texture AO ${Math.round(step * 100)}%`, step};
+    }
+    if (this.settings.lights.include && !this.lightsReady) {
+      const step = this.lightProgress();
+      return {label: `light layers ${Math.round(step * 100)}%`, step};
+    }
+    return {label: 'bake', step: 1};
+  }
+
+  private uvSlice(job: UvJob): {label: string; step: number;} {
+    const tri = Math.max(1, job.triCount);
+    const pct = (cursor: number) => {
+      const step = Math.min(1, cursor / tri);
+      return {label: `${Math.round(step * 100)}%`, step};
+    };
+    if (job.phase === 'copy') {
+      const step = Math.min(1, job.copyCursor / Math.max(1, job.vertexCount));
+      return {label: `${Math.round(step * 100)}%`, step};
+    }
+    if (job.phase === 'normals') {
+      return pct(job.normalCursor);
+    }
+    if (job.phase === 'edges') {
+      return pct(job.edgeCursor);
+    }
+    if (job.phase === 'charts') {
+      const slice = pct(job.chartCursor);
+      return {
+        label: `${slice.label} · ${job.chartCount} charts`,
+        step: slice.step,
+      };
+    }
+    if (job.phase === 'pack') {
+      const stage = job.pack?.stage ?? 'pack';
+      const slice = pct(job.pack?.cursor ?? 0);
+      return {label: `${stage} ${slice.label}`, step: slice.step};
+    }
+    return {label: job.done ? 'done' : job.phase, step: job.done ? 1 : 0};
   }
 
   private contactProgress(): number {
