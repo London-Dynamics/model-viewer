@@ -46,6 +46,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Box3,
+  Matrix3,
   MeshBasicMaterial,
   NeutralToneMapping,
   NoBlending,
@@ -73,8 +74,10 @@ import {
 
 const params = new URLSearchParams(location.search);
 const resolution = Number(params.get('resolution') || 2048);
-const viewW = 640;
-const viewH = 480;
+// Every panel renders at this size, the trace included.
+const viewW = 960;
+const viewH = 720;
+const bakeSamples = Number(params.get('samples') || 16);
 window.__status = {done: false};
 
 async function applyLightmap(url, meshes) {
@@ -198,7 +201,10 @@ try {
   envMap.mapping = EquirectangularReflectionMapping;
   const scene = new Scene();
   scene.environment = envMap;
-  scene.environmentIntensity = 1;
+  // Same values drive WebGL and the WebGPU trace (it copies tone mapping and
+  // exposure from gl and reads environment intensity and rotation from scene).
+  scene.environmentIntensity = Number(params.get('envIntensity') || 1);
+  scene.environmentRotation.set(0, Number(params.get('envRotation') || 0) * Math.PI / 180, 0);
   scene.background = null;
   let root;
   if (planeMode) {
@@ -289,6 +295,26 @@ try {
   console.info('STAGE_UV', Math.round(performance.now() - uvStart));
 
   for (const mesh of meshes) writeInsetUv(mesh, resolution);
+  // Ground shadow planes are receivers only: bake their upward side and keep
+  // them out of the occluders, so the contact shadow is the model's alone.
+  const modelBox = new Box3().setFromObject(root);
+  const grounds = meshes.filter((mesh) => {
+    const b = new Box3().setFromObject(mesh);
+    const size = b.getSize(new Vector3());
+    const flat = size.y < 0.01 * Math.max(size.x, size.z);
+    return /shadow/i.test(mesh.name) || (flat && b.max.y <= modelBox.min.y + 0.02 * (modelBox.max.y - modelBox.min.y));
+  });
+  for (const mesh of grounds) {
+    const normal = mesh.geometry.getAttribute('normal');
+    const up = new Vector3();
+    const toLocal = new Matrix3().getNormalMatrix(mesh.matrixWorld).invert();
+    for (let i = 0; i < normal.count; i++) {
+      up.set(0, 1, 0).applyMatrix3(toLocal).normalize();
+      normal.setXYZ(i, up.x, up.y, up.z);
+    }
+    normal.needsUpdate = true;
+  }
+  console.info('GROUND_PLANES', JSON.stringify(grounds.map((mesh) => mesh.name)));
   const packed = packSurface(root, resolution);
   console.info('STAGE_STAMP', packed.count);
   const bake = new AtlasBake();
@@ -296,6 +322,7 @@ try {
   if (params.get('normals')) bake.normalMode = params.get('normals');
   if (params.get('normalize')) bake.normalize = params.get('normalize');
   if (params.get('sides')) bake.sides = Number(params.get('sides'));
+  if (params.get('bias')) bake.normalBias = Number(params.get('bias'));
   // Glass keeps its own material in the atlas trace, so light reaches the cabin.
   let glass = 0;
   for (const mesh of meshes) {
@@ -307,8 +334,9 @@ try {
   }
   console.info('GLASS_PASSTHROUGH', glass);
   bake.setSurface(packed.surface, packed.count, resolution);
+  for (const mesh of grounds) mesh.visible = false;
   const traceStart = performance.now();
-  bake.start(scene, 16, 4);
+  bake.start(scene, bakeSamples, 4);
   while (!bake.implemented && !bake.unavailable) {
     await new Promise((resolve) => setTimeout(resolve, 16));
   }
@@ -322,7 +350,7 @@ try {
     if (bake.unavailable) {
       throw new Error('atlas bake unavailable');
     }
-    if (counted < 16 && frames % 4 === 0) {
+    if (counted < bakeSamples && frames % 4 === 0) {
       counted = await bake.measure();
       console.info('SAMPLES', counted, 'frames', frames);
     }
@@ -331,11 +359,12 @@ try {
       result = {samples: counted, factor};
       break;
     }
-    if (frames > 6000) {
+    if (frames > 6000 + 200 * bakeSamples) {
       throw new Error('atlas frame budget exhausted at ' + frames);
     }
   }
   const cleanMs = Math.round(performance.now() - traceStart);
+  for (const mesh of grounds) mesh.visible = true;
   {
     // Per-mesh mean factor at its uv1 vertices, biggest meshes first.
     const rows = meshes.map((mesh, n) => {
@@ -404,6 +433,7 @@ try {
   gl.outputColorSpace = SRGBColorSpace;
   // Same tone mapping the scenes use in the viewer (tone-mapping="neutral").
   gl.toneMapping = params.get('tone') === 'aces' ? ACESFilmicToneMapping : NeutralToneMapping;
+  gl.toneMappingExposure = Number(params.get('exposure') || 1);
   gl.setClearColor(0xd8d8d8, 1);
   gl.setSize(viewW, viewH, false);
   fitCameraAspect(camera, viewW, viewH);
@@ -471,7 +501,41 @@ try {
     }
     meshes[n].material = material;
   }
+  const shadowMat = new MeshBasicMaterial({color: 0x000000, transparent: true, depthWrite: false});
+  shadowMat.aoMap = ao;
+  shadowMat.aoMapIntensity = 1;
+  shadowMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `{
+          float ldShade = 1.0 - texture2D( aoMap, vAoMapUv ).r;
+          // Small open-sky residue is noise, not shadow: keep the plane clear there.
+          gl_FragColor = vec4( 0.0, 0.0, 0.0, clamp( ( ldShade - 0.06 ) * 1.2, 0.0, 0.92 ) );
+        }
+        #include <dithering_fragment>`);
+  };
+  shadowMat.customProgramCacheKey = () => 'ld-bake-ground';
+  for (const mesh of grounds) mesh.material = shadowMat;
   draw(2);
+  // Close-up of the bake alone, for leak checks (Montana bottom shelf).
+  if (params.get('closeCam')) {
+    const [cx, cy, cz] = params.get('closeCam').split(',').map(Number);
+    const [tx, ty, tz] = params.get('closeTarget').split(',').map(Number);
+    const close = new PerspectiveCamera(Number(params.get('closeFov') || 40), viewW / viewH, 0.01, 50);
+    close.position.set(cx, cy, cz);
+    close.lookAt(tx, ty, tz);
+    for (const mesh of meshes) mesh.material = factorMat;
+    gl.setSize(viewW, viewH, false);
+    gl.render(scene, close);
+    const canvas = document.createElement('canvas');
+    canvas.id = 'closeup';
+    canvas.width = viewW;
+    canvas.height = viewH;
+    canvas.getContext('2d').drawImage(gl.domElement, 0, 0);
+    document.body.appendChild(canvas);
+    for (let n = 0; n < meshes.length; n++) meshes[n].material = saved[n];
+    for (const mesh of grounds) mesh.material = shadowMat;
+  }
 
   const atlas = document.createElement('canvas');
   atlas.id = 'atlas';
@@ -552,7 +616,7 @@ try {
   traceTimes.samples = trace.samples;
   console.info('TRACE_DONE', JSON.stringify(traceTimes));
   const traceTex = trace.outputTexture();
-  const quad = new FullScreenQuad(new MeshBasicMaterial({map: traceTex, toneMapped: true, transparent: true, depthTest: false, depthWrite: false, blending: NormalBlending}));
+  const quad = new FullScreenQuad(new MeshBasicMaterial({map: traceTex, toneMapped: false, transparent: true, depthTest: false, depthWrite: false, blending: NormalBlending}));
   gl.setSize(viewW, viewH, false);
   gl.setClearColor(0xd8d8d8, 1);
   gl.autoClear = false;
@@ -572,7 +636,7 @@ try {
   const sec = (ms) => (ms / 1000).toFixed(2) + ' s';
   label(0, 'Real-time (no bake)');
   label(1, 'Baked shadow / AO alone');
-  label(2, 'Real-time + bake');
+  label(2, grounds.length ? 'Real-time + bake (ground: baked contact shadow)' : 'Real-time + bake');
   label(3, `Full WebGPU path trace (${traceSamples} spp, ${traceBounces} bounces, OIDN)`);
   sheetCtx.fillStyle = '#f4f4f4';
   sheetCtx.fillRect(0, 0, sheet.width, headerH);

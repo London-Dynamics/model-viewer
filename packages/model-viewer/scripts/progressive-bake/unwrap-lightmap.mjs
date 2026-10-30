@@ -48,7 +48,7 @@ const meshesOf = (root) => {
  * Chunks carry world-space positions and normals so xatlas sizes charts by
  * real metres, even under node scale. The caller maps them back to local.
  */
-const chunksOf = (geometry, world) => {
+const chunksOf = (geometry, world, densityScale = 1) => {
   const position = geometry.getAttribute('position');
   const normal = geometry.getAttribute('normal');
   const normalMatrix = new Matrix3().getNormalMatrix(world);
@@ -87,7 +87,9 @@ const chunksOf = (geometry, world) => {
       if (local == null) {
         local = positions.length / 3;
         map.set(id, local);
-        p.fromBufferAttribute(position, id).applyMatrix4(world);
+        // xatlas sizes charts from these positions, so a scale here is a
+        // per-mesh texel density. The output divides it back out.
+        p.fromBufferAttribute(position, id).applyMatrix4(world).multiplyScalar(densityScale);
         positions.push(p.x, p.y, p.z);
         if (normal) {
           nv.fromBufferAttribute(normal, id).applyMatrix3(normalMatrix).normalize();
@@ -281,32 +283,78 @@ const loadMeshes = async (glbPath) => {
   return root;
 };
 
-export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
+/** World area, triangle count and a 1 mm bbox key, for coincident copies. */
+const meshStats = (mesh) => {
+  const position = mesh.geometry.getAttribute('position');
+  const index = mesh.geometry.getIndex();
+  const triCount = index ? index.count / 3 : position.count / 3;
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  let area = 0;
+  for (let tri = 0; tri < triCount; tri++) {
+    const i0 = index ? index.getX(tri * 3) : tri * 3;
+    const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+    const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+    a.fromBufferAttribute(position, i0).applyMatrix4(mesh.matrixWorld);
+    b.fromBufferAttribute(position, i1).applyMatrix4(mesh.matrixWorld);
+    c.fromBufferAttribute(position, i2).applyMatrix4(mesh.matrixWorld);
+    area += b.sub(a).cross(c.sub(a)).length() * 0.5;
+  }
+  const box = new Box3().setFromBufferAttribute(position).applyMatrix4(mesh.matrixWorld);
+  const mm = (v) => Math.round(v * 1000);
+  const key = [position.count, triCount, mm(box.min.x), mm(box.min.y), mm(box.min.z),
+               mm(box.max.x), mm(box.max.y), mm(box.max.z), Math.round(area * 1e4)].join(',');
+  return {area, key, box};
+};
+
+/**
+ * Relative texel density per mesh. A ground shadow plane only needs a soft
+ * contact shadow, and meshes the file marks unused are not on show.
+ */
+const densityOf = (mesh, stats, modelBox) => {
+  const name = mesh.name || '';
+  const size = stats.box.getSize(new Vector3());
+  const flat = size.y < 0.01 * Math.max(size.x, size.z);
+  const ground = flat && stats.box.max.y <= modelBox.min.y + 0.02 * (modelBox.max.y - modelBox.min.y);
+  if (/shadow/i.test(name) || ground) return {scale: 0.25, why: 'ground'};
+  if (/unused/i.test(name)) return {scale: 0.1, why: 'unused'};
+  return {scale: 1, why: ''};
+};
+
+export async function unwrapLightmap(glbPath, outPath, resolution = 2048, options = {}) {
   const root = await loadMeshes(glbPath);
   root.updateMatrixWorld(true);
   const meshes = meshesOf(root);
   const box = new Box3().setFromObject(root);
   const size = box.getSize(new Vector3());
   const maxSide = Math.max(size.x, size.y, size.z);
-  const perCm = texelsPerCm(maxSide);
+  const perCm = options.maxTexelsPerCm || texelsPerCm(maxSide);
+  const stats = meshes.map(meshStats);
+  const seen = new Map();
+  const aliasOf = stats.map((stat, m) => {
+    const first = seen.get(stat.key);
+    if (first != null) return first;
+    seen.set(stat.key, m);
+    return -1;
+  });
+  const density = meshes.map((mesh, m) => densityOf(mesh, stats[m], box));
+  const report = {aliases: 0, aliasAreaM2: 0, scaled: []};
+  for (let m = 0; m < meshes.length; m++) {
+    if (aliasOf[m] >= 0) {
+      report.aliases++;
+      report.aliasAreaM2 += stats[m].area;
+    } else if (density[m].scale !== 1) {
+      report.scaled.push([meshes[m].name, density[m].why, density[m].scale, Math.round(stats[m].area * 100) / 100]);
+    }
+  }
+  console.log('ATLAS_SHARING', JSON.stringify(report));
   // World surface area decides whether the class floor fits one atlas.
   let area = 0;
-  const a = new Vector3();
-  const b = new Vector3();
-  const c = new Vector3();
-  for (const mesh of meshes) {
-    const position = mesh.geometry.getAttribute('position');
-    const index = mesh.geometry.getIndex();
-    const triCount = index ? index.count / 3 : position.count / 3;
-    for (let tri = 0; tri < triCount; tri++) {
-      const i0 = index ? index.getX(tri * 3) : tri * 3;
-      const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-      const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-      a.fromBufferAttribute(position, i0).applyMatrix4(mesh.matrixWorld);
-      b.fromBufferAttribute(position, i1).applyMatrix4(mesh.matrixWorld);
-      c.fromBufferAttribute(position, i2).applyMatrix4(mesh.matrixWorld);
-      area += b.sub(a).cross(c.sub(a)).length() * 0.5;
-    }
+  let fullArea = 0;
+  for (let m = 0; m < meshes.length; m++) {
+    fullArea += stats[m].area;
+    if (aliasOf[m] < 0) area += stats[m].area * density[m].scale * density[m].scale;
   }
   const fitUnit = Math.sqrt(0.75 * resolution * resolution / Math.max(area, 1e-6));
   let texelsPerUnit = Math.min(perCm * 100, fitUnit);
@@ -323,7 +371,8 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
       },
   );
   await waitLoaded(atlas);
-  const allChunks = meshes.map((mesh) => chunksOf(mesh.geometry, mesh.matrixWorld));
+  const allChunks = meshes.map((mesh, m) => aliasOf[m] >= 0 ? [] :
+      chunksOf(mesh.geometry, mesh.matrixWorld, density[m].scale));
   const meshChunks = allChunks.map((chunks) => chunks.length);
   let result = null;
   let unwrapMs = 0;
@@ -382,6 +431,10 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
   const parts = [];
   let cursor = 0;
   for (let m = 0; m < meshes.length; m++) {
+    if (aliasOf[m] >= 0) {
+      parts.push(null);
+      continue;
+    }
     const count = meshChunks[m];
     const group = result.meshes.slice(cursor, cursor + count);
     cursor += count;
@@ -401,10 +454,11 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
     const toLocal = meshes[m].matrixWorld.clone().invert();
     const normalBack = new Matrix3().setFromMatrix4(meshes[m].matrixWorld).transpose();
     const lp = new Vector3();
+    const unscale = 1 / density[m].scale;
     for (const piece of group) {
       const wv = piece.vertex.vertices;
       for (let i = 0; i < wv.length; i += 3) {
-        lp.set(wv[i], wv[i + 1], wv[i + 2]).applyMatrix4(toLocal);
+        lp.set(wv[i], wv[i + 1], wv[i + 2]).multiplyScalar(unscale).applyMatrix4(toLocal);
         wv[i] = lp.x; wv[i + 1] = lp.y; wv[i + 2] = lp.z;
       }
       const wn = piece.vertex.normals;
@@ -449,8 +503,38 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
     });
   }
 
+  // Coincident copies reuse the first mesh's charts, moved into their own
+  // local space, so one atlas region serves every copy.
+  for (let m = 0; m < meshes.length; m++) {
+    const first = aliasOf[m];
+    if (first < 0) continue;
+    const source = parts[first];
+    const toLocal = meshes[m].matrixWorld.clone().invert().multiply(meshes[first].matrixWorld);
+    const normalMove = new Matrix3().getNormalMatrix(toLocal);
+    const positions = source.positions.slice();
+    const normals = source.normals.slice();
+    const v = new Vector3();
+    for (let i = 0; i < positions.length; i += 3) {
+      v.set(positions[i], positions[i + 1], positions[i + 2]).applyMatrix4(toLocal);
+      positions[i] = v.x; positions[i + 1] = v.y; positions[i + 2] = v.z;
+      v.set(normals[i], normals[i + 1], normals[i + 2]).applyMatrix3(normalMove).normalize();
+      normals[i] = v.x; normals[i + 1] = v.y; normals[i + 2] = v.z;
+    }
+    parts[m] = {
+      name: meshes[m].name,
+      positions,
+      normals,
+      uv: source.uv.slice(),
+      uv1: source.uv1.slice(),
+      indices: source.indices.slice(),
+      aliasOf: meshes[first].name,
+    };
+  }
+
   const header = {
     resolution,
+    fullAreaM2: fullArea,
+    sharing: report,
     unwrapMs,
     texelsPerCm: texelsPerUnit / 100,
     classTexelsPerCm: perCm,
@@ -466,6 +550,7 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
       name: part.name,
       vertexCount: part.positions.length / 3,
       indexCount: part.indices.length,
+      aliasOf: part.aliasOf,
     })),
   };
   const headerBytes = Buffer.from(JSON.stringify(header), 'utf8');
@@ -486,6 +571,7 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
   let covered = 0;
   const stamp = new Uint8Array(resolution * resolution);
   for (const part of parts) {
+    if (part.aliasOf) continue;
     const uv = part.uv1;
     const index = part.indices;
     for (let i = 0; i < index.length; i += 3) {
@@ -512,7 +598,8 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
 if (process.argv[1] && process.argv[1].endsWith('unwrap-lightmap.mjs')) {
   const glb = process.argv[2];
   const out = process.argv[3];
-  unwrapLightmap(glb, out, Number(process.argv[4] || 2048)).catch((error) => {
+  unwrapLightmap(glb, out, Number(process.argv[4] || 2048),
+      {maxTexelsPerCm: Number(process.argv[5] || 0)}).catch((error) => {
     console.error(error);
     process.exit(1);
   });
