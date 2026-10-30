@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {Camera, CanvasTexture, LinearSRGBColorSpace, Scene, Vector2, WebGLRenderer} from 'three';
+import {Camera, CanvasTexture, Mesh, MeshBasicMaterial, Scene, SRGBColorSpace, Vector2, WebGLRenderer} from 'three';
 
 import {fitCameraAspect} from './surface-bake.js';
 
@@ -45,6 +45,7 @@ type GpuTracer = {
   setUpscaler(upscaler: object|null): void;
   setScene(scene: Scene, camera: Camera): void;
   updateCamera(): void;
+  updateEnvironment(): void;
   renderSample(): void;
   reset(): void;
   dispose(): void;
@@ -58,7 +59,13 @@ type GpuTracer = {
  */
 export class WebGPUBeautyTrace {
   readonly canvas = document.createElement('canvas');
-  private renderer: {setSize(w: number, h: number, updateStyle?: boolean): void; dispose(): void;}|null = null;
+  private renderer: {
+    setSize(w: number, h: number, updateStyle?: boolean): void;
+    dispose(): void;
+    toneMapping: number;
+    toneMappingExposure: number;
+    outputColorSpace: string;
+  }|null = null;
   private tracer: GpuTracer|null = null;
   private texture: CanvasTexture|null = null;
   private starting: Promise<boolean>|null = null;
@@ -66,6 +73,8 @@ export class WebGPUBeautyTrace {
   private disposed = false;
   private boundScene: Scene|null = null;
   private cameraStamp = '';
+  private environmentStamp = '';
+  private readonly standIn = new MeshBasicMaterial({visible: false});
   private denoise = true;
   private denoiser: Denoiser|null = null;
   presented = false;
@@ -207,6 +216,52 @@ export class WebGPUBeautyTrace {
     this.samples = 0;
   }
 
+  /**
+   * The WebGPU tracer writes every material in the scene graph, hidden ones
+   * included, and reads .color from each. Shader-only helpers such as the
+   * soft shadow's blur plane have none, so they get a stand-in while the
+   * scene is bound.
+   */
+  private withTraceableMaterials<T>(scene: Scene, fn: () => T): T {
+    const swapped: Array<[Mesh, Mesh['material']]> = [];
+    scene.traverse((object) => {
+      const mesh = object as Mesh;
+      const material = mesh.material;
+      if (material == null) {
+        return;
+      }
+      const list = Array.isArray(material) ? material : [material];
+      if (list.some((entry) => entry != null && (entry as MeshBasicMaterial).color == null)) {
+        swapped.push([mesh, material]);
+        mesh.material = this.standIn;
+      }
+    });
+    try {
+      return fn();
+    } finally {
+      for (const [mesh, material] of swapped) {
+        mesh.material = material;
+      }
+    }
+  }
+
+  private environmentKey(scene: Scene) {
+    const rotation = scene.environmentRotation;
+    const quantize = (value: number) => Math.round(value * 1e4) / 1e4;
+    return `${scene.environment?.uuid ?? ''},${quantize(scene.environmentIntensity)},${quantize(rotation.x)},${quantize(rotation.y)},${quantize(rotation.z)}`;
+  }
+
+  /** Environment intensity or rotation changed: same BVH, new lighting. */
+  private rememberEnvironment(scene: Scene) {
+    const stamp = this.environmentKey(scene);
+    if (stamp === this.environmentStamp || this.tracer == null || this.denoiseBusy()) {
+      return;
+    }
+    this.environmentStamp = stamp;
+    this.tracer.updateEnvironment();
+    this.samples = 0;
+  }
+
   /** One frame of the viewer path. -1 while the GPU device is still opening. */
   sample(
       scene: Scene, camera: Camera, gl: WebGLRenderer, bounces: number,
@@ -221,6 +276,7 @@ export class WebGPUBeautyTrace {
       return -1;
     }
     this.renderer?.setSize(width, height, false);
+    this.matchOutput(gl);
     const nextBounces = Math.max(1, bounces);
     const nextSamples = Math.max(1, samples);
     if (this.tracer.maxBounces !== nextBounces) {
@@ -232,14 +288,16 @@ export class WebGPUBeautyTrace {
     this.tracer.renderScale = Math.min(1, Math.max(0.1, renderScale));
     if (this.boundScene !== scene) {
       if (!this.denoiseBusy()) {
-        this.tracer.setScene(scene, camera);
+        this.withTraceableMaterials(scene, () => this.tracer!.setScene(scene, camera));
         this.boundScene = scene;
         this.cameraStamp = this.cameraKey(camera);
+        this.environmentStamp = this.environmentKey(scene);
         this.presented = false;
         this.samples = 0;
       }
     } else {
       this.rememberCamera(camera);
+      this.rememberEnvironment(scene);
     }
     const started = performance.now();
     this.tracer.renderSample();
@@ -251,13 +309,28 @@ export class WebGPUBeautyTrace {
     return performance.now() - started;
   }
 
+  /**
+   * The canvas is the final picture: the WebGPU present applies the WebGL
+   * view's tone mapping and exposure and encodes sRGB, so the composite must
+   * read it as sRGB and not tone map it again.
+   */
+  private matchOutput(gl: WebGLRenderer) {
+    const renderer = this.renderer;
+    if (renderer == null) {
+      return;
+    }
+    renderer.toneMapping = gl.toneMapping;
+    renderer.toneMappingExposure = gl.toneMappingExposure;
+    renderer.outputColorSpace = SRGBColorSpace;
+  }
+
   outputTexture(): CanvasTexture|null {
     if (!this.presented) {
       return null;
     }
     if (this.texture == null) {
       this.texture = new CanvasTexture(this.canvas);
-      this.texture.colorSpace = LinearSRGBColorSpace;
+      this.texture.colorSpace = SRGBColorSpace;
     }
     this.texture.needsUpdate = true;
     return this.texture;
@@ -268,6 +341,7 @@ export class WebGPUBeautyTrace {
     this.presented = false;
     this.samples = 0;
     this.boundScene = null;
+    this.environmentStamp = '';
   }
 
   dispose() {
@@ -275,6 +349,7 @@ export class WebGPUBeautyTrace {
     this.tracer?.dispose();
     this.renderer?.dispose();
     this.texture?.dispose();
+    this.standIn.dispose();
     this.tracer = null;
     this.renderer = null;
     this.texture = null;

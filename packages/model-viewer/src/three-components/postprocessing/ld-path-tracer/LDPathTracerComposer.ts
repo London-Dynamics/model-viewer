@@ -150,6 +150,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       cloneProgressiveSettings(DEFAULT_PROGRESSIVE_SETTINGS);
   private pipeline: ProgressivePipeline|null = null;
   private traceBlit: FullScreenQuad|null = null;
+  private lookStamp = '';
   private readonly beautyTrace = new WebGPUBeautyTrace();
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
@@ -235,6 +236,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.applyOutputState(false);
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.scene.getCamera());
+    this.followLook(false);
     this.sampleBeauty();
     this.compositeBeauty(1);
     if (this.shouldRenderAmbientOcclusionPreview()) {
@@ -442,11 +444,43 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.applyOutputState(review);
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.scene.getCamera());
+    this.followLook(review);
     this.compositeProgressiveTrace();
     this.pipeline?.noteFrame(performance.now() - started);
     if (this.pipeline?.keepRendering()) {
       this.queueNextProgressiveRender();
     }
+  }
+
+  /**
+   * Exposure, tone mapping, environment intensity or rotation changed. A
+   * settled trace is no longer sampled, so present it once more: the WebGPU
+   * present picks up the new tone mapping and exposure, and an environment
+   * change restarts accumulation on the same BVH.
+   */
+  private followLook(review: boolean) {
+    if (review || this.renderer == null || this.scene == null) {
+      return;
+    }
+    const rotation = this.scene.environmentRotation;
+    const stamp = [
+      this.renderer.toneMapping,
+      this.renderer.toneMappingExposure,
+      this.scene.environmentIntensity,
+      rotation.x,
+      rotation.y,
+      rotation.z,
+    ].join(',');
+    if (stamp === this.lookStamp) {
+      return;
+    }
+    const first = this.lookStamp === '';
+    this.lookStamp = stamp;
+    if (first || !this.beautyTrace.presented) {
+      return;
+    }
+    this.sampleBeauty();
+    this.queueNextProgressiveRender();
   }
 
   private applyOutputState(review: boolean) {
@@ -535,7 +569,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const blit = this.ensureTraceBlit();
     const material = blit.material as MeshBasicMaterial;
     material.map = gpu;
-    material.toneMapped = true;
+    // Already tone mapped and sRGB encoded by the WebGPU present.
+    material.toneMapped = false;
     material.opacity = fade;
     material.transparent = fade < 0.999;
     material.blending = fade < 0.999 ? NormalBlending : NoBlending;
@@ -551,6 +586,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private ensureTraceBlit(): FullScreenQuad {
     if (this.traceBlit == null) {
       this.traceBlit = new FullScreenQuad(new MeshBasicMaterial({
+        toneMapped: false,
         transparent: true,
         depthTest: false,
         depthWrite: false,
