@@ -45,8 +45,15 @@ import {
   Vector3,
   BufferAttribute,
   BufferGeometry,
+  Box3,
+  MeshBasicMaterial,
+  NeutralToneMapping,
+  NoBlending,
+  NormalBlending,
   WebGLRenderer,
 } from 'three';
+import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
+import {WebGPUBeautyTrace} from '/packages/model-viewer/lib/three-components/postprocessing/ld-path-tracer/progressive/webgpu-beauty-trace.js';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
 import {HDRLoader} from 'three/addons/loaders/HDRLoader.js';
@@ -89,6 +96,8 @@ async function applyLightmap(url, meshes) {
   if (header.meshes.length !== meshes.length) {
     throw new Error('lightmap mesh count ' + header.meshes.length);
   }
+  let colorMeshes = 0;
+  let colorMissed = 0;
   for (let n = 0; n < meshes.length; n++) {
     const spec = header.meshes[n];
     const geometry = new BufferGeometry();
@@ -97,8 +106,36 @@ async function applyLightmap(url, meshes) {
     geometry.setAttribute('uv', new BufferAttribute(take(spec.vertexCount * 2, Float32Array), 2));
     geometry.setAttribute('uv1', new BufferAttribute(take(spec.vertexCount * 2, Float32Array), 2));
     geometry.setIndex(new BufferAttribute(take(spec.indexCount, Uint32Array), 1));
+    // The unwrap keeps position, normal and uvs only. Carry COLOR_0 across by
+    // position, or WebGL reads the missing attribute as black.
+    const oldColor = meshes[n].geometry.getAttribute('color');
+    if (oldColor) {
+      const oldPos = meshes[n].geometry.getAttribute('position');
+      const key = (x, y, z) => `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+      const lookup = new Map();
+      for (let i = 0; i < oldPos.count; i++) {
+        lookup.set(key(oldPos.getX(i), oldPos.getY(i), oldPos.getZ(i)), i);
+      }
+      const pos = geometry.getAttribute('position');
+      const size = oldColor.itemSize;
+      const colors = new Float32Array(pos.count * size).fill(1);
+      let missed = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const at = lookup.get(key(pos.getX(i), pos.getY(i), pos.getZ(i)));
+        if (at == null) {
+          missed++;
+          continue;
+        }
+        for (let c = 0; c < size; c++) colors[i * size + c] = oldColor.getComponent(at, c);
+      }
+      geometry.setAttribute('color', new BufferAttribute(colors, size));
+      colorMeshes++;
+      colorMissed += missed;
+    }
     meshes[n].geometry = geometry;
   }
+  console.info('VERTEX_COLORS', colorMeshes, 'missed', colorMissed);
+  window.__lightmap = header;
   console.info('LIGHTMAP', JSON.stringify({
     unwrapMs: header.unwrapMs,
     texelsPerCm: header.texelsPerCm,
@@ -256,6 +293,19 @@ try {
   console.info('STAGE_STAMP', packed.count);
   const bake = new AtlasBake();
   if (params.get('up') === '1') bake.useConstantUpRay();
+  if (params.get('normals')) bake.normalMode = params.get('normals');
+  if (params.get('normalize')) bake.normalize = params.get('normalize');
+  if (params.get('sides')) bake.sides = Number(params.get('sides'));
+  // Glass keeps its own material in the atlas trace, so light reaches the cabin.
+  let glass = 0;
+  for (const mesh of meshes) {
+    const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    if (list.some((m) => m && (m.transparent || (m.transmission || 0) > 0))) {
+      mesh.userData.noHit = true;
+      glass++;
+    }
+  }
+  console.info('GLASS_PASSTHROUGH', glass);
   bake.setSurface(packed.surface, packed.count, resolution);
   const traceStart = performance.now();
   bake.start(scene, 16, 4);
@@ -286,6 +336,23 @@ try {
     }
   }
   const cleanMs = Math.round(performance.now() - traceStart);
+  {
+    // Per-mesh mean factor at its uv1 vertices, biggest meshes first.
+    const rows = meshes.map((mesh, n) => {
+      const uv = mesh.geometry.getAttribute('uv2') || mesh.geometry.getAttribute('uv1');
+      let sum = 0;
+      let k = 0;
+      for (let i = 0; i < uv.count; i += Math.max(1, Math.floor(uv.count / 400))) {
+        const x = Math.min(resolution - 1, Math.floor(uv.getX(i) * resolution));
+        const y = Math.min(resolution - 1, Math.floor(uv.getY(i) * resolution));
+        const f = result.factor[y * resolution + x];
+        if (f >= 0) { sum += f; k++; }
+      }
+      const m = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      return [mesh.name, Math.round(areas[n] * 100) / 100, k ? Math.round(sum / k * 100) / 100 : -1, m && m.name, m && m.side, m && m.transparent];
+    }).sort((x, y) => y[1] - x[1]);
+    console.info('MESH_FACTOR', JSON.stringify(rows.slice(0, 40)));
+  }
   const r8 = packFactorR8(result.factor, resolution);
   console.info('ATLAS_DONE', JSON.stringify({
     cleanMs,
@@ -318,24 +385,41 @@ try {
   }
   const crackTex = bakeTexture(crackRgba, resolution, 1);
 
-  const camera = new PerspectiveCamera(30, viewW / viewH, 0.05, 50);
-  const target = new Vector3(0, 0.38, 0);
-  const phi = 75 * Math.PI / 180;
-  const radius = 2.4;
-  camera.position.set(0, target.y + radius * Math.cos(phi), radius * Math.sin(phi));
+  // cam=thetaDeg,phiDeg,radiusM like a model-viewer camera-orbit; target=x,y,z or the box centre.
+  const [thetaDeg, phiDeg, radius] = (params.get('cam') || '0,75,2.4').split(',').map(Number);
+  const box = new Box3().setFromObject(root);
+  const target = params.get('target') ?
+      new Vector3(...params.get('target').split(',').map(Number)) :
+      box.getCenter(new Vector3());
+  const theta = thetaDeg * Math.PI / 180;
+  const phi = phiDeg * Math.PI / 180;
+  const camera = new PerspectiveCamera(Number(params.get('fov') || 30), viewW / viewH, Math.max(0.01, radius / 100), radius * 20);
+  camera.position.set(
+      target.x + radius * Math.sin(phi) * Math.sin(theta),
+      target.y + radius * Math.cos(phi),
+      target.z + radius * Math.sin(phi) * Math.cos(theta));
   camera.lookAt(target);
+  console.info('CAMERA', JSON.stringify({target: target.toArray(), position: camera.position.toArray(), box: [box.min.toArray(), box.max.toArray()]}));
   const gl = new WebGLRenderer({antialias: true});
   gl.outputColorSpace = SRGBColorSpace;
-  gl.toneMapping = ACESFilmicToneMapping;
+  // Same tone mapping the scenes use in the viewer (tone-mapping="neutral").
+  gl.toneMapping = params.get('tone') === 'aces' ? ACESFilmicToneMapping : NeutralToneMapping;
   gl.setClearColor(0xd8d8d8, 1);
   gl.setSize(viewW, viewH, false);
   fitCameraAspect(camera, viewW, viewH);
 
   const saved = meshes.map((mesh) => mesh.material);
+  const savedAo = [];
+  for (const material of saved) {
+    for (const entry of (Array.isArray(material) ? material : [material])) {
+      if (entry) savedAo.push([entry, entry.aoMap, entry.aoMapIntensity]);
+    }
+  }
   const sheet = document.createElement('canvas');
   sheet.id = 'sheet';
-  sheet.width = viewW * 3;
-  sheet.height = viewH;
+  const headerH = 44;
+  sheet.width = viewW * 2;
+  sheet.height = headerH + viewH * 2;
   const sheetCtx = sheet.getContext('2d');
   sheetCtx.fillStyle = '#d8d8d8';
   sheetCtx.fillRect(0, 0, sheet.width, sheet.height);
@@ -343,7 +427,17 @@ try {
     gl.setSize(viewW, viewH, false);
     fitCameraAspect(camera, viewW, viewH);
     gl.render(scene, camera);
-    sheetCtx.drawImage(gl.domElement, index * viewW, 0, viewW, viewH);
+    sheetCtx.drawImage(gl.domElement, (index % 2) * viewW, headerH + Math.floor(index / 2) * viewH, viewW, viewH);
+  };
+  const label = (index, text) => {
+    const x = (index % 2) * viewW + 10;
+    const y = headerH + Math.floor(index / 2) * viewH + 10;
+    sheetCtx.font = '15px -apple-system, Helvetica, sans-serif';
+    const w = sheetCtx.measureText(text).width + 14;
+    sheetCtx.fillStyle = 'rgba(255,255,255,0.85)';
+    sheetCtx.fillRect(x, y, w, 24);
+    sheetCtx.fillStyle = '#111';
+    sheetCtx.fillText(text, x + 7, y + 17);
   };
   draw(0);
   const factorMat = new MeshStandardMaterial({color: 0xffffff, roughness: 1, metalness: 0});
@@ -421,6 +515,72 @@ try {
   crackMat.customProgramCacheKey = () => 'ld-bake-crack';
   paintSeam('seam-before', crackMat);
   paintSeam('seam-after', factorMat);
+
+  // Panel 4: full WebGPU beauty trace with the viewer's own defaults
+  // (WebGPUBeautyTrace, 16 samples, 15 bounces, scale 1, OIDN, FSR), no bake.
+  const fill = bake.frames.filled / bake.frames.pixels;
+  const bakeStages = {...bake.stages};
+  bake.dispose();
+  for (let n = 0; n < meshes.length; n++) meshes[n].material = saved[n];
+  for (const [entry, map, intensity] of savedAo) {
+    entry.aoMap = map;
+    entry.aoMapIntensity = intensity;
+    entry.needsUpdate = true;
+  }
+  gl.setSize(viewW, viewH, false);
+  fitCameraAspect(camera, viewW, viewH);
+  const traceSamples = Number(params.get('traceSamples') || 16);
+  const traceBounces = Number(params.get('traceBounces') || 15);
+  const trace = new WebGPUBeautyTrace();
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+  const t0 = performance.now();
+  const traceTimes = {bootMs: -1, samplesMs: -1, settledMs: -1, frames: 0};
+  while (!trace.settled()) {
+    trace.sample(scene, camera, gl, traceBounces, traceSamples, true, 1);
+    traceTimes.frames++;
+    const now = performance.now() - t0;
+    if (trace.active && traceTimes.bootMs < 0) traceTimes.bootMs = Math.round(now);
+    if (trace.samples >= traceSamples && traceTimes.samplesMs < 0) traceTimes.samplesMs = Math.round(now);
+    if (now > 300000) throw new Error('full trace did not settle in 300 s at ' + trace.samples + ' samples');
+    await nextFrame();
+  }
+  traceTimes.settledMs = Math.round(performance.now() - t0);
+  // One more present so the canvas holds the denoised frame.
+  trace.sample(scene, camera, gl, traceBounces, traceSamples, true, 1);
+  await nextFrame();
+  await nextFrame();
+  traceTimes.samples = trace.samples;
+  console.info('TRACE_DONE', JSON.stringify(traceTimes));
+  const traceTex = trace.outputTexture();
+  const quad = new FullScreenQuad(new MeshBasicMaterial({map: traceTex, toneMapped: true, transparent: true, depthTest: false, depthWrite: false, blending: NormalBlending}));
+  gl.setSize(viewW, viewH, false);
+  gl.setClearColor(0xd8d8d8, 1);
+  gl.autoClear = false;
+  gl.clear();
+  quad.render(gl);
+  gl.autoClear = true;
+  sheetCtx.drawImage(gl.domElement, viewW, headerH + viewH, viewW, viewH);
+  const raw = document.createElement('canvas');
+  raw.id = 'trace-raw';
+  raw.width = trace.canvas.width;
+  raw.height = trace.canvas.height;
+  raw.getContext('2d').drawImage(trace.canvas, 0, 0);
+  document.body.appendChild(raw);
+  trace.dispose();
+
+  const lm = window.__lightmap || {};
+  const sec = (ms) => (ms / 1000).toFixed(2) + ' s';
+  label(0, 'Real-time (no bake)');
+  label(1, 'Baked shadow / AO alone');
+  label(2, 'Real-time + bake');
+  label(3, `Full WebGPU path trace (${traceSamples} spp, ${traceBounces} bounces, OIDN)`);
+  sheetCtx.fillStyle = '#f4f4f4';
+  sheetCtx.fillRect(0, 0, sheet.width, headerH);
+  sheetCtx.fillStyle = '#111';
+  sheetCtx.font = 'bold 15px -apple-system, Helvetica, sans-serif';
+  sheetCtx.fillText(params.get('title') || 'bake', 10, 18);
+  sheetCtx.font = '13px -apple-system, Helvetica, sans-serif';
+  sheetCtx.fillText(`bake ${sec(cleanMs)} (BVH ${sec(bakeStages.bvh)}, ${result.samples} spp ${sec(bakeStages.samples)}, OIDN ${sec(bakeStages.denoise)}, readback ${sec(bakeStages.readback)}) · unwrap ${sec(lm.unwrapMs || 0)} ahead of time · ${(lm.texelsPerCm || 0).toFixed(2)} texels/cm · atlas ${resolution}² texel fill ${(fill * 100).toFixed(1)}% · full trace ${sec(traceTimes.settledMs)} (boot+BVH ${sec(traceTimes.bootMs)})`, 10, 36);
   window.__status = {
     done: true,
     cleanMs,
@@ -430,6 +590,10 @@ try {
     frames: bake.frames,
     uv1InFile: fileUv1,
     aspect: camera.aspect,
+    stages: bakeStages,
+    fill,
+    trace: traceTimes,
+    lightmap: {unwrapMs: lm.unwrapMs, texelsPerCm: lm.texelsPerCm, coverage: lm.coverage, attempts: lm.attempts, areaM2: lm.areaM2},
   };
   console.info('PANELS_READY', JSON.stringify(window.__status));
 } catch (error) {

@@ -1,59 +1,109 @@
-import {mkdir, writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
 import {cacheDir, launchBrowser, outDir, startServer} from './harness.mjs';
 import {unwrapLightmap} from './unwrap-lightmap.mjs';
 
-const shots = join(
-    outDir, 'sheets', 'compare', 'gpu-debug', 'upgrade');
+/**
+ * Four-panel WebGPU sheet per model: real-time, bake alone, real-time plus
+ * bake, and the full WebGPU path trace from the same camera.
+ * MODEL=montana|aquila|triton. Run headed (HEADLESS=0): headless Chrome
+ * hangs WebGPU and OIDN on macOS.
+ */
+const MODELS = {
+  montana: {
+    title: 'Montana 001112 (2027)',
+    cam: '0,75,2.4',
+    target: '0,0.38,0',
+    fov: 30,
+  },
+  aquila: {
+    title: 'Aquila 45 Sport',
+    // scenes.json hero: 0.650rad 1.247rad 14.73m, field-of-view 45deg.
+    cam: '37.26,71.43,14.73',
+    target: '0,0.8,0',
+    fov: 45,
+  },
+  triton: {
+    title: 'Mitsubishi AU Triton v3',
+    // scenes.json hero: -2.182rad 1.532rad 10.98m, field-of-view 30deg.
+    cam: '-125.02,87.78,10.98',
+    target: '0.09,0.97,0',
+    fov: 30,
+  },
+};
+
+const shots = join(outDir, 'sheets', 'webgpu-four');
 
 const run = async () => {
   await mkdir(shots, {recursive: true});
+  const plane = process.env.PLANE === '1';
+  const tag = plane ? 'plane' : (process.env.MODEL || 'montana');
+  const spec = MODELS[tag] || MODELS.montana;
+  const resolution = plane ? 256 : Number(process.env.RESOLUTION || 2048);
+  const lightmapName = process.env.LIGHTMAP || `${tag}-lightmap-v2.bin`;
+  let unwrap = null;
+  const lightmapPath = join(cacheDir, lightmapName);
+  if (!plane && process.env.SKIP_UNWRAP === '1' && existsSync(lightmapPath)) {
+    // Reuse the ahead-of-time unwrap. Header only, for the timings.
+    const file = await readFile(lightmapPath);
+    const length = file.readUInt32LE(4);
+    unwrap = JSON.parse(file.subarray(8, 8 + length).toString('utf8').replace(/\0+$/, ''));
+    unwrap.reused = true;
+  } else if (!plane) {
+    unwrap = await unwrapLightmap(join(cacheDir, `${tag}.glb`), join(cacheDir, lightmapName), resolution);
+  }
   const server = await startServer();
   const browser = await launchBrowser();
   const page = await browser.newPage();
-  await page.setViewport({width: 1280, height: 900, deviceScaleFactor: 1});
+  await page.setViewport({width: 1400, height: 1100, deviceScaleFactor: 1});
   page.on('console', (message) => {
     console.log('PAGE', message.type(), message.text());
   });
   page.on('pageerror', (error) => {
     console.log('PAGEERROR', error && error.stack || error);
   });
-  const plane = process.env.PLANE === '1';
-  const up = process.env.UP === '1';
-  const resolution = plane ? 256 : 2048;
-  const lightmapFile = join(cacheDir, 'montana-lightmap.bin');
-  if (!plane) {
-    await unwrapLightmap(join(cacheDir, 'montana.glb'), lightmapFile, resolution);
-  }
-  const url = `http://127.0.0.1:${server.port}/packages/model-viewer/scripts/progressive-bake/webgpu-atlas.html?model=/bake-cache/montana.glb&env=/bake-cache/montana.hdr&resolution=${resolution}${plane ? '&plane=1' : ''}${up ? '&up=1' : ''}${plane ? '' : '&lightmap=/bake-cache/montana-lightmap.bin'}`;
+  const query = new URLSearchParams({
+    model: `/bake-cache/${tag}.glb`,
+    env: `/bake-cache/${tag}.hdr`,
+    resolution: String(resolution),
+    cam: spec.cam,
+    target: spec.target,
+    fov: String(spec.fov),
+    title: spec.title,
+  });
+  if (plane) query.set('plane', '1');
+  else query.set('lightmap', `/bake-cache/${lightmapName}`);
+  if (process.env.UP === '1') query.set('up', '1');
+  if (process.env.SIDES) query.set('sides', process.env.SIDES);
+  if (process.env.NORMALIZE) query.set('normalize', process.env.NORMALIZE);
+  if (process.env.NORMALS) query.set('normals', process.env.NORMALS);
+  if (process.env.TRACE_SAMPLES) query.set('traceSamples', process.env.TRACE_SAMPLES);
+  const url = `http://127.0.0.1:${server.port}/packages/model-viewer/scripts/progressive-bake/webgpu-atlas.html?${query}`;
   try {
     await page.goto(url, {waitUntil: 'domcontentloaded', timeout: 120000});
     await page.waitForFunction(
-        () => window.__status && window.__status.done, {timeout: 720000});
+        () => window.__status && window.__status.done, {timeout: 900000, polling: 500});
     const status = await page.evaluate(() => window.__status);
+    if (unwrap) delete unwrap.meshes;
+    status.unwrap = unwrap;
     console.log('STATUS', JSON.stringify(status));
     if (status.error) {
       throw new Error(status.error);
     }
-    const atlas = await page.$('#atlas');
-    const sheet = await page.$('#sheet');
-    const tag = plane ? 'plane' : 'montana';
-    if (atlas) {
-      await atlas.screenshot({path: join(shots, `${tag}-webgpu-atlas-layout.jpg`), type: 'jpeg', quality: 85});
-    }
-    if (sheet) {
-      await sheet.screenshot({path: join(shots, `${tag}-webgpu-atlas.jpg`), type: 'jpeg', quality: 85});
-      const before = await page.$('#crop-before');
-      const after = await page.$('#crop-after');
-      if (before) await before.screenshot({path: join(shots, `${tag}-denoise-before.jpg`), type: 'jpeg', quality: 90});
-      if (after) await after.screenshot({path: join(shots, `${tag}-denoise-after.jpg`), type: 'jpeg', quality: 90});
-      const seamBefore = await page.$('#seam-before');
-      const seamAfter = await page.$('#seam-after');
-      if (seamBefore) await seamBefore.screenshot({path: join(shots, `${tag}-seam-before.jpg`), type: 'jpeg', quality: 90});
-      if (seamAfter) await seamAfter.screenshot({path: join(shots, `${tag}-seam-after.jpg`), type: 'jpeg', quality: 90});
-    }
-    await writeFile(join(shots, 'timings.json'), JSON.stringify(status, null, 2));
+    const grab = async (id, name, quality = 88) => {
+      const element = await page.$(id);
+      if (element) {
+        await element.screenshot({path: join(shots, name), type: 'jpeg', quality});
+      }
+    };
+    const suffix = process.env.SUFFIX ? `-${process.env.SUFFIX}` : '';
+    await grab('#sheet', `${tag}-four-panel${suffix}.jpg`);
+    await grab('#atlas', `${tag}-atlas-layout.jpg`, 80);
+    await grab('#trace-raw', `${tag}-trace-raw.jpg`);
+    await grab('#seam-after', `${tag}-seam-after.jpg`);
+    await writeFile(join(shots, `${tag}-timings.json`), JSON.stringify(status, null, 2));
   } finally {
     await browser.close();
     await server.close();

@@ -13,6 +13,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   Group,
+  Matrix3,
   Matrix4,
   Mesh,
   Quaternion,
@@ -43,9 +44,16 @@ const meshesOf = (root) => {
   return meshes;
 };
 
-const chunksOf = (geometry) => {
+/**
+ * Chunks carry world-space positions and normals so xatlas sizes charts by
+ * real metres, even under node scale. The caller maps them back to local.
+ */
+const chunksOf = (geometry, world) => {
   const position = geometry.getAttribute('position');
   const normal = geometry.getAttribute('normal');
+  const normalMatrix = new Matrix3().getNormalMatrix(world);
+  const p = new Vector3();
+  const nv = new Vector3();
   const uv = geometry.getAttribute('uv');
   const index = geometry.getIndex();
   const triCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
@@ -79,9 +87,11 @@ const chunksOf = (geometry) => {
       if (local == null) {
         local = positions.length / 3;
         map.set(id, local);
-        positions.push(position.getX(id), position.getY(id), position.getZ(id));
+        p.fromBufferAttribute(position, id).applyMatrix4(world);
+        positions.push(p.x, p.y, p.z);
         if (normal) {
-          normals.push(normal.getX(id), normal.getY(id), normal.getZ(id));
+          nv.fromBufferAttribute(normal, id).applyMatrix3(normalMatrix).normalize();
+          normals.push(nv.x, nv.y, nv.z);
         } else {
           normals.push(0, 1, 0);
         }
@@ -158,6 +168,61 @@ const decodePrimitive = (draco, decoder, bytes, attributes) => {
   return decoded;
 };
 
+const COMPONENTS = {SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4};
+const ARRAYS = {
+  5120: Int8Array,
+  5121: Uint8Array,
+  5122: Int16Array,
+  5123: Uint16Array,
+  5125: Uint32Array,
+  5126: Float32Array,
+};
+const NORMALIZE = {5120: 127, 5121: 255, 5122: 32767, 5123: 65535};
+
+/** Plain (non-Draco) accessor, de-interleaved to Float32 or Uint32. */
+const readAccessor = (json, bin, id, asIndex = false) => {
+  const accessor = json.accessors[id];
+  const view = json.bufferViews[accessor.bufferView];
+  const Type = ARRAYS[accessor.componentType];
+  const size = COMPONENTS[accessor.type];
+  const elementBytes = Type.BYTES_PER_ELEMENT * size;
+  const stride = view.byteStride || elementBytes;
+  const base = bin.byteOffset + (view.byteOffset || 0) + (accessor.byteOffset || 0);
+  const out = asIndex ? new Uint32Array(accessor.count * size) : new Float32Array(accessor.count * size);
+  const data = new DataView(bin.buffer);
+  const scale = !asIndex && accessor.normalized ? NORMALIZE[accessor.componentType] : 1;
+  const readers = {
+    5120: (o) => data.getInt8(o),
+    5121: (o) => data.getUint8(o),
+    5122: (o) => data.getInt16(o, true),
+    5123: (o) => data.getUint16(o, true),
+    5125: (o) => data.getUint32(o, true),
+    5126: (o) => data.getFloat32(o, true),
+  };
+  const read = readers[accessor.componentType];
+  for (let i = 0; i < accessor.count; i++) {
+    for (let c = 0; c < size; c++) {
+      const value = read(base + i * stride + c * Type.BYTES_PER_ELEMENT);
+      out[i * size + c] = scale !== 1 ? Math.max(value / scale, -1) : value;
+    }
+  }
+  return out;
+};
+
+const plainPrimitive = (json, bin, primitive) => {
+  const attributes = primitive.attributes;
+  const positions = readAccessor(json, bin, attributes.POSITION);
+  const indices = primitive.indices != null ?
+      readAccessor(json, bin, primitive.indices, true) :
+      Uint32Array.from({length: positions.length / 3}, (_, i) => i);
+  return {
+    indices,
+    positions,
+    normals: attributes.NORMAL != null ? readAccessor(json, bin, attributes.NORMAL) : null,
+    uvs: attributes.TEXCOORD_0 != null ? readAccessor(json, bin, attributes.TEXCOORD_0) : null,
+  };
+};
+
 const loadMeshes = async (glbPath) => {
   const file = await readFile(glbPath);
   const {json, bin} = parseGlb(file);
@@ -186,12 +251,14 @@ const loadMeshes = async (glbPath) => {
       const mesh = json.meshes[node.mesh];
       mesh.primitives.forEach((primitive, n) => {
         const dracoExt = primitive.extensions && primitive.extensions.KHR_draco_mesh_compression;
+        let decoded;
         if (dracoExt == null) {
-          throw new Error('primitive is not Draco compressed');
+          decoded = plainPrimitive(json, bin, primitive);
+        } else {
+          const view = json.bufferViews[dracoExt.bufferView];
+          const bytes = bin.subarray(view.byteOffset || 0, (view.byteOffset || 0) + view.byteLength);
+          decoded = decodePrimitive(draco, decoder, bytes, dracoExt.attributes);
         }
-        const view = json.bufferViews[dracoExt.bufferView];
-        const bytes = bin.subarray(view.byteOffset || 0, (view.byteOffset || 0) + view.byteLength);
-        const decoded = decodePrimitive(draco, decoder, bytes, dracoExt.attributes);
         const geometry = new BufferGeometry();
         geometry.setAttribute('position', new BufferAttribute(decoded.positions, 3));
         if (decoded.normals) {
@@ -222,7 +289,27 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
   const size = box.getSize(new Vector3());
   const maxSide = Math.max(size.x, size.y, size.z);
   const perCm = texelsPerCm(maxSide);
-  const texelsPerUnit = perCm * 100;
+  // World surface area decides whether the class floor fits one atlas.
+  let area = 0;
+  const a = new Vector3();
+  const b = new Vector3();
+  const c = new Vector3();
+  for (const mesh of meshes) {
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const triCount = index ? index.count / 3 : position.count / 3;
+    for (let tri = 0; tri < triCount; tri++) {
+      const i0 = index ? index.getX(tri * 3) : tri * 3;
+      const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+      const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+      a.fromBufferAttribute(position, i0).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, i1).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, i2).applyMatrix4(mesh.matrixWorld);
+      area += b.sub(a).cross(c.sub(a)).length() * 0.5;
+    }
+  }
+  const fitUnit = Math.sqrt(0.75 * resolution * resolution / Math.max(area, 1e-6));
+  let texelsPerUnit = Math.min(perCm * 100, fitUnit);
 
   const wasmUrl = pathToFileURL(join(here, 'vendor/xatlas/xatlas.wasm')).href;
   const Xatlas = Api(createXAtlasModule);
@@ -236,40 +323,61 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
       },
   );
   await waitLoaded(atlas);
-  atlas.createAtlas();
-  const meshChunks = [];
-  for (const mesh of meshes) {
-    const chunks = chunksOf(mesh.geometry);
-    meshChunks.push(chunks.length);
-    for (const chunk of chunks) {
-      const added = atlas.addMesh(
-          chunk.indices,
-          chunk.positions,
-          chunk.normals,
-          chunk.uvs,
-          mesh.name,
-          true,
-          false,
-      );
-      if (added == null) {
-        throw new Error(`xatlas rejected ${mesh.name}`);
+  const allChunks = meshes.map((mesh) => chunksOf(mesh.geometry, mesh.matrixWorld));
+  const meshChunks = allChunks.map((chunks) => chunks.length);
+  let result = null;
+  let unwrapMs = 0;
+  let attempts = 0;
+  // Many tiny charts make padding, not density, the limit, so a failed
+  // attempt first thins the padding and merges charts, then drops density.
+  let padding = 4;
+  let maxCost = 2;
+  const started = performance.now();
+  for (;;) {
+    attempts++;
+    atlas.createAtlas();
+    for (let m = 0; m < meshes.length; m++) {
+      for (const chunk of allChunks[m]) {
+        const added = atlas.addMesh(
+            chunk.indices,
+            chunk.positions,
+            chunk.normals,
+            chunk.uvs,
+            meshes[m].name,
+            true,
+            false,
+        );
+        if (added == null) {
+          throw new Error(`xatlas rejected ${meshes[m].name}`);
+        }
       }
     }
+    result = atlas.generateAtlas({
+      useInputMeshUvs: false,
+      maxIterations: 1,
+      maxCost,
+    }, {
+      resolution,
+      padding,
+      texelsPerUnit,
+      bilinear: true,
+      rotateCharts: true,
+      rotateChartsToAxis: true,
+    }, true);
+    atlas.destroyAtlas();
+    console.log('XATLAS_ATTEMPT', JSON.stringify({attempts, texelsPerUnit, padding, maxCost, atlasCount: result.atlasCount, area, ms: Math.round(performance.now() - started)}));
+    if (result.atlasCount <= 1 || attempts >= 8) break;
+    if (padding > 2) {
+      padding = 2;
+    } else if (maxCost < 16) {
+      maxCost *= 2;
+    }
+    texelsPerUnit *= result.atlasCount > 2 ? 0.7 : 0.85;
   }
-  const started = performance.now();
-  const result = atlas.generateAtlas({
-    useInputMeshUvs: false,
-    maxIterations: 1,
-  }, {
-    resolution,
-    padding: 4,
-    texelsPerUnit,
-    bilinear: true,
-    rotateCharts: true,
-    rotateChartsToAxis: true,
-  }, true);
-  const unwrapMs = Math.round(performance.now() - started);
-  atlas.destroyAtlas();
+  unwrapMs = Math.round(performance.now() - started);
+  if (result.atlasCount > 1) {
+    throw new Error(`xatlas still needs ${result.atlasCount} atlases at ${texelsPerUnit} texels/m`);
+  }
 
   const parts = [];
   let cursor = 0;
@@ -290,7 +398,22 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
     const indices = new Uint32Array(indexCount);
     let vBase = 0;
     let iBase = 0;
+    const toLocal = meshes[m].matrixWorld.clone().invert();
+    const normalBack = new Matrix3().setFromMatrix4(meshes[m].matrixWorld).transpose();
+    const lp = new Vector3();
     for (const piece of group) {
+      const wv = piece.vertex.vertices;
+      for (let i = 0; i < wv.length; i += 3) {
+        lp.set(wv[i], wv[i + 1], wv[i + 2]).applyMatrix4(toLocal);
+        wv[i] = lp.x; wv[i + 1] = lp.y; wv[i + 2] = lp.z;
+      }
+      const wn = piece.vertex.normals;
+      if (wn) {
+        for (let i = 0; i < wn.length; i += 3) {
+          lp.set(wn[i], wn[i + 1], wn[i + 2]).applyMatrix3(normalBack).normalize();
+          wn[i] = lp.x; wn[i + 1] = lp.y; wn[i + 2] = lp.z;
+        }
+      }
       if (piece.vertexCount > 65535) {
         throw new Error(`${meshes[m].name} chart chunk has ${piece.vertexCount} vertices`);
       }
@@ -329,8 +452,13 @@ export async function unwrapLightmap(glbPath, outPath, resolution = 2048) {
   const header = {
     resolution,
     unwrapMs,
-    texelsPerCm: perCm,
+    texelsPerCm: texelsPerUnit / 100,
+    classTexelsPerCm: perCm,
+    padding,
+    maxCost,
     texelsPerUnit,
+    areaM2: area,
+    attempts,
     maxSide,
     atlasWidth: result.width,
     atlasHeight: result.height,
