@@ -21,6 +21,7 @@ import ModelViewerElementBase from '../model-viewer-base.js';
 import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveOptionsPatch, ProgressiveSettings, resolveProgressiveSettings,} from '../three-components/postprocessing/ld-path-tracer/progressive/options.js';
 import {ProgressiveReadout} from '../three-components/postprocessing/ld-path-tracer/progressive/ProgressivePipeline.js';
+import {parseTraceMode, parseTraceView, TraceMode, TraceView} from '../three-components/postprocessing/ld-path-tracer/progressive/trace-composite.js';
 import {Constructor} from '../utilities.js';
 
 import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
@@ -46,7 +47,14 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseSigma: number;
   pathTracerDenoiseThreshold: number;
   pathTracerDenoiseKSigma: number;
+  pathTracerMode: TraceMode;
+  pathTracerView: TraceView;
+  pathTracerExclude: string;
+  pathTracerExcludedCastShadow: boolean;
+  pathTracerGroundShadow: number;
   readonly pathTracerRenderedSamples: number;
+  readonly isPathTracerSettled: boolean;
+  getPathTracerExcludedMeshes(): string[];
   readonly isPathTracerReady: boolean;
   readonly isContactShadowReady: boolean;
   readonly isTextureAoReady: boolean;
@@ -123,6 +131,35 @@ export const LDPathTracerMixin = <
     @property({type: Number, attribute: 'path-tracer-denoise-k-sigma'})
     pathTracerDenoiseKSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseKSigma;
 
+    /**
+     * full: the trace is the picture. shadows: a white-diffuse trace darkens
+     * the real-time render and a ground catcher. lighting: a diffuse-proxy
+     * trace replaces the real-time diffuse lighting.
+     */
+    @property({type: String, attribute: 'path-tracer-mode'})
+    pathTracerMode: TraceMode = DEFAULT_PATH_TRACER_OPTIONS.traceMode;
+
+    /** composite, trace (the raw traced pass) or realtime. */
+    @property({type: String, attribute: 'path-tracer-view'})
+    pathTracerView: TraceView = DEFAULT_PATH_TRACER_OPTIONS.traceView;
+
+    /**
+     * Comma separated: `semi-transparent`, and mesh or material names with
+     * `*` wildcards (`mesh:` / `material:` prefixes narrow a token). Excluded
+     * meshes render real-time on top of the result.
+     */
+    @property({type: String, attribute: 'path-tracer-exclude'})
+    pathTracerExclude = DEFAULT_PATH_TRACER_OPTIONS.traceExclude;
+
+    /** Excluded meshes still block light in the trace. */
+    @property({type: Boolean, attribute: 'path-tracer-excluded-cast-shadow'})
+    pathTracerExcludedCastShadow =
+        DEFAULT_PATH_TRACER_OPTIONS.traceExcludedCastShadow;
+
+    /** Traced ground shadow strength in shadows and lighting modes. */
+    @property({type: Number, attribute: 'path-tracer-ground-shadow'})
+    pathTracerGroundShadow = DEFAULT_PATH_TRACER_OPTIONS.traceGroundShadow;
+
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
     private pathTracerBuildOptions: PathTracerBuildOptions = {
       ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
@@ -136,6 +173,14 @@ export const LDPathTracerMixin = <
       }
 
       return 0;
+    }
+
+    get isPathTracerSettled() {
+      return this.getPathTracerComposer()?.isTraceSettled() === true;
+    }
+
+    getPathTracerExcludedMeshes(): string[] {
+      return this.getPathTracerComposer()?.getExcludedMeshNames() ?? [];
     }
 
     get isPathTracerReady() {
@@ -229,6 +274,11 @@ export const LDPathTracerMixin = <
         'pathTracerDenoiseSigma',
         'pathTracerDenoiseThreshold',
         'pathTracerDenoiseKSigma',
+        'pathTracerMode',
+        'pathTracerView',
+        'pathTracerExclude',
+        'pathTracerExcludedCastShadow',
+        'pathTracerGroundShadow',
         'ambientOcclusion',
         'aoAlgorithm',
         'aoRadius',
@@ -326,6 +376,13 @@ export const LDPathTracerMixin = <
         denoiseSigma: this.pathTracerDenoiseSigma,
         denoiseThreshold: this.pathTracerDenoiseThreshold,
         denoiseKSigma: this.pathTracerDenoiseKSigma,
+        traceMode: parseTraceMode(this.pathTracerMode),
+        traceView: parseTraceView(this.pathTracerView),
+        traceExclude: this.pathTracerExclude ?? '',
+        traceExcludedCastShadow: this.pathTracerExcludedCastShadow === true,
+        traceGroundShadow: Number.isFinite(this.pathTracerGroundShadow) ?
+            Math.max(0, this.pathTracerGroundShadow) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceGroundShadow,
         ambientOcclusionPreviewOptions:
             this.getAmbientOcclusionPreviewOptions(),
       };

@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer} from 'three';
+import {Camera, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer} from 'three';
 import {PhysicalCamera} from 'three-gpu-pathtracer/src/objects/PhysicalCamera.js';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -24,6 +24,7 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
 import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
 import {fitCameraAspect} from './progressive/surface-bake.js';
+import {DEFAULT_TRACE_COMPOSITE_OPTIONS, TRACE_LINEAR_SCALE, TraceComposite, TraceCompositeOptions, TraceMode, TraceView} from './progressive/trace-composite.js';
 import {WebGPUBeautyTrace} from './progressive/webgpu-beauty-trace.js';
 
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -77,6 +78,9 @@ const PATH_TRACER_RESET_OPTION_KEYS = [
   'apertureBlades',
   'apertureRotation',
   'anamorphicRatio',
+  'traceMode',
+  'traceExclude',
+  'traceExcludedCastShadow',
 ] as const;
 
 export interface PathTracerOptions {
@@ -97,6 +101,15 @@ export interface PathTracerOptions {
   denoiseThreshold: number;
   denoiseKSigma: number;
   ambientOcclusionPreviewOptions: AmbientOcclusionOptions|null;
+  /** full beauty, traced shadows over real-time, or traced lighting. */
+  traceMode: TraceMode;
+  /** composite, the raw trace pass, or the real-time render. */
+  traceView: TraceView;
+  /** What stays out of the trace; see TraceCompositeOptions.exclude. */
+  traceExclude: string;
+  traceExcludedCastShadow: boolean;
+  /** Traced ground catcher strength in the composite modes. */
+  traceGroundShadow: number;
 }
 
 export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
@@ -117,6 +130,11 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   denoiseThreshold: 0.1,
   denoiseKSigma: 1,
   ambientOcclusionPreviewOptions: null,
+  traceMode: DEFAULT_TRACE_COMPOSITE_OPTIONS.mode,
+  traceView: DEFAULT_TRACE_COMPOSITE_OPTIONS.view,
+  traceExclude: DEFAULT_TRACE_COMPOSITE_OPTIONS.exclude,
+  traceExcludedCastShadow: DEFAULT_TRACE_COMPOSITE_OPTIONS.excludedCastShadow,
+  traceGroundShadow: DEFAULT_TRACE_COMPOSITE_OPTIONS.groundShadow,
 };
 
 /**
@@ -153,6 +171,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private traceBlit: FullScreenQuad|null = null;
   private lookStamp = '';
   private readonly beautyTrace = new WebGPUBeautyTrace();
+  private readonly composite = new TraceComposite();
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -178,6 +197,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.invalidateReady();
       this.meshWorldMatrices.clear();
       this.beautyTrace.reset();
+      this.composite.invalidate();
     }
     this.syncAmbientOcclusionPreview();
     this.syncScene();
@@ -235,11 +255,19 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.applyOutputState(false);
+    const proxy = this.composite.sync(this.scene, this.compositeOptions());
+    if (proxy != null) {
+      this.renderComposite(proxy);
+      return;
+    }
+    this.beautyTrace.setLinearOutput(null);
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.scene.getCamera());
     this.followLook(false);
     this.sampleBeauty();
-    this.compositeBeauty(1);
+    if (this.options.traceView !== 'realtime') {
+      this.compositeBeauty(1);
+    }
     if (this.shouldRenderAmbientOcclusionPreview()) {
       this.ambientOcclusionPreviewComposer?.render(deltaTime);
     }
@@ -277,6 +305,64 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   getSamples() {
     return this.beautyTrace.samples;
+  }
+
+  /** Sample cap reached and the denoiser, when on, has finished. */
+  isTraceSettled(): boolean {
+    return this.beautyTrace.settled();
+  }
+
+  /** Names of the meshes the current exclusion setting keeps out of the trace. */
+  getExcludedMeshNames(): string[] {
+    return this.composite.excludedMeshes().map((mesh) => mesh.name);
+  }
+
+  private compositeOptions(): TraceCompositeOptions {
+    return {
+      mode: this.options.traceMode,
+      view: this.options.traceView,
+      exclude: this.options.traceExclude,
+      excludedCastShadow: this.options.traceExcludedCastShadow,
+      groundShadow: this.options.traceGroundShadow,
+    };
+  }
+
+  /**
+   * Shadows, lighting, or full with exclusions: trace the proxy scene in
+   * linear light and mix it with linear real-time passes. Tone mapping and
+   * exposure are applied once, in the composite, so real-time and trace
+   * share one look.
+   */
+  private renderComposite(proxy: Scene) {
+    const renderer = this.renderer!;
+    const scene = this.scene!;
+    this.beautyTrace.setLinearOutput(TRACE_LINEAR_SCALE);
+    if (!this.disposed &&
+        (this.beautyTrace.canStart() || this.beautyTrace.active)) {
+      try {
+        this.beautyTrace.sample(
+            proxy,
+            this.traceCamera(),
+            renderer,
+            this.options.bounces,
+            this.options.samples,
+            this.options.denoise,
+            this.options.renderScale);
+      } catch (error) {
+        console.warn('[model-viewer] WebGPU composite trace sample failed.', error);
+      }
+    }
+    const texture =
+        this.beautyTrace.samples >= this.options.samplesThreshold ?
+        this.beautyTrace.outputTexture() :
+        null;
+    this.composite.draw(
+        renderer, scene, scene.getCamera(), texture, this.compositeOptions());
+    if (this.beautyTrace.samples < this.options.samples &&
+        (this.beautyTrace.active || this.beautyTrace.canStart())) {
+      this.queueNextProgressiveRender();
+    }
+    this.maybeMarkReady();
   }
 
   get isReady() {
@@ -395,6 +481,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   markSceneDirty() {
+    this.composite.invalidate();
     this.invalidateReady();
     this.meshWorldMatrices.clear();
     this.beautyTrace.reset();
@@ -411,6 +498,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.traceBlit?.dispose();
     this.traceBlit = null;
     this.beautyTrace.dispose();
+    this.composite.dispose();
     this.disposeShadowCatcher();
     this.renderer = null;
     this.scene = null;
@@ -850,6 +938,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     if (changed) {
       this.beautyTrace.reset();
+      this.composite.invalidate();
       this.invalidateReady();
       this.rememberGeometryState();
     }

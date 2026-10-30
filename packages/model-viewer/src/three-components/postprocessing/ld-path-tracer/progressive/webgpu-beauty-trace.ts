@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {Camera, CanvasTexture, Mesh, MeshBasicMaterial, Scene, SRGBColorSpace, Vector2, WebGLRenderer} from 'three';
+import {Camera, CanvasTexture, LinearToneMapping, Mesh, MeshBasicMaterial, Scene, SRGBColorSpace, Vector2, WebGLRenderer} from 'three';
 
 import {fitCameraAspect} from './surface-bake.js';
 
@@ -77,8 +77,17 @@ export class WebGPUBeautyTrace {
   private readonly standIn = new MeshBasicMaterial({visible: false});
   private denoise = true;
   private denoiser: Denoiser|null = null;
+  private linearScale: number|null = null;
   presented = false;
   samples = 0;
+
+  /**
+   * Composite modes need linear light: present with linear tone mapping at
+   * this exposure instead of copying the WebGL look. null restores the look.
+   */
+  setLinearOutput(scale: number|null) {
+    this.linearScale = scale;
+  }
 
   /** True once the sample cap is reached and OIDN, when enabled, has finished. */
   settled(): boolean {
@@ -319,8 +328,13 @@ export class WebGPUBeautyTrace {
     if (renderer == null) {
       return;
     }
-    renderer.toneMapping = gl.toneMapping;
-    renderer.toneMappingExposure = gl.toneMappingExposure;
+    if (this.linearScale != null) {
+      renderer.toneMapping = LinearToneMapping;
+      renderer.toneMappingExposure = this.linearScale;
+    } else {
+      renderer.toneMapping = gl.toneMapping;
+      renderer.toneMappingExposure = gl.toneMappingExposure;
+    }
     renderer.outputColorSpace = SRGBColorSpace;
   }
 

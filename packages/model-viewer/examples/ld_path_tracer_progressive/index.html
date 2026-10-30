@@ -37,6 +37,44 @@
       <summary>Scene</summary>
       <div class="rows">
         <label><span>Model</span><select id="scene"></select></label>
+        <label><span>Camera</span>
+          <select id="camera">
+            <option value="front" selected>front 3/4</option>
+            <option value="side">side</option>
+            <option value="rear">rear 3/4</option>
+            <option value="close">close-up (glass)</option>
+          </select>
+        </label>
+      </div>
+    </details>
+    <details open>
+      <summary>Trace composite</summary>
+      <p class="hint">No baking. The trace runs in immediate mode and is mixed with the real-time render. Attributes: path-tracer-mode, path-tracer-view, path-tracer-exclude, path-tracer-excluded-cast-shadow, path-tracer-ground-shadow.</p>
+      <div class="rows">
+        <label><span>Mode</span>
+          <select id="tmode">
+            <option value="realtime">real-time (trace off)</option>
+            <option value="full">full trace</option>
+            <option value="shadows" selected>trace shadows</option>
+            <option value="lighting">trace lights + shadows</option>
+          </select>
+        </label>
+        <label><span>View</span>
+          <select id="tview">
+            <option value="composite" selected>composite</option>
+            <option value="trace">trace raw</option>
+            <option value="realtime">real-time</option>
+          </select>
+        </label>
+        <label><span>Exclude</span>
+          <select id="exclude-preset">
+            <option value="" selected>nothing</option>
+            <option value="semi-transparent">semi-transparent</option>
+          </select>
+        </label>
+        <label><span>+ names</span><input id="exclude-names" type="text" placeholder="glass*, material:Chrome" /></label>
+        <label><span>Excluded cast shadow</span><input id="excluded-cast" type="checkbox" /></label>
+        <label><span>Ground shadow</span><input id="ground-shadow" type="number" min="0" max="2" step="0.05" value="1" /></label>
       </div>
     </details>
     <details open>
@@ -74,6 +112,16 @@
     <details open>
       <summary>Path tracer</summary>
       <div class="rows">
+        <label><span>Samples</span><input id="samples" type="number" min="1" max="1024" value="64" /></label>
+        <label><span>Reveal samples</span><input id="reveal" type="number" min="1" max="256" value="4" /></label>
+        <label><span>Bounces</span><input id="bounces" type="number" min="1" max="8" value="3" /></label>
+        <label><span>Render scale</span><input id="scale" type="number" min="0.25" max="1" step="0.05" value="1" /></label>
+      </div>
+    </details>
+    <details>
+      <summary>Bake (parked)</summary>
+      <p class="hint">The progressive bake pipeline. Trace composite needs mode immediate.</p>
+      <div class="rows">
         <label><span>Picture</span>
           <select id="picture">
             <option value="beauty" selected>beauty</option>
@@ -88,26 +136,17 @@
             <option value="scene">scene HDR</option>
           </select>
         </label>
-        <label><span>On</span><input id="pt-on" type="checkbox" checked /></label>
+
         <label><span>Mode</span>
           <select id="mode">
-            <option value="progressive" selected>progressive</option>
-            <option value="immediate">immediate</option>
+            <option value="progressive">progressive</option>
+            <option value="immediate" selected>immediate</option>
           </select>
         </label>
-        <label><span>Samples</span><input id="samples" type="number" min="1" max="256" value="16" /></label>
-        <label><span>Reveal samples</span><input id="reveal" type="number" min="1" max="256" value="8" /></label>
-        <label><span>Bounces</span><input id="bounces" type="number" min="1" max="8" value="2" /></label>
-        <label><span>Render scale</span><input id="scale" type="number" min="0.25" max="1" step="0.05" value="1" /></label>
         <label><span>Tiles</span><input id="tiles" type="text" value="3 3" /></label>
         <label><span>Fade ms</span><input id="fade" type="number" min="0" max="5000" value="400" /></label>
         <label><span>Idle ms</span><input id="idle" type="number" min="0" max="20000" value="400" /></label>
         <label><span>Budget ms</span><input id="budget" type="number" min="0.5" max="32" step="0.5" value="6" /></label>
-      </div>
-    </details>
-    <details open>
-      <summary>Layers</summary>
-      <div class="rows">
         <label><span>Contact shadow</span><input id="contact" type="checkbox" checked /></label>
         <label><span>Contact res</span><input id="contact-res" type="number" min="8" max="1024" step="8" value="192" /></label>
         <label><span>Softness</span><input id="softness" type="number" min="0" max="1" step="0.01" value="0.08" /></label>
@@ -240,7 +279,17 @@
           denoise: true,
         },
       });
-      mv.pathTracer = val('pt-on');
+      const tmode = val('tmode');
+      if (tmode !== 'realtime') {
+        mv.pathTracerMode = tmode;
+      }
+      mv.pathTracerView = val('tview');
+      mv.pathTracerExclude = [val('exclude-preset'), val('exclude-names')].filter(Boolean).join(',');
+      mv.pathTracerExcludedCastShadow = val('excluded-cast');
+      mv.pathTracerGroundShadow = val('ground-shadow');
+      mv.pathTracer = tmode !== 'realtime';
+      traceClock.start = performance.now();
+      traceClock.settledMs = null;
     }
 
     // Look: exposure and tone mapping are element properties; the WebGPU
@@ -284,6 +333,7 @@
 
     function phaseOf(state) {
       if (!mv.pathTracer) return 'off';
+      if (val('mode') === 'immediate') return 'immediate';
       if (state == null) return 'starting';
       const mode = val('mode');
       if (mode !== 'progressive') return 'immediate';
@@ -295,12 +345,36 @@
       return 'done';
     }
 
+    // Time from the last change to the trace settling (all samples done).
+    const traceClock = {start: performance.now(), settledMs: null, samples: 0};
+    function compositeLines() {
+      const samples = mv.pathTracerRenderedSamples || 0;
+      if (samples < traceClock.samples) {
+        traceClock.start = performance.now();
+        traceClock.settledMs = null;
+      }
+      traceClock.samples = samples;
+      const settled = mv.isPathTracerSettled;
+      if (settled && traceClock.settledMs == null) {
+        traceClock.settledMs = performance.now() - traceClock.start;
+      }
+      const excluded = mv.getPathTracerExcludedMeshes ? mv.getPathTracerExcludedMeshes() : [];
+      return [
+        'composite ' + val('tmode') + ' / ' + val('tview'),
+        'trace ' + samples + '/' + val('samples') + ' samples  ' +
+            (settled ? 'settled ' + Math.round(traceClock.settledMs || 0) + 'ms' :
+                       'running ' + Math.round(performance.now() - traceClock.start) + 'ms'),
+        'excluded ' + excluded.length + (excluded.length ? ': ' + excluded.slice(0, 6).join(', ') + (excluded.length > 6 ? ' …' : '') : ''),
+      ];
+    }
+
     function paintStatus() {
       const state = mv.getPathTracerProgressiveState();
       const frame = state && state.frameMs;
       const bake = state && state.bakeMs;
       const trace = state && state.fullTrace;
       const lines = [
+        ...compositeLines(),
         'phase ' + phaseOf(state),
         'look exposure ' + val('exposure') + '  tone ' + val('tone') +
             '  env ' + val('env-intensity') + ' @ ' + val('env-rotation') + '°',
@@ -324,6 +398,33 @@
             '  probes ' + Math.round(bake.probes),
       ];
       statusEl.textContent = lines.join('\n');
+    }
+
+    function parseOrbit(text) {
+      const parts = String(text).trim().split(/\s+/);
+      const angle = (part) => part.endsWith('rad') ? parseFloat(part) : parseFloat(part) * Math.PI / 180;
+      return {theta: angle(parts[0]), phi: angle(parts[1]), radius: parts[2]};
+    }
+
+    // front 3/4 = the scene hero; rear 3/4 = hero rotated half a turn.
+    function presetOf(scene, name) {
+      const cams = scene.cameras || {};
+      const hero = cameraOf(scene);
+      if (name === 'side' && cams.side) return {orbit: cams.side[0], target: cams.side[1] || hero.target};
+      if (name === 'close' && cams.close) return {orbit: cams.close[0], target: cams.close[1] || hero.target};
+      if (name === 'rear' && hero.orbit) {
+        const o = parseOrbit(hero.orbit);
+        return {orbit: (o.theta + Math.PI).toFixed(3) + 'rad ' + o.phi.toFixed(3) + 'rad ' + o.radius, target: hero.target};
+      }
+      return hero;
+    }
+
+    function applyCamera() {
+      if (current == null) return;
+      const cam = presetOf(current, val('camera'));
+      if (cam.orbit) mv.cameraOrbit = cam.orbit;
+      if (cam.target) mv.cameraTarget = cam.target;
+      if (typeof mv.jumpCameraToGoal === 'function') mv.jumpCameraToGoal();
     }
 
     function cameraOf(scene) {
@@ -352,7 +453,7 @@
       if (mv.hasAttribute('ao-samples')) $('sao-samples').value = mv.getAttribute('ao-samples');
       if (mv.hasAttribute('ao-radius')) $('sao-radius').value = mv.getAttribute('ao-radius');
       if (mv.hasAttribute('ao-intensity')) $('sao-intensity').value = mv.getAttribute('ao-intensity');
-      const cam = cameraOf(scene);
+      const cam = presetOf(scene, val('camera'));
       if (cam.orbit) mv.setAttribute('camera-orbit', cam.orbit);
       if (cam.target) mv.setAttribute('camera-target', cam.target);
       if (typeof mv.jumpCameraToGoal === 'function') mv.jumpCameraToGoal();
@@ -422,13 +523,8 @@
       mv.setPathTracerOptions({bake: {textureAO: {samples: next}}});
       mv.setPathTracerOptions({bake: {textureAO: {samples}}});
     });
-    $('reset-cam').addEventListener('click', () => {
-      if (current == null) return;
-      const cam = cameraOf(current);
-      if (cam.orbit) mv.cameraOrbit = cam.orbit;
-      if (cam.target) mv.cameraTarget = cam.target;
-      if (typeof mv.jumpCameraToGoal === 'function') mv.jumpCameraToGoal();
-    });
+    $('reset-cam').addEventListener('click', applyCamera);
+    $('camera').addEventListener('change', applyCamera);
     $('geom').addEventListener('click', () => {
       if (current == null) return;
       const url = new URL(current.model);
@@ -443,12 +539,17 @@
       revealSamples = val('reveal');
       applyOptions();
     });
-    selectScene('aquila');
+    const query = new URLSearchParams(location.search);
+    for (const [key, id] of [['camera', 'camera'], ['mode', 'tmode'], ['view', 'tview'], ['exclude', 'exclude-preset']]) {
+      if (query.has(key)) $(id).value = query.get(key);
+    }
+    selectScene(query.get('model') || 'aquila');
+    sceneSelect.value = current.id;
     setInterval(paintStatus, 250);
 
     function asideControls() {
       for (const el of document.querySelectorAll('aside input, aside select')) {
-        if (el.id === 'scene' || el.id === 'view-env' || el.id === 'bake-env' || el.id === 'trace') continue;
+        if (el.id === 'scene' || el.id === 'camera' || el.id === 'view-env' || el.id === 'bake-env' || el.id === 'trace') continue;
         if (el.closest('details') && el.closest('details').querySelector('#exposure')) continue;
         el.addEventListener('change', applyOptions);
       }
