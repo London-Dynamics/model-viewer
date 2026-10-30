@@ -296,6 +296,7 @@
         pathTracerSamples: 32,
         pathTracerSamplesThreshold: 6,
         pathTracerBounces: 5,
+        pathTracerPixelRatio: 0,
         pathTracerRenderScale: 1,
         tilesX: 3,
         tilesY: 3,
@@ -341,6 +342,7 @@
             'pathTracerSamples',
             'pathTracerSamplesThreshold',
             'pathTracerBounces',
+            'pathTracerPixelRatio',
             'pathTracerRenderScale',
             'tiles',
           ],
@@ -425,6 +427,14 @@
           min: 1,
           max: 50,
           step: 1,
+        },
+        pathTracerPixelRatio: {
+          label: 'Pixel ratio',
+          kind: 'range',
+          attr: 'path-tracer-pixel-ratio',
+          min: 0,
+          max: 4,
+          step: 0.5,
         },
         pathTracerRenderScale: {
           label: 'Render scale',
@@ -834,7 +844,7 @@
         const hint = document.createElement('p');
         hint.className = 'hint';
         hint.textContent =
-            'Denoise mode gpu turns spatial denoise on and off turns it off. Stop trace disables path-tracer and returns to the real-time view. Reset trace calls resetPathTracer().';
+            'WebGPU only. If WebGPU is unavailable the real-time view stays. Denoise attaches Open Image Denoise and ignores sigma, threshold, and k-sigma. Tiles do not split the WebGPU frame. Stop trace turns path-tracer off. Reset trace calls resetPathTracer().';
         controls.append(hint);
       };
 
@@ -993,6 +1003,7 @@
         params.set('path-tracer-samples-threshold', String(state.pathTracerSamplesThreshold));
         params.set('path-tracer-bounces', String(state.pathTracerBounces));
         params.set('path-tracer-render-scale', String(state.pathTracerRenderScale));
+        params.set('path-tracer-pixel-ratio', String(state.pathTracerPixelRatio));
         params.set('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
         params.set('path-tracer-depth-of-field', state.pathTracerDepthOfField ? '1' : '0');
         params.set('path-tracer-focal-length', String(state.pathTracerFocalLength));
@@ -1050,6 +1061,7 @@
         state.pathTracerSamplesThreshold = readNumber(params, 'path-tracer-samples-threshold', state.pathTracerSamplesThreshold);
         state.pathTracerBounces = readNumber(params, 'path-tracer-bounces', state.pathTracerBounces);
         state.pathTracerRenderScale = readNumber(params, 'path-tracer-render-scale', state.pathTracerRenderScale);
+        state.pathTracerPixelRatio = readNumber(params, 'path-tracer-pixel-ratio', state.pathTracerPixelRatio);
         const tiles = (params.get('path-tracer-tiles') || '').split(/[\s,]+/).map(Number);
         if (Number.isFinite(tiles[0])) {
           state.tilesX = tiles[0];

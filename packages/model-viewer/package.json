@@ -1,6 +1,6 @@
 {
   "name": "@london-dynamics/model-viewer",
-  "version": "4.11.3",
+  "version": "4.11.4",
   "description": "Easily display interactive 3D models on the web and in AR!",
   "repository": {
     "url": "git+https://github.com/london-dynamics/model-viewer.git"
@@ -103,6 +103,7 @@
     "@monogrid/gainmap-js": "^3.1.0",
     "camera-controls": "3.1.0",
     "lit": "^3.2.1",
+    "oidn-web": "^0.5.0",
     "three-gpu-pathtracer": "^0.0.27",
     "three-mesh-bvh": "^0.9.17",
     "utility-types": "3.11.0"

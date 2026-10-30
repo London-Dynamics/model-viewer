@@ -14,13 +14,12 @@
  */
 
 import {expect} from 'chai';
-import {WebGLPathTracer} from 'three-gpu-pathtracer';
-import {CENTER} from 'three-mesh-bvh';
+import {WebGPUPathTracer} from 'three-gpu-pathtracer/webgpu';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {waitForEvent} from '../../utilities.js';
-import {assetPath, rafPasses} from '../helpers.js';
+import {assetPath, rafPasses, webGpuAvailable} from '../helpers.js';
 
 const ASTRONAUT = assetPath('models/Astronaut.glb');
 const DUCK =
@@ -64,22 +63,25 @@ suite('LD path tracer ready signal', function() {
   let samplesAtReady: number[] = [];
   let restoreSetScene: () => void = () => {};
 
-  const originalSetScene = WebGLPathTracer.prototype.setScene;
+  const originalSetScene = WebGPUPathTracer.prototype.setScene;
 
-  setup(async () => {
+  setup(async function() {
+    if (!(await webGpuAvailable())) {
+      this.skip();
+    }
     sceneBuilds = 0;
     readyCount = 0;
     samplesAtReady = [];
-    WebGLPathTracer.prototype.setScene = function(
-        this: WebGLPathTracer, scene: any, camera: any, options?: any) {
-      const result = originalSetScene.call(this, scene, camera, options);
+    WebGPUPathTracer.prototype.setScene = function(
+        this: WebGPUPathTracer, scene: any, camera: any) {
+      const result = originalSetScene.call(this, scene, camera);
       if (element != null && scene === element[$scene]) {
         sceneBuilds++;
       }
       return result;
     };
     restoreSetScene = () => {
-      WebGLPathTracer.prototype.setScene = originalSetScene;
+      WebGPUPathTracer.prototype.setScene = originalSetScene;
     };
 
     element = new ModelViewerElement();
@@ -205,11 +207,7 @@ suite('LD path tracer ready signal', function() {
 
         expect(sceneBuilds).to.equal(buildsBefore + 1);
         expect(readyCount).to.equal(2);
-
-        const generator =
-            (element.getPathTracerComposer() as any)?.pathTracer?._generator;
-        expect(generator.bvhOptions.strategy).to.equal(CENTER);
-        expect(generator.bvhOptions.targetLeafSize).to.equal(10);
+        expect(asHost(element).getPathTracerOptions().maxLeafTris).to.equal(10);
       });
 
   test(
@@ -217,9 +215,9 @@ suite('LD path tracer ready signal', function() {
       async () => {
         const buildsBefore = sceneBuilds;
         let environmentUpdates = 0;
-        const originalUpdate = WebGLPathTracer.prototype.updateEnvironment;
-        WebGLPathTracer.prototype.updateEnvironment = function(
-            this: WebGLPathTracer) {
+        const originalUpdate = WebGPUPathTracer.prototype.updateEnvironment;
+        WebGPUPathTracer.prototype.updateEnvironment = function(
+            this: WebGPUPathTracer) {
           environmentUpdates++;
           return originalUpdate.call(this);
         };
@@ -246,7 +244,7 @@ suite('LD path tracer ready signal', function() {
           }
           expect(asHost(element).isPathTracerReady).to.equal(true);
         } finally {
-          WebGLPathTracer.prototype.updateEnvironment = originalUpdate;
+          WebGPUPathTracer.prototype.updateEnvironment = originalUpdate;
         }
       });
 });

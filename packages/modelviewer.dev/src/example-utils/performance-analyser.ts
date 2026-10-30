@@ -15,7 +15,7 @@
 
 export interface PerformanceMetric {
   label: string;
-  read: () => string|number|null|undefined;
+  read: () => string | number | null | undefined;
   rate?: boolean;
 }
 
@@ -53,6 +53,8 @@ interface RenderScaleDetail {
   minimumDpr: number;
   pixelWidth: number;
   pixelHeight: number;
+  tracedWidth?: number;
+  tracedHeight?: number;
   reason: string;
 }
 
@@ -218,7 +220,8 @@ export const createPerformanceAnalyser = ({
         const previous = metricRateState.get(metric.label);
         metricRateState.set(metric.label, {time: now, value});
 
-        const rate = previous == null || now === previous.time ? 0 :
+        const rate = previous == null || now === previous.time ?
+            0 :
             (value - previous.value) / ((now - previous.time) / 1000);
         extraMetricSnapshot[metric.label] =
             `${formatNumber(value)} (${formatNumber(Math.max(0, rate))}/s)`;
@@ -258,9 +261,14 @@ export const createPerformanceAnalyser = ({
       values.renderScale.textContent =
           `${formatNumber(stats.renderScale.renderedDpr, 2)} / reported ${
               formatNumber(stats.renderScale.reportedDpr, 2)}`;
-      values.renderSize.textContent =
-          `${stats.renderScale.pixelWidth} x ${stats.renderScale.pixelHeight}${
-              stats.renderScale.reason ? ` (${stats.renderScale.reason})` : ''}`;
+      const traced = stats.renderScale.tracedWidth != null &&
+              stats.renderScale.tracedHeight != null ?
+          ` · traced ${stats.renderScale.tracedWidth} x ${
+              stats.renderScale.tracedHeight}` :
+          '';
+      values.renderSize.textContent = `${stats.renderScale.pixelWidth} x ${
+          stats.renderScale.pixelHeight}${traced}${
+          stats.renderScale.reason ? ` (${stats.renderScale.reason})` : ''}`;
     } else {
       const rect = target.getBoundingClientRect();
       values.renderScale.textContent = formatNumber(window.devicePixelRatio, 2);
@@ -272,10 +280,10 @@ export const createPerformanceAnalyser = ({
         'unavailable' :
         `${formatNumber(stats.heapUsedMb)} / ${
             formatNumber(stats.heapTotalMb ?? 0)} MB`;
-    values.longTasks.textContent =
-        `${stats.longTaskCount} / worst ${formatNumber(stats.worstLongTaskMs)} ms`;
-    values.gpu.textContent = stats.webgl == null ? 'unavailable' :
-        `${stats.webgl.renderer}`;
+    values.longTasks.textContent = `${stats.longTaskCount} / worst ${
+        formatNumber(stats.worstLongTaskMs)} ms`;
+    values.gpu.textContent =
+        stats.webgl == null ? 'unavailable' : `${stats.webgl.renderer}`;
 
     for (const metric of extraMetrics) {
       extraValueElements.get(metric.label)!.textContent =

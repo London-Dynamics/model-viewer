@@ -55,14 +55,10 @@ const LIGHT_RIGS = [
   'overhead strips',
 ];
 
+// WebGPUPathTracer only. Denoise uses OIDN once path-tracer-samples is reached.
 const UNSUPPORTED = {
-  pause: 'model-viewer has no pause. Turn enable off to leave path tracing and show the real-time view.',
-  frameBudget: 'frameBudget is a WebGPUPathTracer limit. model-viewer still uses WebGLPathTracer.',
-  multipleImportanceSampling: 'The WebGL path tracer keeps multiple importance sampling on. There is no attribute to turn it off.',
-  randomStrategy: 'Blue Dither, Sobol, and PCG are WebGPUPathTracer random strategies.',
   cameraProjection: 'model-viewer cameras are perspective. Orthographic is not a camera-orbit mode.',
-  denoise: 'Upstream toggles the WebGPU OIDN denoiser. model-viewer spatial denoise is path-tracer-denoise on the settings page, not OIDN.',
-  upscale: 'FSR upscaling ships with the WebGPU path tracer and is not exposed.',
+  upscale: 'FSR upscaling is not exposed on model-viewer.',
   sharpness: 'Sharpness belongs to the FSR upscaler, which model-viewer does not run.',
   lighting: 'Rect area light rigs are not exposed. Lighting comes from the environment map.',
 };
@@ -270,19 +266,32 @@ const buildGui = () => {
 
   const pathTracingFolder = gui.addFolder('Path Tracer');
   pathTracingFolder.add(params, 'enable').onChange(applyTracer);
-  disable(pathTracingFolder.add(params, 'pause'), UNSUPPORTED.pause);
+  pathTracingFolder.add(params, 'pause').onChange(() => {
+    if (params.pause) {
+      viewer.setAttribute('path-tracer-paused', '');
+    } else {
+      viewer.removeAttribute('path-tracer-paused');
+    }
+  });
   pathTracingFolder.add(params, 'maxBounces', 1, 50, 1).onChange(applyTracer);
   pathTracingFolder.add(params, 'renderScale', 0.1, 1.0, 0.01).onChange(applyTracer);
-  disable(pathTracingFolder.add(params, 'frameBudget', 50000, 2000000, 50000), UNSUPPORTED.frameBudget);
+  pathTracingFolder.add(params, 'frameBudget', 50000, 2000000, 50000).onChange((value) => {
+    viewer.setAttribute('path-tracer-frame-budget', String(value));
+  });
   pathTracingFolder.add(params, 'maxSamples', 1, 500, 1)
       .name('maxSamples')
       .onChange(applyTracer);
-  disable(
-      pathTracingFolder.add(params, 'multipleImportanceSampling'),
-      UNSUPPORTED.multipleImportanceSampling);
-  disable(
-      pathTracingFolder.add(params, 'randomStrategy', ['Blue Dither', 'Sobol', 'PCG']),
-      UNSUPPORTED.randomStrategy);
+  pathTracingFolder.add(params, 'multipleImportanceSampling').onChange(() => {
+    if (params.multipleImportanceSampling) {
+      viewer.setAttribute('path-tracer-multiple-importance-sampling', '');
+    } else {
+      viewer.removeAttribute('path-tracer-multiple-importance-sampling');
+    }
+  });
+  pathTracingFolder.add(params, 'randomStrategy', ['Blue Dither', 'Sobol', 'PCG']).onChange((value) => {
+    const name = value === 'Sobol' ? 'sobol' : value === 'PCG' ? 'pcg' : 'blue-dither';
+    viewer.setAttribute('path-tracer-random', name);
+  });
   disable(
       pathTracingFolder.add(params, 'cameraProjection', ['Perspective', 'Orthographic']),
       UNSUPPORTED.cameraProjection);
@@ -292,7 +301,13 @@ const buildGui = () => {
   pathTracingFolder.open();
 
   const postFolder = gui.addFolder('Denoise / Upscale');
-  disable(postFolder.add(params, 'denoise'), UNSUPPORTED.denoise);
+  postFolder.add(params, 'denoise').onChange(() => {
+    if (params.denoise) {
+      viewer.setAttribute('path-tracer-denoise', '');
+    } else {
+      viewer.removeAttribute('path-tracer-denoise');
+    }
+  });
   disable(postFolder.add(params, 'upscale'), UNSUPPORTED.upscale);
   disable(postFolder.add(params, 'sharpness', 0, 1, 0.01), UNSUPPORTED.sharpness);
 
