@@ -49,6 +49,7 @@ export declare interface LDPathTracerInterface {
   getPathTracerComposer(): LDPathTracerComposer|null;
   setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
   getPathTracerOptions(): PathTracerBuildOptions;
+  resetPathTracer(): void;
 }
 
 const parseTiles = (value: string): Vector2 => {
@@ -148,6 +149,10 @@ export const LDPathTracerMixin = <
     getPathTracerOptions(): PathTracerBuildOptions {
       return this.getPathTracerComposer()?.getBuildOptions() ??
           {...this.pathTracerBuildOptions};
+    }
+
+    resetPathTracer() {
+      this.getPathTracerComposer()?.resetSamples();
     }
 
     override connectedCallback() {

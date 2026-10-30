@@ -159,6 +159,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private sceneBuildQueued = false;
   private sceneBuildGeneration = 0;
   private disposed = false;
+  private environmentStateReady = false;
+  private lastEnvironmentIntensity = 1;
+  private lastEnvironment: unknown = null;
+  private lastBackground: unknown = null;
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -222,6 +226,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     this.syncShadowCatcher();
     this.syncScene();
+    this.syncEnvironment();
     this.updateSceneIfGeometryMoved();
     this.updateCameraIfNeeded();
     this.ambientOcclusionPreviewComposer?.beforeRender(_time, _delta);
@@ -282,6 +287,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return this.pathTracer?.samples ?? 0;
   }
 
+  resetSamples() {
+    // Restarts accumulation and keeps the current scene build. Camera moves
+    // do the same and do not clear isPathTracerReady.
+    this.cameraStateInitialized = false;
+    this.pathTracer?.reset();
+    this.requestRender();
+  }
+
   get isReady() {
     return this.ready;
   }
@@ -322,14 +335,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.sceneBuildQueued = false;
     this.sceneBuildInFlight = false;
     this.disableBvhWorker();
-    try {
-      this.pathTracer?.dispose();
-    } catch {
-      // three-gpu-pathtracer 0.0.23 references a private dispose member that
-      // is not present. The renderer-owned WebGL context is still released by
-      // model-viewer; swallow that package bug during feature teardown.
-    }
-    this.pathTracer = null;
+    this.disposePathTracer();
     this.ambientOcclusionPreviewComposer?.dispose();
     this.ambientOcclusionPreviewComposer = null;
     this.currentAmbientOcclusionPreviewOptions = null;
@@ -344,6 +350,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.queuedRender = null;
     }
     this.cameraStateInitialized = false;
+    this.environmentStateReady = false;
     this.needsSceneUpdate = true;
     this.ready = false;
   }
@@ -355,6 +362,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     this.disposePathTracer();
     this.invalidateReady();
+    this.environmentStateReady = false;
+    // 0.0.25 deprecated WebGLPathTracer in favor of WebGPUPathTracer. This
+    // composer stays on WebGLPathTracer because model-viewer renders with
+    // WebGLRenderer. The constructor warns; WebGPUPathTracer needs a
+    // WebGPURenderer, which this element does not create.
     this.pathTracer = new WebGLPathTracer(this.renderer);
     this.pathTracer.renderDelay = 0;
     this.pathTracer.fadeDuration = PATH_TRACER_FADE_DURATION_MS;
@@ -378,13 +390,51 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
-    try {
-      this.pathTracer.dispose();
-    } catch {
-      // three-gpu-pathtracer 0.0.23 references a private dispose member that
-      // is not present. Drop the instance so a replacement can be created.
-    }
+    this.pathTracer.dispose();
     this.pathTracer = null;
+  }
+
+  private rememberEnvironmentState() {
+    if (this.scene == null) {
+      this.environmentStateReady = false;
+      return;
+    }
+
+    const intensity = this.scene.environmentIntensity;
+    this.lastEnvironmentIntensity =
+        typeof intensity === 'number' && Number.isFinite(intensity) ?
+        intensity :
+        1;
+    this.lastEnvironment = this.scene.environment;
+    this.lastBackground = this.scene.background;
+    this.environmentStateReady = true;
+  }
+
+  private syncEnvironment() {
+    if (this.pathTracer == null || this.scene == null ||
+        this.sceneBuildInFlight || this.disposed) {
+      return;
+    }
+
+    const intensityValue = this.scene.environmentIntensity;
+    const intensity =
+        typeof intensityValue === 'number' && Number.isFinite(intensityValue) ?
+        intensityValue :
+        1;
+    const environment = this.scene.environment;
+    const background = this.scene.background;
+    if (this.environmentStateReady &&
+        intensity === this.lastEnvironmentIntensity &&
+        environment === this.lastEnvironment &&
+        background === this.lastBackground) {
+      return;
+    }
+
+    this.lastEnvironmentIntensity = intensity;
+    this.lastEnvironment = environment;
+    this.lastBackground = background;
+    this.environmentStateReady = true;
+    this.pathTracer.updateEnvironment();
   }
 
   private applyBuildOptions() {
@@ -400,7 +450,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     generator.bvhOptions = {
       ...generator.bvhOptions,
       strategy: BVH_STRATEGY[this.buildOptions.strategy],
-      maxLeafTris: this.buildOptions.maxLeafTris,
+      // three-mesh-bvh 0.9.15+ renamed maxLeafTris to targetLeafSize.
+      targetLeafSize: this.buildOptions.maxLeafTris,
     };
   }
 
@@ -528,6 +579,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.syncScene();
         return;
       }
+      this.rememberEnvironmentState();
       this.requestRender();
     };
 

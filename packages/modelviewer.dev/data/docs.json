@@ -1024,6 +1024,18 @@
         }
       },
       {
+        "name": "environment-intensity",
+        "htmlName": "environmentIntensity",
+        "description": "Scales the scene environment map for both the real-time view and the path tracer. <code>1</code> keeps the HDR as authored. <code>0</code> removes environment lighting. The path tracer reads this from the scene and restarts accumulation when it changes.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_settings/#settings\"><span class='attribute'>environment-intensity</span> example</a>"
+        ],
+        "default": {
+          "default": "1",
+          "options": "any value 0 or greater"
+        }
+      },
+      {
         "name": "tone-mapping",
         "htmlName": "toneMapping",
         "description": "Selects the function that compresses the HDR rendering to an SDR image on your screen. ACES is a film industry standard that is commonly used, though it has serious color-accuracy problems. AgX is a new and improved tone mapper seeing broad adoption in film and games. Khronos PBR Neutral ('neutral') is a standard function designed specifically for accurate color reproduction in e-commerce. Our current default is neutral, but prior to v4.0 this default was ACES. The deprecated name commerce is an alias for neutral. Other options include NoToneMapping, which disables tone mapping entirely, LinearToneMapping, a simple linear scaling of brightness values, ReinhardToneMapping, a balanced approach for natural-looking HDR images, and CineonToneMapping, which emulates the look of traditional film. Each tone mapper has its use cases, depending on the desired visual outcome and application requirements.",
@@ -2605,6 +2617,15 @@
         "links": [
           "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
         ]
+      },
+      {
+        "name": "resetPathTracer()",
+        "htmlName": "resetPathTracer",
+        "description": "Restarts path-tracer sample accumulation without rebuilding the BVH. No-op when path tracing is off. Camera motion already restarts accumulation; this is the explicit control for a reset button.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_settings/#settings\">Settings example</a>"
+        ],
+        "signature": "resetPathTracer(): void"
       }
     ],
     "Events": [

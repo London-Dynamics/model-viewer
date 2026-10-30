@@ -209,6 +209,44 @@ suite('LD path tracer ready signal', function() {
         const generator =
             (element.getPathTracerComposer() as any)?.pathTracer?._generator;
         expect(generator.bvhOptions.strategy).to.equal(CENTER);
-        expect(generator.bvhOptions.maxLeafTris).to.equal(10);
+        expect(generator.bvhOptions.targetLeafSize).to.equal(10);
+      });
+
+  test(
+      'applies environment-intensity without rebuilding the scene',
+      async () => {
+        const buildsBefore = sceneBuilds;
+        let environmentUpdates = 0;
+        const originalUpdate = WebGLPathTracer.prototype.updateEnvironment;
+        WebGLPathTracer.prototype.updateEnvironment = function(
+            this: WebGLPathTracer) {
+          environmentUpdates++;
+          return originalUpdate.call(this);
+        };
+
+        try {
+          element.environmentIntensity = 0.35;
+          await element.updateComplete;
+          await waitFrames(4);
+
+          expect(element[$scene].environmentIntensity).to.equal(0.35);
+          expect(environmentUpdates).to.be.greaterThan(0);
+          expect(sceneBuilds).to.equal(buildsBefore);
+          const tracer =
+              (element.getPathTracerComposer() as {
+                pathTracer?: {
+                  _pathTracer?: {material?: {environmentIntensity?: number}};
+                };
+              } |
+               null)
+                  ?.pathTracer;
+          const material = tracer?._pathTracer?.material;
+          if (element[$scene].environment != null) {
+            expect(material?.environmentIntensity).to.be.closeTo(0.35, 1e-6);
+          }
+          expect(asHost(element).isPathTracerReady).to.equal(true);
+        } finally {
+          WebGLPathTracer.prototype.updateEnvironment = originalUpdate;
+        }
       });
 });

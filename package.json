@@ -49,9 +49,13 @@
     "eslint-plugin-wc": "^2.2.1",
     "http-server": "^14.1.1",
     "husky": "^9.1.7",
+    "three": "0.185.1",
     "typescript": "5.8.2"
   },
   "dependencies": {
     "puppeteer": "^24.4.0"
+  },
+  "overrides": {
+    "three": "0.185.1"
   }
 }
