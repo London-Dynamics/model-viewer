@@ -133,6 +133,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private currentAmbientOcclusionPreviewOptions: AmbientOcclusionOptions|null =
       null;
   private queuedRender: number|null = null;
+  private renderTicket = 0;
   private readonly meshWorldMatrices = new Map<string, Matrix4>();
   private readonly shadowCatcherCenter = new Vector3();
   private shadowCatcher: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
@@ -415,10 +416,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.scene = null;
     this.camera = null;
     this.meshWorldMatrices.clear();
-    if (this.queuedRender != null) {
-      window.cancelAnimationFrame(this.queuedRender);
-      this.queuedRender = null;
-    }
+    this.queuedRender = null;
     this.ready = false;
   }
 
@@ -876,9 +874,17 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
-    // Renderer.hasRendered() clears the dirty flag immediately after render().
-    // Queue on the next frame so progressive samples keep accumulating.
-    this.queuedRender = window.requestAnimationFrame(() => {
+    // Renderer.hasRendered() clears the dirty flag right after render(), in
+    // the same task. A microtask runs after that, so the very next animation
+    // frame renders again. A requestAnimationFrame callback lands after the
+    // renderer's own frame callback, which skipped every other frame and
+    // halved the trace rate.
+    const ticket = ++this.renderTicket;
+    this.queuedRender = ticket;
+    queueMicrotask(() => {
+      if (this.queuedRender !== ticket) {
+        return;
+      }
       this.queuedRender = null;
       this.scene?.queueRender();
     });
