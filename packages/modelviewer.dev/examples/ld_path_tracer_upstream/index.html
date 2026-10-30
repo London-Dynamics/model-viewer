@@ -1,0 +1,141 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; path tracer upstream comparison</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="three-gpu-pathtracer demo controls on model-viewer."
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body.light-background {
+        background: linear-gradient(#e0e0e0, #c4c4c4);
+      }
+
+      body.dark-background {
+        background: linear-gradient(#111111, #000000);
+      }
+
+      body.checkerboard {
+        background-color: #fff;
+        background-image:
+          linear-gradient(45deg, #ccc 25%, transparent 25%),
+          linear-gradient(-45deg, #ccc 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #ccc 75%),
+          linear-gradient(-45deg, transparent 75%, #ccc 75%);
+        background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+        background-size: 20px 20px;
+      }
+
+      model-viewer {
+        background: transparent;
+        display: block;
+        height: 100vh;
+        width: 100vw;
+      }
+
+      #status,
+      #upstream-link,
+      #limits {
+        font: 12px/1.35 ui-sans-serif, system-ui, sans-serif;
+        max-width: min(36rem, calc(100vw - 18rem));
+        position: fixed;
+        z-index: 1;
+      }
+
+      #upstream-link {
+        background: rgba(255, 255, 255, 0.88);
+        border-radius: 0.25rem;
+        color: #1d4ed8;
+        left: 0.5rem;
+        padding: 0.35rem 0.5rem;
+        top: 0.5rem;
+      }
+
+      #limits {
+        background: rgba(255, 255, 255, 0.88);
+        border-radius: 0.25rem;
+        color: #111827;
+        left: 0.5rem;
+        padding: 0.35rem 0.5rem;
+        top: 2.2rem;
+      }
+
+      #status {
+        background: rgba(17, 24, 39, 0.78);
+        border-radius: 0.25rem;
+        bottom: 0.5rem;
+        color: white;
+        left: 0.5rem;
+        padding: 0.35rem 0.5rem;
+      }
+    </style>
+  </head>
+  <body class="ld light-background" id="upstream">
+    <model-viewer
+      id="viewer"
+      camera-controls
+      interaction-prompt="none"
+      camera-orbit="-45deg 76deg auto"
+      field-of-view="45deg"
+      tone-mapping="aces"
+      exposure="1"
+      environment-intensity="1"
+      shadow-intensity="1"
+      shadow-mode="path-tracer"
+      path-tracer
+      path-tracer-samples="16"
+      path-tracer-samples-threshold="5"
+      path-tracer-bounces="15"
+      path-tracer-render-scale="1"
+      path-tracer-tiles="1 1"
+      path-tracer-denoise-mode="off"
+    ></model-viewer>
+    <a id="upstream-link" href="https://gkjohnson.github.io/three-gpu-pathtracer/index.html" target="_blank" rel="noopener">Open this model in the upstream demo</a>
+    <p id="limits">
+      Same model list, HDRs, and lil-gui names as three-gpu-pathtracer 0.0.27.
+      model-viewer does not normalize models to a unit sphere, run upstream post-process, or trace with WebGPU.
+      <a href="../ld_path_tracer_settings/">Settings page</a>
+    </p>
+    <p id="status"></p>
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
+    ></script>
+    <script type="module" src="./page.js"></script>
+  </body>
+</html>
