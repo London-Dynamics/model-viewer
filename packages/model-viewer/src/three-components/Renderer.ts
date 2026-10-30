@@ -47,6 +47,17 @@ const DEFAULT_LAST_STEP = 3;
 export const DEFAULT_POWER_PREFERENCE: string = 'high-performance';
 const COMMERCE_EXPOSURE = 1.3;
 
+const tracedOutputSize =
+    (scene: ModelScene): {width: number, height: number}|null => {
+      const effect = scene.effectRenderer as
+              {getTracedSize?: () => {width: number, height: number} | null} |
+          null;
+      if (effect == null || typeof effect.getTracedSize !== 'function') {
+        return null;
+      }
+      return effect.getTracedSize();
+    };
+
 /**
  * Registers canvases with Canvas2DRenderingContexts and renders them
  * all in the same WebGLRenderingContext, spitting out textures to apply
@@ -347,13 +358,18 @@ export class Renderer extends
     const reason = scale < 1                 ? 'GPU throttling' :
         this.dpr !== window.devicePixelRatio ? 'No meta viewport tag' :
                                                '';
+    const pixelWidth = Math.ceil(scene.width * renderedDpr);
+    const pixelHeight = Math.ceil(scene.height * renderedDpr);
+    const traced = tracedOutputSize(scene);
     scene.element.dispatchEvent(new CustomEvent('render-scale', {
       detail: {
         reportedDpr: window.devicePixelRatio,
         renderedDpr: renderedDpr,
         minimumDpr: this.dpr * SCALE_STEPS[this.lastStep],
-        pixelWidth: Math.ceil(scene.width * renderedDpr),
-        pixelHeight: Math.ceil(scene.height * renderedDpr),
+        pixelWidth,
+        pixelHeight,
+        tracedWidth: traced?.width ?? pixelWidth,
+        tracedHeight: traced?.height ?? pixelHeight,
         reason: reason
       }
     }));

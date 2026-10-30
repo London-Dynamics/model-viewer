@@ -153,6 +153,14 @@ assert.match(
     'save path traced button should use a dedicated path traced export handler');
 assert.match(
     html,
+    /capturePathTracerFrame\(/,
+    'save path traced should read the tracer target via capturePathTracerFrame');
+assert.match(
+    html,
+    /path-tracer-pixel-ratio/,
+    'path tracer example should document path-tracer-pixel-ratio');
+assert.match(
+    html,
     /downloadFinalCanvas/,
     'save final button should use a dedicated final export handler');
 assert.match(
