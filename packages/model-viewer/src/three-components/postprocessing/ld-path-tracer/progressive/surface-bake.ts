@@ -60,6 +60,7 @@ type GpuTracer = {
   maxBounces: number;
   maxTransparentBounces: number;
   maxSamples: number;
+  reset(): void;
   renderScale: number;
   minSamples: number;
   renderDelay: number;
@@ -279,6 +280,29 @@ export class AtlasBake {
   /** Normalised chart texels before gutter dilation, so a seam crop can show the crack. */
   crackFactor: Float32Array|null = null;
   private constantUp = false;
+  /**
+   * 'authored' shoots along the mesh normal, like a Cycles bake. 'centroid'
+   * flips every texel when most normals face the model centre.
+   */
+  normalMode: 'authored'|'centroid' = 'authored';
+  /**
+   * 'sky' divides each texel by the unoccluded irradiance for its normal
+   * (order-2 SH of the environment), so the atlas is a shadow ratio that
+   * multiplies the real-time IBL. 'peak' divides by the 98th percentile.
+   */
+  normalize: 'sky'|'peak' = 'sky';
+  private normalData: Float32Array|null = null;
+  /**
+   * 2 traces half the samples along +n and half along -n and keeps the
+   * brighter sky ratio per texel. Authored normals on double-sided sheets
+   * (shadow planes, cabinet panels) often point away from the visible side.
+   */
+  sides: 1|2 = 2;
+  private sidePass = 0;
+  private flipping: Promise<void>|null = null;
+  private frontRaw: Float32Array|null = null;
+  private preRatio = false;
+  private normalTexture: DataTexture|null = null;
   private albedoTex: unknown = null;
   private guideTex: unknown = null;
   private samples = 0;
@@ -349,7 +373,7 @@ export class AtlasBake {
     if (this.denoiseStarted) {
       return this.samples;
     }
-    if (this.reading == null) {
+    if (this.reading == null && this.flipping == null) {
       const started = performance.now();
       this.tracer.renderSample();
       this.noteCpu(performance.now() - started);
@@ -408,17 +432,68 @@ export class AtlasBake {
     }
     await this.renderer?.backend.device?.queue.onSubmittedWorkDone();
     const counts = await this.tracer.getSampleCountsAsync();
+    if (this.flipping != null) {
+      return this.reportedSamples();
+    }
     if (counts.min > this.samples) {
       this.samples = counts.min;
     }
-    if (this.samples >= this.sampleTarget) {
+    if (this.samples >= this.passTarget()) {
       this.beginDenoise();
     }
-    return this.samples;
+    return this.reportedSamples();
+  }
+
+  private passTarget(): number {
+    return this.sides === 2 ? Math.max(1, Math.ceil(this.sampleTarget / 2)) :
+                              this.sampleTarget;
+  }
+
+  private reportedSamples(): number {
+    if (this.sides !== 2) {
+      return this.samples;
+    }
+    return this.sidePass === 0 ? Math.min(this.samples, this.passTarget() - 1) :
+                                 this.passTarget() + this.samples;
+  }
+
+  /** Keep the +n pass, flip the atlas normals and trace again. */
+  private async flipSide() {
+    const tracer = this.tracer;
+    const normals = this.normalData;
+    if (tracer == null || normals == null || this.normalTexture == null) {
+      this.sides = 1;
+      this.flipping = null;
+      this.beginDenoise();
+      return;
+    }
+    const started = performance.now();
+    await this.renderer?.backend.device?.queue.onSubmittedWorkDone();
+    this.frontRaw = await this.copyFloatTarget(tracer.target);
+    for (let i = 0; i < normals.length; i += 4) {
+      normals[i] = -normals[i];
+      normals[i + 1] = -normals[i + 1];
+      normals[i + 2] = -normals[i + 2];
+    }
+    this.normalTexture.needsUpdate = true;
+    tracer.reset();
+    this.samples = 0;
+    this.sidePass = 1;
+    console.info('SIDE_FLIP', JSON.stringify({
+      atMs: Math.round(performance.now() - this.startedAt),
+      ms: Math.round(performance.now() - started),
+    }));
+    this.flipping = null;
   }
 
   private beginDenoise() {
     if (this.denoiseStarted || this.denoiser == null || this.tracer == null) {
+      return;
+    }
+    if (this.sides === 2 && this.sidePass === 0) {
+      if (this.flipping == null) {
+        this.flipping = this.flipSide();
+      }
       return;
     }
     this.denoiseStarted = true;
@@ -440,6 +515,7 @@ export class AtlasBake {
     const target = tracer.target as {width?: number; height?: number;};
     console.info('DENOISE_TARGET', target?.width ?? 0, target?.height ?? 0);
     const raw = await this.copyFloatTarget(target);
+    this.combineSides(raw);
     const crop = pickCrop(raw, this.resolution, 320);
     const scale = cropScale(raw, this.resolution, crop);
     this.beforeCrop = paintCrop(raw, this.resolution, crop, scale);
@@ -520,6 +596,76 @@ export class AtlasBake {
     const denoised = await this.copyFloatTarget(denoiser.texture);
     this.afterCrop = paintCrop(denoised, this.resolution, crop, scale);
     await this.readFactor(denoised);
+  }
+
+  /** raw holds the -n pass. Replace it with max(+n, -n) sky ratios. */
+  private combineSides(raw: Float32Array) {
+    const front = this.frontRaw;
+    const normals = this.normalData;
+    const mask = this.mask;
+    if (front == null || normals == null || mask == null) {
+      return;
+    }
+    const sh = irradianceSH(this.scene?.environment ?? null,
+                            this.scene?.environmentIntensity ?? 1);
+    if (sh == null) {
+      for (let i = 0; i < raw.length; i++) {
+        if (Number.isFinite(front[i]) && !(raw[i] >= front[i])) {
+          raw[i] = front[i];
+        }
+      }
+      console.info('SIDES_COMBINED', JSON.stringify({sky: false}));
+      return;
+    }
+    const started = performance.now();
+    const back = new Float32Array(mask.length);
+    const forward = new Float32Array(mask.length);
+    let skyMax = 0;
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i] !== 1) {
+        continue;
+      }
+      const x = normals[i * 4];
+      const y = normals[i * 4 + 1];
+      const z = normals[i * 4 + 2];
+      back[i] = irradianceLum(sh, x, y, z);
+      forward[i] = irradianceLum(sh, -x, -y, -z);
+      skyMax = Math.max(skyMax, back[i], forward[i]);
+    }
+    const floor = Math.max(1e-4, skyMax * 0.02);
+    let backWins = 0;
+    let count = 0;
+    let sum = 0;
+    for (let i = 0; i < mask.length; i++) {
+      if (mask[i] !== 1) {
+        continue;
+      }
+      const f = Number.isFinite(front[i]) ? front[i] / Math.max(forward[i], floor) : NaN;
+      const b = Number.isFinite(raw[i]) ? raw[i] / Math.max(back[i], floor) : NaN;
+      let value = Number.isFinite(f) ? f : b;
+      if (Number.isFinite(b) && b > value) {
+        value = b;
+        backWins++;
+      }
+      raw[i] = Math.min(1, Math.max(0, value));
+      if (Number.isFinite(raw[i])) {
+        sum += raw[i];
+        count++;
+      }
+      normals[i * 4] = -normals[i * 4];
+      normals[i * 4 + 1] = -normals[i * 4 + 1];
+      normals[i * 4 + 2] = -normals[i * 4 + 2];
+    }
+    this.preRatio = true;
+    this.frontRaw = null;
+    console.info('SIDES_COMBINED', JSON.stringify({
+      sky: true,
+      backWins,
+      count,
+      mean: count ? sum / count : 0,
+      skyMax,
+      ms: Math.round(performance.now() - started),
+    }));
   }
 
   private filledColorTexture(filled: Float32Array): DataTexture {
@@ -660,6 +806,8 @@ export class AtlasBake {
     }
     const rasterStart = performance.now();
     const baked = this.texturesFromSurface(surface, this.surfaceCount, resolution);
+    this.normalData = baked.normalData;
+    this.normalTexture = baked.normal;
     console.info('STAGE_RASTER', Math.round(performance.now() - rasterStart), this.surfaceCount);
 
     const [{WebGPURenderer}, gpu, oidn, tsl, bvh] = await Promise.all([
@@ -767,7 +915,18 @@ export class AtlasBake {
           }
           let normal = normalize( textureLoad( ${nrmNode}, sampleAt, 0 ).xyz );
           (*ray).origin = stored.xyz + normal * ${NORMAL_BIAS};
-          (*ray).direction = normal;
+          // The tracer jitters uv by a fresh rand2 per sample, so the
+          // sub-texel offset is two uniforms. Spend them on a cosine lobe:
+          // the texel then averages irradiance, not the one radiance along n.
+          let xi = fract( uv * resolution );
+          let radius = sqrt( xi.x );
+          let phi = 6.28318530718 * xi.y;
+          let helper = select( vec3f( 1.0, 0.0, 0.0 ), vec3f( 0.0, 1.0, 0.0 ), abs( normal.x ) > 0.9 );
+          let tangent = normalize( cross( helper, normal ) );
+          let bitangent = cross( normal, tangent );
+          (*ray).direction = normalize( tangent * ( radius * cos( phi ) ) +
+              bitangent * ( radius * sin( phi ) ) +
+              normal * sqrt( max( 0.0, 1.0 - xi.x ) ) );
           (*ray).maxDist = 0.0;
           return true;
         }
@@ -875,10 +1034,12 @@ export class AtlasBake {
         away++;
       }
     }
-    const flipNormals = count > 0 && away < count * 0.5;
+    const flipNormals =
+        this.normalMode === 'centroid' && count > 0 && away < count * 0.5;
     console.info('NORMALS', JSON.stringify({
       away,
       count,
+      mode: this.normalMode,
       flipOutward: flipNormals,
     }));
     for (let i = 0; i < count; i++) {
@@ -928,7 +1089,7 @@ export class AtlasBake {
     albedo.minFilter = NearestFilter;
     albedo.flipY = false;
     albedo.needsUpdate = true;
-    return {position: positionTex, normal: normalTex, guide: guideTex, albedo, mask};
+    return {position: positionTex, normal: normalTex, guide: guideTex, albedo, mask, normalData: normal};
   }
 
   private async readFactor(grid?: Float32Array) {
@@ -998,9 +1159,42 @@ export class AtlasBake {
       clampedMax: rawMax,
       peak,
     }));
-    for (let i = 0; i < factor.length; i++) {
-      if (factor[i] >= 0) {
-        factor[i] = Math.min(1, Math.max(0, factor[i] / peak));
+    const sh = this.normalize === 'sky' && !this.preRatio ?
+        irradianceSH(this.scene?.environment ?? null,
+                     this.scene?.environmentIntensity ?? 1) :
+        null;
+    const normals = this.normalData;
+    if (sh != null && normals != null) {
+      const shStart = performance.now();
+      let ratioSum = 0;
+      let ratioCount = 0;
+      let skyMax = 0;
+      for (let i = 0; i < factor.length; i++) {
+        if (factor[i] >= 0) {
+          skyMax = Math.max(skyMax, irradianceLum(sh, normals[i * 4], normals[i * 4 + 1], normals[i * 4 + 2]));
+        }
+      }
+      const floor = Math.max(1e-4, skyMax * 0.02);
+      for (let i = 0; i < factor.length; i++) {
+        if (factor[i] >= 0) {
+          const sky = irradianceLum(sh, normals[i * 4], normals[i * 4 + 1], normals[i * 4 + 2]);
+          factor[i] = Math.min(1, Math.max(0, factor[i] / Math.max(sky, floor)));
+          ratioSum += factor[i];
+          ratioCount++;
+        }
+      }
+      console.info('SKY_RATIO', JSON.stringify({
+        mean: ratioCount ? ratioSum / ratioCount : 0,
+        skyMax,
+        floor,
+        ms: Math.round(performance.now() - shStart),
+      }));
+    } else {
+      const divisor = this.preRatio ? 1 : peak;
+      for (let i = 0; i < factor.length; i++) {
+        if (factor[i] >= 0) {
+          factor[i] = Math.min(1, Math.max(0, factor[i] / divisor));
+        }
       }
     }
     // Gutters are still empty here. Dilate only the denoised chart texels,
@@ -1152,6 +1346,90 @@ const countEmpty = (value: Float32Array): number => {
     }
   }
   return empty;
+};
+
+/**
+ * Order-2 SH irradiance of an equirect environment (Ramamoorthi and
+ * Hanrahan), already convolved with the cosine lobe. 9 x RGB.
+ */
+const irradianceSH = (env: unknown, intensity: number): Float32Array|null => {
+  const texture = env as {image?: {data?: ArrayBufferView; width?: number; height?: number;}}|null;
+  const image = texture?.image;
+  const data = image?.data;
+  const width = image?.width ?? 0;
+  const height = image?.height ?? 0;
+  if (data == null || width <= 0 || height <= 0) {
+    return null;
+  }
+  const isFloat = data instanceof Float32Array;
+  const half = data instanceof Uint16Array;
+  if (!isFloat && !half) {
+    return null;
+  }
+  const channels = (data as Float32Array).length / (width * height);
+  const read = (index: number) => isFloat ? (data as Float32Array)[index] :
+                                            halfToFloat((data as Uint16Array)[index]);
+  const sh = new Float64Array(27);
+  const step = Math.max(1, Math.floor(width / 512));
+  const dPhi = (2 * Math.PI / width) * step;
+  const dTheta = (Math.PI / height) * step;
+  for (let row = 0; row < height; row += step) {
+    // Row 0 is the top of the file. HDRLoader flips on upload, so it is +Y.
+    const lat = Math.PI / 2 - ((row + 0.5) / height) * Math.PI;
+    const cosLat = Math.cos(lat);
+    const y = Math.sin(lat);
+    const weight = dPhi * dTheta * cosLat;
+    for (let col = 0; col < width; col += step) {
+      const phi = ((col + 0.5) / width - 0.5) * 2 * Math.PI;
+      const x = Math.cos(phi) * cosLat;
+      const z = Math.sin(phi) * cosLat;
+      const o = (row * width + col) * channels;
+      const r = read(o) * weight;
+      const g = read(o + 1) * weight;
+      const b = read(o + 2) * weight;
+      const basis = shBasis(x, y, z);
+      for (let k = 0; k < 9; k++) {
+        sh[k * 3] += r * basis[k];
+        sh[k * 3 + 1] += g * basis[k];
+        sh[k * 3 + 2] += b * basis[k];
+      }
+    }
+  }
+  const band = [Math.PI, 2 * Math.PI / 3, 2 * Math.PI / 3, 2 * Math.PI / 3,
+                Math.PI / 4, Math.PI / 4, Math.PI / 4, Math.PI / 4, Math.PI / 4];
+  const out = new Float32Array(27);
+  for (let k = 0; k < 9; k++) {
+    for (let c = 0; c < 3; c++) {
+      // Irradiance over pi: the radiance a white Lambertian surface returns.
+      out[k * 3 + c] = sh[k * 3 + c] * band[k] * intensity / Math.PI;
+    }
+  }
+  return out;
+};
+
+const shBasis = (x: number, y: number, z: number): number[] => [
+  0.282095,
+  0.488603 * y,
+  0.488603 * z,
+  0.488603 * x,
+  1.092548 * x * y,
+  1.092548 * y * z,
+  0.315392 * (3 * z * z - 1),
+  1.092548 * x * z,
+  0.546274 * (x * x - y * y),
+];
+
+const irradianceLum = (sh: Float32Array, x: number, y: number, z: number): number => {
+  const basis = shBasis(x, y, z);
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  for (let k = 0; k < 9; k++) {
+    r += sh[k * 3] * basis[k];
+    g += sh[k * 3 + 1] * basis[k];
+    b += sh[k * 3 + 2] * basis[k];
+  }
+  return Math.max(0, 0.2126 * r + 0.7152 * g + 0.0722 * b);
 };
 
 const luminance = (pixels: ArrayBufferView, offset: number): number => {
