@@ -16,13 +16,7 @@
 import {property} from 'lit/decorators.js';
 
 import ModelViewerElementBase from '../model-viewer-base.js';
-import {
-  $container,
-  $needsRender,
-  $onResize,
-  $scene,
-  $updateSize,
-} from '../model-viewer-base.js';
+import {$container, $needsRender, $onResize, $scene, $updateSize,} from '../model-viewer-base.js';
 import {Constructor} from '../utilities.js';
 
 export type PathTracerDenoiseMode = 'off'|'gpu'|'server-ai';
@@ -48,8 +42,8 @@ export declare interface LDServerAIDenoiseInterface {
   serverAIDenoiseAspectRatio: string;
   readonly serverAIDenoiseResolvedAspectRatio: string;
   serverAIDenoise(options?: ServerAIDenoiseOptions): Promise<string>;
-  pathTracerServerAIDenoise(
-      options?: PathTracerServerAIDenoiseOptions): Promise<string>;
+  pathTracerServerAIDenoise(options?: PathTracerServerAIDenoiseOptions):
+      Promise<string>;
 }
 
 const DEFAULT_ENDPOINT =
@@ -77,7 +71,8 @@ const blobToDataURL = (blob: Blob): Promise<string> => {
 };
 
 const parseAspectRatio = (value: string): number|null => {
-  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*(?:\/|:)\s*(\d+(?:\.\d+)?)$/);
+  const match =
+      value.trim().match(/^(\d+(?:\.\d+)?)\s*(?:\/|:)\s*(\d+(?:\.\d+)?)$/);
   if (match == null) {
     return null;
   }
@@ -91,48 +86,48 @@ const parseAspectRatio = (value: string): number|null => {
   return width / height;
 };
 
-const closestSupportedAspectRatio = (width: number, height: number):
-    typeof SUPPORTED_ASPECT_RATIOS[number] => {
-  const ratio = Math.max(1, width) / Math.max(1, height);
-  return SUPPORTED_ASPECT_RATIOS.reduce((best, candidate) => {
-    return Math.abs(candidate[1] - ratio) < Math.abs(best[1] - ratio) ?
-      candidate :
-      best;
-  });
-};
-
-const supportedAspectRatio = (value: string):
-    typeof SUPPORTED_ASPECT_RATIOS[number]|null => {
-  const ratio = parseAspectRatio(value);
-  if (ratio == null) {
-    return null;
-  }
-
-  return SUPPORTED_ASPECT_RATIOS.find(
-             (candidate) => Math.abs(candidate[1] - ratio) < 1e-6) ??
-      null;
-};
-
-const constrainedSizeForAspectRatio = (
-    width: number, height: number, aspectRatio: number) => {
-  if (width / height > aspectRatio) {
-    const constrainedWidth = Math.round(height * aspectRatio);
-    return {
-      width: constrainedWidth,
-      height,
-      offsetX: Math.round((width - constrainedWidth) / 2),
-      offsetY: 0,
+const closestSupportedAspectRatio =
+    (width: number, height: number): typeof SUPPORTED_ASPECT_RATIOS[number] => {
+      const ratio = Math.max(1, width) / Math.max(1, height);
+      return SUPPORTED_ASPECT_RATIOS.reduce((best, candidate) => {
+        return Math.abs(candidate[1] - ratio) < Math.abs(best[1] - ratio) ?
+            candidate :
+            best;
+      });
     };
-  }
 
-  const constrainedHeight = Math.round(width / aspectRatio);
-  return {
-    width,
-    height: constrainedHeight,
-    offsetX: 0,
-    offsetY: Math.round((height - constrainedHeight) / 2),
-  };
-};
+const supportedAspectRatio =
+    (value: string): typeof SUPPORTED_ASPECT_RATIOS[number]|null => {
+      const ratio = parseAspectRatio(value);
+      if (ratio == null) {
+        return null;
+      }
+
+      return SUPPORTED_ASPECT_RATIOS.find(
+                 (candidate) => Math.abs(candidate[1] - ratio) < 1e-6) ??
+          null;
+    };
+
+const constrainedSizeForAspectRatio =
+    (width: number, height: number, aspectRatio: number) => {
+      if (width / height > aspectRatio) {
+        const constrainedWidth = Math.round(height * aspectRatio);
+        return {
+          width: constrainedWidth,
+          height,
+          offsetX: Math.round((width - constrainedWidth) / 2),
+          offsetY: 0,
+        };
+      }
+
+      const constrainedHeight = Math.round(width / aspectRatio);
+      return {
+        width,
+        height: constrainedHeight,
+        offsetX: 0,
+        offsetY: Math.round((height - constrainedHeight) / 2),
+      };
+    };
 
 const waitFrame = (signal?: AbortSignal) =>
     new Promise<void>((resolve, reject) => {
@@ -151,10 +146,7 @@ const waitFrame = (signal?: AbortSignal) =>
     });
 
 export const LDServerAIDenoiseMixin = <
-  T extends Constructor<ModelViewerElementBase>
->(
-  ModelViewerElement: T
-) => {
+    T extends Constructor<ModelViewerElementBase>>(ModelViewerElement: T) => {
   class LDServerAIDenoiseModelViewerElement extends ModelViewerElement {
     @property({type: String, attribute: 'path-tracer-denoise-mode'})
     pathTracerDenoiseMode: PathTracerDenoiseMode = 'gpu';
@@ -204,7 +196,8 @@ export const LDServerAIDenoiseMixin = <
       });
 
       if (!response.ok) {
-        throw new Error(`Server AI denoise failed with status ${response.status}`);
+        throw new Error(
+            `Server AI denoise failed with status ${response.status}`);
       }
 
       const result = await response.json();
@@ -218,23 +211,26 @@ export const LDServerAIDenoiseMixin = <
       throw new Error('Server AI denoise did not return an image');
     }
 
-    async pathTracerServerAIDenoise({
-      samples,
-      signal,
-      ...serverOptions
-    }: PathTracerServerAIDenoiseOptions = {}): Promise<string> {
+    async pathTracerServerAIDenoise(
+        {samples, signal, ...serverOptions}:
+            PathTracerServerAIDenoiseOptions = {}): Promise<string> {
       const targetSamples = Math.max(
           1,
-          Math.floor(samples ??
-              Number((this as unknown as {pathTracerSamples?: number})
-                         .pathTracerSamples ?? 1)));
-      const pathTracerHost =
-          this as unknown as {pathTracerSamples?: number};
+          Math.floor(
+              samples ??
+              Number(
+                  (this as unknown as {pathTracerSamples?: number})
+                      .pathTracerSamples ??
+                  1)));
+      const pathTracerHost = this as unknown as {pathTracerSamples?: number};
       if (Number(pathTracerHost.pathTracerSamples ?? 0) < targetSamples) {
         pathTracerHost.pathTracerSamples = targetSamples;
       }
-      while (Number((this as unknown as {pathTracerRenderedSamples?: number})
-                        .pathTracerRenderedSamples ?? 0) < targetSamples) {
+      while (Number(
+                 (this as unknown as {
+                   pathTracerRenderedSamples?: number
+                 }).pathTracerRenderedSamples ??
+                 0) < targetSamples) {
         await waitFrame(signal);
       }
 
@@ -265,10 +261,11 @@ export const LDServerAIDenoiseMixin = <
       }
 
       const active = this.pathTracerDenoiseMode === 'server-ai';
-      const [, aspectRatio] = this.resolveServerAIDenoiseAspectRatio(width, height);
+      const [, aspectRatio] =
+          this.resolveServerAIDenoiseAspectRatio(width, height);
       const size = active ?
-        constrainedSizeForAspectRatio(width, height, aspectRatio) :
-        {width, height, offsetX: 0, offsetY: 0};
+          constrainedSizeForAspectRatio(width, height, aspectRatio) :
+          {width, height, offsetX: 0, offsetY: 0};
 
       this[$container].style.width = `${size.width}px`;
       this[$container].style.height = `${size.height}px`;
@@ -282,14 +279,27 @@ export const LDServerAIDenoiseMixin = <
       width,
       height,
     }: {width?: number, height?: number}): Promise<string> {
-      const captureImage =
-          (this as unknown as {
-            captureImage?: (options?: {
-              width?: number,
-              height?: number,
-              fileType?: string,
-            }) => Promise<string>
-          }).captureImage;
+      const host = this as unknown as {
+        pathTracer?: boolean,
+        isPathTracerReady?: boolean,
+        capturePathTracerFrame?: (options?: {fileType?: string}) =>
+                                  Promise<{dataUrl: string}>,
+        captureImage?: (options?: {
+                      width?: number,
+                      height?: number,
+                      fileType?: string,
+                    }) => Promise<string>,
+      };
+      // The server denoise needs the traced frame, not an offscreen raster.
+      // Width and height are only used for the raster fallback.
+      if (host.pathTracer === true && host.isPathTracerReady === true &&
+          typeof host.capturePathTracerFrame === 'function') {
+        const frame =
+            await host.capturePathTracerFrame({fileType: 'image/png'});
+        return frame.dataUrl;
+      }
+
+      const captureImage = host.captureImage;
       if (typeof captureImage === 'function') {
         const dpr = window.devicePixelRatio || 1;
         return captureImage.call(this, {
@@ -303,8 +313,8 @@ export const LDServerAIDenoiseMixin = <
       return blobToDataURL(blob);
     }
 
-    private resolveServerAIDenoiseAspectRatio(width = this[$scene].width,
-                                              height = this[$scene].height) {
+    private resolveServerAIDenoiseAspectRatio(
+        width = this[$scene].width, height = this[$scene].height) {
       if (this.serverAIDenoiseAspectRatio.trim() !== '') {
         const supported = supportedAspectRatio(this.serverAIDenoiseAspectRatio);
         if (supported != null) {
@@ -316,7 +326,7 @@ export const LDServerAIDenoiseMixin = <
     }
   }
 
-  return LDServerAIDenoiseModelViewerElement as Constructor<
-      LDServerAIDenoiseInterface> &
+  return LDServerAIDenoiseModelViewerElement as
+      Constructor<LDServerAIDenoiseInterface>&
       T;
 };
