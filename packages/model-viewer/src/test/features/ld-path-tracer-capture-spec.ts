@@ -20,7 +20,7 @@ import {$renderer} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {resolvePathTracerRenderScale} from '../../three-components/postprocessing/ld-path-tracer/path-tracer-scale.js';
 import {waitForEvent} from '../../utilities.js';
-import {assetPath, rafPasses} from '../helpers.js';
+import {assetPath, rafPasses, webGpuAvailable} from '../helpers.js';
 
 const ASTRONAUT = assetPath('models/Astronaut.glb');
 
@@ -189,7 +189,10 @@ suite('path tracer native capture', function() {
   let readyDetail: {samples?: number, width?: number, height?: number}|null =
       null;
 
-  setup(async () => {
+  setup(async function() {
+    if (!(await webGpuAvailable())) {
+      this.skip();
+    }
     readyDetail = null;
     element = new ModelViewerElement();
     element.style.width = '80px';

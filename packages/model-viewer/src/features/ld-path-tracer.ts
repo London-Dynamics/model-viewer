@@ -53,13 +53,19 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseSigma: number;
   pathTracerDenoiseThreshold: number;
   pathTracerDenoiseKSigma: number;
+  pathTracerPaused: boolean;
+  pathTracerFrameBudget: number;
+  pathTracerMultipleImportanceSampling: boolean;
+  pathTracerRandom: 'blue-dither'|'sobol'|'pcg';
   readonly pathTracerRenderedSamples: number;
   readonly isPathTracerReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
   setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
   getPathTracerOptions(): PathTracerBuildOptions;
+  resetPathTracer(): void;
   capturePathTracerFrame(options?: CapturePathTracerFrameOptions):
       Promise<PathTracerPresentedFrame>;
+  readonly pathTracerUnavailableReason: string;
 }
 
 export interface CapturePathTracerFrameOptions {
@@ -141,6 +147,20 @@ export const LDPathTracerMixin = <
     @property({type: Number, attribute: 'path-tracer-denoise-k-sigma'})
     pathTracerDenoiseKSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseKSigma;
 
+    @property({type: Boolean, attribute: 'path-tracer-paused'})
+    pathTracerPaused = DEFAULT_PATH_TRACER_OPTIONS.paused;
+
+    @property({type: Number, attribute: 'path-tracer-frame-budget'})
+    pathTracerFrameBudget = DEFAULT_PATH_TRACER_OPTIONS.frameBudget;
+
+    @property(
+        {type: Boolean, attribute: 'path-tracer-multiple-importance-sampling'})
+    pathTracerMultipleImportanceSampling =
+        DEFAULT_PATH_TRACER_OPTIONS.multipleImportanceSampling;
+
+    @property({type: String, attribute: 'path-tracer-random'})
+    pathTracerRandom = DEFAULT_PATH_TRACER_OPTIONS.randomStrategy;
+
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
     private pathTracerBuildOptions: PathTracerBuildOptions = {
       ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
@@ -152,6 +172,11 @@ export const LDPathTracerMixin = <
       }
 
       return 0;
+    }
+
+    get pathTracerUnavailableReason() {
+      const session = this.getPathTracerComposer();
+      return session == null ? '' : session.unavailableReason;
     }
 
     get isPathTracerReady() {
@@ -174,6 +199,10 @@ export const LDPathTracerMixin = <
     getPathTracerOptions(): PathTracerBuildOptions {
       return this.getPathTracerComposer()?.getBuildOptions() ??
           {...this.pathTracerBuildOptions};
+    }
+
+    resetPathTracer() {
+      this.getPathTracerComposer()?.resetSamples();
     }
 
     capturePathTracerFrame(options: CapturePathTracerFrameOptions = {}):
@@ -223,6 +252,10 @@ export const LDPathTracerMixin = <
         'pathTracerDenoiseSigma',
         'pathTracerDenoiseThreshold',
         'pathTracerDenoiseKSigma',
+        'pathTracerPaused',
+        'pathTracerFrameBudget',
+        'pathTracerMultipleImportanceSampling',
+        'pathTracerRandom',
         'ambientOcclusion',
         'aoAlgorithm',
         'aoRadius',
@@ -320,6 +353,13 @@ export const LDPathTracerMixin = <
         denoiseSigma: this.pathTracerDenoiseSigma,
         denoiseThreshold: this.pathTracerDenoiseThreshold,
         denoiseKSigma: this.pathTracerDenoiseKSigma,
+        paused: this.pathTracerPaused,
+        frameBudget: Math.max(1, Math.floor(this.pathTracerFrameBudget)),
+        multipleImportanceSampling: this.pathTracerMultipleImportanceSampling,
+        randomStrategy: this.pathTracerRandom === 'sobol' ||
+                this.pathTracerRandom === 'pcg' ?
+            this.pathTracerRandom :
+            'blue-dither',
         ambientOcclusionPreviewOptions:
             this.getAmbientOcclusionPreviewOptions(),
       };

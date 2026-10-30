@@ -1,0 +1,1153 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; path tracer settings</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="Full-viewport model-viewer with every path-tracer setting in a right-hand sidebar."
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      .shell {
+        display: flex;
+        height: 100vh;
+        inset: 0;
+        position: fixed;
+        width: 100vw;
+      }
+
+      .shell > model-viewer {
+        flex: 1 1 auto;
+        height: 100%;
+        min-width: 0;
+        width: auto;
+      }
+
+      .settings-bar {
+        background: #f8fafc;
+        border-left: 1px solid #e5e7eb;
+        box-sizing: border-box;
+        color: #111827;
+        flex: 0 0 17.5rem;
+        font-size: 12px;
+        height: 100%;
+        line-height: 1.3;
+        overflow: auto;
+        padding: 0.5rem 0.6rem 1rem;
+        width: 17.5rem;
+      }
+
+      .settings-bar h1 {
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.3;
+        margin: 0 0 0.25rem;
+      }
+
+      .settings-bar p,
+      .hint {
+        color: #4b5563;
+        font-size: 11px;
+        margin: 0 0 0.5rem;
+      }
+
+      .settings-bar a {
+        color: #2563eb;
+      }
+
+      details {
+        border-top: 1px solid #e5e7eb;
+        padding: 0.35rem 0;
+      }
+
+      summary {
+        cursor: pointer;
+        font-weight: 650;
+      }
+
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        margin-top: 0.4rem;
+      }
+
+      label.row {
+        align-items: center;
+        flex-direction: row;
+        gap: 0.4rem;
+      }
+
+      .url-row {
+        display: grid;
+        gap: 0.25rem;
+        grid-template-columns: 1fr auto;
+        margin-top: 0.35rem;
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      input[type='text'],
+      input[type='number'],
+      select,
+      textarea {
+        border: 1px solid #d1d5db;
+        border-radius: 0.25rem;
+        box-sizing: border-box;
+        padding: 0.2rem 0.35rem;
+        width: 100%;
+      }
+
+      input[type='range'] {
+        width: 100%;
+      }
+
+      .slider-line {
+        align-items: center;
+        display: flex;
+        gap: 0.35rem;
+      }
+
+      .slider-line input[type='range'] {
+        flex: 1 1 auto;
+      }
+
+      .slider-line output {
+        font-variant-numeric: tabular-nums;
+        min-width: 2.6rem;
+        text-align: right;
+      }
+
+      button {
+        background: #2563eb;
+        border: 0;
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        padding: 0.25rem 0.45rem;
+      }
+
+      button.ghost {
+        background: #e5e7eb;
+        color: #111827;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.4rem;
+      }
+
+      .stats {
+        background: #111827;
+        border-radius: 0.25rem;
+        color: white;
+        font-variant-numeric: tabular-nums;
+        margin-top: 0.4rem;
+        padding: 0.35rem 0.45rem;
+      }
+
+      .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.35rem;
+      }
+
+      .presets button {
+        background: white;
+        border: 1px solid #d1d5db;
+        color: #111827;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="shell" id="settings">
+      <model-viewer
+        id="viewer"
+        camera-controls
+        interaction-prompt="none"
+        min-camera-orbit="auto auto 0.01m"
+        max-camera-orbit="auto auto 1000m"
+        shadow-intensity="1"
+        shadow-mode="path-tracer"
+        environment-intensity="1"
+        exposure="1"
+        tone-mapping="neutral"
+        field-of-view="30deg"
+        path-tracer
+        path-tracer-samples="32"
+        path-tracer-samples-threshold="6"
+        path-tracer-bounces="5"
+        path-tracer-render-scale="1"
+        path-tracer-tiles="3 3"
+        path-tracer-denoise
+        path-tracer-denoise-mode="gpu"
+      ></model-viewer>
+      <aside class="settings-bar" id="sidebar" aria-label="Path tracer settings">
+        <h1>Path tracer settings</h1>
+        <p>
+          Sets <code>&lt;model-viewer&gt;</code> attributes and properties only.
+          <a href="../ld_path_tracer/">Examples</a>
+          ·
+          <a href="../ld_path_tracer_upstream/">Upstream comparison</a>
+        </p>
+        <div id="controls"></div>
+      </aside>
+    </div>
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
+    ></script>
+    <script type="module">
+      const DEFAULT_SRC =
+          'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb';
+      const DEFAULT_ENV =
+          'https://raw.githubusercontent.com/mrdoob/three.js/r150/examples/textures/equirectangular/royal_esplanade_1k.hdr';
+
+      const viewer = document.querySelector('#viewer');
+      const controls = document.querySelector('#controls');
+      const ORBITS = {
+        'Three-quarter': '-45deg 75deg auto',
+        Front: '0deg 75deg auto',
+        Left: '-90deg 75deg auto',
+        Right: '90deg 75deg auto',
+        Back: '180deg 75deg auto',
+        Top: '0deg 10deg auto',
+      };
+      const LENSES = {
+        '50mm f/1.8': {
+          pathTracerDepthOfField: true,
+          fieldOfView: '39deg',
+          exposure: 2.5,
+          pathTracerFocalLength: 50,
+          pathTracerFStop: 1.8,
+          pathTracerFocusDistance: 4,
+          pathTracerApertureBlades: 7,
+          pathTracerAnamorphicRatio: 1,
+        },
+        '35mm f/2.8': {
+          pathTracerDepthOfField: true,
+          fieldOfView: '54deg',
+          exposure: 2.2,
+          pathTracerFocalLength: 35,
+          pathTracerFStop: 2.8,
+          pathTracerFocusDistance: 5,
+          pathTracerApertureBlades: 7,
+          pathTracerAnamorphicRatio: 1,
+        },
+        '85mm f/1.8': {
+          pathTracerDepthOfField: true,
+          fieldOfView: '24deg',
+          exposure: 3,
+          pathTracerFocalLength: 85,
+          pathTracerFStop: 1.8,
+          pathTracerFocusDistance: 3,
+          pathTracerApertureBlades: 9,
+          pathTracerAnamorphicRatio: 1,
+        },
+      };
+
+      const state = {
+        src: DEFAULT_SRC,
+        environmentImage: DEFAULT_ENV,
+        skybox: false,
+        pathTracer: true,
+        pathTracerSamples: 32,
+        pathTracerSamplesThreshold: 6,
+        pathTracerBounces: 5,
+        pathTracerPixelRatio: 0,
+        pathTracerRenderScale: 1,
+        tilesX: 3,
+        tilesY: 3,
+        pathTracerDepthOfField: false,
+        pathTracerFocalLength: 50,
+        pathTracerFStop: 1.8,
+        pathTracerFocusDistance: 5,
+        pathTracerApertureBlades: 0,
+        pathTracerApertureRotation: 0,
+        pathTracerAnamorphicRatio: 1,
+        pathTracerDenoise: true,
+        pathTracerDenoiseSigma: 5,
+        pathTracerDenoiseThreshold: 0.1,
+        pathTracerDenoiseKSigma: 1,
+        pathTracerDenoiseMode: 'gpu',
+        serverAIDenoiseAspectRatio: '',
+        sceneDescription: '',
+        strategy: 'sah',
+        maxLeafTris: 1,
+        exposure: 1,
+        toneMapping: 'neutral',
+        environmentIntensity: 1,
+        shadowIntensity: 1,
+        shadowSoftness: 1,
+        shadowMode: 'path-tracer',
+        fieldOfView: 30,
+        orbit: 'Three-quarter',
+      };
+
+      const sections = [
+        {
+          title: 'Source',
+          open: true,
+          fields: ['src', 'environmentImage', 'skybox'],
+        },
+        {
+          title: 'Trace',
+          open: true,
+          fields: [
+            'pathTracer',
+            'actions',
+            'stats',
+            'pathTracerSamples',
+            'pathTracerSamplesThreshold',
+            'pathTracerBounces',
+            'pathTracerPixelRatio',
+            'pathTracerRenderScale',
+            'tiles',
+          ],
+        },
+        {
+          title: 'Depth of field',
+          fields: [
+            'pathTracerDepthOfField',
+            'pathTracerFocalLength',
+            'pathTracerFStop',
+            'pathTracerFocusDistance',
+            'pathTracerApertureBlades',
+            'pathTracerApertureRotation',
+            'pathTracerAnamorphicRatio',
+            'lenses',
+          ],
+        },
+        {
+          title: 'Denoise',
+          fields: [
+            'pathTracerDenoiseMode',
+            'pathTracerDenoise',
+            'pathTracerDenoiseSigma',
+            'pathTracerDenoiseThreshold',
+            'pathTracerDenoiseKSigma',
+            'serverAIDenoiseAspectRatio',
+            'sceneDescription',
+            'serverAi',
+          ],
+        },
+        {
+          title: 'BVH',
+          fields: ['strategy', 'maxLeafTris'],
+        },
+        {
+          title: 'Look',
+          open: true,
+          fields: [
+            'exposure',
+            'toneMapping',
+            'environmentIntensity',
+            'shadowMode',
+            'shadowIntensity',
+            'shadowSoftness',
+          ],
+        },
+        {
+          title: 'Camera',
+          fields: ['fieldOfView', 'orbits'],
+        },
+      ];
+
+      const fields = {
+        src: {label: 'GLB URL', kind: 'url', attr: 'src'},
+        environmentImage: {
+          label: 'Environment / HDR URL',
+          kind: 'url',
+          attr: 'environment-image',
+        },
+        skybox: {label: 'Use HDR as skybox', kind: 'checkbox', attr: 'skybox-image'},
+        pathTracer: {label: 'Path tracer', kind: 'checkbox', attr: 'path-tracer'},
+        pathTracerSamples: {
+          label: 'Samples',
+          kind: 'range',
+          attr: 'path-tracer-samples',
+          min: 1,
+          max: 500,
+          step: 1,
+        },
+        pathTracerSamplesThreshold: {
+          label: 'Samples threshold',
+          kind: 'range',
+          attr: 'path-tracer-samples-threshold',
+          min: 1,
+          max: 64,
+          step: 1,
+        },
+        pathTracerBounces: {
+          label: 'Bounces',
+          kind: 'range',
+          attr: 'path-tracer-bounces',
+          min: 1,
+          max: 50,
+          step: 1,
+        },
+        pathTracerPixelRatio: {
+          label: 'Pixel ratio',
+          kind: 'range',
+          attr: 'path-tracer-pixel-ratio',
+          min: 0,
+          max: 4,
+          step: 0.5,
+        },
+        pathTracerRenderScale: {
+          label: 'Render scale',
+          kind: 'range',
+          attr: 'path-tracer-render-scale',
+          min: 0.1,
+          max: 1,
+          step: 0.01,
+        },
+        tiles: {label: 'Tiles', kind: 'tiles', attr: 'path-tracer-tiles'},
+        pathTracerDepthOfField: {
+          label: 'Depth of field',
+          kind: 'checkbox',
+          attr: 'path-tracer-depth-of-field',
+        },
+        pathTracerFocalLength: {
+          label: 'Focal length',
+          kind: 'range',
+          attr: 'path-tracer-focal-length',
+          min: 10,
+          max: 200,
+          step: 1,
+        },
+        pathTracerFStop: {
+          label: 'f-stop',
+          kind: 'range',
+          attr: 'path-tracer-f-stop',
+          min: 0.5,
+          max: 22,
+          step: 0.1,
+        },
+        pathTracerFocusDistance: {
+          label: 'Focus distance',
+          kind: 'range',
+          attr: 'path-tracer-focus-distance',
+          min: 0.05,
+          max: 20,
+          step: 0.05,
+        },
+        pathTracerApertureBlades: {
+          label: 'Aperture blades',
+          kind: 'range',
+          attr: 'path-tracer-aperture-blades',
+          min: 0,
+          max: 16,
+          step: 1,
+        },
+        pathTracerApertureRotation: {
+          label: 'Aperture rotation (rad)',
+          kind: 'range',
+          attr: 'path-tracer-aperture-rotation',
+          min: -3.14,
+          max: 3.14,
+          step: 0.01,
+        },
+        pathTracerAnamorphicRatio: {
+          label: 'Anamorphic ratio',
+          kind: 'range',
+          attr: 'path-tracer-anamorphic-ratio',
+          min: 0.25,
+          max: 4,
+          step: 0.01,
+        },
+        pathTracerDenoiseMode: {
+          label: 'Denoise mode',
+          kind: 'select',
+          attr: 'path-tracer-denoise-mode',
+          options: ['off', 'gpu', 'server-ai'],
+        },
+        pathTracerDenoise: {
+          label: 'Spatial denoise',
+          kind: 'checkbox',
+          attr: 'path-tracer-denoise',
+        },
+        pathTracerDenoiseSigma: {
+          label: 'Denoise sigma',
+          kind: 'range',
+          attr: 'path-tracer-denoise-sigma',
+          min: 0.1,
+          max: 20,
+          step: 0.1,
+        },
+        pathTracerDenoiseThreshold: {
+          label: 'Denoise threshold',
+          kind: 'range',
+          attr: 'path-tracer-denoise-threshold',
+          min: 0.001,
+          max: 1,
+          step: 0.001,
+        },
+        pathTracerDenoiseKSigma: {
+          label: 'Denoise k-sigma',
+          kind: 'range',
+          attr: 'path-tracer-denoise-k-sigma',
+          min: 0,
+          max: 4,
+          step: 0.05,
+        },
+        serverAIDenoiseAspectRatio: {
+          label: 'Server AI aspect',
+          kind: 'select',
+          attr: 'server-ai-denoise-aspect-ratio',
+          options: ['', '1 / 1', '3 / 2', '2 / 3', '4 / 3', '3 / 4', '16 / 9', '9 / 16'],
+        },
+        sceneDescription: {label: 'Scene description', kind: 'text'},
+        strategy: {
+          label: 'BVH strategy',
+          kind: 'select',
+          options: ['sah', 'center', 'average'],
+        },
+        maxLeafTris: {
+          label: 'Max leaf tris',
+          kind: 'range',
+          min: 1,
+          max: 64,
+          step: 1,
+        },
+        exposure: {
+          label: 'Exposure',
+          kind: 'range',
+          attr: 'exposure',
+          min: 0,
+          max: 5,
+          step: 0.01,
+        },
+        toneMapping: {
+          label: 'Tone mapping',
+          kind: 'select',
+          attr: 'tone-mapping',
+          options: ['auto', 'neutral', 'aces', 'agx', 'reinhard', 'cineon', 'linear', 'none'],
+        },
+        environmentIntensity: {
+          label: 'Environment intensity',
+          kind: 'range',
+          attr: 'environment-intensity',
+          min: 0,
+          max: 5,
+          step: 0.01,
+        },
+        shadowMode: {
+          label: 'Shadow mode',
+          kind: 'select',
+          attr: 'shadow-mode',
+          options: ['none', 'soft-shadow', 'path-tracer'],
+        },
+        shadowIntensity: {
+          label: 'Shadow intensity',
+          kind: 'range',
+          attr: 'shadow-intensity',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        shadowSoftness: {
+          label: 'Shadow softness',
+          kind: 'range',
+          attr: 'shadow-softness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        fieldOfView: {
+          label: 'Field of view',
+          kind: 'range',
+          attr: 'field-of-view',
+          min: 10,
+          max: 90,
+          step: 1,
+        },
+      };
+
+      const inputs = {};
+      let traceStartedAt = performance.now();
+      let applyingQuery = false;
+
+      const sectionOf = (name) => {
+        const details = document.createElement('details');
+        const known = sections.find((section) => section.title === name);
+        if (known?.open) {
+          details.open = true;
+        }
+        const summary = document.createElement('summary');
+        summary.textContent = name;
+        details.append(summary);
+        controls.append(details);
+        return details;
+      };
+
+      const remember = (name, node) => {
+        inputs[name] = node;
+        return node;
+      };
+
+      const addRange = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const line = document.createElement('span');
+        line.className = 'slider-line';
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = String(spec.min);
+        input.max = String(spec.max);
+        input.step = String(spec.step);
+        input.value = String(state[name]);
+        const output = document.createElement('output');
+        output.textContent = formatNumber(state[name], spec.step);
+        input.addEventListener('input', () => {
+          const value = Number(input.value);
+          state[name] = value;
+          output.textContent = formatNumber(value, spec.step);
+          applyField(name);
+          writeQuery();
+        });
+        line.append(input, output);
+        label.append(line);
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const addCheck = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.className = 'row';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(state[name]);
+        input.addEventListener('change', () => {
+          state[name] = input.checked;
+          applyField(name);
+          writeQuery();
+        });
+        label.append(input, document.createTextNode(spec.label));
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const addSelect = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const select = document.createElement('select');
+        for (const option of spec.options) {
+          const node = document.createElement('option');
+          node.value = option;
+          node.textContent = option === '' ? '(auto)' : option;
+          select.append(node);
+        }
+        select.value = String(state[name] ?? '');
+        select.addEventListener('change', () => {
+          state[name] = select.value;
+          applyField(name);
+          writeQuery();
+        });
+        label.append(select);
+        parent.append(label);
+        remember(name, select);
+      };
+
+      const addUrl = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.spellcheck = false;
+        input.value = state[name];
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            loadUrl(name, input.value);
+          }
+        });
+        input.addEventListener('input', () => {
+          state[name] = input.value;
+        });
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Load';
+        button.addEventListener('click', () => loadUrl(name, input.value));
+        const row = document.createElement('div');
+        row.className = 'url-row';
+        row.append(input, button);
+        label.append(row);
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const build = () => {
+        for (const section of sections) {
+          const details = sectionOf(section.title);
+          for (const name of section.fields) {
+            if (name === 'actions') {
+              const actions = document.createElement('div');
+              actions.className = 'actions';
+              actions.append(
+                  actionButton('Start trace', () => {
+                    state.pathTracer = true;
+                    syncControl('pathTracer');
+                    viewer.pathTracer = true;
+                    restartClock();
+                    writeQuery();
+                  }),
+                  actionButton('Stop trace', () => {
+                    state.pathTracer = false;
+                    syncControl('pathTracer');
+                    viewer.pathTracer = false;
+                    writeQuery();
+                  }, 'ghost'),
+                  actionButton('Reset trace', () => {
+                    viewer.resetPathTracer();
+                    restartClock();
+                  }, 'ghost'));
+              details.append(actions);
+              continue;
+            }
+            if (name === 'stats') {
+              const stats = document.createElement('div');
+              stats.className = 'stats';
+              stats.id = 'trace-stats';
+              stats.textContent = 'samples 0 · 0.0s';
+              details.append(stats);
+              continue;
+            }
+            if (name === 'tiles') {
+              const label = document.createElement('label');
+              label.textContent = 'Tiles';
+              const row = document.createElement('div');
+              row.className = 'url-row';
+              const x = document.createElement('input');
+              const y = document.createElement('input');
+              for (const input of [x, y]) {
+                input.type = 'number';
+                input.min = '1';
+                input.max = '8';
+                input.step = '1';
+              }
+              x.value = String(state.tilesX);
+              y.value = String(state.tilesY);
+              const publish = () => {
+                state.tilesX = clampInt(x.value, 1, 8);
+                state.tilesY = clampInt(y.value, 1, 8);
+                viewer.setAttribute('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
+                writeQuery();
+              };
+              x.addEventListener('change', publish);
+              y.addEventListener('change', publish);
+              row.append(x, y);
+              label.append(row);
+              details.append(label);
+              inputs.tilesX = x;
+              inputs.tilesY = y;
+              continue;
+            }
+            if (name === 'lenses' || name === 'orbits') {
+              const wrap = document.createElement('div');
+              wrap.className = 'presets';
+              const source = name === 'lenses' ? LENSES : ORBITS;
+              for (const label of Object.keys(source)) {
+                wrap.append(actionButton(label, () => {
+                  if (name === 'lenses') {
+                    applyLens(label);
+                  } else {
+                    state.orbit = label;
+                    viewer.setAttribute('camera-orbit', ORBITS[label]);
+                    restartClock();
+                    writeQuery();
+                  }
+                }, 'ghost'));
+              }
+              details.append(wrap);
+              continue;
+            }
+            if (name === 'serverAi') {
+              const button = actionButton('Run server AI denoise', () => {
+                runServerAI();
+              });
+              const status = document.createElement('p');
+              status.className = 'hint';
+              status.id = 'server-ai-status';
+              status.textContent = 'Calls pathTracerServerAIDenoise().';
+              details.append(button, status);
+              continue;
+            }
+            if (name === 'sceneDescription') {
+              const label = document.createElement('label');
+              label.textContent = 'Scene description';
+              const area = document.createElement('textarea');
+              area.rows = 2;
+              area.addEventListener('change', () => {
+                state.sceneDescription = area.value;
+                writeQuery();
+              });
+              label.append(area);
+              details.append(label);
+              inputs.sceneDescription = area;
+              continue;
+            }
+            const spec = fields[name];
+            if (spec.kind === 'url') {
+              addUrl(details, name, spec);
+            } else if (spec.kind === 'checkbox') {
+              addCheck(details, name, spec);
+            } else if (spec.kind === 'select') {
+              addSelect(details, name, spec);
+            } else if (spec.kind === 'range') {
+              addRange(details, name, spec);
+            }
+          }
+        }
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent =
+            'WebGPU only. If WebGPU is unavailable the real-time view stays. Denoise attaches Open Image Denoise and ignores sigma, threshold, and k-sigma. Tiles do not split the WebGPU frame. Stop trace turns path-tracer off. Reset trace calls resetPathTracer().';
+        controls.append(hint);
+      };
+
+      const actionButton = (label, onClick, kind) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        if (kind) {
+          button.className = kind;
+        }
+        button.addEventListener('click', onClick);
+        return button;
+      };
+
+      const formatNumber = (value, step) => {
+        const numeric = Number(value);
+        if (Number(step) >= 1) {
+          return String(Math.round(numeric));
+        }
+        const places = String(step).includes('.') ?
+            String(step).split('.')[1].length :
+            0;
+        return numeric.toFixed(places);
+      };
+
+      const clampInt = (value, min, max) => {
+        const numeric = Math.round(Number(value));
+        if (!Number.isFinite(numeric)) {
+          return min;
+        }
+        return Math.min(max, Math.max(min, numeric));
+      };
+
+      const loadUrl = (name, value) => {
+        state[name] = value.trim();
+        if (inputs[name]) {
+          inputs[name].value = state[name];
+        }
+        applyField(name);
+        if (name === 'environmentImage' && state.skybox) {
+          applyField('skybox');
+        }
+        restartClock();
+        writeQuery();
+      };
+
+      const applyField = (name) => {
+        if (name === 'src') {
+          if (state.src) {
+            viewer.setAttribute('src', state.src);
+          }
+          return;
+        }
+        if (name === 'environmentImage') {
+          if (state.environmentImage) {
+            viewer.setAttribute('environment-image', state.environmentImage);
+          } else {
+            viewer.removeAttribute('environment-image');
+          }
+          return;
+        }
+        if (name === 'skybox') {
+          if (state.skybox && state.environmentImage) {
+            viewer.setAttribute('skybox-image', state.environmentImage);
+          } else {
+            viewer.removeAttribute('skybox-image');
+          }
+          return;
+        }
+        if (name === 'strategy' || name === 'maxLeafTris') {
+          viewer.setPathTracerOptions({
+            strategy: state.strategy,
+            maxLeafTris: state.maxLeafTris,
+          });
+          return;
+        }
+        if (name === 'fieldOfView') {
+          viewer.setAttribute('field-of-view', `${state.fieldOfView}deg`);
+          return;
+        }
+        const spec = fields[name];
+        if (spec == null || spec.attr == null || spec.attr === 'skybox-image') {
+          return;
+        }
+        if (spec.kind === 'checkbox') {
+          if (state[name]) {
+            viewer.setAttribute(spec.attr, '');
+          } else {
+            viewer.removeAttribute(spec.attr);
+          }
+          return;
+        }
+        viewer.setAttribute(spec.attr, String(state[name]));
+      };
+
+      const applyLens = (label) => {
+        const lens = LENSES[label];
+        for (const [key, value] of Object.entries(lens)) {
+          if (key === 'fieldOfView') {
+            state.fieldOfView = Number(String(value).replace('deg', ''));
+            syncControl('fieldOfView');
+            viewer.setAttribute('field-of-view', value);
+          } else {
+            state[key] = value;
+            syncControl(key);
+            applyField(key);
+          }
+        }
+        restartClock();
+        writeQuery();
+      };
+
+      const syncControl = (name) => {
+        const node = inputs[name];
+        if (node == null) {
+          return;
+        }
+        if (node.type === 'checkbox') {
+          node.checked = Boolean(state[name]);
+        } else {
+          node.value = String(state[name]);
+          const output = node.parentElement?.querySelector('output');
+          const spec = fields[name];
+          if (output && spec?.step != null) {
+            output.textContent = formatNumber(state[name], spec.step);
+          }
+        }
+      };
+
+      const applyAll = () => {
+        for (const name of Object.keys(fields)) {
+          if (fields[name].kind === 'url') {
+            continue;
+          }
+          applyField(name);
+        }
+        viewer.setAttribute('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
+        viewer.setAttribute('camera-orbit', ORBITS[state.orbit] || ORBITS['Three-quarter']);
+        if (state.src) {
+          viewer.setAttribute('src', state.src);
+        }
+        applyField('environmentImage');
+        applyField('skybox');
+      };
+
+      const writeQuery = () => {
+        if (applyingQuery) {
+          return;
+        }
+        const params = new URLSearchParams();
+        params.set('src', state.src);
+        params.set('env', state.environmentImage);
+        params.set('skybox', state.skybox ? '1' : '0');
+        params.set('path-tracer', state.pathTracer ? '1' : '0');
+        params.set('path-tracer-samples', String(state.pathTracerSamples));
+        params.set('path-tracer-samples-threshold', String(state.pathTracerSamplesThreshold));
+        params.set('path-tracer-bounces', String(state.pathTracerBounces));
+        params.set('path-tracer-render-scale', String(state.pathTracerRenderScale));
+        params.set('path-tracer-pixel-ratio', String(state.pathTracerPixelRatio));
+        params.set('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
+        params.set('path-tracer-depth-of-field', state.pathTracerDepthOfField ? '1' : '0');
+        params.set('path-tracer-focal-length', String(state.pathTracerFocalLength));
+        params.set('path-tracer-f-stop', String(state.pathTracerFStop));
+        params.set('path-tracer-focus-distance', String(state.pathTracerFocusDistance));
+        params.set('path-tracer-aperture-blades', String(state.pathTracerApertureBlades));
+        params.set('path-tracer-aperture-rotation', String(state.pathTracerApertureRotation));
+        params.set('path-tracer-anamorphic-ratio', String(state.pathTracerAnamorphicRatio));
+        params.set('path-tracer-denoise', state.pathTracerDenoise ? '1' : '0');
+        params.set('path-tracer-denoise-sigma', String(state.pathTracerDenoiseSigma));
+        params.set('path-tracer-denoise-threshold', String(state.pathTracerDenoiseThreshold));
+        params.set('path-tracer-denoise-k-sigma', String(state.pathTracerDenoiseKSigma));
+        params.set('path-tracer-denoise-mode', state.pathTracerDenoiseMode);
+        params.set('server-ai-denoise-aspect-ratio', state.serverAIDenoiseAspectRatio);
+        params.set('scene', state.sceneDescription);
+        params.set('strategy', state.strategy);
+        params.set('max-leaf-tris', String(state.maxLeafTris));
+        params.set('exposure', String(state.exposure));
+        params.set('tone-mapping', state.toneMapping);
+        params.set('environment-intensity', String(state.environmentIntensity));
+        params.set('shadow-intensity', String(state.shadowIntensity));
+        params.set('shadow-softness', String(state.shadowSoftness));
+        params.set('shadow-mode', state.shadowMode);
+        params.set('field-of-view', String(state.fieldOfView));
+        params.set('camera-orbit', state.orbit);
+        history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+      };
+
+      const readBool = (params, key, fallback) => {
+        if (!params.has(key)) {
+          return fallback;
+        }
+        return params.get(key) === '1';
+      };
+
+      const readNumber = (params, key, fallback) => {
+        if (!params.has(key)) {
+          return fallback;
+        }
+        const value = Number(params.get(key));
+        return Number.isFinite(value) ? value : fallback;
+      };
+
+      const readQuery = () => {
+        const params = new URLSearchParams(location.search);
+        if ([...params.keys()].length === 0) {
+          return;
+        }
+        applyingQuery = true;
+        state.src = params.get('src') || state.src;
+        state.environmentImage = params.has('env') ? params.get('env') : state.environmentImage;
+        state.skybox = readBool(params, 'skybox', state.skybox);
+        state.pathTracer = readBool(params, 'path-tracer', state.pathTracer);
+        state.pathTracerSamples = readNumber(params, 'path-tracer-samples', state.pathTracerSamples);
+        state.pathTracerSamplesThreshold = readNumber(params, 'path-tracer-samples-threshold', state.pathTracerSamplesThreshold);
+        state.pathTracerBounces = readNumber(params, 'path-tracer-bounces', state.pathTracerBounces);
+        state.pathTracerRenderScale = readNumber(params, 'path-tracer-render-scale', state.pathTracerRenderScale);
+        state.pathTracerPixelRatio = readNumber(params, 'path-tracer-pixel-ratio', state.pathTracerPixelRatio);
+        const tiles = (params.get('path-tracer-tiles') || '').split(/[\s,]+/).map(Number);
+        if (Number.isFinite(tiles[0])) {
+          state.tilesX = tiles[0];
+        }
+        if (Number.isFinite(tiles[1])) {
+          state.tilesY = tiles[1];
+        }
+        state.pathTracerDepthOfField = readBool(params, 'path-tracer-depth-of-field', state.pathTracerDepthOfField);
+        state.pathTracerFocalLength = readNumber(params, 'path-tracer-focal-length', state.pathTracerFocalLength);
+        state.pathTracerFStop = readNumber(params, 'path-tracer-f-stop', state.pathTracerFStop);
+        state.pathTracerFocusDistance = readNumber(params, 'path-tracer-focus-distance', state.pathTracerFocusDistance);
+        state.pathTracerApertureBlades = readNumber(params, 'path-tracer-aperture-blades', state.pathTracerApertureBlades);
+        state.pathTracerApertureRotation = readNumber(params, 'path-tracer-aperture-rotation', state.pathTracerApertureRotation);
+        state.pathTracerAnamorphicRatio = readNumber(params, 'path-tracer-anamorphic-ratio', state.pathTracerAnamorphicRatio);
+        state.pathTracerDenoise = readBool(params, 'path-tracer-denoise', state.pathTracerDenoise);
+        state.pathTracerDenoiseSigma = readNumber(params, 'path-tracer-denoise-sigma', state.pathTracerDenoiseSigma);
+        state.pathTracerDenoiseThreshold = readNumber(params, 'path-tracer-denoise-threshold', state.pathTracerDenoiseThreshold);
+        state.pathTracerDenoiseKSigma = readNumber(params, 'path-tracer-denoise-k-sigma', state.pathTracerDenoiseKSigma);
+        state.pathTracerDenoiseMode = params.get('path-tracer-denoise-mode') || state.pathTracerDenoiseMode;
+        state.serverAIDenoiseAspectRatio = params.get('server-ai-denoise-aspect-ratio') ?? state.serverAIDenoiseAspectRatio;
+        state.sceneDescription = params.get('scene') ?? state.sceneDescription;
+        state.strategy = params.get('strategy') || state.strategy;
+        state.maxLeafTris = readNumber(params, 'max-leaf-tris', state.maxLeafTris);
+        state.exposure = readNumber(params, 'exposure', state.exposure);
+        state.toneMapping = params.get('tone-mapping') || state.toneMapping;
+        state.environmentIntensity = readNumber(params, 'environment-intensity', state.environmentIntensity);
+        state.shadowIntensity = readNumber(params, 'shadow-intensity', state.shadowIntensity);
+        state.shadowSoftness = readNumber(params, 'shadow-softness', state.shadowSoftness);
+        state.shadowMode = params.get('shadow-mode') || state.shadowMode;
+        state.fieldOfView = readNumber(params, 'field-of-view', state.fieldOfView);
+        state.orbit = params.get('camera-orbit') || state.orbit;
+        applyingQuery = false;
+      };
+
+      const pushControls = () => {
+        for (const name of Object.keys(inputs)) {
+          if (name === 'tilesX' || name === 'tilesY') {
+            continue;
+          }
+          syncControl(name);
+        }
+        if (inputs.tilesX) {
+          inputs.tilesX.value = String(state.tilesX);
+          inputs.tilesY.value = String(state.tilesY);
+        }
+        if (inputs.sceneDescription) {
+          inputs.sceneDescription.value = state.sceneDescription;
+        }
+      };
+
+      const restartClock = () => {
+        traceStartedAt = performance.now();
+      };
+
+      const runServerAI = async () => {
+        const status = document.querySelector('#server-ai-status');
+        status.textContent = 'Waiting for samples, then calling pathTracerServerAIDenoise()…';
+        try {
+          const image = await viewer.pathTracerServerAIDenoise({
+            sceneDescription: state.sceneDescription || undefined,
+          });
+          status.textContent = 'Server AI denoise returned an image URL.';
+          status.title = image;
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : String(error);
+        }
+      };
+
+      viewer.addEventListener('load', restartClock);
+      viewer.addEventListener('camera-change', restartClock);
+
+      build();
+      readQuery();
+      pushControls();
+      applyAll();
+      writeQuery();
+
+      const stats = document.querySelector('#trace-stats');
+      const tick = () => {
+        const samples = Math.floor(Number(viewer.pathTracerRenderedSamples || 0));
+        const seconds = ((performance.now() - traceStartedAt) / 1000).toFixed(1);
+        const ready = viewer.isPathTracerReady ? 'ready' : 'building';
+        stats.textContent = `samples ${samples} · ${seconds}s · ${ready}`;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>
