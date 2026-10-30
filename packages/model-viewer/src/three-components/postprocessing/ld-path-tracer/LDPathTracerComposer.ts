@@ -138,6 +138,8 @@ export interface PathTracerOptions {
   traceSamplesMode: TraceSamplesMode;
   /** Adaptive stop: mean luminance change between checkpoints, 0-255. */
   traceAdaptiveThreshold: number;
+  /** Adaptive never stops before this many samples (capped at `samples`). */
+  traceMinSamples: number;
   /** Fade-in of a settled trace after the camera stops. Off is instant. */
   traceFadeMs: number;
 }
@@ -170,6 +172,7 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   traceMaterialRoles: DEFAULT_TRACE_COMPOSITE_OPTIONS.materialRoles,
   traceSamplesMode: 'fixed',
   traceAdaptiveThreshold: 1,
+  traceMinSamples: 16,
   traceFadeMs: 150,
 };
 
@@ -452,6 +455,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.beautyTrace.stampFor(viewPlan.scene, traceCamera, bounces, maxSamples),
         options.traceSamplesMode,
         options.traceAdaptiveThreshold,
+        options.traceMinSamples,
         options.renderScale,
         options.denoise,
         this.drawingBuffer.x,
@@ -572,7 +576,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       change: Number.isFinite(change) ? Math.round(change * 1000) / 1000 : -1,
       ms: Math.round(elapsed),
     });
-    const converged = change < Math.max(0, this.options.traceAdaptiveThreshold);
+    // Checkpoints before the floor only refresh the snapshot; convergence
+    // can end the trace from traceMinSamples on.
+    const floor = Math.min(maxSamples, Math.max(1, Math.floor(this.options.traceMinSamples)));
+    const converged = this.sampleCap >= floor &&
+        change < Math.max(0, this.options.traceAdaptiveThreshold);
     if (converged || this.sampleCap >= maxSamples) {
       this.viewDone = true;
       this.stats.converged = converged;

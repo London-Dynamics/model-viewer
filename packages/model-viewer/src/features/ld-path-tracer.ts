@@ -57,6 +57,7 @@ export declare interface LDPathTracerInterface {
   pathTracerMaterialRoles: string;
   pathTracerSamplesMode: TraceSamplesMode;
   pathTracerAdaptiveThreshold: number;
+  pathTracerMinSamples: number;
   pathTracerFadeMs: number;
   readonly pathTracerStats: TraceStats|null;
   readonly pathTracerRenderedSamples: number;
@@ -197,6 +198,10 @@ export const LDPathTracerMixin = <
     pathTracerAdaptiveThreshold =
         DEFAULT_PATH_TRACER_OPTIONS.traceAdaptiveThreshold;
 
+    /** Adaptive mode never stops before this many samples (default 16). */
+    @property({type: Number, attribute: 'path-tracer-min-samples'})
+    pathTracerMinSamples = DEFAULT_PATH_TRACER_OPTIONS.traceMinSamples;
+
     /** Fade-in after the camera stops, ms. The trace turns off instantly. */
     @property({type: Number, attribute: 'path-tracer-fade-ms'})
     pathTracerFadeMs = DEFAULT_PATH_TRACER_OPTIONS.traceFadeMs;
@@ -333,6 +338,7 @@ export const LDPathTracerMixin = <
         'pathTracerMaterialRoles',
         'pathTracerSamplesMode',
         'pathTracerAdaptiveThreshold',
+        'pathTracerMinSamples',
         'pathTracerFadeMs',
         'ambientOcclusion',
         'aoAlgorithm',
@@ -447,6 +453,9 @@ export const LDPathTracerMixin = <
         traceAdaptiveThreshold: Number.isFinite(this.pathTracerAdaptiveThreshold) ?
             Math.max(0, this.pathTracerAdaptiveThreshold) :
             DEFAULT_PATH_TRACER_OPTIONS.traceAdaptiveThreshold,
+        traceMinSamples: Number.isFinite(this.pathTracerMinSamples) ?
+            Math.max(1, Math.floor(this.pathTracerMinSamples)) :
+            DEFAULT_PATH_TRACER_OPTIONS.traceMinSamples,
         traceFadeMs: Number.isFinite(this.pathTracerFadeMs) ?
             Math.max(0, this.pathTracerFadeMs) :
             DEFAULT_PATH_TRACER_OPTIONS.traceFadeMs,
