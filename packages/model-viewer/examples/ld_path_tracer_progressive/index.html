@@ -49,7 +49,7 @@
     </details>
     <details open>
       <summary>Trace composite</summary>
-      <p class="hint">No baking. The trace runs in immediate mode and is mixed with the real-time render. Attributes: path-tracer-mode, path-tracer-view, path-tracer-exclude, path-tracer-excluded-cast-shadow, path-tracer-ground-shadow.</p>
+      <p class="hint">No baking. The trace runs in immediate mode and is mixed with the real-time render. Attributes: path-tracer-mode, -view, -shadow-quality, -ao-distance, -exclude, -excluded-cast-shadow, -material-roles, -ground-shadow, -samples-mode, -adaptive-threshold, -fade-ms. The trace turns off on the first camera move (real-time + burned ground stay) and fades in once settled.</p>
       <div class="rows">
         <label><span>Mode</span>
           <select id="tmode">
@@ -57,7 +57,16 @@
             <option value="full">full trace</option>
             <option value="shadows" selected>trace shadows</option>
             <option value="lighting">trace lights + shadows</option>
+            <option value="ground">burned ground shadow only</option>
           </select>
+        </label>
+        <label><span>Shadow quality</span>
+          <select id="shadow-quality">
+            <option value="normal" selected>normal (full trace)</option>
+            <option value="fast">fast (short-range AO)</option>
+          </select>
+        </label>
+        <label><span>AO distance m</span><input id="ao-distance" type="number" min="0.005" max="2" step="0.005" value="0.05" />
         </label>
         <label><span>View</span>
           <select id="tview">
@@ -74,7 +83,16 @@
         </label>
         <label><span>+ names</span><input id="exclude-names" type="text" placeholder="glass*, material:Chrome" /></label>
         <label><span>Excluded cast shadow</span><input id="excluded-cast" type="checkbox" /></label>
+        <label><span>Material roles</span><input id="material-roles" type="text" placeholder="Glass*: exclude; Tyre*: no-receive; Floor: receive-only" /></label>
         <label><span>Ground shadow</span><input id="ground-shadow" type="number" min="0" max="2" step="0.05" value="1" /></label>
+        <label><span>Samples mode</span>
+          <select id="samples-mode">
+            <option value="fixed" selected>fixed</option>
+            <option value="adaptive">adaptive (stop on converge)</option>
+          </select>
+        </label>
+        <label><span>Adaptive threshold</span><input id="adaptive-threshold" type="number" min="0" max="20" step="0.1" value="1" /></label>
+        <label><span>Fade-in ms</span><input id="fade-ms" type="number" min="0" max="2000" step="10" value="150" /></label>
       </div>
     </details>
     <details open>
@@ -287,6 +305,12 @@
       mv.pathTracerExclude = [val('exclude-preset'), val('exclude-names')].filter(Boolean).join(',');
       mv.pathTracerExcludedCastShadow = val('excluded-cast');
       mv.pathTracerGroundShadow = val('ground-shadow');
+      mv.pathTracerShadowQuality = val('shadow-quality');
+      mv.pathTracerAoDistance = val('ao-distance');
+      mv.pathTracerMaterialRoles = val('material-roles');
+      mv.pathTracerSamplesMode = val('samples-mode');
+      mv.pathTracerAdaptiveThreshold = val('adaptive-threshold');
+      mv.pathTracerFadeMs = val('fade-ms');
       mv.pathTracer = tmode !== 'realtime';
       traceClock.start = performance.now();
       traceClock.settledMs = null;
@@ -359,8 +383,15 @@
         traceClock.settledMs = performance.now() - traceClock.start;
       }
       const excluded = mv.getPathTracerExcludedMeshes ? mv.getPathTracerExcludedMeshes() : [];
+      const stats = mv.pathTracerStats;
+      const ms = (v) => v == null ? '–' : Math.round(v) + 'ms';
       return [
-        'composite ' + val('tmode') + ' / ' + val('tview'),
+        'composite ' + val('tmode') + ' / ' + val('tview') +
+            (val('tmode') === 'shadows' ? ' / ' + val('shadow-quality') : '') + ' / ' + val('samples-mode'),
+        stats ? 'ground ' + (stats.groundReady ? 'burned ' + ms(stats.burnMs) : 'pending') +
+            '  first ' + ms(stats.firstSnapshotMs) + '  final ' + ms(stats.settledMs) +
+            '  spp ' + stats.samples + (stats.converged ? ' (converged)' : '') +
+            '  fade ' + stats.fade.toFixed(2) : 'stats –',
         'trace ' + samples + '/' + val('samples') + ' samples  ' +
             (settled ? 'settled ' + Math.round(traceClock.settledMs || 0) + 'ms' :
                        'running ' + Math.round(performance.now() - traceClock.start) + 'ms'),
@@ -470,6 +501,12 @@
         add(scene.environment, scene.label);
         add(scene.nightEnvironment, scene.label + ' night');
       }
+      // HDR presets: changing the preset is changing the HDR.
+      for (const name of ['neutral', 'lightroom_14b', 'spruit_sunrise_1k_HDR', 'aircraft_workshop_01_1k',
+                          'whipple_creek_regional_park_04_1k', 'pillars_1k', 'music_hall_01_1k', 'lebombo_1k',
+                          'moon_1k', 'white_furnace']) {
+        add(`../../../shared-assets/environments/${name}.hdr`, 'preset: ' + name.replace(/_1k|_HDR|_04/g, ''));
+      }
       viewEnv.replaceChildren();
       bakeEnv.replaceChildren();
       const match = document.createElement('option');
@@ -540,7 +577,7 @@
       applyOptions();
     });
     const query = new URLSearchParams(location.search);
-    for (const [key, id] of [['camera', 'camera'], ['mode', 'tmode'], ['view', 'tview'], ['exclude', 'exclude-preset']]) {
+    for (const [key, id] of [['camera', 'camera'], ['mode', 'tmode'], ['view', 'tview'], ['exclude', 'exclude-preset'], ['quality', 'shadow-quality'], ['samplesmode', 'samples-mode'], ['roles', 'material-roles']]) {
       if (query.has(key)) $(id).value = query.get(key);
     }
     selectScene(query.get('model') || 'aquila');

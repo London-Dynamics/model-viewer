@@ -30,6 +30,7 @@ const FRAME_BUDGET = 250000;
 type Denoiser = {
   complete: boolean;
   running: boolean;
+  reset(): void;
 };
 
 type GpuTracer = {
@@ -39,6 +40,9 @@ type GpuTracer = {
   renderScale: number;
   minSamples: number;
   renderDelay: number;
+  fadeDuration: number;
+  /** Local three-gpu-pathtracer patch; see patches/README.md. */
+  maxRayDistance?: number;
   setRandom(random: object): void;
   setMultipleImportanceSampling(value: boolean): void;
   setDenoiser(denoiser: object|null): void;
@@ -78,6 +82,7 @@ export class WebGPUBeautyTrace {
   private denoise = true;
   private denoiser: Denoiser|null = null;
   private linearScale: number|null = null;
+  private maxRayDistance = 0;
   presented = false;
   samples = 0;
 
@@ -87,6 +92,28 @@ export class WebGPUBeautyTrace {
    */
   setLinearOutput(scale: number|null) {
     this.linearScale = scale;
+  }
+
+  /**
+   * Bounce and shadow rays stop after this distance (0: unbounded). The fast
+   * shadow trace uses it as a short-range ambient occlusion radius.
+   */
+  setMaxRayDistance(distance: number) {
+    this.maxRayDistance = Math.max(0, distance);
+  }
+
+  /** What the tracer is accumulating now. */
+  stamp(): string {
+    const tracer = this.tracer;
+    if (tracer == null || this.boundScene == null) {
+      return '';
+    }
+    return `${this.boundScene.uuid}|${this.cameraStamp}|${this.environmentStamp}|${tracer.maxBounces}|${tracer.maxRayDistance ?? 0}|${tracer.maxSamples}`;
+  }
+
+  /** What sample(scene, camera) is asked to accumulate. */
+  stampFor(scene: Scene, camera: Camera, bounces: number, samples: number): string {
+    return `${scene.uuid}|${this.cameraKey(camera)}|${this.environmentKey(scene)}|${Math.max(1, bounces)}|${this.maxRayDistance}|${Math.max(1, samples)}`;
   }
 
   /** True once the sample cap is reached and OIDN, when enabled, has finished. */
@@ -177,6 +204,8 @@ export class WebGPUBeautyTrace {
     pathTracer.renderScale = Math.min(1, Math.max(0.1, renderScale));
     pathTracer.minSamples = 1;
     pathTracer.renderDelay = 0;
+    // The composite fades the settled trace in itself.
+    pathTracer.fadeDuration = 0;
     pathTracer.setRandom(gpu.RANDOM_BLUE_DITHER);
     pathTracer.setMultipleImportanceSampling(true);
     this.denoise = denoise;
@@ -288,10 +317,23 @@ export class WebGPUBeautyTrace {
     this.matchOutput(gl);
     const nextBounces = Math.max(1, bounces);
     const nextSamples = Math.max(1, samples);
-    if (this.tracer.maxBounces !== nextBounces) {
+    if (this.tracer.maxBounces !== nextBounces && !this.denoiseBusy()) {
       this.tracer.maxBounces = nextBounces;
+      this.tracer.reset();
+      this.samples = 0;
+    }
+    if ((this.tracer.maxRayDistance ?? 0) !== this.maxRayDistance &&
+        !this.denoiseBusy()) {
+      this.tracer.maxRayDistance = this.maxRayDistance;
+      this.samples = 0;
     }
     if (this.tracer.maxSamples !== nextSamples) {
+      // A raised cap resumes sampling; the denoiser must run again on the
+      // longer accumulation instead of keeping the old result.
+      if (nextSamples > this.tracer.maxSamples && this.denoiser != null &&
+          !this.denoiser.running) {
+        this.denoiser.reset();
+      }
       this.tracer.maxSamples = nextSamples;
     }
     this.tracer.renderScale = Math.min(1, Math.max(0.1, renderScale));

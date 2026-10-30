@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer} from 'three';
+import {Camera, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, NoBlending, NoToneMapping, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer} from 'three';
 import {PhysicalCamera} from 'three-gpu-pathtracer/src/objects/PhysicalCamera.js';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -24,7 +24,7 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 import {cloneProgressiveSettings, DEFAULT_PROGRESSIVE_SETTINGS, ProgressiveSettings} from './progressive/options.js';
 import {ProgressivePipeline} from './progressive/ProgressivePipeline.js';
 import {fitCameraAspect} from './progressive/surface-bake.js';
-import {DEFAULT_TRACE_COMPOSITE_OPTIONS, TRACE_LINEAR_SCALE, TraceComposite, TraceCompositeOptions, TraceMode, TraceView} from './progressive/trace-composite.js';
+import {DEFAULT_TRACE_COMPOSITE_OPTIONS, TRACE_LINEAR_SCALE, TraceComposite, TraceCompositeOptions, TraceMode, TracePlan, TraceSamplesMode, TraceShadowQuality, TraceSnapshot, TraceView} from './progressive/trace-composite.js';
 import {WebGPUBeautyTrace} from './progressive/webgpu-beauty-trace.js';
 
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -78,10 +78,28 @@ const PATH_TRACER_RESET_OPTION_KEYS = [
   'apertureBlades',
   'apertureRotation',
   'anamorphicRatio',
-  'traceMode',
-  'traceExclude',
-  'traceExcludedCastShadow',
 ] as const;
+
+/** Timings of the current trace composite, for the test page and tests. */
+export interface TraceStats {
+  mode: TraceMode;
+  view: TraceView;
+  /** Ground shadow burn, ms from its start to the burned texture. */
+  burnMs: number|null;
+  /** Camera stop to the first denoised snapshot on screen. */
+  firstSnapshotMs: number|null;
+  /** Camera stop to the final snapshot (sample cap or convergence). */
+  settledMs: number|null;
+  /** Samples in the snapshot on screen. */
+  samples: number;
+  checkpoints: Array<{samples: number, change: number, ms: number}>;
+  converged: boolean;
+  groundReady: boolean;
+  /** Ground shadow burns since the composer started. */
+  burns: number;
+  fade: number;
+  excluded: number;
+}
 
 export interface PathTracerOptions {
   samples: number;
@@ -110,6 +128,18 @@ export interface PathTracerOptions {
   traceExcludedCastShadow: boolean;
   /** Traced ground catcher strength in the composite modes. */
   traceGroundShadow: number;
+  /** normal: full shadow trace; fast: short-range AO under a white sky. */
+  traceShadowQuality: TraceShadowQuality;
+  /** Fast shadow ray length, metres. */
+  traceAoDistance: number;
+  /** Per-material roles; see TraceCompositeOptions.materialRoles. */
+  traceMaterialRoles: string;
+  /** fixed: trace `samples`; adaptive: stop once the denoised frame converges. */
+  traceSamplesMode: TraceSamplesMode;
+  /** Adaptive stop: mean luminance change between checkpoints, 0-255. */
+  traceAdaptiveThreshold: number;
+  /** Fade-in of a settled trace after the camera stops. Off is instant. */
+  traceFadeMs: number;
 }
 
 export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
@@ -135,7 +165,15 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   traceExclude: DEFAULT_TRACE_COMPOSITE_OPTIONS.exclude,
   traceExcludedCastShadow: DEFAULT_TRACE_COMPOSITE_OPTIONS.excludedCastShadow,
   traceGroundShadow: DEFAULT_TRACE_COMPOSITE_OPTIONS.groundShadow,
+  traceShadowQuality: DEFAULT_TRACE_COMPOSITE_OPTIONS.shadowQuality,
+  traceAoDistance: DEFAULT_TRACE_COMPOSITE_OPTIONS.aoDistance,
+  traceMaterialRoles: DEFAULT_TRACE_COMPOSITE_OPTIONS.materialRoles,
+  traceSamplesMode: 'fixed',
+  traceAdaptiveThreshold: 1,
+  traceFadeMs: 150,
 };
+
+const ADAPTIVE_FIRST_CHECKPOINT = 4;
 
 /**
  * Beauty samples come only from WebGPUPathTracer. The raster view stays on
@@ -172,6 +210,21 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private lookStamp = '';
   private readonly beautyTrace = new WebGPUBeautyTrace();
   private readonly composite = new TraceComposite();
+  private readonly snapshot = new TraceSnapshot();
+  private readonly burnSnapshot = new TraceSnapshot();
+  private readonly drawingBuffer = new Vector2();
+  private viewKey = '';
+  private viewChangedThisFrame = false;
+  private viewStart = 0;
+  private viewDone = false;
+  private snapshotValid = false;
+  private fadeStart = 0;
+  private sampleCap = 0;
+  private settledFrames = 0;
+  private capturedStamp = '';
+  private burnStart = -1;
+  private burnCount = 0;
+  private stats: TraceStats = this.emptyStats();
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -255,29 +308,50 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.applyOutputState(false);
-    const proxy = this.composite.sync(this.scene, this.compositeOptions());
-    if (proxy != null) {
-      this.renderComposite(proxy);
+    if (this.options.traceView === 'realtime') {
+      this.renderer.autoClear = true;
+      this.renderer.render(this.scene, this.scene.getCamera());
+      if (this.shouldRenderAmbientOcclusionPreview()) {
+        this.ambientOcclusionPreviewComposer?.render(deltaTime);
+      }
+      this.renderSoftShadowOverlay();
+      this.stats = {...this.emptyStats(), view: 'realtime'};
+      this.maybeMarkReady();
       return;
     }
-    this.beautyTrace.setLinearOutput(null);
-    this.renderer.autoClear = true;
-    this.renderer.render(this.scene, this.scene.getCamera());
-    this.followLook(false);
-    this.sampleBeauty();
-    if (this.options.traceView !== 'realtime') {
-      this.compositeBeauty(1);
-    }
-    if (this.shouldRenderAmbientOcclusionPreview()) {
-      this.ambientOcclusionPreviewComposer?.render(deltaTime);
-    }
-    this.renderSoftShadowOverlay();
+    this.renderComposite();
+  }
 
-    if (this.beautyTrace.samples < this.options.samples &&
-        (this.beautyTrace.active || this.beautyTrace.canStart())) {
-      this.queueNextProgressiveRender();
-    }
-    this.maybeMarkReady();
+  private emptyStats(): TraceStats {
+    return {
+      mode: this.options?.traceMode ?? 'full',
+      view: this.options?.traceView ?? 'composite',
+      burnMs: null,
+      firstSnapshotMs: null,
+      settledMs: null,
+      samples: 0,
+      checkpoints: [],
+      converged: false,
+      groundReady: false,
+      burns: this.burnCount ?? 0,
+      fade: 0,
+      excluded: 0,
+    };
+  }
+
+  /** Timings and state of the trace composite. */
+  getTraceStats(): TraceStats {
+    return {
+      ...this.stats,
+      checkpoints: this.stats.checkpoints.map((entry) => ({...entry})),
+      groundReady: this.composite.groundReady,
+      burns: this.burnCount,
+      excluded: this.composite.excludedMeshes().length,
+    };
+  }
+
+  getTraceRoles() {
+    return this.composite.rolesSummary();
   }
 
   updateOptions(partial: Partial<PathTracerOptions>) {
@@ -307,9 +381,28 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return this.beautyTrace.samples;
   }
 
-  /** Sample cap reached and the denoiser, when on, has finished. */
+  /**
+   * The final denoised trace is on screen at full weight and the ground
+   * shadow layer, when used, is burned.
+   */
   isTraceSettled(): boolean {
-    return this.beautyTrace.settled();
+    const options = this.options;
+    if (options.traceView === 'realtime') {
+      return true;
+    }
+    if (!this.beautyTrace.canStart() && !this.beautyTrace.active) {
+      return true;
+    }
+    const groundNeeded = options.traceMode !== 'full' &&
+        options.traceGroundShadow > 0;
+    if (groundNeeded && !this.composite.groundReady) {
+      return false;
+    }
+    if (options.traceMode === 'ground') {
+      return true;
+    }
+    return this.viewDone && this.stats.fade >= 1 && this.viewKey !== '' &&
+        !this.viewChangedThisFrame;
   }
 
   /** Names of the meshes the current exclusion setting keeps out of the trace. */
@@ -324,45 +417,169 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       exclude: this.options.traceExclude,
       excludedCastShadow: this.options.traceExcludedCastShadow,
       groundShadow: this.options.traceGroundShadow,
+      shadowQuality: this.options.traceShadowQuality,
+      aoDistance: this.options.traceAoDistance,
+      materialRoles: this.options.traceMaterialRoles,
     };
   }
 
   /**
-   * Shadows, lighting, or full with exclusions: trace the proxy scene in
-   * linear light and mix it with linear real-time passes. Tone mapping and
-   * exposure are applied once, in the composite, so real-time and trace
-   * share one look.
+   * Every immediate-mode trace goes through here. The tracer works on a
+   * proxy scene in linear light; the composite only ever shows a settled,
+   * denoised snapshot of it. A camera change drops the snapshot at once, so
+   * only real-time and the burned ground layer show while the camera moves;
+   * the next settled snapshot fades in over traceFadeMs.
    */
-  private renderComposite(proxy: Scene) {
+  private renderComposite() {
     const renderer = this.renderer!;
     const scene = this.scene!;
+    const options = this.options;
+    const compositeOptions = this.compositeOptions();
+    renderer.getDrawingBufferSize(this.drawingBuffer);
+    const plan = this.composite.plan(scene, compositeOptions, this.drawingBuffer);
+    const traceCamera = this.traceCamera();
+    const now = performance.now();
+    const adaptive = options.traceSamplesMode === 'adaptive';
+    const maxSamples = Math.max(1, Math.floor(options.samples));
+
+    this.viewChangedThisFrame = false;
+    const viewPlan = plan.view;
+    if (viewPlan != null) {
+      const bounces = viewPlan.bounces ?? options.bounces;
+      this.beautyTrace.setMaxRayDistance(viewPlan.maxRayDistance);
+      const key = [
+        viewPlan.key,
+        this.beautyTrace.stampFor(viewPlan.scene, traceCamera, bounces, maxSamples),
+        options.traceSamplesMode,
+        options.traceAdaptiveThreshold,
+        options.renderScale,
+        options.denoise,
+        this.drawingBuffer.x,
+        this.drawingBuffer.y,
+      ].join('#');
+      if (key !== this.viewKey) {
+        this.viewKey = key;
+        this.viewChangedThisFrame = true;
+        this.viewStart = now;
+        this.viewDone = false;
+        this.snapshotValid = false;
+        this.settledFrames = 0;
+        this.capturedStamp = '';
+        this.sampleCap = adaptive ?
+            Math.min(maxSamples, ADAPTIVE_FIRST_CHECKPOINT) :
+            maxSamples;
+        this.snapshot.forget();
+        const burnMs = this.stats.burnMs;
+        this.stats = {...this.emptyStats(), burnMs};
+      }
+    } else {
+      if (this.viewKey !== '') {
+        const burnMs = this.stats.burnMs;
+        this.stats = {...this.emptyStats(), burnMs};
+      }
+      this.viewKey = '';
+      this.snapshotValid = false;
+      this.viewDone = true;
+    }
+
+    // The burn runs first and is independent of the camera; the view trace
+    // waits for one unchanged frame so an orbit does not trace every frame.
+    let job: TracePlan|null = null;
+    let jobSamples = maxSamples;
+    if (plan.burn != null) {
+      job = plan.burn;
+      if (this.burnStart < 0) {
+        this.burnStart = now;
+      }
+    } else if (viewPlan != null && !this.viewDone && !this.viewChangedThisFrame) {
+      job = viewPlan;
+      jobSamples = this.sampleCap;
+    }
+
     this.beautyTrace.setLinearOutput(TRACE_LINEAR_SCALE);
-    if (!this.disposed &&
-        (this.beautyTrace.canStart() || this.beautyTrace.active)) {
+    const tracing = !this.disposed &&
+        (this.beautyTrace.canStart() || this.beautyTrace.active);
+    if (job != null && tracing) {
+      const camera = job.camera ?? traceCamera;
+      const bounces = job.bounces ?? options.bounces;
+      this.beautyTrace.setMaxRayDistance(job.maxRayDistance);
+      const want =
+          this.beautyTrace.stampFor(job.scene, camera, bounces, jobSamples);
+      // The denoised frame is presented by the renderSample after OIDN
+      // completes, so it is on the canvas only after a call that started
+      // settled.
+      const wasSettled =
+          this.beautyTrace.settled() && this.beautyTrace.stamp() === want;
       try {
         this.beautyTrace.sample(
-            proxy,
-            this.traceCamera(),
-            renderer,
-            this.options.bounces,
-            this.options.samples,
-            this.options.denoise,
-            this.options.renderScale);
+            job.scene, camera, renderer, bounces, jobSamples, options.denoise,
+            options.renderScale);
       } catch (error) {
         console.warn('[model-viewer] WebGPU composite trace sample failed.', error);
       }
+      this.settledFrames = wasSettled ? this.settledFrames + 1 : 0;
+      if (this.settledFrames >= 1 && this.capturedStamp !== want) {
+        this.capturedStamp = want;
+        this.settledFrames = 0;
+        if (job === plan.burn) {
+          this.burnSnapshot.capture(this.beautyTrace.canvas);
+          this.composite.finishBurn(renderer, this.burnSnapshot.texture);
+          this.stats.burnMs = performance.now() - this.burnStart;
+          this.burnStart = -1;
+          this.burnCount++;
+          this.capturedStamp = '';
+        } else {
+          this.captureView(now, maxSamples, adaptive);
+        }
+      }
     }
-    const texture =
-        this.beautyTrace.samples >= this.options.samplesThreshold ?
-        this.beautyTrace.outputTexture() :
-        null;
+
+    const fadeMs = Math.max(0, options.traceFadeMs);
+    const fade = !this.snapshotValid ? 0 :
+        fadeMs <= 0                  ? 1 :
+                                       Math.min(1, (now - this.fadeStart) / fadeMs);
+    this.stats.fade = fade;
     this.composite.draw(
-        renderer, scene, scene.getCamera(), texture, this.compositeOptions());
-    if (this.beautyTrace.samples < this.options.samples &&
-        (this.beautyTrace.active || this.beautyTrace.canStart())) {
+        renderer, scene, scene.getCamera(),
+        this.snapshotValid ? this.snapshot.texture : null, fade,
+        compositeOptions, viewPlan);
+
+    const more = plan.burn != null || (viewPlan != null && !this.viewDone) ||
+        (this.snapshotValid && fade < 1);
+    if (tracing && more) {
       this.queueNextProgressiveRender();
     }
     this.maybeMarkReady();
+  }
+
+  private captureView(now: number, maxSamples: number, adaptive: boolean) {
+    this.snapshot.capture(this.beautyTrace.canvas);
+    const elapsed = performance.now() - this.viewStart;
+    if (!this.snapshotValid) {
+      this.snapshotValid = true;
+      this.fadeStart = now;
+      this.stats.firstSnapshotMs = elapsed;
+    }
+    this.stats.samples = this.sampleCap;
+    if (!adaptive) {
+      this.viewDone = true;
+      this.stats.settledMs = elapsed;
+      return;
+    }
+    const change = this.snapshot.change();
+    this.stats.checkpoints.push({
+      samples: this.sampleCap,
+      change: Number.isFinite(change) ? Math.round(change * 1000) / 1000 : -1,
+      ms: Math.round(elapsed),
+    });
+    const converged = change < Math.max(0, this.options.traceAdaptiveThreshold);
+    if (converged || this.sampleCap >= maxSamples) {
+      this.viewDone = true;
+      this.stats.converged = converged;
+      this.stats.settledMs = elapsed;
+      return;
+    }
+    this.sampleCap = Math.min(maxSamples, this.sampleCap * 2);
   }
 
   get isReady() {
@@ -499,6 +716,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.traceBlit = null;
     this.beautyTrace.dispose();
     this.composite.dispose();
+    this.snapshot.dispose();
+    this.burnSnapshot.dispose();
     this.disposeShadowCatcher();
     this.renderer = null;
     this.scene = null;
