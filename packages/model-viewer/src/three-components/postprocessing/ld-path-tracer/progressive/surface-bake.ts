@@ -33,7 +33,6 @@ const FRAME_BUDGET = 250000;
  * that same normal. 2 mm aimed back in was a self-hit, and the texel
  * stayed at the cleared black.
  */
-const NORMAL_BIAS = 0.01;
 
 /** Guided OIDN weights. The harness serves this from the bake cache. */
 const AUX_WEIGHTS_PATH = '/bake-cache/rt_hdr_alb_nrm.tza';
@@ -293,11 +292,16 @@ export class AtlasBake {
   normalize: 'sky'|'peak' = 'sky';
   private normalData: Float32Array|null = null;
   /**
-   * 2 traces half the samples along +n and half along -n and keeps the
-   * brighter sky ratio per texel. Authored normals on double-sided sheets
-   * (shadow planes, cabinet panels) often point away from the visible side.
+   * 1 traces the authored side only. 2 traces half the samples along +n and
+   * half along -n and keeps the brighter sky ratio, which lets light from
+   * under a thin panel show on its top face, so it is opt-in.
    */
-  sides: 1|2 = 2;
+  sides: 1|2 = 1;
+  /**
+   * Metres the atlas ray starts off the surface. It must stay well under the
+   * thinnest panel, or origins on one face land past the opposite face.
+   */
+  normalBias = 0.0005;
   private sidePass = 0;
   private flipping: Promise<void>|null = null;
   private frontRaw: Float32Array|null = null;
@@ -914,7 +918,7 @@ export class AtlasBake {
             return false;
           }
           let normal = normalize( textureLoad( ${nrmNode}, sampleAt, 0 ).xyz );
-          (*ray).origin = stored.xyz + normal * ${NORMAL_BIAS};
+          (*ray).origin = stored.xyz + normal * ${this.normalBias.toFixed(6)};
           // The tracer jitters uv by a fresh rand2 per sample, so the
           // sub-texel offset is two uniforms. Spend them on a cosine lobe:
           // the texel then averages irradiance, not the one radiance along n.
