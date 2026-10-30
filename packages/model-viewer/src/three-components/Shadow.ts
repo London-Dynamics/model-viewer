@@ -356,6 +356,50 @@ export class Shadow extends Object3D {
   }
 
   /**
+   * Hide the synthetic soft-shadow floor, the blur plane, and any room-floor
+   * shadow overlays. three-gpu-pathtracer snapshots visible meshes and treats
+   * MeshBasicMaterial as a perfect mirror (roughness 0, metalness 0,
+   * specularIntensity 1). Call the returned function after that snapshot so
+   * the raster shadow overlay draws again. A second call is a no-op.
+   */
+  hideFromPathTracer(): () => void {
+    const previous: Array<{object: Object3D; visible: boolean}> = [];
+    this.forEachPathTracerExcluded((object) => {
+      previous.push({object, visible: object.visible});
+      object.visible = false;
+    });
+    let restored = false;
+    return () => {
+      if (restored) {
+        return;
+      }
+      restored = true;
+      for (let i = 0; i < previous.length; i++) {
+        previous[i].object.visible = previous[i].visible;
+      }
+    };
+  }
+
+  /**
+   * True for meshes that only rasterize the soft shadow. Geometry-change
+   * tracking must ignore them so a shadow update does not rebuild the BVH.
+   */
+  isExcludedFromPathTracer(object: Object3D): boolean {
+    if (object === this.floor || object === this.blurPlane) {
+      return true;
+    }
+    return object.userData?.isRoomFloorShadowOverlay === true;
+  }
+
+  private forEachPathTracerExcluded(visit: (object: Object3D) => void): void {
+    visit(this.floor);
+    visit(this.blurPlane);
+    for (let i = 0; i < this.roomFloorOverlays.length; i++) {
+      visit(this.roomFloorOverlays[i].overlay);
+    }
+  }
+
+  /**
    * Project the soft-shadow map onto room floor meshes instead of the
    * synthetic plane. No-op when the mesh signature is unchanged. Pass null or
    * an empty list to clear and restore the synthetic plane.

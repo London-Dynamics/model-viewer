@@ -532,30 +532,37 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     };
 
     const worker = this.ensureBvhWorker();
-    if (worker != null) {
-      pathTracer.setBVHWorker(worker);
-      pathTracer.setSceneAsync(scene, pathTracerCamera)
-          .then(() => {
-            settle();
-          })
-          .catch((error: unknown) => {
-            if (this.disposed || generation !== this.sceneBuildGeneration) {
+    // setScene/setSceneAsync bake visible meshes synchronously, before the
+    // BVH promise settles. Hide shadow receivers for that snapshot only.
+    const restoreShadowReceivers = this.hideShadowReceivers();
+    try {
+      if (worker != null) {
+        pathTracer.setBVHWorker(worker);
+        pathTracer.setSceneAsync(scene, pathTracerCamera)
+            .then(() => {
               settle();
-              return;
-            }
-            console.warn(
-                '[model-viewer] Path tracer BVH worker failed. Building on the main thread.',
-                error);
-            this.disableBvhWorker();
-            this.bvhWorkerFailed = true;
-            this.sceneBuildInFlight = false;
-            this.needsSceneUpdate = true;
-            this.syncScene();
-          });
-      return;
-    }
+            })
+            .catch((error: unknown) => {
+              if (this.disposed || generation !== this.sceneBuildGeneration) {
+                settle();
+                return;
+              }
+              console.warn(
+                  '[model-viewer] Path tracer BVH worker failed. Building on the main thread.',
+                  error);
+              this.disableBvhWorker();
+              this.bvhWorkerFailed = true;
+              this.sceneBuildInFlight = false;
+              this.needsSceneUpdate = true;
+              this.syncScene();
+            });
+        return;
+      }
 
-    pathTracer.setScene(scene, pathTracerCamera);
+      pathTracer.setScene(scene, pathTracerCamera);
+    } finally {
+      restoreShadowReceivers();
+    }
     settle();
   }
 
@@ -804,6 +811,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.shadowCatcher = null;
   }
 
+  private hideShadowReceivers(): () => void {
+    const shadow = this.scene?.shadow;
+    if (shadow == null) {
+      return () => {};
+    }
+    return shadow.hideFromPathTracer();
+  }
+
+  private isShadowReceiver(object: Object3D): boolean {
+    return this.scene?.shadow?.isExcludedFromPathTracer(object) === true;
+  }
+
   private updateSceneIfGeometryMoved() {
     if (this.scene == null || this.meshWorldMatrices.size === 0) {
       return;
@@ -814,7 +833,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     let changed = false;
 
     this.scene.traverseVisible((object: Object3D) => {
-      if (!(object as any).isMesh) {
+      if (!(object as any).isMesh || this.isShadowReceiver(object)) {
         return;
       }
 
@@ -851,7 +870,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.meshWorldMatrices.clear();
     this.scene.updateMatrixWorld(true);
     this.scene.traverseVisible((object: Object3D) => {
-      if ((object as any).isMesh) {
+      if ((object as any).isMesh && !this.isShadowReceiver(object)) {
         this.meshWorldMatrices.set(object.uuid, object.matrixWorld.clone());
       }
     });
