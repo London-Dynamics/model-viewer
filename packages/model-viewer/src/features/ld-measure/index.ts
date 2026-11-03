@@ -63,8 +63,10 @@ export declare interface LDMeasureInterface {
   removeGridShapeLines(id: string): boolean;
 }
 
+type MeasurementLine = Object3D & {geometry: BufferGeometry};
+
 type LineGroup = {
-  lines: Line[];
+  lines: MeasurementLine[];
 };
 
 const $measureContainer = Symbol('measureContainer');

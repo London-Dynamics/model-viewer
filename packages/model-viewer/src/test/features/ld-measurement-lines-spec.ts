@@ -14,9 +14,17 @@ import {
   computeLocalBoundingBox,
   computePivotOnFloor,
   computeUnionBoundingBoxInFrame,
+  createMeasurementLineMaterials,
+  createMeasurementLinePair,
   getViewOctantLabelInSpace,
   measurementLineAnchors,
   HETEROGENEOUS_ROTATION_THRESHOLD_DEG,
+  MEASUREMENT_LINE_CORE_COLOR,
+  MEASUREMENT_LINE_CORE_RENDER_ORDER,
+  MEASUREMENT_LINE_CORE_WIDTH,
+  MEASUREMENT_LINE_HALO_COLOR,
+  MEASUREMENT_LINE_HALO_RENDER_ORDER,
+  MEASUREMENT_LINE_HALO_WIDTH,
   rotationYSpreadDeg,
   setupMeasurementFrame,
   syncMeasurementFrameFromPivotTransform,
@@ -285,5 +293,65 @@ suite('ld-measurement-lines', () => {
     expect(frame.position.x).to.equal(1);
     expect(frame.position.z).to.equal(2);
     expect(frame.rotation.y).to.be.closeTo(0.2 + (45 * Math.PI) / 180, 1e-5);
+  });
+
+  test('createMeasurementLinePair draws a halo behind a core', () => {
+    const materials = createMeasurementLineMaterials();
+    const view = {width: 640, height: 480};
+    const [halo, core] = createMeasurementLinePair(
+      [new Vector3(0, 0, 0), new Vector3(1, 0, 0)],
+      materials,
+      view
+    );
+
+    expect(halo.geometry).to.equal(core.geometry);
+    expect(halo.material).to.equal(materials.halo);
+    expect(core.material).to.equal(materials.core);
+    expect(halo.renderOrder).to.equal(MEASUREMENT_LINE_HALO_RENDER_ORDER);
+    expect(core.renderOrder).to.equal(MEASUREMENT_LINE_CORE_RENDER_ORDER);
+    expect(halo.renderOrder).to.be.below(core.renderOrder);
+
+    expect(materials.halo.linewidth).to.equal(MEASUREMENT_LINE_HALO_WIDTH);
+    expect(materials.core.linewidth).to.equal(MEASUREMENT_LINE_CORE_WIDTH);
+    expect(materials.halo.color.getHex()).to.equal(MEASUREMENT_LINE_HALO_COLOR);
+    expect(materials.core.color.getHex()).to.equal(MEASUREMENT_LINE_CORE_COLOR);
+    expect(materials.halo.worldUnits).to.equal(false);
+    expect(materials.core.worldUnits).to.equal(false);
+    expect(materials.halo.depthTest).to.equal(false);
+    expect(materials.core.depthTest).to.equal(false);
+    expect(materials.halo.depthWrite).to.equal(false);
+    expect(materials.core.depthWrite).to.equal(false);
+    expect(materials.halo.toneMapped).to.equal(false);
+    expect(materials.core.toneMapped).to.equal(false);
+    expect(materials.halo.transparent).to.equal(true);
+    expect(materials.core.transparent).to.equal(true);
+    expect(materials.halo.resolution.x).to.equal(640);
+    expect(materials.halo.resolution.y).to.equal(480);
+    expect(materials.core.resolution.x).to.equal(640);
+
+    halo.geometry.computeBoundingBox();
+    const center = new Vector3();
+    halo.geometry.boundingBox!.getCenter(center);
+    expect(center.x).to.be.closeTo(0.5, 1e-5);
+    expect(center.y).to.be.closeTo(0, 1e-5);
+    expect(center.z).to.be.closeTo(0, 1e-5);
+
+    expect(halo.userData.noHit).to.equal(true);
+    expect(core.userData.skipShadow).to.equal(true);
+    expect(halo.frustumCulled).to.equal(false);
+    expect(halo.visible).to.equal(false);
+    expect(halo.castShadow).to.equal(false);
+
+    view.width = 1000;
+    view.height = 700;
+    (halo.onBeforeRender as () => void)();
+    expect(materials.halo.resolution.x).to.equal(1000);
+    expect(materials.halo.resolution.y).to.equal(700);
+    expect(materials.core.resolution.x).to.equal(1000);
+    expect(materials.core.resolution.y).to.equal(700);
+
+    halo.geometry.dispose();
+    materials.halo.dispose();
+    materials.core.dispose();
   });
 });
