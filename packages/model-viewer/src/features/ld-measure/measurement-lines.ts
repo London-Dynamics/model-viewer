@@ -235,6 +235,54 @@ export function getViewOctantLabelInSpace(
   return AZIMUTHAL_OCTANT_LABELS[azimuthalOctant];
 }
 
+export type MeasurementLineAnchors = {
+  width: number;
+  height: number;
+  depth: number;
+};
+
+const NORTH = 0;
+const EAST = 1;
+const SOUTH = 2;
+const WEST = 3;
+const NORTH_A = 4;
+const NORTH_B = 5;
+const EAST_A = 6;
+const EAST_B = 7;
+const SOUTH_A = 8;
+const SOUTH_B = 9;
+const WEST_A = 10;
+const WEST_B = 11;
+
+/**
+ * Floor width, vertical height, and floor depth line-group indices.
+ * Height is the far vertical edge of the side already chosen for this octant.
+ */
+export function measurementLineAnchors(
+  octant: string
+): MeasurementLineAnchors | null {
+  switch (octant) {
+    case 'front':
+      return {width: SOUTH, height: WEST_B, depth: EAST};
+    case 'front-right':
+      return {width: SOUTH, height: NORTH_A, depth: EAST};
+    case 'right':
+      return {width: NORTH, height: SOUTH_B, depth: EAST};
+    case 'back-right':
+      return {width: NORTH, height: WEST_A, depth: EAST};
+    case 'back':
+      return {width: NORTH, height: EAST_B, depth: WEST};
+    case 'back-left':
+      return {width: NORTH, height: SOUTH_A, depth: WEST};
+    case 'left':
+      return {width: SOUTH, height: NORTH_B, depth: WEST};
+    case 'front-left':
+      return {width: SOUTH, height: EAST_A, depth: WEST};
+    default:
+      return null;
+  }
+}
+
 function findSceneTarget(scene: Object3D): Object3D | null {
   let target: Object3D | null = null;
   scene.traverse((child) => {

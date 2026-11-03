@@ -15,6 +15,7 @@ import {
   computePivotOnFloor,
   computeUnionBoundingBoxInFrame,
   getViewOctantLabelInSpace,
+  measurementLineAnchors,
   HETEROGENEOUS_ROTATION_THRESHOLD_DEG,
   rotationYSpreadDeg,
   setupMeasurementFrame,
@@ -140,6 +141,27 @@ suite('ld-measurement-lines', () => {
 
     expect(unrotated).to.equal('front');
     expect(rotated).to.not.equal(unrotated);
+  });
+
+  test('measurementLineAnchors keeps floor lines and puts height on the far edge', () => {
+    const expected: Record<
+      string,
+      {width: number; height: number; depth: number}
+    > = {
+      front: {width: 2, height: 11, depth: 1},
+      'front-right': {width: 2, height: 4, depth: 1},
+      right: {width: 0, height: 9, depth: 1},
+      'back-right': {width: 0, height: 10, depth: 1},
+      back: {width: 0, height: 7, depth: 3},
+      'back-left': {width: 0, height: 8, depth: 3},
+      left: {width: 2, height: 5, depth: 3},
+      'front-left': {width: 2, height: 6, depth: 3},
+    };
+
+    for (const [octant, anchors] of Object.entries(expected)) {
+      expect(measurementLineAnchors(octant)).to.deep.equal(anchors);
+    }
+    expect(measurementLineAnchors('unknown')).to.equal(null);
   });
 
   test('syncMeasurementTransform updates multi-select frame without remeasure', () => {
