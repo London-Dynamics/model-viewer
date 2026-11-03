@@ -14,8 +14,9 @@
  */
 
 import {expect} from 'chai';
-import {Mesh, MeshStandardMaterial} from 'three';
+import {Mesh, MeshStandardMaterial, Vector3} from 'three';
 
+import {$controls} from '../../features/controls.js';
 import {$currentGLTF} from '../../features/scene-graph.js';
 import {$primitivesList} from '../../features/scene-graph/model.js';
 import {PrimitiveNode} from '../../features/scene-graph/nodes/primitive-node.js';
@@ -68,6 +69,54 @@ suite('SceneGraph', () => {
             expect(dim.y).to.be.eq(2, 'y');
             expect(dim.z).to.be.eq(3, 'z');
           });
+
+      test('roomScale sizes the room and placeGlb stays unscaled', async () => {
+        element.roomScale = 10;
+        element.src = CUBE_GLB_PATH;
+        await waitForEvent(element, 'load');
+
+        const dim = element.getDimensions();
+        expect(dim.x).to.be.closeTo(10, 0.001, 'x');
+        expect(dim.y).to.be.closeTo(10, 0.001, 'y');
+        expect(dim.z).to.be.closeTo(10, 0.001, 'z');
+
+        const placed = await element.placeGlb(CUBE_GLB_PATH, {
+          position: [1, 0, 1],
+          skipPlaceholderFeedback: true,
+        });
+        placed.node.updateMatrixWorld(true);
+        const worldScale = new Vector3();
+        placed.node.getWorldScale(worldScale);
+        expect(worldScale.x).to.be.closeTo(1, 1e-5);
+        expect(worldScale.y).to.be.closeTo(1, 1e-5);
+        expect(worldScale.z).to.be.closeTo(1, 1e-5);
+        expect(placed.node.parent).to.equal(element[$scene].target);
+
+        const orbitBefore = element.getCameraOrbit().radius;
+        const limitsBefore = (element as any)[$controls].options;
+        const minBefore = limitsBefore.minimumRadius as number;
+        const maxBefore = limitsBefore.maximumRadius as number;
+
+        element.roomScale = 2;
+        // Framing requests further updates after the roomScale update returns.
+        for (let i = 0; i < 4; i++) {
+          await element.updateComplete;
+        }
+        const resized = element.getDimensions();
+        expect(resized.x).to.be.closeTo(2, 0.001, 'resized x');
+        placed.node.updateMatrixWorld(true);
+        placed.node.getWorldScale(worldScale);
+        expect(worldScale.x).to.be.closeTo(1, 1e-5);
+
+        const scaleRatio = 2 / 10;
+        expect(element.getCameraOrbit().radius)
+            .to.be.closeTo(orbitBefore * scaleRatio, orbitBefore * 0.02);
+        const limitsAfter = (element as any)[$controls].options;
+        expect(limitsAfter.minimumRadius)
+            .to.be.closeTo(minBefore * scaleRatio, minBefore * 0.02);
+        expect(limitsAfter.maximumRadius)
+            .to.be.closeTo(maxBefore * scaleRatio, maxBefore * 0.02);
+      });
 
       test('orientation is applied after scale', async () => {
         element.orientation = '90deg 90deg 90deg';

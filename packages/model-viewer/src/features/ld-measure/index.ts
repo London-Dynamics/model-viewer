@@ -1211,6 +1211,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (changedProperties.has('gridShapes')) {
           this._setGridShapesVisible(this.gridShapes);
         }
+
+        if (changedProperties.has('roomScale') && !!this['measure']) {
+          this.handleNewAttributes();
+        }
       }
     }
 

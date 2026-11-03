@@ -403,6 +403,8 @@ export declare interface LDModularInterface {
   clear: ClearSceneFunction;
   disableBaseModelShadows: boolean;
   srcIsRoom: boolean;
+  /** Uniform scale of the loaded room model. Placed objects are not affected. */
+  roomScale: number;
   walls: boolean;
   floor: boolean;
   rotationControls: boolean;
@@ -595,6 +597,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'src-is-room' })
     srcIsRoom: boolean = false;
 
+    /** Uniform scale of the loaded src model. Does not scale objects from placeGlb. */
+    @property({ type: Number, attribute: 'room-scale' })
+    roomScale: number = 1;
+
     @property({ type: Boolean, attribute: 'walls' })
     walls: boolean = false;
 
@@ -731,6 +737,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
+
+      if (changedProperties.has('roomScale') && this[$scene].model != null) {
+        const scene = this[$scene];
+        scene.applyTransform();
+        scene.updateBoundingBox();
+        scene.updateShadow();
+        // Controls.updateFraming recomputes the framing sphere and then
+        // re-evaluates camera-orbit plus min/max orbits. scene.updateFraming
+        // only updates the sphere, so the camera stays on the old radius.
+        // Do not await: that method waits on updateComplete from inside updated().
+        void (this as unknown as {updateFraming(): Promise<void>}).updateFraming();
+        this[$renderer].arRenderer.onUpdateScene();
+        this[$needsRender]();
+      }
+
       if (
         changedProperties.has('srcIsRoom') ||
         changedProperties.has('disableBaseModelShadows') ||

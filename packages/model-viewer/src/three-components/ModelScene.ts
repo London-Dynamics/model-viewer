@@ -77,6 +77,13 @@ import { Shadow } from './Shadow.js';
 export const GROUNDED_SKYBOX_SIZE = 10;
 const MIN_SHADOW_RATIO = 100;
 
+/** Positive finite room scale. Anything else leaves the room at its authored size. */
+export function uniformRoomScale(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : 1;
+}
+
 export interface ModelLoadEvent extends ThreeEvent {
   url: string;
 }
@@ -695,7 +702,12 @@ export class ModelScene extends Scene {
       NumberNode,
     ];
 
-    model.scale.set(scale[0].number, scale[1].number, scale[2].number);
+    const roomScale = uniformRoomScale(this.element.roomScale);
+    model.scale.set(
+      scale[0].number * roomScale,
+      scale[1].number * roomScale,
+      scale[2].number * roomScale
+    );
   }
 
   updateBoundingBox() {
