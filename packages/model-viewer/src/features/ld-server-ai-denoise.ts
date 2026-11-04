@@ -25,7 +25,7 @@ import {
 } from '../model-viewer-base.js';
 import {Constructor} from '../utilities.js';
 
-export type PathTracerDenoiseMode = 'off'|'gpu'|'server-ai';
+export type PathTracerDenoiseMode = 'off'|'gpu'|'oidn'|'server-ai';
 
 export interface ServerAIDenoiseOptions {
   endpoint?: string;
@@ -250,6 +250,11 @@ export const LDServerAIDenoiseMixin = <
       if (changedProperties.has('pathTracerDenoiseMode')) {
         (this as unknown as {pathTracerDenoise?: boolean}).pathTracerDenoise =
             this.pathTracerDenoiseMode === 'gpu';
+        (this as unknown as {
+          getPathTracerComposer?: () =>
+              {setOidnDenoise(enabled: boolean): void}|null
+        }).getPathTracerComposer?.()?.setOidnDenoise(
+            this.pathTracerDenoiseMode === 'oidn');
       }
 
       if (changedProperties.has('pathTracerDenoiseMode') ||

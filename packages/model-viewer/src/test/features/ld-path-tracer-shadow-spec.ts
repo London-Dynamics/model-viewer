@@ -14,7 +14,7 @@
  */
 
 import {expect} from 'chai';
-import {BackSide, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry} from 'three';
+import {BackSide, Mesh, MeshStandardMaterial, Object3D, PlaneGeometry, ShaderMaterial} from 'three';
 import {WebGLPathTracer} from 'three-gpu-pathtracer';
 
 import {$scene} from '../../model-viewer-base.js';
@@ -53,7 +53,7 @@ const syntheticFloor = (shadow: Shadow): Mesh|null => {
     }
     const material = (object as Mesh).material;
     if (!Array.isArray(material) &&
-        (material as MeshBasicMaterial).side === BackSide) {
+        (material as ShaderMaterial).side === BackSide) {
       floor = object as Mesh;
     }
   });
@@ -160,12 +160,47 @@ suite('LD path tracer soft-shadow receivers', function() {
   });
 
   test(
+      'draws the soft shadow while realtime is showing and the trace is hidden',
+      async () => {
+        element.pathTracerDisplay = 'after-denoise';
+        element.pathTracerFreezeRealtime = false;
+        element.pathTracerSamples = 64;
+        element.pathTracerSoftShadow = false;
+        await element.updateComplete;
+
+        let draws = 0;
+        const original = shadow.renderFloor.bind(shadow);
+        shadow.renderFloor = ((...args: Parameters<Shadow['renderFloor']>) => {
+          draws++;
+          return original(...args);
+        }) as Shadow['renderFloor'];
+        try {
+          await waitUntil(
+              () => element.pathTracerRenderedSamples > 0,
+              'trace did not start while realtime was showing');
+          const before = draws;
+          await waitFrames(6);
+          const composer = element.getPathTracerComposer() as any;
+          expect(composer.pathTracer._quad.material.opacity).to.equal(0);
+          expect(draws).to.be.greaterThan(before);
+          expect(floor.visible).to.equal(true);
+        } finally {
+          shadow.renderFloor = original;
+        }
+      });
+
+  test(
       'hides the soft-shadow floor while the tracer builds and restores it',
       () => {
         expect(sceneBuilds).to.be.greaterThan(0);
         expect(excludedVisibleDuringBuild).to.equal(0);
         expect(floor.visible).to.equal(true);
         expect(shadow.getIntensity()).to.be.greaterThan(0);
+        const material = floor.material as ShaderMaterial;
+        expect(material.transparent).to.equal(true);
+        expect(material.toneMapped).to.equal(false);
+        expect(material.premultipliedAlpha).to.equal(true);
+        expect(material.depthWrite).to.equal(false);
       });
 
   test('does not rebuild when the soft-shadow floor moves', async () => {

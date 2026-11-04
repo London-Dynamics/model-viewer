@@ -83,6 +83,7 @@ suite('LDPathTracer render integration', function() {
     element.style.width = '160px';
     element.style.height = '160px';
     element.pathTracer = true;
+    element.pathTracerDisplay = 'progressive';
     element.pathTracerSamples = 4;
     element.pathTracerSamplesThreshold = 1;
     element.pathTracerBounces = 3;
@@ -109,8 +110,10 @@ suite('LDPathTracer render integration', function() {
   });
 
   test('uses separate target samples and display threshold', async () => {
+    element.pathTracerDisplay = 'progressive';
     element.pathTracerSamples = 64;
     element.pathTracerSamplesThreshold = 32;
+    element.pathTracerFade = 0.3;
     await waitFrames(2);
 
     const composer = element.getPathTracerComposer() as any;
@@ -119,13 +122,167 @@ suite('LDPathTracer render integration', function() {
     expect(element.pathTracerSamples).to.equal(64);
     expect(element.pathTracerSamplesThreshold).to.equal(32);
     expect(pathTracer?.minSamples).to.equal(32);
+    expect(pathTracer?.fadeDuration).to.equal(300);
+  });
+
+  test('holds the path trace off until denoise when that display is selected', async () => {
+    element.pathTracerDisplay = 'after-denoise';
+    element.pathTracerFade = 0.3;
+    element.pathTracerSamples = 64;
+    element.pathTracerSamplesThreshold = 1;
+    await waitFrames(2);
+
+    const composer = element.getPathTracerComposer() as any;
+    const pathTracer = composer?.pathTracer;
+
+    expect(pathTracer?.minSamples).to.equal(Number.MAX_SAFE_INTEGER);
+    expect(pathTracer?._quad?.material?.opacity).to.equal(0);
+    expect(pathTracer?.fadeDuration).to.equal(300);
+  });
+
+  test('applies the floor material from path tracer properties', async () => {
+    element.pathTracerFloor = true;
+    element.pathTracerFloorColor = '#ff0000';
+    element.pathTracerFloorRoughness = 0.35;
+    element.pathTracerFloorMetalness = 0.5;
+    element.pathTracerFloorOpacity = 0.8;
+    await waitFrames(4);
+
+    let floor: any = null;
+    element[$scene].traverse((object) => {
+      if (object.name === 'PathTracerShadowCatcher') {
+        floor = object;
+      }
+    });
+
+    expect(floor).to.not.equal(null);
+    expect(floor.visible).to.equal(false);
+    const material = floor!.material;
+    expect(material.color.getHexString()).to.equal('ff0000');
+    expect(material.roughness).to.be.closeTo(0.35, 1e-4);
+    expect(material.metalness).to.be.closeTo(0.5, 1e-4);
+    expect(material.opacity).to.be.closeTo(0.8, 1e-4);
+    expect(material.transparent).to.equal(true);
+  });
+
+  test('paints missed rays with the page background color', async () => {
+    const previous = document.body.style.backgroundColor;
+    document.body.style.backgroundColor = '#ff0000';
+    try {
+      element[$scene].queueRender();
+      await waitFrames(4);
+
+      const composer = element.getPathTracerComposer() as any;
+      const material = composer.pathTracer._pathTracer.material;
+      expect(material.backgroundAlpha).to.equal(1);
+      expect(material.backgroundMap.topColor.getHexString()).to.equal('ff0000');
+      expect(material.backgroundMap.bottomColor.getHexString()).to.equal('ff0000');
+
+      document.body.style.backgroundColor = '#ffffff';
+      element[$scene].queueRender();
+      await waitFrames(4);
+      expect(material.backgroundMap.topColor.getHexString()).to.equal('ffffff');
+      expect(material.backgroundMap.bottomColor.getHexString()).to.equal('ffffff');
+      expect(element[$scene].background).to.equal(null);
+    } finally {
+      document.body.style.backgroundColor = previous;
+    }
   });
 
   test('exposes accumulated sample count for debugging', async () => {
+    element.interactionPrompt = 'none';
     await waitFrames(12);
+    for (let frame = 0; frame < 40 && element.pathTracerRenderedSamples === 0;
+         frame++) {
+      await rafPasses();
+    }
 
     expect(element.pathTracerRenderedSamples)
         .to.be.greaterThan(0, 'Sample count should reflect accumulation');
+  });
+
+  test('does not path trace while the camera is moving', async () => {
+    element.interactionPrompt = 'none';
+    await waitFrames(12);
+    for (let frame = 0; frame < 40 && element.pathTracerRenderedSamples === 0;
+         frame++) {
+      await rafPasses();
+    }
+    expect(element.pathTracerRenderedSamples).to.be.greaterThan(0);
+
+    const composer = element.getPathTracerComposer() as any;
+    const gpuTracer = composer.pathTracer._pathTracer;
+    let traceCalls = 0;
+    const originalUpdate = gpuTracer.update.bind(gpuTracer);
+    gpuTracer.update = (...args: unknown[]) => {
+      traceCalls++;
+      return originalUpdate(...args);
+    };
+
+    try {
+      const camera = element[$scene].getCamera();
+      camera.position.x += 1;
+      camera.updateMatrixWorld(true);
+
+      composer.beforeRender(performance.now(), 16);
+      composer.render(16);
+      expect(traceCalls).to.equal(
+          0, 'A camera move should draw the real-time view without a sample');
+      expect(composer.getSamples()).to.equal(0);
+
+      composer.beforeRender(performance.now(), 16);
+      composer.render(16);
+      expect(traceCalls).to.equal(
+          0, 'Path tracing waits after the camera stops moving');
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      composer.beforeRender(performance.now(), 16);
+      composer.render(16);
+      expect(traceCalls).to.be.greaterThan(
+          0, 'Path tracing starts once the camera has settled');
+      expect(composer.getSamples()).to.be.greaterThan(0);
+    } finally {
+      gpuTracer.update = originalUpdate;
+    }
+  });
+
+  test('does not path trace while the pointer is held still', async () => {
+    element.interactionPrompt = 'none';
+    await waitFrames(12);
+    for (let frame = 0; frame < 40 && element.pathTracerRenderedSamples === 0;
+         frame++) {
+      await rafPasses();
+    }
+    expect(element.pathTracerRenderedSamples).to.be.greaterThan(0);
+
+    const composer = element.getPathTracerComposer() as any;
+    const gpuTracer = composer.pathTracer._pathTracer;
+    let traceCalls = 0;
+    const originalUpdate = gpuTracer.update.bind(gpuTracer);
+    gpuTracer.update = (...args: unknown[]) => {
+      traceCalls++;
+      return originalUpdate(...args);
+    };
+
+    try {
+      element.dispatchEvent(new PointerEvent('pointerdown', {
+        pointerId: 1,
+        button: 0,
+        bubbles: true,
+      }));
+      composer.beforeRender(performance.now(), 16);
+      composer.render(16);
+      expect(traceCalls).to.equal(
+          0, 'A held pointer should stay on the real-time view');
+      expect(composer.getSamples()).to.equal(0);
+    } finally {
+      gpuTracer.update = originalUpdate;
+      element.dispatchEvent(new PointerEvent('pointerup', {
+        pointerId: 1,
+        button: 0,
+        bubbles: true,
+      }));
+    }
   });
 
   test('accumulates samples with AO and bloom enabled', async () => {

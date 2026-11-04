@@ -57,6 +57,87 @@
         width: auto;
       }
 
+      .path-tracer-performance-overlay {
+        background: rgba(17, 24, 39, 0.78);
+        border-radius: 0.375rem;
+        color: white;
+        font-size: 0.75rem;
+        left: 0.75rem;
+        line-height: 1rem;
+        max-width: min(24rem, calc(100vw - 19rem));
+        padding: 0.5rem;
+        position: absolute;
+        top: 0.75rem;
+        z-index: 2;
+      }
+
+      .performance-analyser {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .performance-analyser-header {
+        align-items: center;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: space-between;
+      }
+
+      .performance-analyser h3 {
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1rem;
+        margin: 0;
+      }
+
+      .performance-analyser-actions {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .performance-analyser-actions button {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        font-size: 0.6875rem;
+        line-height: 1rem;
+        padding: 0.125rem 0.375rem;
+      }
+
+      .performance-analyser-grid {
+        display: grid;
+        gap: 0.25rem 0.75rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .performance-analyser-row {
+        align-items: baseline;
+        display: flex;
+        gap: 0.5rem;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .performance-analyser-row span {
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+
+      .performance-analyser-row strong {
+        color: white;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', 'Courier New', monospace;
+        font-weight: 500;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .settings-bar {
         background: #f8fafc;
         border-left: 1px solid #e5e7eb;
@@ -137,8 +218,17 @@
         width: 100%;
       }
 
-      input[type='range'] {
+      input[type='range'],
+      input[type='color'] {
         width: 100%;
+      }
+
+      input[type='color'] {
+        background: white;
+        border: 1px solid #d1d5db;
+        box-sizing: border-box;
+        height: 1.7rem;
+        padding: 0.1rem;
       }
 
       .slider-line {
@@ -210,20 +300,31 @@
         min-camera-orbit="auto auto 0.01m"
         max-camera-orbit="auto auto 1000m"
         shadow-intensity="1"
-        shadow-mode="path-tracer"
+        shadow-mode="soft-shadow"
+        path-tracer-floor
         environment-intensity="1"
         exposure="1"
-        tone-mapping="neutral"
+        tone-mapping="aces"
         field-of-view="30deg"
         path-tracer
-        path-tracer-samples="32"
-        path-tracer-samples-threshold="6"
-        path-tracer-bounces="5"
+        path-tracer-samples="16"
+        path-tracer-samples-threshold="1"
+        path-tracer-display="after-denoise"
+        path-tracer-fade="0.3"
+        path-tracer-freeze-realtime
+        path-tracer-bounces="15"
         path-tracer-render-scale="1"
-        path-tracer-tiles="3 3"
-        path-tracer-denoise
-        path-tracer-denoise-mode="gpu"
+        path-tracer-tiles="1 1"
+        path-tracer-floor-color="#ffffff"
+        path-tracer-floor-roughness="0.2"
+        path-tracer-floor-metalness="0"
+        path-tracer-floor-opacity="1"
+        path-tracer-denoise-mode="oidn"
       ></model-viewer>
+      <div
+        id="path-tracer-performance-analyser"
+        class="path-tracer-performance-overlay"
+      ></div>
       <aside class="settings-bar" id="sidebar" aria-label="Path tracer settings">
         <h1>Path tracer settings</h1>
         <p>
@@ -240,10 +341,12 @@
       src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
     ></script>
     <script type="module">
+      import {createPerformanceAnalyser} from '../built/performance-analyser.js';
+
       const DEFAULT_SRC =
-          'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb';
+          'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/7786a153-c7de-d806-401b-336324e1be1c.glb';
       const DEFAULT_ENV =
-          'https://raw.githubusercontent.com/mrdoob/three.js/r150/examples/textures/equirectangular/royal_esplanade_1k.hdr';
+          'https://d1mepjfmhz5ui7.cloudfront.net/centurion/Centurion-2.hdr';
 
       const viewer = document.querySelector('#viewer');
       const controls = document.querySelector('#controls');
@@ -293,12 +396,15 @@
         environmentImage: DEFAULT_ENV,
         skybox: false,
         pathTracer: true,
-        pathTracerSamples: 32,
-        pathTracerSamplesThreshold: 6,
-        pathTracerBounces: 5,
+        pathTracerSamples: 16,
+        pathTracerSamplesThreshold: 1,
+        pathTracerDisplay: 'after-denoise',
+        pathTracerFade: 0.3,
+        pathTracerFreezeRealtime: true,
+        pathTracerBounces: 15,
         pathTracerRenderScale: 1,
-        tilesX: 3,
-        tilesY: 3,
+        tilesX: 1,
+        tilesY: 1,
         pathTracerDepthOfField: false,
         pathTracerFocalLength: 50,
         pathTracerFStop: 1.8,
@@ -306,21 +412,28 @@
         pathTracerApertureBlades: 0,
         pathTracerApertureRotation: 0,
         pathTracerAnamorphicRatio: 1,
-        pathTracerDenoise: true,
+        pathTracerDenoise: false,
         pathTracerDenoiseSigma: 5,
         pathTracerDenoiseThreshold: 0.1,
         pathTracerDenoiseKSigma: 1,
-        pathTracerDenoiseMode: 'gpu',
+        pathTracerDenoiseMode: 'oidn',
         serverAIDenoiseAspectRatio: '',
         sceneDescription: '',
         strategy: 'sah',
         maxLeafTris: 1,
         exposure: 1,
-        toneMapping: 'neutral',
+        toneMapping: 'aces',
         environmentIntensity: 1,
         shadowIntensity: 1,
         shadowSoftness: 1,
-        shadowMode: 'path-tracer',
+        shadowMode: 'soft-shadow',
+        lights: true,
+        pathTracerFloor: true,
+        pathTracerSoftShadow: false,
+        pathTracerFloorColor: '#ffffff',
+        pathTracerFloorRoughness: 0.2,
+        pathTracerFloorMetalness: 0,
+        pathTracerFloorOpacity: 1,
         fieldOfView: 30,
         orbit: 'Three-quarter',
       };
@@ -340,6 +453,9 @@
             'stats',
             'pathTracerSamples',
             'pathTracerSamplesThreshold',
+            'pathTracerDisplay',
+            'pathTracerFade',
+            'pathTracerFreezeRealtime',
             'pathTracerBounces',
             'pathTracerRenderScale',
             'tiles',
@@ -382,9 +498,22 @@
             'exposure',
             'toneMapping',
             'environmentIntensity',
+            'lights',
             'shadowMode',
             'shadowIntensity',
             'shadowSoftness',
+            'pathTracerSoftShadow',
+          ],
+        },
+        {
+          title: 'Floor',
+          open: true,
+          fields: [
+            'pathTracerFloor',
+            'pathTracerFloorColor',
+            'pathTracerFloorRoughness',
+            'pathTracerFloorMetalness',
+            'pathTracerFloorOpacity',
           ],
         },
         {
@@ -417,6 +546,26 @@
           min: 1,
           max: 64,
           step: 1,
+        },
+        pathTracerDisplay: {
+          label: 'Show trace',
+          kind: 'select',
+          attr: 'path-tracer-display',
+          options: ['progressive', 'before-denoise', 'after-denoise'],
+          labels: ['While tracing', 'When done, before denoise', 'After denoise'],
+        },
+        pathTracerFade: {
+          label: 'Fade (s)',
+          kind: 'range',
+          attr: 'path-tracer-fade',
+          min: 0,
+          max: 3,
+          step: 0.05,
+        },
+        pathTracerFreezeRealtime: {
+          label: 'Freeze realtime',
+          kind: 'checkbox',
+          attr: 'path-tracer-freeze-realtime',
         },
         pathTracerBounces: {
           label: 'Bounces',
@@ -492,7 +641,7 @@
           label: 'Denoise mode',
           kind: 'select',
           attr: 'path-tracer-denoise-mode',
-          options: ['off', 'gpu', 'server-ai'],
+          options: ['off', 'gpu', 'oidn', 'server-ai'],
         },
         pathTracerDenoise: {
           label: 'Spatial denoise',
@@ -564,11 +713,26 @@
           max: 5,
           step: 0.01,
         },
+        lights: {
+          label: 'Model lights',
+          kind: 'checkbox',
+          attr: 'lights',
+        },
         shadowMode: {
-          label: 'Shadow mode',
+          label: 'Soft shadow',
           kind: 'select',
           attr: 'shadow-mode',
-          options: ['none', 'soft-shadow', 'path-tracer'],
+          options: ['none', 'soft-shadow'],
+        },
+        pathTracerSoftShadow: {
+          label: 'Soft shadow on trace',
+          kind: 'checkbox',
+          attr: 'path-tracer-soft-shadow',
+        },
+        pathTracerFloor: {
+          label: 'Floor',
+          kind: 'checkbox',
+          attr: 'path-tracer-floor',
         },
         shadowIntensity: {
           label: 'Shadow intensity',
@@ -582,6 +746,35 @@
           label: 'Shadow softness',
           kind: 'range',
           attr: 'shadow-softness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        pathTracerFloorColor: {
+          label: 'Color',
+          kind: 'color',
+          attr: 'path-tracer-floor-color',
+        },
+        pathTracerFloorRoughness: {
+          label: 'Roughness',
+          kind: 'range',
+          attr: 'path-tracer-floor-roughness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        pathTracerFloorMetalness: {
+          label: 'Metalness',
+          kind: 'range',
+          attr: 'path-tracer-floor-metalness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        pathTracerFloorOpacity: {
+          label: 'Opacity',
+          kind: 'range',
+          attr: 'path-tracer-floor-opacity',
           min: 0,
           max: 1,
           step: 0.01,
@@ -660,16 +853,32 @@
         remember(name, input);
       };
 
+      const addColor = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.value = String(state[name]);
+        input.addEventListener('input', () => {
+          state[name] = input.value;
+          applyField(name);
+          writeQuery();
+        });
+        label.append(input);
+        parent.append(label);
+        remember(name, input);
+      };
+
       const addSelect = (parent, name, spec) => {
         const label = document.createElement('label');
         label.textContent = spec.label;
         const select = document.createElement('select');
-        for (const option of spec.options) {
+        spec.options.forEach((option, index) => {
           const node = document.createElement('option');
           node.value = option;
-          node.textContent = option === '' ? '(auto)' : option;
+          node.textContent = spec.labels?.[index] ?? (option === '' ? '(auto)' : option);
           select.append(node);
-        }
+        });
         select.value = String(state[name] ?? '');
         select.addEventListener('change', () => {
           state[name] = select.value;
@@ -828,13 +1037,15 @@
               addSelect(details, name, spec);
             } else if (spec.kind === 'range') {
               addRange(details, name, spec);
+            } else if (spec.kind === 'color') {
+              addColor(details, name, spec);
             }
           }
         }
         const hint = document.createElement('p');
         hint.className = 'hint';
         hint.textContent =
-            'Denoise mode gpu turns spatial denoise on and off turns it off. Stop trace disables path-tracer and returns to the real-time view. Reset trace calls resetPathTracer().';
+            'Denoise mode oidn runs Open Image Denoise once the sample cap is reached. gpu turns spatial denoise on. off turns denoising off. Stop trace disables path-tracer and returns to the real-time view. Reset trace calls resetPathTracer().';
         controls.append(hint);
       };
 
@@ -915,6 +1126,10 @@
           viewer.setAttribute('field-of-view', `${state.fieldOfView}deg`);
           return;
         }
+        if (name === 'lights') {
+          viewer.applyModelLights(state.lights);
+          return;
+        }
         const spec = fields[name];
         if (spec == null || spec.attr == null || spec.attr === 'skybox-image') {
           return;
@@ -991,6 +1206,9 @@
         params.set('path-tracer', state.pathTracer ? '1' : '0');
         params.set('path-tracer-samples', String(state.pathTracerSamples));
         params.set('path-tracer-samples-threshold', String(state.pathTracerSamplesThreshold));
+        params.set('path-tracer-display', state.pathTracerDisplay);
+        params.set('path-tracer-fade', String(state.pathTracerFade));
+        params.set('path-tracer-freeze-realtime', state.pathTracerFreezeRealtime ? '1' : '0');
         params.set('path-tracer-bounces', String(state.pathTracerBounces));
         params.set('path-tracer-render-scale', String(state.pathTracerRenderScale));
         params.set('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
@@ -1016,6 +1234,13 @@
         params.set('shadow-intensity', String(state.shadowIntensity));
         params.set('shadow-softness', String(state.shadowSoftness));
         params.set('shadow-mode', state.shadowMode);
+        params.set('lights', state.lights ? '1' : '0');
+        params.set('path-tracer-floor', state.pathTracerFloor ? '1' : '0');
+        params.set('path-tracer-soft-shadow', state.pathTracerSoftShadow ? '1' : '0');
+        params.set('path-tracer-floor-color', state.pathTracerFloorColor);
+        params.set('path-tracer-floor-roughness', String(state.pathTracerFloorRoughness));
+        params.set('path-tracer-floor-metalness', String(state.pathTracerFloorMetalness));
+        params.set('path-tracer-floor-opacity', String(state.pathTracerFloorOpacity));
         params.set('field-of-view', String(state.fieldOfView));
         params.set('camera-orbit', state.orbit);
         history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
@@ -1026,6 +1251,15 @@
           return fallback;
         }
         return params.get(key) === '1';
+      };
+
+      const readColor = (params, key, fallback) => {
+        if (!params.has(key)) {
+          return fallback;
+        }
+        const value = params.get(key) || '';
+        const hex = value.startsWith('#') ? value : `#${value}`;
+        return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.toLowerCase() : fallback;
       };
 
       const readNumber = (params, key, fallback) => {
@@ -1048,6 +1282,9 @@
         state.pathTracer = readBool(params, 'path-tracer', state.pathTracer);
         state.pathTracerSamples = readNumber(params, 'path-tracer-samples', state.pathTracerSamples);
         state.pathTracerSamplesThreshold = readNumber(params, 'path-tracer-samples-threshold', state.pathTracerSamplesThreshold);
+        state.pathTracerDisplay = params.get('path-tracer-display') || state.pathTracerDisplay;
+        state.pathTracerFade = readNumber(params, 'path-tracer-fade', state.pathTracerFade);
+        state.pathTracerFreezeRealtime = readBool(params, 'path-tracer-freeze-realtime', state.pathTracerFreezeRealtime);
         state.pathTracerBounces = readNumber(params, 'path-tracer-bounces', state.pathTracerBounces);
         state.pathTracerRenderScale = readNumber(params, 'path-tracer-render-scale', state.pathTracerRenderScale);
         const tiles = (params.get('path-tracer-tiles') || '').split(/[\s,]+/).map(Number);
@@ -1079,6 +1316,19 @@
         state.shadowIntensity = readNumber(params, 'shadow-intensity', state.shadowIntensity);
         state.shadowSoftness = readNumber(params, 'shadow-softness', state.shadowSoftness);
         state.shadowMode = params.get('shadow-mode') || state.shadowMode;
+        state.lights = readBool(params, 'lights', state.lights);
+        state.pathTracerFloor = readBool(params, 'path-tracer-floor', state.pathTracerFloor);
+        state.pathTracerSoftShadow = readBool(params, 'path-tracer-soft-shadow', state.pathTracerSoftShadow);
+        if (state.shadowMode === 'path-tracer') {
+          state.shadowMode = 'none';
+          if (!params.has('path-tracer-floor')) {
+            state.pathTracerFloor = true;
+          }
+        }
+        state.pathTracerFloorColor = readColor(params, 'path-tracer-floor-color', state.pathTracerFloorColor);
+        state.pathTracerFloorRoughness = readNumber(params, 'path-tracer-floor-roughness', state.pathTracerFloorRoughness);
+        state.pathTracerFloorMetalness = readNumber(params, 'path-tracer-floor-metalness', state.pathTracerFloorMetalness);
+        state.pathTracerFloorOpacity = readNumber(params, 'path-tracer-floor-opacity', state.pathTracerFloorOpacity);
         state.fieldOfView = readNumber(params, 'field-of-view', state.fieldOfView);
         state.orbit = params.get('camera-orbit') || state.orbit;
         applyingQuery = false;
@@ -1126,6 +1376,18 @@
       pushControls();
       applyAll();
       writeQuery();
+      createPerformanceAnalyser({
+        target: viewer,
+        mount: document.querySelector('#path-tracer-performance-analyser'),
+        title: 'Performance',
+        extraMetrics: [
+          {
+            label: 'Samples',
+            read: () =>
+              String(Math.floor(Number(viewer.pathTracerRenderedSamples || 0))),
+          },
+        ],
+      });
 
       const stats = document.querySelector('#trace-stats');
       const tick = () => {

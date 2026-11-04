@@ -315,6 +315,13 @@ export class Renderer extends
   }
 
   private shouldRender(scene: ModelScene): boolean {
+    if (scene.lockRenderScale) {
+      if (scene.scaleStep !== 0) {
+        scene.scaleStep = 0;
+        this.rescaleCanvas(scene);
+      }
+      return scene.shouldRender();
+    }
     if (!scene.shouldRender()) {
       // The first frame we stop rendering the scene (because it stops moving),
       // trigger one extra render at full scale.

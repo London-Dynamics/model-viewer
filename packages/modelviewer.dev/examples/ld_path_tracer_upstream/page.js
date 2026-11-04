@@ -61,7 +61,7 @@ const UNSUPPORTED = {
   multipleImportanceSampling: 'The WebGL path tracer keeps multiple importance sampling on. There is no attribute to turn it off.',
   randomStrategy: 'Blue Dither, Sobol, and PCG are WebGPUPathTracer random strategies.',
   cameraProjection: 'model-viewer cameras are perspective. Orthographic is not a camera-orbit mode.',
-  denoise: 'Upstream toggles the WebGPU OIDN denoiser. model-viewer spatial denoise is path-tracer-denoise on the settings page, not OIDN.',
+  denoise: 'OIDN is path-tracer-denoise-mode=oidn on the settings page. This comparison page leaves denoising off.',
   upscale: 'FSR upscaling ships with the WebGPU path tracer and is not exposed.',
   sharpness: 'Sharpness belongs to the FSR upscaler, which model-viewer does not run.',
   lighting: 'Rect area light rigs are not exposed. Lighting comes from the environment map.',

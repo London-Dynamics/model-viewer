@@ -120,6 +120,9 @@ export class ModelScene extends Scene {
   public height = 1;
   public aspect = 1;
   public scaleStep = 0;
+  // While a path trace is settling, keep the full-resolution picture. Dynamic
+  // resolution would otherwise shrink the canvas and the image would jump.
+  public lockRenderScale = false;
   public renderCount = 0;
   public externalRenderer: RendererInterface|null = null;
   public appendedAnimations: Array<string> = [];

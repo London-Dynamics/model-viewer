@@ -18,7 +18,7 @@ import {Vector2} from 'three';
 
 import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
-import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, normalizePathTracerDisplay, normalizePathTracerFloorColor, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
 import {Constructor} from '../utilities.js';
 
 import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
@@ -30,6 +30,9 @@ export declare interface LDPathTracerInterface {
   pathTracer: boolean;
   pathTracerSamples: number;
   pathTracerSamplesThreshold: number;
+  pathTracerDisplay: string;
+  pathTracerFade: number;
+  pathTracerFreezeRealtime: boolean;
   pathTracerBounces: number;
   pathTracerRenderScale: number;
   pathTracerTiles: string;
@@ -44,6 +47,12 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseSigma: number;
   pathTracerDenoiseThreshold: number;
   pathTracerDenoiseKSigma: number;
+  pathTracerFloor: boolean;
+  pathTracerSoftShadow: boolean;
+  pathTracerFloorColor: string;
+  pathTracerFloorRoughness: number;
+  pathTracerFloorMetalness: number;
+  pathTracerFloorOpacity: number;
   readonly pathTracerRenderedSamples: number;
   readonly isPathTracerReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
@@ -51,6 +60,13 @@ export declare interface LDPathTracerInterface {
   getPathTracerOptions(): PathTracerBuildOptions;
   resetPathTracer(): void;
 }
+
+const clampPathTracerUnit = (value: number, fallback: number): number => {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(1, Math.max(0, value));
+};
 
 const parseTiles = (value: string): Vector2 => {
   const [x = DEFAULT_PATH_TRACER_OPTIONS.tiles.x,
@@ -72,6 +88,15 @@ export const LDPathTracerMixin = <
 
     @property({type: Number, attribute: 'path-tracer-samples-threshold'})
     pathTracerSamplesThreshold = DEFAULT_PATH_TRACER_OPTIONS.samplesThreshold;
+
+    @property({type: String, attribute: 'path-tracer-display'})
+    pathTracerDisplay = DEFAULT_PATH_TRACER_OPTIONS.display;
+
+    @property({type: Number, attribute: 'path-tracer-fade'})
+    pathTracerFade = DEFAULT_PATH_TRACER_OPTIONS.fadeSeconds;
+
+    @property({type: Boolean, attribute: 'path-tracer-freeze-realtime'})
+    pathTracerFreezeRealtime = DEFAULT_PATH_TRACER_OPTIONS.freezeRealtime;
 
     @property({type: Number, attribute: 'path-tracer-bounces'})
     pathTracerBounces = DEFAULT_PATH_TRACER_OPTIONS.bounces;
@@ -115,6 +140,24 @@ export const LDPathTracerMixin = <
 
     @property({type: Number, attribute: 'path-tracer-denoise-k-sigma'})
     pathTracerDenoiseKSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseKSigma;
+
+    @property({type: Boolean, attribute: 'path-tracer-floor'})
+    pathTracerFloor = DEFAULT_PATH_TRACER_OPTIONS.floor;
+
+    @property({type: Boolean, attribute: 'path-tracer-soft-shadow'})
+    pathTracerSoftShadow = DEFAULT_PATH_TRACER_OPTIONS.softShadow;
+
+    @property({type: String, attribute: 'path-tracer-floor-color'})
+    pathTracerFloorColor = DEFAULT_PATH_TRACER_OPTIONS.floorColor;
+
+    @property({type: Number, attribute: 'path-tracer-floor-roughness'})
+    pathTracerFloorRoughness = DEFAULT_PATH_TRACER_OPTIONS.floorRoughness;
+
+    @property({type: Number, attribute: 'path-tracer-floor-metalness'})
+    pathTracerFloorMetalness = DEFAULT_PATH_TRACER_OPTIONS.floorMetalness;
+
+    @property({type: Number, attribute: 'path-tracer-floor-opacity'})
+    pathTracerFloorOpacity = DEFAULT_PATH_TRACER_OPTIONS.floorOpacity;
 
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
     private pathTracerBuildOptions: PathTracerBuildOptions = {
@@ -181,6 +224,9 @@ export const LDPathTracerMixin = <
       const knobs = [
         'pathTracerSamples',
         'pathTracerSamplesThreshold',
+        'pathTracerDisplay',
+        'pathTracerFade',
+        'pathTracerFreezeRealtime',
         'pathTracerBounces',
         'pathTracerRenderScale',
         'pathTracerTiles',
@@ -195,6 +241,12 @@ export const LDPathTracerMixin = <
         'pathTracerDenoiseSigma',
         'pathTracerDenoiseThreshold',
         'pathTracerDenoiseKSigma',
+        'pathTracerFloor',
+        'pathTracerSoftShadow',
+        'pathTracerFloorColor',
+        'pathTracerFloorRoughness',
+        'pathTracerFloorMetalness',
+        'pathTracerFloorOpacity',
         'ambientOcclusion',
         'aoAlgorithm',
         'aoRadius',
@@ -252,6 +304,11 @@ export const LDPathTracerMixin = <
         composer.setBuildOptions(this.pathTracerBuildOptions);
         this[$pathTracerComposer] = composer;
       }
+      if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
+        this[$pathTracerComposer].setOidnDenoise(
+            (this as unknown as {pathTracerDenoiseMode?: string})
+                .pathTracerDenoiseMode === 'oidn');
+      }
       if (!this.isRenderPipeline(currentEffect)) {
         this.registerEffectComposer(this[$pathTracerComposer]!);
       }
@@ -277,6 +334,13 @@ export const LDPathTracerMixin = <
         samples: Math.max(1, Math.floor(this.pathTracerSamples)),
         samplesThreshold:
             Math.max(1, Math.floor(this.pathTracerSamplesThreshold)),
+        display: normalizePathTracerDisplay(this.pathTracerDisplay),
+        fadeSeconds: Math.max(
+            0,
+            Number.isFinite(this.pathTracerFade) ?
+                this.pathTracerFade :
+                DEFAULT_PATH_TRACER_OPTIONS.fadeSeconds),
+        freezeRealtime: this.pathTracerFreezeRealtime,
         bounces: Math.max(1, Math.floor(this.pathTracerBounces)),
         renderScale: this.pathTracerRenderScale,
         tiles: parseTiles(this.pathTracerTiles),
@@ -291,6 +355,17 @@ export const LDPathTracerMixin = <
         denoiseSigma: this.pathTracerDenoiseSigma,
         denoiseThreshold: this.pathTracerDenoiseThreshold,
         denoiseKSigma: this.pathTracerDenoiseKSigma,
+        floor: this.pathTracerFloor,
+        softShadow: this.pathTracerSoftShadow,
+        floorColor: normalizePathTracerFloorColor(this.pathTracerFloorColor),
+        floorRoughness: clampPathTracerUnit(
+            this.pathTracerFloorRoughness,
+            DEFAULT_PATH_TRACER_OPTIONS.floorRoughness),
+        floorMetalness: clampPathTracerUnit(
+            this.pathTracerFloorMetalness,
+            DEFAULT_PATH_TRACER_OPTIONS.floorMetalness),
+        floorOpacity: clampPathTracerUnit(
+            this.pathTracerFloorOpacity, DEFAULT_PATH_TRACER_OPTIONS.floorOpacity),
         ambientOcclusionPreviewOptions:
             this.getAmbientOcclusionPreviewOptions(),
       };
