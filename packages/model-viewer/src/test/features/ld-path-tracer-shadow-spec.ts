@@ -15,13 +15,13 @@
 
 import {expect} from 'chai';
 import {BackSide, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry} from 'three';
-import {WebGLPathTracer} from 'three-gpu-pathtracer';
+import {WebGPUPathTracer} from 'three-gpu-pathtracer/webgpu';
 
 import {$scene} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {Shadow} from '../../three-components/Shadow.js';
 import {waitForEvent} from '../../utilities.js';
-import {assetPath, rafPasses} from '../helpers.js';
+import {assetPath, rafPasses, webGpuAvailable} from '../helpers.js';
 
 const ASTRONAUT = assetPath('models/Astronaut.glb');
 
@@ -81,7 +81,7 @@ suite('LD path tracer soft-shadow receivers', function() {
   let excludedVisibleDuringBuild = 0;
   let restoreSetScene: () => void = () => {};
 
-  const originalSetScene = WebGLPathTracer.prototype.setScene;
+  const originalSetScene = WebGPUPathTracer.prototype.setScene;
 
   const waitForStableBuilds = async () => {
     let stableFrames = 0;
@@ -101,11 +101,14 @@ suite('LD path tracer soft-shadow receivers', function() {
     }
   };
 
-  setup(async () => {
+  setup(async function() {
+    if (!(await webGpuAvailable())) {
+      this.skip();
+    }
     sceneBuilds = 0;
     excludedVisibleDuringBuild = 0;
-    WebGLPathTracer.prototype.setScene = function(
-        this: WebGLPathTracer, scene: any, camera: any, options?: any) {
+    WebGPUPathTracer.prototype.setScene = function(
+        this: WebGPUPathTracer, scene: any, camera: any) {
       if (element != null && scene === element[$scene] && shadow != null) {
         sceneBuilds++;
         scene.traverseVisible((object: Object3D) => {
@@ -115,10 +118,10 @@ suite('LD path tracer soft-shadow receivers', function() {
           }
         });
       }
-      return originalSetScene.call(this, scene, camera, options);
+      return originalSetScene.call(this, scene, camera);
     };
     restoreSetScene = () => {
-      WebGLPathTracer.prototype.setScene = originalSetScene;
+      WebGPUPathTracer.prototype.setScene = originalSetScene;
     };
 
     element = new ModelViewerElement();

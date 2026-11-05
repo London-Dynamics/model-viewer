@@ -13,10 +13,8 @@
  * limitations under the License.
  */
 
-import {Camera, Color, DoubleSide, Matrix4, Mesh, MeshStandardMaterial, NeutralToneMapping, NoBlending, NormalBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Texture, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget,} from 'three';
-import {DenoiseMaterial, PhysicalCamera, WebGLPathTracer,} from 'three-gpu-pathtracer';
-import {AVERAGE, CENTER, SAH} from 'three-mesh-bvh';
-import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
+import {Camera, DoubleSide, Matrix4, Mesh, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,} from 'three';
+import {PhysicalCamera} from 'three-gpu-pathtracer';
 
 import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
@@ -24,8 +22,8 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 
 import {resolvePathTracerRenderScale} from './path-tracer-scale.js';
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
+import {PATH_TRACER_UNAVAILABLE_EVENT, WebGPUPathTracerSession} from './WebGPUPathTracerSession.js';
 
-const PATH_TRACER_FADE_DURATION_MS = 600;
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
 
 export interface PathTracerPresentedFrame {
@@ -58,12 +56,6 @@ const PATH_TRACER_BVH_STRATEGIES = new Set<PathTracerBVHStrategy>([
   'center',
   'average',
 ]);
-
-const BVH_STRATEGY = {
-  sah: SAH,
-  center: CENTER,
-  average: AVERAGE,
-} as const;
 
 export const resolvePathTracerBuildOptions = (
     current: PathTracerBuildOptions,
@@ -120,6 +112,10 @@ export interface PathTracerOptions {
   denoiseSigma: number;
   denoiseThreshold: number;
   denoiseKSigma: number;
+  paused: boolean;
+  frameBudget: number;
+  multipleImportanceSampling: boolean;
+  randomStrategy: 'blue-dither'|'sobol'|'pcg';
   ambientOcclusionPreviewOptions: AmbientOcclusionOptions|null;
 }
 
@@ -141,6 +137,10 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   denoiseSigma: 5,
   denoiseThreshold: 0.1,
   denoiseKSigma: 1,
+  paused: false,
+  frameBudget: 250000,
+  multipleImportanceSampling: true,
+  randomStrategy: 'blue-dither',
   ambientOcclusionPreviewOptions: null,
 };
 
@@ -149,9 +149,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private scene: ModelScene|null = null;
   private camera: Camera|null = null;
   private readonly physicalCamera = new PhysicalCamera();
-  private readonly denoiseMaterial = new DenoiseMaterial();
-  private readonly denoiseQuad = new FullScreenQuad(this.denoiseMaterial);
-  private pathTracer: WebGLPathTracer|null = null;
+  private session: WebGPUPathTracerSession|null = null;
+  private pathTracer: WebGPUPathTracerSession|null = null;
   private ambientOcclusionPreviewComposer: LDAmbientOcclusionComposer|null =
       null;
   private currentAmbientOcclusionPreviewOptions: AmbientOcclusionOptions|null =
@@ -180,9 +179,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private sceneBuildQueued = false;
   private sceneBuildGeneration = 0;
   private disposed = false;
-  private presentationQuad: FullScreenQuad|null = null;
+  private environmentStateReady = false;
+  private lastEnvironmentIntensity = 1;
+  private lastEnvironment: unknown = null;
+  private lastBackground: unknown = null;
   private readonly drawingBufferSize = new Vector2();
-  private readonly savedClearColor = new Color();
   private reportedTracedWidth = 0;
   private reportedTracedHeight = 0;
   private reportedSupersampled = false;
@@ -250,20 +251,26 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     this.syncShadowCatcher();
     this.syncScene();
+    this.syncEnvironment();
     this.updateSceneIfGeometryMoved();
     this.updateCameraIfNeeded();
     this.ambientOcclusionPreviewComposer?.beforeRender(_time, _delta);
   }
 
   render(_deltaTime?: DOMHighResTimeStamp) {
-    if (this.sceneBuildInFlight || this.pathTracer == null ||
-        this.renderer == null || this.scene == null) {
+    if (this.session?.state !== 'ready' || this.pathTracer == null ||
+        this.renderer == null || this.scene == null ||
+        this.sceneBuildInFlight) {
+      this.renderRealtime();
       return;
     }
 
-    this.prepareRendererOutput();
-
+    this.layoutTrace();
     this.pathTracer.renderSample();
+    this.pathTracer.show(this.pathTracer.samples > 0);
+    if (this.pathTracer.samples <= 0) {
+      this.renderRealtime();
+    }
     if (this.shouldRenderAmbientOcclusionPreview()) {
       this.ambientOcclusionPreviewComposer?.render(_deltaTime);
     }
@@ -274,6 +281,35 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.maybeMarkReady();
     this.publishTracedSize();
+  }
+
+  private renderRealtime() {
+    if (this.renderer == null || this.scene == null) {
+      return;
+    }
+    this.prepareRendererOutput();
+    this.renderer.autoClear = true;
+    this.renderer.render(this.scene, this.scene.getCamera());
+  }
+
+  private layoutTrace() {
+    if (this.pathTracer == null || this.renderer == null ||
+        this.scene == null) {
+      return;
+    }
+    this.renderer.getDrawingBufferSize(this.drawingBufferSize);
+    const resolved = resolvePathTracerRenderScale({
+      renderScale: this.options.renderScale,
+      pixelRatio: this.options.pixelRatio,
+      devicePixelRatio: window.devicePixelRatio || 1,
+      drawingBufferWidth: this.drawingBufferSize.x,
+      drawingBufferHeight: this.drawingBufferSize.y,
+      maxTextureSize: this.pathTracer.maxTextureSize,
+    });
+    const cssWidth = this.scene.element.clientWidth || this.scene.width;
+    const cssHeight = this.scene.element.clientHeight || this.scene.height;
+    this.pathTracer.layout(
+        cssWidth, cssHeight, resolved.width, resolved.height);
   }
 
   updateOptions(partial: Partial<PathTracerOptions>) {
@@ -300,6 +336,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return this.pathTracer?.samples ?? 0;
   }
 
+  resetSamples() {
+    // Restarts accumulation and keeps the current scene build. Camera moves
+    // do the same and do not clear isPathTracerReady.
+    this.cameraStateInitialized = false;
+    this.pathTracer?.reset();
+    this.requestRender();
+  }
+
+  get unavailableReason() {
+    return this.session?.state === 'unavailable' ? this.session.reason : '';
+  }
+
   get isReady() {
     return this.ready;
   }
@@ -315,91 +363,30 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   /**
-   * Read the presented path-traced image at the tracer target's own size.
-   * Denoise runs when it is enabled and samples have reached the display
-   * threshold. The soft-shadow floor is composited on top. The visible
-   * accumulation buffer is not reset and the pixels are not resized.
+   * Read the presented WebGPU image at the tracer buffer's own size.
+   * OIDN replaces the raw accumulation once every pixel has reached
+   * path-tracer-samples, when denoise is on. The bitmap is not resized.
    */
   capturePresentedFrame(options: {fileType?: string,
                                   encoderOptions?: number} = {}):
       PathTracerPresentedFrame {
-    if (this.pathTracer == null || this.renderer == null ||
-        this.scene == null) {
+    if (this.pathTracer == null || this.pathTracer.state !== 'ready') {
       throw new Error('Path tracer is not active');
     }
     if (this.pathTracer.samples <= 0) {
       throw new Error('Path tracer has no samples to capture');
     }
-
-    const source = this.pathTracer.target;
-    const width = source.width;
-    const height = source.height;
-    const quad = this.presentationQuad;
-    if (width < 1 || height < 1 || quad == null) {
+    const traced = this.getTracedSize();
+    if (traced == null) {
       throw new Error('Path tracer has not presented a frame');
     }
-
     const fileType = options.fileType ?? 'image/png';
-    const renderer = this.renderer;
-    const renderTarget = new WebGLRenderTarget(width, height, {
-      type: UnsignedByteType,
-      format: RGBAFormat,
-      colorSpace: SRGBColorSpace,
-    });
-    const material =
-        quad.material as unknown as {map: Texture | null, opacity: number};
-    const previousTarget = renderer.getRenderTarget();
-    const previousViewport = renderer.getViewport(new Vector4());
-    const previousScissor = renderer.getScissor(new Vector4());
-    const previousScissorTest = renderer.getScissorTest();
-    const previousAutoClear = renderer.autoClear;
-    const previousToneMapping = renderer.toneMapping;
-    const previousOutputColorSpace = renderer.outputColorSpace;
-    const previousExposure = renderer.toneMappingExposure;
-    const previousClearAlpha = renderer.getClearAlpha();
-    const previousOpacity = material.opacity;
-    const previousMap = material.map;
-    renderer.getClearColor(this.savedClearColor);
-
-    try {
-      this.prepareRendererOutput();
-      renderer.setRenderTarget(renderTarget);
-      renderer.setViewport(0, 0, width, height);
-      renderer.setScissorTest(false);
-      renderer.setClearColor(0x000000, 0);
-      renderer.autoClear = true;
-      renderer.clear(true, true, true);
-      material.map = source.texture;
-      material.opacity = 1;
-      this.renderPathTracerOutput(source, renderer, quad, true);
-      this.renderSoftShadowOverlay();
-
-      return {
-        dataUrl: readRenderTargetDataURL(
-            renderer,
-            renderTarget,
-            width,
-            height,
-            fileType,
-            options.encoderOptions),
-        width,
-        height,
-        samples: this.pathTracer.samples,
-      };
-    } finally {
-      material.opacity = previousOpacity;
-      material.map = previousMap;
-      renderer.setRenderTarget(previousTarget);
-      renderer.setViewport(previousViewport);
-      renderer.setScissor(previousScissor);
-      renderer.setScissorTest(previousScissorTest);
-      renderer.autoClear = previousAutoClear;
-      renderer.toneMapping = previousToneMapping;
-      renderer.outputColorSpace = previousOutputColorSpace;
-      renderer.toneMappingExposure = previousExposure;
-      renderer.setClearColor(this.savedClearColor, previousClearAlpha);
-      renderTarget.dispose();
-    }
+    return {
+      dataUrl: this.pathTracer.captureDataURL(fileType, options.encoderOptions),
+      width: traced.width,
+      height: traced.height,
+      samples: this.pathTracer.samples,
+    };
   }
 
   getBuildOptions(): PathTracerBuildOptions {
@@ -414,8 +401,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.buildOptions = next;
-    if (this.renderer != null && this.pathTracer != null) {
-      this.rebuildPathTracer();
+    this.session?.setBuildOptions(next);
+    this.clearGeometryBounds();
+    if (this.pathTracer != null) {
+      this.markSceneDirty();
     }
     this.requestRender();
   }
@@ -438,19 +427,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.sceneBuildQueued = false;
     this.sceneBuildInFlight = false;
     this.disableBvhWorker();
-    try {
-      this.pathTracer?.dispose();
-    } catch {
-      // three-gpu-pathtracer 0.0.23 references a private dispose member that
-      // is not present. The renderer-owned WebGL context is still released by
-      // model-viewer; swallow that package bug during feature teardown.
-    }
-    this.pathTracer = null;
+    this.disposePathTracer();
     this.ambientOcclusionPreviewComposer?.dispose();
     this.ambientOcclusionPreviewComposer = null;
     this.currentAmbientOcclusionPreviewOptions = null;
-    this.denoiseQuad.dispose();
-    this.presentationQuad = null;
     this.reportedTracedWidth = 0;
     this.reportedTracedHeight = 0;
     this.reportedSupersampled = false;
@@ -464,50 +444,48 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.queuedRender = null;
     }
     this.cameraStateInitialized = false;
+    this.environmentStateReady = false;
     this.needsSceneUpdate = true;
     this.ready = false;
   }
 
   private rebuildPathTracer() {
-    if (this.renderer == null) {
+    if (this.renderer == null || this.scene == null) {
       return;
     }
 
     this.disposePathTracer();
     this.invalidateReady();
-    this.pathTracer = new WebGLPathTracer(this.renderer);
-    this.pathTracer.renderDelay = 0;
-    this.pathTracer.fadeDuration = PATH_TRACER_FADE_DURATION_MS;
-    this.pathTracer.rasterizeScene = true;
-    this.pathTracer.renderToCanvas = true;
-    this.pathTracer.renderToCanvasCallback = (target, renderer, quad) => {
-      this.presentationQuad = quad;
-      this.renderPathTracerOutput(target, renderer, quad, false);
-    };
-    this.applyOptions();
-    this.applyBuildOptions();
-    this.needsSceneUpdate = true;
-    this.sceneBuildGeneration++;
-    if (this.sceneBuildInFlight) {
-      this.sceneBuildQueued = true;
-      return;
-    }
-    this.syncScene();
+    this.environmentStateReady = false;
+    const session = new WebGPUPathTracerSession(this.scene.element);
+    session.setBuildOptions(this.buildOptions);
+    this.session = session;
+    void session.start().then(() => {
+      if (this.disposed || this.session !== session) {
+        session.dispose();
+        return;
+      }
+      if (session.state === 'unavailable') {
+        this.scene?.element.dispatchEvent(
+            new CustomEvent(PATH_TRACER_UNAVAILABLE_EVENT, {
+              detail: {reason: session.reason},
+            }));
+        this.requestRender();
+        return;
+      }
+      this.pathTracer = session;
+      this.applyOptions(false);
+      this.needsSceneUpdate = true;
+      this.sceneBuildGeneration++;
+      this.syncScene();
+      this.requestRender();
+    });
   }
 
   private disposePathTracer() {
-    if (this.pathTracer == null) {
-      return;
-    }
-
-    try {
-      this.pathTracer.dispose();
-    } catch {
-      // three-gpu-pathtracer 0.0.23 references a private dispose member that
-      // is not present. Drop the instance so a replacement can be created.
-    }
+    this.session?.dispose();
+    this.session = null;
     this.pathTracer = null;
-    this.presentationQuad = null;
   }
 
   private prepareRendererOutput() {
@@ -541,9 +519,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       devicePixelRatio: window.devicePixelRatio || 1,
       drawingBufferWidth: this.drawingBufferSize.x,
       drawingBufferHeight: this.drawingBufferSize.y,
-      maxTextureSize: this.renderer.capabilities.maxTextureSize,
+      maxTextureSize: this.pathTracer.maxTextureSize,
     });
-    this.pathTracer.renderScale = resolved.renderScale;
+    const cssWidth = this.scene?.element.clientWidth || this.scene?.width || 0;
+    const cssHeight =
+        this.scene?.element.clientHeight || this.scene?.height || 0;
+    this.pathTracer.layout(
+        cssWidth, cssHeight, resolved.width, resolved.height);
   }
 
   private publishTracedSize() {
@@ -582,21 +564,56 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }));
   }
 
-  private applyBuildOptions() {
-    const generator = (this.pathTracer as unknown as {
-                        _generator?: {bvhOptions?: Record<string, unknown>;};
-                      } |
-                       null)
-                          ?._generator;
-    if (generator == null) {
+  private rememberEnvironmentState() {
+    if (this.scene == null) {
+      this.environmentStateReady = false;
       return;
     }
 
-    generator.bvhOptions = {
-      ...generator.bvhOptions,
-      strategy: BVH_STRATEGY[this.buildOptions.strategy],
-      maxLeafTris: this.buildOptions.maxLeafTris,
-    };
+    const intensity = this.scene.environmentIntensity;
+    this.lastEnvironmentIntensity =
+        typeof intensity === 'number' && Number.isFinite(intensity) ?
+        intensity :
+        1;
+    this.lastEnvironment = this.scene.environment;
+    this.lastBackground = this.scene.background;
+    this.environmentStateReady = true;
+  }
+
+  private syncEnvironment() {
+    if (this.pathTracer == null || this.scene == null ||
+        this.sceneBuildInFlight || this.disposed) {
+      return;
+    }
+
+    const intensityValue = this.scene.environmentIntensity;
+    const intensity =
+        typeof intensityValue === 'number' && Number.isFinite(intensityValue) ?
+        intensityValue :
+        1;
+    const environment = this.scene.environment;
+    const background = this.scene.background;
+    if (this.environmentStateReady &&
+        intensity === this.lastEnvironmentIntensity &&
+        environment === this.lastEnvironment &&
+        background === this.lastBackground) {
+      return;
+    }
+
+    this.lastEnvironmentIntensity = intensity;
+    this.lastEnvironment = environment;
+    this.lastBackground = background;
+    this.environmentStateReady = true;
+    this.pathTracer.updateEnvironment();
+  }
+
+  private clearGeometryBounds() {
+    this.scene?.traverse((object) => {
+      const mesh = object as Mesh;
+      if (mesh.isMesh && mesh.geometry != null) {
+        mesh.geometry.boundsTree = undefined;
+      }
+    });
   }
 
   private invalidateReady() {
@@ -657,10 +674,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         Math.max(1, Math.floor(this.options.samplesThreshold));
     this.applyRenderScale();
     this.pathTracer.tiles.copy(this.options.tiles);
-    this.denoiseMaterial.sigma = Math.max(0.001, this.options.denoiseSigma);
-    this.denoiseMaterial.threshold =
-        Math.max(0.0001, this.options.denoiseThreshold);
-    this.denoiseMaterial.kSigma = Math.max(0, this.options.denoiseKSigma);
+    this.pathTracer.setDenoise(this.options.denoise);
+    this.pathTracer.pause = this.options.paused;
+    this.pathTracer.frameBudget = this.options.frameBudget;
+    this.pathTracer.multipleImportanceSampling =
+        this.options.multipleImportanceSampling;
+    this.pathTracer.randomName = this.options.randomStrategy;
     if (reset && this.camera != null) {
       this.pathTracer.setCamera(this.getPathTracerCamera());
     }
@@ -728,6 +747,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.syncScene();
         return;
       }
+      this.rememberEnvironmentState();
       this.requestRender();
     };
 
@@ -899,37 +919,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     this.scene.shadow?.renderFloor(
         this.renderer, this.scene, this.scene.getCamera());
-  }
-
-  private renderPathTracerOutput(
-      target: WebGLRenderTarget, renderer: WebGLRenderer, quad: FullScreenQuad,
-      ignorePreview: boolean) {
-    if (!ignorePreview && this.shouldRenderAmbientOcclusionPreview()) {
-      return;
-    }
-
-    if (!this.options.denoise || this.pathTracer == null ||
-        this.pathTracer.samples < this.options.samplesThreshold) {
-      const currentAutoClear = renderer.autoClear;
-      renderer.autoClear = false;
-      quad.render(renderer);
-      renderer.autoClear = currentAutoClear;
-      return;
-    }
-
-    const sourceMaterial = quad.material;
-    this.denoiseMaterial.map = target.texture;
-    this.denoiseMaterial.opacity = sourceMaterial.opacity;
-    this.denoiseMaterial.transparent = sourceMaterial.opacity < 1;
-    this.denoiseMaterial.blending =
-        sourceMaterial.opacity < 1 ? NormalBlending : NoBlending;
-
-    const currentAutoClear = renderer.autoClear;
-    renderer.autoClear = false;
-    this.denoiseQuad.render(renderer);
-    renderer.autoClear = currentAutoClear;
-
-    this.denoiseMaterial.blending = NoBlending;
   }
 
   private shouldRenderAmbientOcclusionPreview() {
@@ -1139,33 +1128,4 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private requestRender() {
     this.scene?.queueRender();
   }
-}
-
-function readRenderTargetDataURL(
-    renderer: WebGLRenderer,
-    renderTarget: WebGLRenderTarget,
-    width: number,
-    height: number,
-    fileType: string,
-    encoderOptions?: number): string {
-  const size = width * height * 4;
-  const pixels = new Uint8Array(size);
-  renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, pixels);
-
-  const flipped = new Uint8ClampedArray(size);
-  const rowBytes = width * 4;
-  for (let y = 0; y < height; y++) {
-    const source = (height - 1 - y) * rowBytes;
-    flipped.set(pixels.subarray(source, source + rowBytes), y * rowBytes);
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d');
-  if (context == null) {
-    throw new Error('Path tracer capture could not create a 2D canvas');
-  }
-  context.putImageData(new ImageData(flipped, width, height), 0, 0);
-  return canvas.toDataURL(fileType, encoderOptions);
 }

@@ -109,6 +109,13 @@ suite('Environment', () => {
       document.body.removeChild(element);
     });
 
+    test('writes environment-intensity onto the scene', async () => {
+      element.environmentIntensity = 0.35;
+      await element.updateComplete;
+
+      expect(scene.environmentIntensity).to.equal(0.35);
+    });
+
     test('changes the tone mapping exposure of the renderer', async () => {
       const renderer = Renderer.singleton;
       const originalToneMappingExposure =

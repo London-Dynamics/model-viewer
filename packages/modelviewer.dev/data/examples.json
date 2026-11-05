@@ -336,6 +336,26 @@
     ]
   },
   {
+    "name": "LD Path Tracer Settings",
+    "htmlName": "ld_path_tracer_settings",
+    "examples": [
+      {
+        "htmlId": "settings",
+        "name": "All path tracer settings"
+      }
+    ]
+  },
+  {
+    "name": "LD Path Tracer Upstream",
+    "htmlName": "ld_path_tracer_upstream",
+    "examples": [
+      {
+        "htmlId": "upstream",
+        "name": "Upstream demo comparison"
+      }
+    ]
+  },
+  {
     "name": "LD Bloom",
     "htmlName": "ld_bloom",
     "examples": [
