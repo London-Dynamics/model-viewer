@@ -14,11 +14,11 @@
  */
 
 import {expect} from 'chai';
+import {BoxGeometry, Mesh, MeshBasicMaterial} from 'three';
 
 import {$renderer, $scene} from '../../../../model-viewer-base.js';
 import {ModelViewerElement} from '../../../../model-viewer.js';
 import {waitForEvent} from '../../../../utilities.js';
-
 import {assetPath, rafPasses} from '../../../helpers.js';
 
 const BAG_GLB =
@@ -102,11 +102,9 @@ suite('LDAmbientOcclusion render integration', function() {
   test('registers an effect composer when initially enabled', async () => {
     expect(element.ambientOcclusion).to.equal(true);
     expect(element[$scene].effectRenderer).to.not.equal(null);
-    expect(
-        (element[$scene].effectRenderer as unknown as {
-          hasAmbientOcclusion(): boolean
-        })
-            .hasAmbientOcclusion())
+    expect((element[$scene].effectRenderer as unknown as {
+             hasAmbientOcclusion(): boolean
+           }).hasAmbientOcclusion())
         .to.equal(true);
   });
 
@@ -140,37 +138,62 @@ suite('LDAmbientOcclusion render integration', function() {
 
     expect(averageRgbDiff(noAoPixels, aoPixels))
         .to.be.greaterThan(
-            0.5,
-            'Composite output should visibly respond to ao-intensity');
+            0.5, 'Composite output should visibly respond to ao-intensity');
   });
 
-  test('does not collapse low AO intensity to the full composite result', async () => {
-    element.aoOutput = 'default';
-    element.aoRadius = 4;
-    element.aoIntensity = 0;
-    await waitFrames();
-    const noAoPixels = readPixels(element);
+  test(
+      'does not collapse low AO intensity to the full composite result',
+      async () => {
+        element.aoOutput = 'default';
+        element.aoRadius = 4;
+        element.aoIntensity = 0;
+        await waitFrames();
+        const noAoPixels = readPixels(element);
 
-    element.aoIntensity = 0.05;
-    await waitFrames();
-    const lowAoPixels = readPixels(element);
+        element.aoIntensity = 0.05;
+        await waitFrames();
+        const lowAoPixels = readPixels(element);
 
-    element.aoIntensity = 1;
-    await waitFrames();
-    const fullAoPixels = readPixels(element);
+        element.aoIntensity = 1;
+        await waitFrames();
+        const fullAoPixels = readPixels(element);
 
-    const lowDiff = averageRgbDiff(noAoPixels, lowAoPixels);
-    const fullDiff = averageRgbDiff(noAoPixels, fullAoPixels);
+        const lowDiff = averageRgbDiff(noAoPixels, lowAoPixels);
+        const fullDiff = averageRgbDiff(noAoPixels, fullAoPixels);
 
-    expect(fullDiff)
-        .to.be.greaterThan(
-            0.5,
-            'Full AO should still visibly change the composite output');
-    expect(lowDiff)
-        .to.be.lessThan(
+        expect(fullDiff).to.be.greaterThan(
+            0.5, 'Full AO should still visibly change the composite output');
+        expect(lowDiff).to.be.lessThan(
             fullDiff * 0.9,
             'A very small AO intensity should stay meaningfully weaker than full AO');
-  });
+      });
+
+  test(
+      'still changes the src model when a large environment model is present',
+      async () => {
+        const environment = new Mesh(
+            new BoxGeometry(80, 0.4, 80),
+            new MeshBasicMaterial({color: 0x3c8f4a}));
+        environment.position.set(0, -1.2, 0);
+        element[$scene].setEnvironmentModel(environment);
+
+        element.aoOutput = 'default';
+        element.aoIntensity = 0;
+        await waitFrames();
+        const withoutAo = readPixels(element);
+
+        element.aoIntensity = 1;
+        await waitFrames();
+        const withAo = readPixels(element);
+
+        expect(countOpaquePixels(withAo))
+            .to.be.greaterThan(
+                0, 'scene should render with AO and an environment model');
+        expect(averageRgbDiff(withoutAo, withAo))
+            .to.be.greaterThan(
+                0.35,
+                'AO should remain visible on the src model when a much larger environment is loaded');
+      });
 
   test('preserves transparent background in composite output', async () => {
     element.aoOutput = 'diffuse';
@@ -205,7 +228,8 @@ suite('LDAmbientOcclusion render integration', function() {
     expect(element.ambientOcclusion).to.equal(true);
     expect(element[$scene].effectRenderer).to.not.equal(null);
     expect(countOpaquePixels(readPixels(element)))
-        .to.be.greaterThan(0, 'Bag should render visible pixels with AO enabled');
+        .to.be.greaterThan(
+            0, 'Bag should render visible pixels with AO enabled');
   });
 
   test('CB1', async () => {
@@ -221,6 +245,7 @@ suite('LDAmbientOcclusion render integration', function() {
     expect(element.environmentImage).to.equal(CB1_HDR);
     expect(element[$scene].effectRenderer).to.not.equal(null);
     expect(countOpaquePixels(readPixels(element)))
-        .to.be.greaterThan(0, 'CB1 should render visible pixels with AO enabled');
+        .to.be.greaterThan(
+            0, 'CB1 should render visible pixels with AO enabled');
   });
 });

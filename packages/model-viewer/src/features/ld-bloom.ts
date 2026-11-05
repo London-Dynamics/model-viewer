@@ -1,3 +1,4 @@
+// clang-format off
 import { property } from 'lit/decorators.js';
 import {
   Camera,
@@ -36,6 +37,10 @@ import ModelViewerElementBase, {
 } from '../model-viewer-base.js';
 import { ModelScene } from '../three-components/ModelScene.js';
 import { AOPass } from '../three-components/postprocessing/ld-ambient-occlusion/AOPass.js';
+import {
+  scaleAmbientOcclusionRadius,
+  srcModelBoundingRadius,
+} from '../three-components/postprocessing/ld-ambient-occlusion/ao-radius.js';
 import {
   AmbientOcclusionOptions,
 } from '../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
@@ -725,11 +730,13 @@ export class LDBloomComposer implements EffectComposerInterface,
       return;
     }
 
-    const sceneRadius = this.scene?.boundingSphere?.radius ?? 1.0;
-    const radiusScale = 1.0 / Math.max(sceneRadius, 0.5);
-    const fineTuneFactor = 0.1;
-    const scaledRadius = options.radius * radiusScale * fineTuneFactor;
-    const scaledThickness = options.thickness * radiusScale * fineTuneFactor;
+    const scaled = scaleAmbientOcclusionRadius(
+      options.radius,
+      options.thickness,
+      srcModelBoundingRadius(this.scene)
+    );
+    const scaledRadius = scaled.radius;
+    const scaledThickness = scaled.thickness;
 
     const aoPass = this.aoPass as AOPass & {
       intensity: number;

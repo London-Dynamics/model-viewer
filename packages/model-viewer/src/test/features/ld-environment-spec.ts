@@ -34,11 +34,13 @@ suite('LDEnvironment', () => {
 
     await scene.setObject(main);
     const dimensions = element.getDimensions().toString();
+    const srcRadius = scene.boundingSphere.radius;
     scene.setEnvironmentModel(environment);
 
     expect(scene.environmentRoot.parent).to.equal(scene);
     expect(environment.parent).to.equal(scene.environmentRoot);
     expect(element.getDimensions().toString()).to.equal(dimensions);
+    expect(scene.boundingSphere.radius).to.equal(srcRadius);
     expect(scene.target.children).not.to.include(environment);
   });
 
