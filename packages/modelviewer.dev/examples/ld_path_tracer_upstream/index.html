@@ -127,8 +127,12 @@
     ></model-viewer>
     <a id="upstream-link" href="https://gkjohnson.github.io/three-gpu-pathtracer/index.html" target="_blank" rel="noopener">Open this model in the upstream demo</a>
     <p id="limits">
-      Same model list, HDRs, and lil-gui names as three-gpu-pathtracer 0.0.27.
-      model-viewer does not normalize models to a unit sphere, run upstream post-process, or trace with WebGPU.
+      WebGPU path tracer only. Same model list, HDRs, and lil-gui names as three-gpu-pathtracer 0.0.27.
+      Denoise is Open Image Denoise (OIDN) and runs once path-tracer-samples is reached.
+      model-viewer does not normalize models to a unit sphere, run upstream post-process, or build pedestal and backdrop meshes.
+      Tiles are a WebGL-era attribute and do not split this WebGPU frame.
+      If WebGPU is missing, the page stays on the real-time view.
+      Serve with <code>npm run serve</code> from the repo root after <code>npm run build:dev</code> in packages/model-viewer.
       <a href="../ld_path_tracer_settings/">Settings page</a>
     </p>
     <p id="status"></p>

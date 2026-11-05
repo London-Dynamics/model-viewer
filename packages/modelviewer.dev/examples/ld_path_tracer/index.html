@@ -291,7 +291,11 @@
                 <code>average</code>) and <code>maxLeafTris</code> without extra
                 attributes. The BVH is built in
                 <code>path-tracer-bvh.worker.js</code> when that file is served
-                beside the bundle; otherwise it builds on the main thread. This
+                beside the bundle; otherwise it builds on the main thread.
+                <span class="attribute">path-tracer-pixel-ratio</span> traces
+                above the screen pixel ratio without resizing the viewer
+                (0 uses the screen). <code>capturePathTracerFrame()</code>
+                returns that traced image at its native size. This
                 page shows the path tracing mixin powered by
                 <a
                   href="https://gkjohnson.github.io/three-gpu-pathtracer"
@@ -325,6 +329,7 @@
                         path-tracer-samples-threshold="6"
                         path-tracer-bounces="5"
                         path-tracer-render-scale="1"
+                        path-tracer-pixel-ratio="0"
                         path-tracer-tiles="3 3"
                         path-tracer-focal-length="50"
                         path-tracer-f-stop="1.8"
@@ -361,6 +366,7 @@
                         <button
                           id="path-tracer-save-path-traced"
                           type="button"
+                          title="Saves capturePathTracerFrame() at the tracer's native size"
                           class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500"
                         >
                           Save path traced
@@ -630,6 +636,22 @@
                               value="1"
                             />
                           </label>
+                          <label>
+                            Pixel ratio
+                            <span
+                              id="pixel-ratio-value"
+                              class="ld-path-tracer-setting-value"
+                              >screen</span
+                            >
+                            <input
+                              id="path-tracer-pixel-ratio"
+                              type="range"
+                              min="0"
+                              max="4"
+                              step="0.5"
+                              value="0"
+                            />
+                          </label>
                         </div>
                         <div class="ld-path-tracer-control-grid">
                           <label>
@@ -882,6 +904,12 @@
                       );
                       const renderScaleValue = document.querySelector(
                         '#render-scale-value'
+                      );
+                      const pixelRatio = document.querySelector(
+                        '#path-tracer-pixel-ratio'
+                      );
+                      const pixelRatioValue = document.querySelector(
+                        '#pixel-ratio-value'
                       );
                       const denoiseMode = document.querySelector(
                         '#path-tracer-denoise-mode'
@@ -1224,6 +1252,25 @@
                       };
                       const downloadPathTracedCanvas = async () => {
                         try {
+                          if (
+                            modelViewer.isPathTracerReady &&
+                            typeof modelViewer.capturePathTracerFrame ===
+                              'function'
+                          ) {
+                            const frame =
+                              await modelViewer.capturePathTracerFrame({
+                                fileType: 'image/png',
+                              });
+                            const link = document.createElement('a');
+                            link.href = frame.dataUrl;
+                            link.download = 'model-viewer-path-tracer.png';
+                            document.body.appendChild(link);
+                            link.click();
+                            setTimeout(() => {
+                              document.body.removeChild(link);
+                            }, 250);
+                            return;
+                          }
                           const exportCanvas = await createExportCanvas();
                           if (exportCanvas == null) {
                             return;
@@ -1417,6 +1464,16 @@
                         modelViewer.setAttribute(
                           'path-tracer-render-scale',
                           value
+                        );
+                      });
+                      pixelRatio.addEventListener('input', (event) => {
+                        clearServerAIDenoise();
+                        const value = Number(event.target.value);
+                        pixelRatioValue.textContent =
+                          value === 0 ? 'screen' : value.toFixed(1);
+                        modelViewer.setAttribute(
+                          'path-tracer-pixel-ratio',
+                          String(value)
                         );
                       });
                       denoiseMode.addEventListener('change', applyDenoiseMode);

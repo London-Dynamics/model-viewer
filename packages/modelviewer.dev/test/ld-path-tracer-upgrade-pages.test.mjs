@@ -24,6 +24,7 @@ const settingsAttributes = [
   'path-tracer-samples-threshold',
   'path-tracer-bounces',
   'path-tracer-render-scale',
+  'path-tracer-pixel-ratio',
   'path-tracer-tiles',
   'path-tracer-depth-of-field',
   'path-tracer-focal-length',

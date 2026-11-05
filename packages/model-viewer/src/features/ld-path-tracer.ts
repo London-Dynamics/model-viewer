@@ -18,10 +18,18 @@ import {Vector2} from 'three';
 
 import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
-import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, normalizePathTracerDisplay, normalizePathTracerFloorColor, PathTracerBuildOptions, PathTracerOptions, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
+import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, normalizePathTracerDisplay, normalizePathTracerFloorColor, PathTracerBuildOptions, PathTracerOptions, PathTracerPresentedFrame, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
 import {Constructor} from '../utilities.js';
 
 import {LDAmbientOcclusionInterface} from './ld-ambient-occlusion.js';
+
+let pathTracerCaptureQueue: Promise<unknown> = Promise.resolve();
+
+const enqueuePathTracerCapture = <T>(task: () => Promise<T>| T): Promise<T> => {
+  const next = pathTracerCaptureQueue.then(task, task);
+  pathTracerCaptureQueue = next.then(() => undefined, () => undefined);
+  return next;
+};
 
 const $pathTracerComposer = Symbol('pathTracerComposer');
 const PATH_TRACER_BACKEND_CHANGE_EVENT = 'ld-path-tracer-backend-change';
@@ -35,6 +43,7 @@ export declare interface LDPathTracerInterface {
   pathTracerFreezeRealtime: boolean;
   pathTracerBounces: number;
   pathTracerRenderScale: number;
+  pathTracerPixelRatio: number;
   pathTracerTiles: string;
   pathTracerDepthOfField: boolean;
   pathTracerFocalLength: number;
@@ -53,12 +62,31 @@ export declare interface LDPathTracerInterface {
   pathTracerFloorRoughness: number;
   pathTracerFloorMetalness: number;
   pathTracerFloorOpacity: number;
+  pathTracerPaused: boolean;
+  pathTracerFrameBudget: number;
+  pathTracerMultipleImportanceSampling: boolean;
+  pathTracerRandom: 'blue-dither'|'sobol'|'pcg';
   readonly pathTracerRenderedSamples: number;
   readonly isPathTracerReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
   setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
   getPathTracerOptions(): PathTracerBuildOptions;
   resetPathTracer(): void;
+  capturePathTracerFrame(options?: CapturePathTracerFrameOptions):
+      Promise<PathTracerPresentedFrame>;
+  readonly pathTracerUnavailableReason: string;
+}
+
+export interface CapturePathTracerFrameOptions {
+  fileType?: string;
+  encoderOptions?: number;
+  /**
+   * Not supported. A one-off offscreen trace would resize or rebuild the
+   * live accumulator. Set `path-tracer-pixel-ratio` instead.
+   */
+  minPixelRatio?: number;
+  /** Not supported. See `minPixelRatio`. */
+  minShortSide?: number;
 }
 
 const clampPathTracerUnit = (value: number, fallback: number): number => {
@@ -103,6 +131,9 @@ export const LDPathTracerMixin = <
 
     @property({type: Number, attribute: 'path-tracer-render-scale'})
     pathTracerRenderScale = DEFAULT_PATH_TRACER_OPTIONS.renderScale;
+
+    @property({type: Number, attribute: 'path-tracer-pixel-ratio'})
+    pathTracerPixelRatio = DEFAULT_PATH_TRACER_OPTIONS.pixelRatio;
 
     @property({type: String, attribute: 'path-tracer-tiles'})
     pathTracerTiles = `${DEFAULT_PATH_TRACER_OPTIONS.tiles.x} ${
@@ -159,6 +190,20 @@ export const LDPathTracerMixin = <
     @property({type: Number, attribute: 'path-tracer-floor-opacity'})
     pathTracerFloorOpacity = DEFAULT_PATH_TRACER_OPTIONS.floorOpacity;
 
+    @property({type: Boolean, attribute: 'path-tracer-paused'})
+    pathTracerPaused = DEFAULT_PATH_TRACER_OPTIONS.paused;
+
+    @property({type: Number, attribute: 'path-tracer-frame-budget'})
+    pathTracerFrameBudget = DEFAULT_PATH_TRACER_OPTIONS.frameBudget;
+
+    @property(
+        {type: Boolean, attribute: 'path-tracer-multiple-importance-sampling'})
+    pathTracerMultipleImportanceSampling =
+        DEFAULT_PATH_TRACER_OPTIONS.multipleImportanceSampling;
+
+    @property({type: String, attribute: 'path-tracer-random'})
+    pathTracerRandom = DEFAULT_PATH_TRACER_OPTIONS.randomStrategy;
+
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
     private pathTracerBuildOptions: PathTracerBuildOptions = {
       ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
@@ -170,6 +215,11 @@ export const LDPathTracerMixin = <
       }
 
       return 0;
+    }
+
+    get pathTracerUnavailableReason() {
+      const session = this.getPathTracerComposer();
+      return session == null ? '' : session.unavailableReason;
     }
 
     get isPathTracerReady() {
@@ -196,6 +246,12 @@ export const LDPathTracerMixin = <
 
     resetPathTracer() {
       this.getPathTracerComposer()?.resetSamples();
+    }
+
+    capturePathTracerFrame(options: CapturePathTracerFrameOptions = {}):
+        Promise<PathTracerPresentedFrame> {
+      return enqueuePathTracerCapture(
+          () => this.capturePathTracerFrameNow(options));
     }
 
     override connectedCallback() {
@@ -229,6 +285,7 @@ export const LDPathTracerMixin = <
         'pathTracerFreezeRealtime',
         'pathTracerBounces',
         'pathTracerRenderScale',
+        'pathTracerPixelRatio',
         'pathTracerTiles',
         'pathTracerDepthOfField',
         'pathTracerFocalLength',
@@ -247,6 +304,10 @@ export const LDPathTracerMixin = <
         'pathTracerFloorRoughness',
         'pathTracerFloorMetalness',
         'pathTracerFloorOpacity',
+        'pathTracerPaused',
+        'pathTracerFrameBudget',
+        'pathTracerMultipleImportanceSampling',
+        'pathTracerRandom',
         'ambientOcclusion',
         'aoAlgorithm',
         'aoRadius',
@@ -304,11 +365,6 @@ export const LDPathTracerMixin = <
         composer.setBuildOptions(this.pathTracerBuildOptions);
         this[$pathTracerComposer] = composer;
       }
-      if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
-        this[$pathTracerComposer].setOidnDenoise(
-            (this as unknown as {pathTracerDenoiseMode?: string})
-                .pathTracerDenoiseMode === 'oidn');
-      }
       if (!this.isRenderPipeline(currentEffect)) {
         this.registerEffectComposer(this[$pathTracerComposer]!);
       }
@@ -343,6 +399,7 @@ export const LDPathTracerMixin = <
         freezeRealtime: this.pathTracerFreezeRealtime,
         bounces: Math.max(1, Math.floor(this.pathTracerBounces)),
         renderScale: this.pathTracerRenderScale,
+        pixelRatio: this.pathTracerPixelRatio,
         tiles: parseTiles(this.pathTracerTiles),
         depthOfField: this.pathTracerDepthOfField,
         focalLength: this.pathTracerFocalLength,
@@ -366,6 +423,13 @@ export const LDPathTracerMixin = <
             DEFAULT_PATH_TRACER_OPTIONS.floorMetalness),
         floorOpacity: clampPathTracerUnit(
             this.pathTracerFloorOpacity, DEFAULT_PATH_TRACER_OPTIONS.floorOpacity),
+        paused: this.pathTracerPaused,
+        frameBudget: Math.max(1, Math.floor(this.pathTracerFrameBudget)),
+        multipleImportanceSampling: this.pathTracerMultipleImportanceSampling,
+        randomStrategy: this.pathTracerRandom === 'sobol' ||
+                this.pathTracerRandom === 'pcg' ?
+            this.pathTracerRandom :
+            'blue-dither',
         ambientOcclusionPreviewOptions:
             this.getAmbientOcclusionPreviewOptions(),
       };
@@ -379,6 +443,25 @@ export const LDPathTracerMixin = <
       }
 
       return host.getAmbientOcclusionOptions();
+    }
+
+    private capturePathTracerFrameNow(options: CapturePathTracerFrameOptions):
+        PathTracerPresentedFrame {
+      if ((options.minPixelRatio != null && options.minPixelRatio > 0) ||
+          (options.minShortSide != null && options.minShortSide > 0)) {
+        throw new Error(
+            'capturePathTracerFrame cannot trace a separate resolution. minPixelRatio and minShortSide would rebuild or resize the live accumulator. Set path-tracer-pixel-ratio so the on-screen trace is already that size.');
+      }
+
+      const composer = this.getPathTracerComposer();
+      if (!this.pathTracer || composer == null || !composer.isReady) {
+        throw new Error('Path tracer is not ready');
+      }
+
+      return composer.capturePresentedFrame({
+        fileType: options.fileType,
+        encoderOptions: options.encoderOptions,
+      });
     }
 
     private isRenderPipeline(effect: unknown): boolean {
