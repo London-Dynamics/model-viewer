@@ -14,7 +14,7 @@
  */
 
 import {expect} from 'chai';
-import {NeutralToneMapping} from 'three';
+import {BoxGeometry, Group, Mesh, MeshBasicMaterial, NeutralToneMapping} from 'three';
 
 import {AOPass} from '../../../../three-components/postprocessing/ld-ambient-occlusion/AOPass.js';
 import {LDAmbientOcclusionComposer} from '../../../../three-components/postprocessing/ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
@@ -101,4 +101,37 @@ suite('LDAmbientOcclusionComposer', () => {
     expect(effectComposerRenderCalls).to.be.equal(1);
   });
 
+  test(
+      'scales the sample radius from the src model sphere, not the environment',
+      () => {
+        const composer = new LDAmbientOcclusionComposer();
+        const environment = new Group();
+        environment.add(
+            new Mesh(new BoxGeometry(220, 2, 220), new MeshBasicMaterial()));
+        let scaledRadius = NaN;
+        let scaledThickness = NaN;
+        (composer as unknown as {
+          scene: object;
+          aoPass: object
+        }).scene = {
+          boundingSphere: {radius: 4},
+          environmentRoot: environment,
+        };
+        (composer as unknown as {aoPass: object}).aoPass = {
+          intensity: 0,
+          output: 0,
+          updateAoMaterial(params: {radius: number; thickness: number}) {
+            scaledRadius = params.radius;
+            scaledThickness = params.thickness;
+          },
+          updatePdMaterial() {},
+        };
+
+        composer.updateOptions({radius: 4, thickness: 10});
+
+        // ao-radius 4 / max(src radius 4, 0.5) * 0.1
+        expect(scaledRadius).to.be.closeTo(0.1, 1e-6);
+        // thickness uses the same src-model scale
+        expect(scaledThickness).to.be.closeTo(0.25, 1e-6);
+      });
 });
