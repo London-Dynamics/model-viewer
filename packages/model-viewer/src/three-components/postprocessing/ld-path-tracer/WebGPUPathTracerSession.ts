@@ -40,6 +40,18 @@ const RANDOM_STRATEGY = {
 
 export const PATH_TRACER_UNAVAILABLE_EVENT = 'path-tracer-unavailable';
 
+interface OIDNTileInputs {
+  progress?: ((
+      output: unknown, tileData: unknown, tile: unknown, index?: number,
+      count?: number) => unknown)|
+      null;
+}
+
+interface OIDNTileExecutor {
+  tileExecute: (inputs: OIDNTileInputs) => unknown;
+  tileExecuteWatched?: boolean;
+}
+
 /**
  * WebGPU path tracer on its own canvas, stacked over model-viewer's WebGL
  * view. The WebGL renderer keeps drawing the real-time frame. This canvas
@@ -57,13 +69,15 @@ export class WebGPUPathTracerSession {
   maxSamples = 0;
   fadeDuration = 1;
   denoiseFailed = false;
+  private denoiseTile = 0;
+  private denoiseTileCount = 0;
   bounces = 5;
   minSamples = 1;
   renderScale = 1;
   pause = false;
-  frameBudget = 250000;
+  frameBudget = 4757192;
   multipleImportanceSampling = true;
-  randomName: PathTracerRandomName = 'blue-dither';
+  randomName: PathTracerRandomName = 'sobol';
   tracedWidth = 0;
   tracedHeight = 0;
   maxTextureSize = 8192;
@@ -84,6 +98,8 @@ export class WebGPUPathTracerSession {
   constructor(private readonly host: HTMLElement) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'path-tracer-webgpu';
+    // The shadow template hides every canvas until it has this class.
+    this.canvas.classList.add('show');
     this.canvas.style.position = 'absolute';
     this.canvas.style.inset = '0';
     this.canvas.style.width = '100%';
@@ -200,6 +216,8 @@ export class WebGPUPathTracerSession {
       this.tracer?.setDenoiser(null);
       this.denoiser?.dispose();
       this.denoiser = null;
+      this.denoiseTile = 0;
+      this.denoiseTileCount = 0;
       return;
     }
     if (this.state === 'ready') {
@@ -246,6 +264,30 @@ export class WebGPUPathTracerSession {
     return this.denoiser?.complete === true;
   }
 
+  /**
+   * Sidebar text for the OIDN pass. Empty when denoise is off. Tile counts
+   * arrive with the first finished tile; before that the weights may still
+   * be loading, so the line says the pass has started.
+   */
+  get denoiseStatus(): string {
+    if (this.denoiseFailed) {
+      return 'denoise failed';
+    }
+    if (!this.denoiseWanted) {
+      return '';
+    }
+    if (this.denoiser?.complete === true) {
+      return 'denoise finished';
+    }
+    if (this.denoiser?.running === true) {
+      if (this.denoiseTileCount > 0) {
+        return `denoise ${this.denoiseTile}/${this.denoiseTileCount}`;
+      }
+      return 'denoise started';
+    }
+    return 'denoise waiting';
+  }
+
   setScene(scene: Object3D, camera: Camera) {
     this.assignBoundsSync(scene);
     this.tracer?.setScene(scene as Scene, camera);
@@ -275,6 +317,8 @@ export class WebGPUPathTracerSession {
   reset() {
     this.samples = 0;
     this.sampleMin = 0;
+    this.denoiseTile = 0;
+    this.denoiseTileCount = 0;
     this.tracer?.reset();
     this.show(false);
     this.setOpacity(0);
@@ -364,6 +408,7 @@ export class WebGPUPathTracerSession {
         maxTileSize: 512,
         dynamicTile: false,
       });
+      this.watchDenoiseTiles(denoiser);
       this.denoiser = denoiser;
       this.tracer.setDenoiser(denoiser);
     } catch (error) {
@@ -372,6 +417,37 @@ export class WebGPUPathTracerSession {
           '[model-viewer] WebGPU path tracer could not attach the OIDN denoiser. The trace stays raw.',
           error);
     }
+  }
+
+  private watchDenoiseTiles(denoiser: OIDNDenoiser) {
+    const host = denoiser as OIDNDenoiser&{
+      _initUNet: (useAuxiliary: boolean) => Promise<OIDNTileExecutor>;
+    };
+    const init = host._initUNet.bind(host);
+    host._initUNet = async (useAuxiliary: boolean) => {
+      const unet = await init(useAuxiliary);
+      if (unet.tileExecuteWatched === true) {
+        return unet;
+      }
+      const execute = unet.tileExecute.bind(unet);
+      unet.tileExecute = (inputs: OIDNTileInputs) => {
+        const report = inputs.progress;
+        inputs.progress = async (
+            output: unknown, tileData: unknown, tile: unknown, index?: number,
+            count?: number) => {
+          if (typeof index === 'number' && typeof count === 'number') {
+            this.denoiseTile = index + 1;
+            this.denoiseTileCount = count;
+          }
+          if (report != null) {
+            await report(output, tileData, tile, index, count);
+          }
+        };
+        return execute(inputs);
+      };
+      unet.tileExecuteWatched = true;
+      return unet;
+    };
   }
 
   private assignBoundsSync(scene: Object3D) {

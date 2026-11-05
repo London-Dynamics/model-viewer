@@ -40,6 +40,7 @@ export declare interface LDPathTracerInterface {
   pathTracerSamplesThreshold: number;
   pathTracerDisplay: string;
   pathTracerFade: number;
+  pathTracerOpacity: number;
   pathTracerFreezeRealtime: boolean;
   pathTracerBounces: number;
   pathTracerRenderScale: number;
@@ -67,6 +68,7 @@ export declare interface LDPathTracerInterface {
   pathTracerMultipleImportanceSampling: boolean;
   pathTracerRandom: 'blue-dither'|'sobol'|'pcg';
   readonly pathTracerRenderedSamples: number;
+  readonly pathTracerDenoiseStatus: string;
   readonly isPathTracerReady: boolean;
   getPathTracerComposer(): LDPathTracerComposer|null;
   setPathTracerOptions(options: Partial<PathTracerBuildOptions>): void;
@@ -122,6 +124,9 @@ export const LDPathTracerMixin = <
 
     @property({type: Number, attribute: 'path-tracer-fade'})
     pathTracerFade = DEFAULT_PATH_TRACER_OPTIONS.fadeSeconds;
+
+    @property({type: Number, attribute: 'path-tracer-opacity'})
+    pathTracerOpacity = DEFAULT_PATH_TRACER_OPTIONS.opacity;
 
     @property({type: Boolean, attribute: 'path-tracer-freeze-realtime'})
     pathTracerFreezeRealtime = DEFAULT_PATH_TRACER_OPTIONS.freezeRealtime;
@@ -217,6 +222,14 @@ export const LDPathTracerMixin = <
       return 0;
     }
 
+    get pathTracerDenoiseStatus() {
+      if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
+        return this[$pathTracerComposer].getDenoiseStatus();
+      }
+
+      return '';
+    }
+
     get pathTracerUnavailableReason() {
       const session = this.getPathTracerComposer();
       return session == null ? '' : session.unavailableReason;
@@ -282,6 +295,7 @@ export const LDPathTracerMixin = <
         'pathTracerSamplesThreshold',
         'pathTracerDisplay',
         'pathTracerFade',
+        'pathTracerOpacity',
         'pathTracerFreezeRealtime',
         'pathTracerBounces',
         'pathTracerRenderScale',
@@ -396,6 +410,13 @@ export const LDPathTracerMixin = <
             Number.isFinite(this.pathTracerFade) ?
                 this.pathTracerFade :
                 DEFAULT_PATH_TRACER_OPTIONS.fadeSeconds),
+        opacity: Math.min(
+            1,
+            Math.max(
+                0,
+                Number.isFinite(this.pathTracerOpacity) ?
+                    this.pathTracerOpacity :
+                    DEFAULT_PATH_TRACER_OPTIONS.opacity)),
         freezeRealtime: this.pathTracerFreezeRealtime,
         bounces: Math.max(1, Math.floor(this.pathTracerBounces)),
         renderScale: this.pathTracerRenderScale,

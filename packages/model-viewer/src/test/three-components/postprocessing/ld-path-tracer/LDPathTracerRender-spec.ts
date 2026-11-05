@@ -156,7 +156,9 @@ suite('LDPathTracer render integration', function() {
     });
 
     expect(floor).to.not.equal(null);
-    expect(floor.visible).to.equal(false);
+    expect(floor.visible).to.equal(true);
+    expect(floor.layers.test(0)).to.equal(false);
+    expect(floor.layers.test(1)).to.equal(true);
     const material = floor!.material;
     expect(material.color.getHexString()).to.equal('ff0000');
     expect(material.roughness).to.be.closeTo(0.35, 1e-4);

@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,} from 'three';
+import {Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer,} from 'three';
 import {GradientEquirectTexture, PhysicalCamera} from 'three-gpu-pathtracer';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -33,6 +33,9 @@ const PATH_TRACER_DISPLAYS = [
   'after-denoise',
 ] as const;
 const PATH_TRACER_SETTLE_MS = 300;
+// Realtime cameras draw layer 0. The floor stays visible so path-trace rays
+// hit it, and is placed on this layer so the raster view does not draw it.
+const PATH_TRACER_FLOOR_LAYER = 1;
 const DEFAULT_PATH_TRACER_FLOOR_COLOR = '#ffffff';
 
 export type PathTracerDisplay = typeof PATH_TRACER_DISPLAYS[number];
@@ -197,6 +200,11 @@ export interface PathTracerOptions {
   samplesThreshold: number;
   display: PathTracerDisplay;
   fadeSeconds: number;
+  /**
+   * Opacity of the trace while "While tracing" is still sampling or
+   * denoising. The picture fades to 1 once that work finishes.
+   */
+  opacity: number;
   freezeRealtime: boolean;
   bounces: number;
   renderScale: number;
@@ -235,6 +243,7 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   samplesThreshold: 6,
   display: 'after-denoise',
   fadeSeconds: 0.3,
+  opacity: 1,
   freezeRealtime: true,
   bounces: 5,
   renderScale: 1,
@@ -258,9 +267,11 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   floorMetalness: 0,
   floorOpacity: 1,
   paused: false,
-  frameBudget: 250000,
+  // 0.0.27 cannot grow the dispatch on its own. This is the budget the
+  // vendor demo settles on for a full-resolution frame.
+  frameBudget: 4757192,
   multipleImportanceSampling: true,
-  randomStrategy: 'blue-dither',
+  randomStrategy: 'sobol',
   ambientOcclusionPreviewOptions: null,
 };
 
@@ -286,6 +297,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private cameraStateInitialized = false;
   private cameraSettled = true;
   private realtimeFrozen = false;
+  private realtimePictureKey = '';
   private traceOpacity = 0;
   private lastFadeAt = 0;
   private readonly activePointers = new Set<number>();
@@ -335,6 +347,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private lastEnvironment: unknown = null;
   private lastBackground: unknown = null;
   private readonly drawingBufferSize = new Vector2();
+  private readonly shadowViewport = new Vector4();
   private reportedTracedWidth = 0;
   private reportedTracedHeight = 0;
   private reportedSupersampled = false;
@@ -409,6 +422,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.syncScene();
     this.syncEnvironment();
     this.syncLights();
+    this.refreshFrozenRealtime();
     this.updateSceneIfGeometryMoved();
     const hadCamera = this.cameraStateInitialized;
     if (this.updateCameraIfNeeded()) {
@@ -960,9 +974,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     };
 
     const worker = this.ensureBvhWorker();
-    // WebGPU walks every object, including invisible ones. Shader materials
-    // have no color and crash the material buffer, so they are detached until
-    // setScene has finished. setSceneAsync captures the scene after it awaits.
+    // WebGPU records every mesh, then skips any object whose visible flag is
+    // off. Shader materials have no color and crash the material buffer, so
+    // they are detached until setScene has finished. setSceneAsync captures
+    // the scene after it awaits.
     const restoreShadowReceivers = this.hideShadowReceivers();
     const detached = this.detachUntraceable();
     const restoreScene = () => {
@@ -1150,13 +1165,34 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private renderSoftShadowOverlay() {
-    if (this.renderer == null || this.scene == null ||
-        this.scene.shadowMode !== 'soft-shadow') {
+    this.paintSoftShadow();
+  }
+
+  /**
+   * The shadow map is view-independent, but the pass that fills it can run
+   * before the model is in place and then never again. Draw it immediately
+   * before the floor so the realtime picture and the trace stamp both get it.
+   * The map pass changes the viewport, so put the scene viewport back first.
+   */
+  private paintSoftShadow() {
+    const renderer = this.renderer;
+    const scene = this.scene;
+    const shadow = scene?.shadow;
+    if (renderer == null || scene == null || shadow == null ||
+        scene.shadowMode !== 'soft-shadow') {
       return;
     }
+    renderer.getViewport(this.shadowViewport);
+    shadow.needsUpdate = true;
+    scene.renderShadow(renderer);
+    renderer.setViewport(
+        this.shadowViewport.x, this.shadowViewport.y, this.shadowViewport.z,
+        this.shadowViewport.w);
+    shadow.renderFloor(renderer, scene, scene.getCamera());
+  }
 
-    this.scene.shadow?.renderFloor(
-        this.renderer, this.scene, this.scene.getCamera());
+  getDenoiseStatus(): string {
+    return this.pathTracer?.denoiseStatus ?? '';
   }
 
   private shouldRenderAmbientOcclusionPreview() {
@@ -1209,7 +1245,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     this.shadowCatcher = new Mesh(new PlaneGeometry(1, 1), material);
     this.shadowCatcher.name = 'PathTracerShadowCatcher';
-    this.shadowCatcher.visible = false;
+    // The hit test ignores visible=false. Keep the mesh visible and off the
+    // realtime camera's layer so only the trace draws it.
+    this.shadowCatcher.visible = true;
+    this.shadowCatcher.layers.set(PATH_TRACER_FLOOR_LAYER);
     this.shadowCatcher.userData.noHit = true;
     this.shadowCatcher.userData.pathTracerShadowCatcher = true;
 
@@ -1387,8 +1426,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       pathTracer.setOpacity(0);
       this.drawTraceIntoCanvas();
       renderer.resetState();
-      this.scene?.shadow?.renderFloor(
-          renderer, this.scene, this.scene.getCamera());
+      this.paintSoftShadow();
       return;
     }
     pathTracer.setOpacity(this.traceOpacity);
@@ -1413,16 +1451,30 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return pathTracer.sampleMin >= cap;
   }
 
+  private traceOpacityTarget(): number {
+    const working = Math.min(1, Math.max(0, this.options.opacity));
+    if (this.options.display === 'progressive' && this.pathTracer != null &&
+        !this.pathTracer.traceSettled) {
+      return working;
+    }
+    return 1;
+  }
+
   private advanceTraceFade() {
     const duration = Math.max(0, this.options.fadeSeconds) * 1000;
+    const target = this.traceOpacityTarget();
     if (duration === 0) {
-      this.traceOpacity = 1;
+      this.traceOpacity = target;
       return;
     }
     const now = performance.now();
     const delta = this.lastFadeAt === 0 ? 0 : Math.min(100, now - this.lastFadeAt);
     this.lastFadeAt = now;
-    this.traceOpacity = Math.min(1, this.traceOpacity + delta / duration);
+    if (this.traceOpacity < target) {
+      this.traceOpacity = Math.min(target, this.traceOpacity + delta / duration);
+    } else if (this.traceOpacity > target) {
+      this.traceOpacity = Math.max(target, this.traceOpacity - delta / duration);
+    }
   }
 
   private drawTraceIntoCanvas() {
@@ -1453,6 +1505,34 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   private shouldFreezeRealtime(): boolean {
     return this.options.freezeRealtime && !this.animationIsPlaying();
+  }
+
+  // The frozen realtime frame stays while the camera is still. A sidebar
+  // change that alters that picture drops it so the next frame draws once
+  // and freezes the new one.
+  private refreshFrozenRealtime() {
+    const scene = this.scene;
+    if (scene == null) {
+      return;
+    }
+    const environment = this.lastEnvironment as {uuid?: string}|null;
+    const background = this.lastBackground as {uuid?: string}|null;
+    const key = [
+      scene.exposure,
+      scene.toneMapping,
+      scene.shadowMode,
+      scene.shadowIntensity,
+      scene.shadowSoftness,
+      this.lastEnvironmentIntensity,
+      environment?.uuid ?? '',
+      background?.uuid ??
+          (this.lastBackground == null ? '' : String(this.lastBackground)),
+      this.lightVisibilityKey,
+    ].join('|');
+    if (this.realtimePictureKey !== '' && key !== this.realtimePictureKey) {
+      this.realtimeFrozen = false;
+    }
+    this.realtimePictureKey = key;
   }
 
   private animationIsPlaying(): boolean {

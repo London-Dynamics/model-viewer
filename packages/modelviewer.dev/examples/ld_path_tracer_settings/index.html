@@ -247,6 +247,14 @@
         text-align: right;
       }
 
+      .slider-line input.slider-value {
+        flex: 0 0 3.4rem;
+        font-variant-numeric: tabular-nums;
+        padding: 0.1rem 0.25rem;
+        text-align: right;
+        width: 3.4rem;
+      }
+
       button {
         background: #2563eb;
         border: 0;
@@ -400,6 +408,7 @@
         pathTracerSamplesThreshold: 1,
         pathTracerDisplay: 'after-denoise',
         pathTracerFade: 0.3,
+        pathTracerOpacity: 1,
         pathTracerFreezeRealtime: true,
         pathTracerBounces: 15,
         pathTracerPixelRatio: 0,
@@ -456,6 +465,7 @@
             'pathTracerSamplesThreshold',
             'pathTracerDisplay',
             'pathTracerFade',
+            'pathTracerOpacity',
             'pathTracerFreezeRealtime',
             'pathTracerBounces',
             'pathTracerPixelRatio',
@@ -540,6 +550,9 @@
           min: 1,
           max: 500,
           step: 1,
+          // Most tests sit around 8–16. The low end of the track covers 1–32
+          // and the number next to it sets an exact value.
+          fineMax: 32,
         },
         pathTracerSamplesThreshold: {
           label: 'Samples threshold',
@@ -562,6 +575,14 @@
           attr: 'path-tracer-fade',
           min: 0,
           max: 3,
+          step: 0.05,
+        },
+        pathTracerOpacity: {
+          label: 'Opacity while tracing',
+          kind: 'range',
+          attr: 'path-tracer-opacity',
+          min: 0,
+          max: 1,
           step: 0.05,
         },
         pathTracerFreezeRealtime: {
@@ -801,6 +822,8 @@
 
       const inputs = {};
       let traceStartedAt = performance.now();
+      let denoiseDoneSeconds = null;
+      let denoiseFinishArmed = false;
       let applyingQuery = false;
 
       const sectionOf = (name) => {
@@ -821,6 +844,32 @@
         return node;
       };
 
+      const FINE_SPAN = 700;
+
+      const unitToSamples = (unit, spec) => {
+        const fineMax = Math.min(spec.fineMax, spec.max);
+        if (unit <= FINE_SPAN) {
+          return clampInt(
+              spec.min + (unit / FINE_SPAN) * (fineMax - spec.min),
+              spec.min,
+              spec.max);
+        }
+        return clampInt(
+            fineMax + ((unit - FINE_SPAN) / (1000 - FINE_SPAN)) * (spec.max - fineMax),
+            spec.min,
+            spec.max);
+      };
+
+      const samplesToUnit = (samples, spec) => {
+        const fineMax = Math.min(spec.fineMax, spec.max);
+        const value = clampInt(samples, spec.min, spec.max);
+        if (value <= fineMax) {
+          return Math.round(((value - spec.min) / (fineMax - spec.min)) * FINE_SPAN);
+        }
+        return Math.round(
+            FINE_SPAN + ((value - fineMax) / (spec.max - fineMax)) * (1000 - FINE_SPAN));
+      };
+
       const addRange = (parent, name, spec) => {
         const label = document.createElement('label');
         label.textContent = spec.label;
@@ -828,19 +877,53 @@
         line.className = 'slider-line';
         const input = document.createElement('input');
         input.type = 'range';
-        input.min = String(spec.min);
-        input.max = String(spec.max);
-        input.step = String(spec.step);
-        input.value = String(state[name]);
-        const output = document.createElement('output');
-        output.textContent = formatNumber(state[name], spec.step);
-        input.addEventListener('input', () => {
-          const value = Number(input.value);
+        const fine = spec.fineMax != null;
+        input.min = fine ? '0' : String(spec.min);
+        input.max = fine ? '1000' : String(spec.max);
+        input.step = fine ? '1' : String(spec.step);
+        input.value = fine ? String(samplesToUnit(state[name], spec)) : String(state[name]);
+        const output = document.createElement(fine ? 'input' : 'output');
+        if (fine) {
+          output.type = 'number';
+          output.className = 'slider-value';
+          output.min = String(spec.min);
+          output.max = String(spec.max);
+          output.step = String(spec.step);
+          output.value = formatNumber(state[name], spec.step);
+          output.setAttribute('aria-label', spec.label);
+        } else {
+          output.textContent = formatNumber(state[name], spec.step);
+        }
+        const publish = (value, fromSlider) => {
           state[name] = value;
-          output.textContent = formatNumber(value, spec.step);
+          if (!fromSlider) {
+            input.value = fine ? String(samplesToUnit(value, spec)) : String(value);
+          }
+          if (fine) {
+            output.value = formatNumber(value, spec.step);
+          } else {
+            output.textContent = formatNumber(value, spec.step);
+          }
           applyField(name);
           writeQuery();
+        };
+        input.addEventListener('input', () => {
+          publish(
+              fine ? unitToSamples(Number(input.value), spec) : Number(input.value),
+              true);
         });
+        if (fine) {
+          const commitTyped = () => {
+            publish(clampInt(output.value, spec.min, spec.max));
+          };
+          output.addEventListener('change', commitTyped);
+          output.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commitTyped();
+            }
+          });
+        }
         line.append(input, output);
         label.append(line);
         parent.append(label);
@@ -1180,11 +1263,18 @@
         if (node.type === 'checkbox') {
           node.checked = Boolean(state[name]);
         } else {
-          node.value = String(state[name]);
-          const output = node.parentElement?.querySelector('output');
           const spec = fields[name];
-          if (output && spec?.step != null) {
-            output.textContent = formatNumber(state[name], spec.step);
+          node.value = spec?.fineMax != null ?
+              String(samplesToUnit(state[name], spec)) :
+              String(state[name]);
+          const output = node.parentElement?.querySelector('output, input.slider-value');
+          if (output && spec?.step != null && document.activeElement !== output) {
+            const text = formatNumber(state[name], spec.step);
+            if (output.tagName === 'OUTPUT') {
+              output.textContent = text;
+            } else {
+              output.value = text;
+            }
           }
         }
       };
@@ -1218,6 +1308,7 @@
         params.set('path-tracer-samples-threshold', String(state.pathTracerSamplesThreshold));
         params.set('path-tracer-display', state.pathTracerDisplay);
         params.set('path-tracer-fade', String(state.pathTracerFade));
+        params.set('path-tracer-opacity', String(state.pathTracerOpacity));
         params.set('path-tracer-freeze-realtime', state.pathTracerFreezeRealtime ? '1' : '0');
         params.set('path-tracer-bounces', String(state.pathTracerBounces));
         params.set('path-tracer-render-scale', String(state.pathTracerRenderScale));
@@ -1295,6 +1386,7 @@
         state.pathTracerSamplesThreshold = readNumber(params, 'path-tracer-samples-threshold', state.pathTracerSamplesThreshold);
         state.pathTracerDisplay = params.get('path-tracer-display') || state.pathTracerDisplay;
         state.pathTracerFade = readNumber(params, 'path-tracer-fade', state.pathTracerFade);
+        state.pathTracerOpacity = readNumber(params, 'path-tracer-opacity', state.pathTracerOpacity);
         state.pathTracerFreezeRealtime = readBool(params, 'path-tracer-freeze-realtime', state.pathTracerFreezeRealtime);
         state.pathTracerBounces = readNumber(params, 'path-tracer-bounces', state.pathTracerBounces);
         state.pathTracerRenderScale = readNumber(params, 'path-tracer-render-scale', state.pathTracerRenderScale);
@@ -1364,6 +1456,8 @@
 
       const restartClock = () => {
         traceStartedAt = performance.now();
+        denoiseDoneSeconds = null;
+        denoiseFinishArmed = false;
       };
 
       const runServerAI = async () => {
@@ -1404,9 +1498,26 @@
       const stats = document.querySelector('#trace-stats');
       const tick = () => {
         const samples = Math.floor(Number(viewer.pathTracerRenderedSamples || 0));
-        const seconds = ((performance.now() - traceStartedAt) / 1000).toFixed(1);
         const ready = viewer.isPathTracerReady ? 'ready' : 'building';
-        stats.textContent = `samples ${samples} · ${seconds}s · ${ready}`;
+        const denoise = viewer.pathTracerDenoiseStatus || '';
+        const finished = denoise === 'denoise finished';
+        if (!finished) {
+          denoiseFinishArmed = true;
+          denoiseDoneSeconds = null;
+        } else if (denoiseFinishArmed && denoiseDoneSeconds == null) {
+          denoiseDoneSeconds = (performance.now() - traceStartedAt) / 1000;
+        }
+        const seconds = (denoiseDoneSeconds ??
+            (performance.now() - traceStartedAt) / 1000).toFixed(1);
+        if (finished && denoiseDoneSeconds != null) {
+          stats.textContent =
+              `samples ${samples} · ${ready} · denoise finished in ${seconds}s`;
+        } else if (denoise === '') {
+          stats.textContent = `samples ${samples} · ${seconds}s · ${ready}`;
+        } else {
+          stats.textContent =
+              `samples ${samples} · ${seconds}s · ${ready} · ${denoise}`;
+        }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
