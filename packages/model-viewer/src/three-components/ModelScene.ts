@@ -28,6 +28,7 @@ import {
   LoopRepeat,
   Material,
   Matrix3,
+  Matrix4,
   Mesh,
   NeutralToneMapping,
   Object3D,
@@ -59,6 +60,7 @@ import {
 import ModelViewerElementBase, {
   $renderer,
   $scene,
+  $updateCameraClipping,
   EffectComposerInterface,
   RendererInterface,
 } from '../model-viewer-base.js';
@@ -230,6 +232,11 @@ export class ModelScene extends Scene {
   private _model: Object3D | null = null;
   private _environmentModel: Object3D | null = null;
   private environmentModelDispose: (() => void) | null = null;
+  /** Environment geometry in environmentRoot local space. */
+  private environmentBoundsLocal: Box3 | null = null;
+  private readonly environmentClipBox = new Box3();
+  private readonly environmentClipCorner = new Vector3();
+  private readonly environmentBoundsInverse = new Matrix4();
   private mixer: AnimationMixer;
   private cancelPendingSourceChange: (() => void) | null = null;
   private animationsByName: Map<string, AnimationClip> = new Map();
@@ -480,19 +487,23 @@ export class ModelScene extends Scene {
   }
 
   setEnvironmentModel(model: Object3D | null, dispose?: () => void) {
-    this.clearEnvironmentModel();
+    this.clearEnvironmentModel(false);
 
     if (model == null) {
+      this.environmentBoundsLocal = null;
+      this.requestCameraClippingUpdate();
       return;
     }
 
     this._environmentModel = model;
     this.environmentModelDispose = dispose ?? null;
     this.environmentRoot.add(model);
+    this.captureEnvironmentBounds();
     this.queueRender();
+    this.requestCameraClippingUpdate();
   }
 
-  clearEnvironmentModel() {
+  clearEnvironmentModel(updateClipping = true) {
     if (this._environmentModel != null) {
       this._environmentModel.removeFromParent();
       this._environmentModel = null;
@@ -503,7 +514,85 @@ export class ModelScene extends Scene {
       this.environmentModelDispose = null;
     }
 
+    this.environmentBoundsLocal = null;
     this.queueRender();
+    if (updateClipping) {
+      this.requestCameraClippingUpdate();
+    }
+  }
+
+  /**
+   * True when an environment model's bounds are cached. Does not walk the
+   * scene graph.
+   */
+  hasEnvironmentBounds(): boolean {
+    const bounds = this.environmentBoundsLocal;
+    return bounds != null && !bounds.isEmpty();
+  }
+
+  /**
+   * Max view-space depth of the cached environment bounds from `camera`.
+   * Zero when no environment model is loaded. Uses the box captured at load
+   * time transformed by environmentRoot, so camera and root changes do not
+   * traverse environment geometry.
+   */
+  environmentViewDepth(camera: Camera): number {
+    const local = this.environmentBoundsLocal;
+    if (local == null || local.isEmpty()) {
+      return 0;
+    }
+
+    this.environmentRoot.updateWorldMatrix(true, false);
+    camera.updateWorldMatrix(true, false);
+    const world = this.environmentClipBox.copy(local).applyMatrix4(
+        this.environmentRoot.matrixWorld);
+    const {min, max} = world;
+    const inverse = camera.matrixWorldInverse;
+    const corner = this.environmentClipCorner;
+    let depth = 0;
+    for (const x of [min.x, max.x]) {
+      for (const y of [min.y, max.y]) {
+        for (const z of [min.z, max.z]) {
+          corner.set(x, y, z).applyMatrix4(inverse);
+          if (Number.isFinite(corner.z)) {
+            depth = Math.max(depth, -corner.z);
+          }
+        }
+      }
+    }
+    return Number.isFinite(depth) && depth > 0 ? depth : 0;
+  }
+
+  private captureEnvironmentBounds() {
+    const model = this._environmentModel;
+    if (model == null) {
+      this.environmentBoundsLocal = null;
+      return;
+    }
+
+    model.updateWorldMatrix(true, true);
+    const world = this.environmentClipBox.setFromObject(model);
+    if (world.isEmpty()) {
+      this.environmentBoundsLocal = null;
+      return;
+    }
+
+    this.environmentRoot.updateWorldMatrix(true, false);
+    const inverse =
+        this.environmentBoundsInverse.copy(this.environmentRoot.matrixWorld);
+    if (inverse.determinant() === 0) {
+      this.environmentBoundsLocal = null;
+      return;
+    }
+    inverse.invert();
+    if (this.environmentBoundsLocal == null) {
+      this.environmentBoundsLocal = new Box3();
+    }
+    this.environmentBoundsLocal.copy(world).applyMatrix4(inverse);
+  }
+
+  private requestCameraClippingUpdate() {
+    this.element[$updateCameraClipping]();
   }
 
   setEnvironmentModelVisible(visible: boolean) {

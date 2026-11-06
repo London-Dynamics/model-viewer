@@ -143,7 +143,13 @@
                 <h4>
                   The road GLB is visible scene dressing loaded after the main
                   car model. The HDR is used for lighting and as a visible
-                  skybox.
+                  skybox. Default
+                  <span class="attribute">environment-clipping="auto"</span>
+                  extends the camera far plane to the environment model's
+                  transformed bounds and does not change orbit limits. Set
+                  <span class="attribute">environment-clipping="legacy"</span>
+                  to keep the previous far plane, derived from the maximum
+                  orbit radius.
                 </h4>
               </div>
               <example-snippet stamp-to="environment-model" highlight-as="html">
@@ -170,6 +176,7 @@
                       environment-model-position="0m 0m 0m"
                       environment-model-orientation="0deg 0deg 0deg"
                       environment-model-scale="1 1 1"
+                      environment-clipping="auto"
                       src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
                       alt="A car rendered on a decorative road environment"
                     >
@@ -201,6 +208,13 @@
                               type="text"
                               value="1 1 1"
                             />
+                          </label>
+                          <label>
+                            Environment Clipping
+                            <select id="environment-clipping">
+                              <option value="auto" selected>auto</option>
+                              <option value="legacy">legacy</option>
+                            </select>
                           </label>
                         </fieldset>
                         <fieldset>
@@ -284,6 +298,15 @@
                         'environment-model-scale',
                         'environment-model-scale'
                       );
+                      const environmentClipping = document.getElementById(
+                        'environment-clipping'
+                      );
+                      environmentClipping.addEventListener('change', () => {
+                        modelViewer.setAttribute(
+                          'environment-clipping',
+                          environmentClipping.value
+                        );
+                      });
                       bindTransformInput('skybox-rotation', 'skybox-rotation');
                       bindTransformInput(
                         'skybox-rotation-axis',

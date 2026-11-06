@@ -40,7 +40,7 @@ import {property} from 'lit/decorators.js';
 import * as THREE from 'three';
 
 import {style} from '../../decorators.js';
-import ModelViewerElementBase, {$ariaLabel, $container, $getModelIsVisible, $loadedTime, $needsRender, $onModelLoad, $onResize, $renderer, $scene, $tick, $updateStatus, $userInputElement, toVector3D, Vector3D,} from '../../model-viewer-base.js';
+import ModelViewerElementBase, {$ariaLabel, $container, $getModelIsVisible, $loadedTime, $needsRender, $onModelLoad, $onResize, $renderer, $scene, $tick, $updateCameraClipping, $updateStatus, $userInputElement, toVector3D, Vector3D,} from '../../model-viewer-base.js';
 import {EvaluatedStyle, Intrinsics, SphericalIntrinsics, Vector3Intrinsics,} from '../../styles/evaluators.js';
 import {DECAY_MILLISECONDS} from '../../three-components/Damper.js';
 import {ChangeSource, PointerChangeEvent,} from '../../three-components/SmoothControls.js';
@@ -64,6 +64,11 @@ const TAP_SMOOTH_TIME = 0.12;
  * radius limit is spent on log(FOV) at the same visual rate.
  */
 const LOG_SCALE_PER_DOLLY_DELTA = -Math.log(0.95);
+/** Keep the environment bound just inside the far plane. */
+const ENVIRONMENT_FAR_RELATIVE_PAD = 0.001;
+const ENVIRONMENT_FAR_ABSOLUTE_PAD = 1e-4;
+const CLIPPING_POSITION_EPSILON_SQ = 1e-8;
+const CLIPPING_ANGLE_EPSILON = 1e-5;
 
 import {$cancelPrompts, $controls, $fingerAnimatedContainers, $panElement, $programmaticCameraAnimation, $promptAnimatedContainer, $promptElement, A11yTranslationsInterface, cameraOrbitIntrinsics, cameraTargetIntrinsics, fieldOfViewIntrinsics, Finger, InteractionPromptStrategy, InteractionPromptStyle, maxCameraOrbitIntrinsics, minCameraOrbitIntrinsics, minFieldOfViewIntrinsics, SphericalPosition, TouchAction, type CameraChangeDetails, type ControlsInterface,} from '../controls.js';
 
@@ -1695,6 +1700,13 @@ const $maintainThetaPhi = Symbol('maintainThetaPhi');
 const $preserveLiveCameraPose = Symbol('preserveLiveCameraPose');
 const $lastSyncedCameraOrbit = Symbol('lastSyncedCameraOrbit');
 const $lastSyncedCameraTarget = Symbol('lastSyncedCameraTarget');
+const $clippingPoseValid = Symbol('clippingPoseValid');
+const $clippingCameraPosition = Symbol('clippingCameraPosition');
+const $clippingCameraQuaternion = Symbol('clippingCameraQuaternion');
+const $useLegacyEnvironmentClipping = Symbol('useLegacyEnvironmentClipping');
+const $rememberClippingPose = Symbol('rememberClippingPose');
+const $refreshEnvironmentFarForCamera =
+    Symbol('refreshEnvironmentFarForCamera');
 
 const $syncCameraOrbit = Symbol('syncCameraOrbit');
 const $syncFieldOfView = Symbol('syncFieldOfView');
@@ -1903,6 +1915,9 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     protected[$preserveLiveCameraPose] = false;
     protected[$lastSyncedCameraOrbit]: string|null = null;
     protected[$lastSyncedCameraTarget]: string|null = null;
+    protected[$clippingPoseValid] = false;
+    protected[$clippingCameraPosition] = new THREE.Vector3();
+    protected[$clippingCameraQuaternion] = new THREE.Quaternion();
     protected[$a11y] = {} as A11yTranslationsInterface;
 
     get inputSensitivity(): number {
@@ -2372,6 +2387,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
       this[$lastSyncedCameraOrbit] = this.cameraOrbit;
       this[$cancelPrompts]();
+      this[$updateCameraClipping]();
     }
 
     [$syncMinCameraOrbit](style: EvaluatedStyle<SphericalIntrinsics>) {
@@ -2462,6 +2478,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$controls].changeSource = ChangeSource.NONE;
       this[$renderer].arRenderer.updateTarget();
       this[$cancelPrompts]();
+      this[$updateCameraClipping]();
     }
 
     [$tick](time: number, delta: number) {
@@ -2564,6 +2581,8 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           this.viewportGizmoHandle.render();
         }
       }
+
+      this[$refreshEnvironmentFarForCamera]();
     }
 
     [$deferInteractionPrompt]() {
@@ -2574,15 +2593,72 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Updates the camera's near and far planes to enclose the scene when
-     * orbiting at the supplied radius.
+     * Updates the camera far plane for the supplied max orbit radius.
+     * Near stays 0.1. With an environment model, far also covers that
+     * model's cached world bounds from the current camera, and is never
+     * smaller than the legacy orbit-derived range.
      */
     [$updateCameraForRadius](radius: number) {
-      const maximumRadius = Math.max(this[$scene].farRadius(), radius);
-
+      const scene = this[$scene];
+      const maximumRadius = Math.max(scene.farRadius(), radius);
       const near = 0.1;
-      const far = Math.abs(2 * maximumRadius);
-      this[$controls].updateNearFar(near, far);
+      let far = Math.abs(2 * maximumRadius);
+      if (!this[$useLegacyEnvironmentClipping]() &&
+          scene.hasEnvironmentBounds()) {
+        const depth = scene.environmentViewDepth(scene.camera);
+        if (depth > 0) {
+          const padded = Math.max(
+              depth + ENVIRONMENT_FAR_ABSOLUTE_PAD,
+              depth * (1 + ENVIRONMENT_FAR_RELATIVE_PAD));
+          far = Math.max(far, padded);
+        }
+      }
+      const camera = scene.camera;
+      if (camera.near !== near || Math.abs(camera.far - far) > 1e-6) {
+        this[$controls].updateNearFar(near, far);
+      }
+    }
+
+    [$updateCameraClipping]() {
+      const radius = this[$controls].options.maximumRadius ?? 0;
+      this[$updateCameraForRadius](radius);
+      this[$rememberClippingPose]();
+    }
+
+    [$useLegacyEnvironmentClipping](): boolean {
+      const mode = (this as {environmentClipping?: string}).environmentClipping;
+      return typeof mode === 'string' && mode.toLowerCase() === 'legacy';
+    }
+
+    [$rememberClippingPose]() {
+      const camera = this[$scene].camera;
+      this[$clippingCameraPosition].copy(camera.position);
+      this[$clippingCameraQuaternion].copy(camera.quaternion);
+      this[$clippingPoseValid] = true;
+    }
+
+    /**
+     * Camera and target motion change the depth to a fixed environment.
+     * The bounds box is cached, so this stays a handful of vector ops.
+     */
+    [$refreshEnvironmentFarForCamera]() {
+      const scene = this[$scene];
+      if (this[$useLegacyEnvironmentClipping]() ||
+          !scene.hasEnvironmentBounds()) {
+        return;
+      }
+      const camera = scene.camera;
+      if (this[$clippingPoseValid]) {
+        const positionDelta =
+            this[$clippingCameraPosition].distanceToSquared(camera.position);
+        const angleDelta =
+            this[$clippingCameraQuaternion].angleTo(camera.quaternion);
+        if (positionDelta <= CLIPPING_POSITION_EPSILON_SQ &&
+            angleDelta <= CLIPPING_ANGLE_EPSILON) {
+          return;
+        }
+      }
+      this[$updateCameraClipping]();
     }
 
     [$updateAria]() {

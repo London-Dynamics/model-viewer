@@ -71,6 +71,7 @@ export const $getLoaded = Symbol('getLoaded');
 export const $getModelIsVisible = Symbol('getModelIsVisible');
 export const $shouldAttemptPreload = Symbol('shouldAttemptPreload');
 export const $updateLDEnvironment = Symbol('updateLDEnvironment');
+export const $updateCameraClipping = Symbol('updateCameraClipping');
 export const $collectLoadWarnings = Symbol('collectLoadWarnings');
 
 export interface Vector3D {
@@ -544,6 +545,15 @@ export default class ModelViewerElementBase extends ReactiveElement {
 
   [$tick](time: number, delta: number) {
     this[$scene].effectRenderer?.beforeRender(time, delta);
+  }
+
+  /**
+   * Recomputes the camera far plane from the current orbit limit and, when
+   * an environment model is loaded, its cached world bounds. LD controls
+   * override this. The default is a no-op so scenes without that mixin keep
+   * their existing camera planes.
+   */
+  [$updateCameraClipping]() {
   }
 
   [$markLoaded]() {

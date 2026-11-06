@@ -5,17 +5,27 @@ import ModelViewerElementBase, {
   $needsRender,
   $renderer,
   $scene,
+  $updateCameraClipping,
   $updateLDEnvironment,
 } from '../../model-viewer-base.js';
 import {normalizeUnit} from '../../styles/conversions.js';
 import {NumberNode, parseExpressions} from '../../styles/parsers.js';
 import {Constructor, deserializeUrl} from '../../utilities.js';
 
+export type EnvironmentClipping = 'auto'|'legacy';
+
 export declare interface LDEnvironmentInterface {
   environmentModel: string|null;
   environmentModelPosition: string;
   environmentModelOrientation: string;
   environmentModelScale: string;
+  /**
+   * `auto` (default) extends the far plane so a loaded environment model stays
+   * visible without changing orbit limits. `legacy` keeps the orbit-derived
+   * far plane. Near is unchanged either way. Scenes with no environment model
+   * always use the legacy plane.
+   */
+  environmentClipping: EnvironmentClipping;
 }
 
 export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -32,6 +42,9 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
 
     @property({type: String, attribute: 'environment-model-scale'})
     environmentModelScale: string = '1 1 1';
+
+    @property({type: String, attribute: 'environment-clipping'})
+    environmentClipping: EnvironmentClipping = 'auto';
 
     private environmentModelLoadId = 0;
 
@@ -54,6 +67,10 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
           changedProperties.has('environmentModelOrientation') ||
           changedProperties.has('environmentModelScale')) {
         this.updateEnvironmentModelTransform();
+      }
+
+      if (changedProperties.has('environmentClipping')) {
+        this[$updateCameraClipping]();
       }
     }
 
@@ -110,6 +127,7 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
           'YXZ'));
       environmentRoot.scale.set(scaleX.number, scaleY.number, scaleZ.number);
       this[$needsRender]();
+      this[$updateCameraClipping]();
     }
 
     async[$updateLDEnvironment]() {
