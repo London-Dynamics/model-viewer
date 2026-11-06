@@ -95,9 +95,12 @@ suite('environment far clipping', () => {
         const near = camera().near;
         const fov = camera().fov;
         const maxDistance = controls().thirdPartyControls.maxDistance;
-        element.setAttribute('environment-clipping', 'auto');
+        expect((element as any).clipToEnv).to.equal(true);
+        expect(element.hasAttribute('clip-to-env')).to.equal(false);
+        element.setAttribute('clip-to-env', 'true');
         await element.updateComplete;
 
+        expect((element as any).clipToEnv).to.equal(true);
         expect(camera().near).to.equal(0.1);
         expect(near).to.equal(0.1);
         expect(camera().far).to.be.closeTo(legacyCameraFar(element), 1e-3);
@@ -143,6 +146,8 @@ suite('environment far clipping', () => {
         expect(element.getDimensions().toString()).to.equal(dimensions);
         expect(scene.target.children).to.not.include(environment);
         expect(environment.parent).to.equal(scene.environmentRoot);
+        expect((element as any).clipToEnv).to.equal(true);
+        expect(element.hasAttribute('clip-to-env')).to.equal(false);
       });
 
   test('moving the environment along the view extends far', async () => {
@@ -321,7 +326,7 @@ suite('environment far clipping', () => {
   });
 
   test(
-      'environment-clipping="legacy" keeps orbit-derived far and auto restores it',
+      'clip-to-env="false" keeps the orbit-derived far, and true or omitting it fits the environment',
       async () => {
         const environment = box(8, 8, 8);
         const forward = new Vector3();
@@ -333,20 +338,63 @@ suite('environment far clipping', () => {
         const fov = camera().fov;
         const maxDistance = controls().thirdPartyControls.maxDistance;
 
-        element.setAttribute('environment-clipping', 'legacy');
+        element.setAttribute('clip-to-env', 'false');
         await element.updateComplete;
 
+        expect((element as any).clipToEnv).to.equal(false);
         expect(camera().far).to.be.closeTo(legacyFar, 1e-3);
         expect(camera().near).to.equal(0.1);
         expect(camera().fov).to.equal(fov);
         expect(controls().thirdPartyControls.maxDistance).to.equal(maxDistance);
         expect(element[$scene].boundingSphere.radius).to.be.lessThan(10);
 
-        element.setAttribute('environment-clipping', 'auto');
+        element.setAttribute('clip-to-env', 'FALSE');
         await element.updateComplete;
+        expect((element as any).clipToEnv).to.equal(false);
+        expect(camera().far).to.be.closeTo(legacyFar, 1e-3);
 
+        element.setAttribute('clip-to-env', 'true');
+        await element.updateComplete;
+        expect((element as any).clipToEnv).to.equal(true);
+        expectFarCovers(camera(), environment, legacyFar);
+
+        element.setAttribute('clip-to-env', '');
+        await element.updateComplete;
+        expect((element as any).clipToEnv).to.equal(true);
+        expectFarCovers(camera(), environment, legacyFar);
+
+        element.removeAttribute('clip-to-env');
+        await element.updateComplete;
+        expect((element as any).clipToEnv).to.equal(true);
+        expect(element.hasAttribute('clip-to-env')).to.equal(false);
         expectFarCovers(camera(), environment, legacyFar);
       });
+
+  test('setting clipToEnv from script updates the far plane', async () => {
+    const environment = box(8, 8, 8);
+    const forward = new Vector3();
+    camera().getWorldDirection(forward);
+    environment.position.copy(forward).multiplyScalar(70);
+    element[$scene].setEnvironmentModel(environment);
+    const legacyFar = legacyCameraFar(element);
+    expect((element as any).clipToEnv).to.equal(true);
+    expect(camera().far).to.be.greaterThan(legacyFar + 20);
+
+    (element as any).clipToEnv = false;
+    await element.updateComplete;
+
+    expect((element as any).clipToEnv).to.equal(false);
+    expect(camera().far).to.be.closeTo(legacyFar, 1e-3);
+    expect(camera().near).to.equal(0.1);
+    expect(element.getCameraOrbit().radius).to.be.closeTo(2, 0.05);
+    expect(controls().thirdPartyControls.maxDistance).to.be.closeTo(2, 1e-3);
+
+    (element as any).clipToEnv = true;
+    await element.updateComplete;
+
+    expect((element as any).clipToEnv).to.equal(true);
+    expectFarCovers(camera(), environment, legacyFar);
+  });
 
   test(
       'loading, shifting, and removing environment-model updates far and leaves framing alone',

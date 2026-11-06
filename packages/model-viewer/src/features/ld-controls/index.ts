@@ -1703,7 +1703,7 @@ const $lastSyncedCameraTarget = Symbol('lastSyncedCameraTarget');
 const $clippingPoseValid = Symbol('clippingPoseValid');
 const $clippingCameraPosition = Symbol('clippingCameraPosition');
 const $clippingCameraQuaternion = Symbol('clippingCameraQuaternion');
-const $useLegacyEnvironmentClipping = Symbol('useLegacyEnvironmentClipping');
+const $clipFarToEnvironment = Symbol('clipFarToEnvironment');
 const $rememberClippingPose = Symbol('rememberClippingPose');
 const $refreshEnvironmentFarForCamera =
     Symbol('refreshEnvironmentFarForCamera');
@@ -2603,8 +2603,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       const maximumRadius = Math.max(scene.farRadius(), radius);
       const near = 0.1;
       let far = Math.abs(2 * maximumRadius);
-      if (!this[$useLegacyEnvironmentClipping]() &&
-          scene.hasEnvironmentBounds()) {
+      if (this[$clipFarToEnvironment]() && scene.hasEnvironmentBounds()) {
         const depth = scene.environmentViewDepth(scene.camera);
         if (depth > 0) {
           const padded = Math.max(
@@ -2625,9 +2624,10 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$rememberClippingPose]();
     }
 
-    [$useLegacyEnvironmentClipping](): boolean {
-      const mode = (this as {environmentClipping?: string}).environmentClipping;
-      return typeof mode === 'string' && mode.toLowerCase() === 'legacy';
+    [$clipFarToEnvironment](): boolean {
+      // Only an explicit false opts out. Undefined during construction still
+      // uses the default, which fits the environment.
+      return (this as {clipToEnv?: boolean}).clipToEnv !== false;
     }
 
     [$rememberClippingPose]() {
@@ -2643,8 +2643,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
      */
     [$refreshEnvironmentFarForCamera]() {
       const scene = this[$scene];
-      if (this[$useLegacyEnvironmentClipping]() ||
-          !scene.hasEnvironmentBounds()) {
+      if (!this[$clipFarToEnvironment]() || !scene.hasEnvironmentBounds()) {
         return;
       }
       const camera = scene.camera;
