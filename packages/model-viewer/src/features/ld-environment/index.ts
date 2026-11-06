@@ -5,17 +5,40 @@ import ModelViewerElementBase, {
   $needsRender,
   $renderer,
   $scene,
+  $updateCameraClipping,
   $updateLDEnvironment,
 } from '../../model-viewer-base.js';
 import {normalizeUnit} from '../../styles/conversions.js';
 import {NumberNode, parseExpressions} from '../../styles/parsers.js';
 import {Constructor, deserializeUrl} from '../../utilities.js';
 
+/**
+ * Default is true when the attribute is omitted. Lit's Boolean converter
+ * treats any present attribute as true, including the string "false", so this
+ * converter accepts that explicit off value. Removing the attribute restores
+ * the default.
+ */
+const clipToEnvConverter = {
+  fromAttribute(value: string|null): boolean {
+    if (value == null) {
+      return true;
+    }
+    return value.trim().toLowerCase() !== 'false';
+  },
+};
+
 export declare interface LDEnvironmentInterface {
   environmentModel: string|null;
   environmentModelPosition: string;
   environmentModelOrientation: string;
   environmentModelScale: string;
+  /**
+   * When true (default), extend the camera far plane so a loaded environment
+   * model stays inside the frustum. Does not hide or show the environment.
+   * Set false to keep the far plane derived from the maximum camera orbit.
+   * Near, zoom limits, and product framing are unchanged either way.
+   */
+  clipToEnv: boolean;
 }
 
 export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -32,6 +55,12 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
 
     @property({type: String, attribute: 'environment-model-scale'})
     environmentModelScale: string = '1 1 1';
+
+    @property({
+      attribute: 'clip-to-env',
+      converter: clipToEnvConverter,
+    })
+    clipToEnv = true;
 
     private environmentModelLoadId = 0;
 
@@ -54,6 +83,10 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
           changedProperties.has('environmentModelOrientation') ||
           changedProperties.has('environmentModelScale')) {
         this.updateEnvironmentModelTransform();
+      }
+
+      if (changedProperties.has('clipToEnv')) {
+        this[$updateCameraClipping]();
       }
     }
 
@@ -110,6 +143,7 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
           'YXZ'));
       environmentRoot.scale.set(scaleX.number, scaleY.number, scaleZ.number);
       this[$needsRender]();
+      this[$updateCameraClipping]();
     }
 
     async[$updateLDEnvironment]() {

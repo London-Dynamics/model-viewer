@@ -1582,6 +1582,18 @@
     "htmlName": "ld_environment",
     "Attributes": [
       {
+        "name": "clip-to-env",
+        "htmlName": "clipToEnv",
+        "description": "Adjusts the camera <b>far</b> clipping range so a loaded <span class='attribute'>environment-model</span> stays inside the frustum. It does not show or hide the environment. The near plane, zoom, and orbit limits stay the same, and the environment is not included in product framing.<br/><br/>Default is <b>true</b> when the attribute is omitted: the far plane is at least the orbit-derived range (<code>2 * max(scene far radius, max orbit radius)</code>) and large enough for the environment model's transformed world bounds from the current camera. It is recalculated when the environment model is loaded, replaced, removed, or moved, and when the camera or its target changes the required distance.<br/><br/>Set <code>clip-to-env=\"false\"</code> or <code>element.clipToEnv = false</code> to keep only the orbit-derived far plane. The string <code>false</code> is respected; a bare <code>clip-to-env</code> attribute means true. Removing the attribute restores the default.<br/><br/>Scenes with no environment model keep the orbit-derived plane either way.<br/><br/>Usage:<br/><code>&lt;model-viewer src=\"product.glb\" environment-model=\"harbor.glb\" max-camera-orbit=\"auto auto 10m\"&gt;&lt;/model-viewer&gt;</code><br/><code>&lt;model-viewer clip-to-env=\"false\" environment-model=\"harbor.glb\"&gt;&lt;/model-viewer&gt;</code>",
+        "links": [
+          "<a href=\"../examples/ld_environment/#environment-model\">Environment model example</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
         "name": "water-texture",
         "htmlName": "waterTexture",
         "description": "Activate a water texture on the ground plane by providing a normals texture file.",
