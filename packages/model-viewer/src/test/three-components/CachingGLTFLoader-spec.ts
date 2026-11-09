@@ -30,6 +30,9 @@ const ModelViewerElement = class extends ModelViewerElementBase {
 customElements.define('model-viewer-loader', ModelViewerElement);
 
 const ASTRONAUT_GLB_PATH = assetPath('models/Astronaut.glb');
+const CUBE_GLTF_PATH = assetPath('models/cube.gltf');
+const SPHERE_GLTF_PATH = assetPath('models/reflective-sphere.gltf');
+const TRIANGLE_GLTF_PATH = assetPath('models/Triangle.gltf');
 
 suite('CachingGLTFLoader', () => {
   suite('when loading a glTF', () => {
@@ -109,12 +112,15 @@ suite('CachingGLTFLoader', () => {
             .to.deep.equal(['empty-response']);
       });
 
-      test('rejects a non-GLB file with an invalid-glb-header issue', async () => {
-        const url = blobUrlFor(['this is not a glb file']);
-        const error = await loadError(url) as ModelLoadError;
-        expect(error.issues.map((issue) => issue.code))
-            .to.deep.equal(['invalid-glb-header']);
-      });
+      test(
+          'rejects a non-GLB file with an invalid-glb-header issue',
+          async () => {
+            const url = blobUrlFor(['this is not a glb file']);
+            const error = await loadError(url) as ModelLoadError;
+            expect(error.issues.map((issue) => issue.code)).to.deep.equal([
+              'invalid-glb-header'
+            ]);
+          });
 
       test('does not keep failed loads in the cache', async () => {
         const url = blobUrlFor([]);
@@ -144,5 +150,58 @@ suite('CachingGLTFLoader', () => {
         expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.be.false;
       });
     });
+
+    test(
+        'does not let an environment model consume a src cache slot',
+        async () => {
+          const previous = loader[$evictionPolicy].evictionThreshold;
+          loader[$evictionPolicy].evictionThreshold = 1;
+          try {
+            const src = await loader.load(ASTRONAUT_GLB_PATH, element);
+            src.dispose();
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.be.true;
+
+            const environment = await loader.load(
+                SPHERE_GLTF_PATH, element, () => {}, 'environment');
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.be.true;
+            expect(CachingGLTFLoader.has(SPHERE_GLTF_PATH)).to.be.true;
+            expect(CachingGLTFLoader.cache.has(SPHERE_GLTF_PATH)).to.be.false;
+            environment.dispose();
+          } finally {
+            loader[$evictionPolicy].evictionThreshold = previous;
+          }
+        });
+
+    test(
+        'keeps environment models cached when modelCacheSize is 0',
+        async () => {
+          const previous = loader[$evictionPolicy].evictionThreshold;
+          loader[$evictionPolicy].evictionThreshold = 0;
+          try {
+            const src = await loader.load(ASTRONAUT_GLB_PATH, element);
+            src.dispose();
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.be.false;
+
+            const day = await loader.load(
+                SPHERE_GLTF_PATH, element, () => {}, 'environment');
+            const night = await loader.load(
+                TRIANGLE_GLTF_PATH, element, () => {}, 'environment');
+            day.dispose();
+
+            const nextSrc = await loader.load(CUBE_GLTF_PATH, element);
+            expect(CachingGLTFLoader.has(SPHERE_GLTF_PATH)).to.be.true;
+            expect(CachingGLTFLoader.has(TRIANGLE_GLTF_PATH)).to.be.true;
+            expect(CachingGLTFLoader.cache.has(SPHERE_GLTF_PATH)).to.be.false;
+            expect(CachingGLTFLoader.cache.has(TRIANGLE_GLTF_PATH)).to.be.false;
+
+            nextSrc.dispose();
+            expect(CachingGLTFLoader.has(CUBE_GLTF_PATH)).to.be.false;
+            expect(CachingGLTFLoader.has(SPHERE_GLTF_PATH)).to.be.true;
+            expect(CachingGLTFLoader.has(TRIANGLE_GLTF_PATH)).to.be.true;
+            night.dispose();
+          } finally {
+            loader[$evictionPolicy].evictionThreshold = previous;
+          }
+        });
   });
 });
