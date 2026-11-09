@@ -206,9 +206,12 @@ export const LDEnvironmentMixin =
           const loadId = ++this.environmentModelLoadId;
           const url = deserializeUrl(this.environmentModel);
 
-          this[$scene].clearEnvironmentModel();
-
+          // An empty value clears now. A replacement stays on screen until its
+          // load settles, then swaps in the same turn as the render request.
           if (url == null) {
+            this.loadedEnvironmentUrl = null;
+            this.finishEnvironmentGate();
+            this[$scene].clearEnvironmentModel();
             this[$needsRender]();
             return;
           }
@@ -227,6 +230,8 @@ export const LDEnvironmentMixin =
             }
 
             this.prepareEnvironmentModel(gltf.scene);
+            // Removes the previous model, adds this one, then queues a render
+            // and refreshes clip / environment bounds.
             this[$scene].setEnvironmentModel(gltf.scene, () => gltf.dispose());
             this.dispatchEvent(
                 new CustomEvent('environment-model-load', {detail: {url}}));
@@ -235,6 +240,9 @@ export const LDEnvironmentMixin =
               return;
             }
 
+            // The attribute names a model we do not have. Drop the previous
+            // set instead of leaving it up under the new URL.
+            this[$scene].clearEnvironmentModel();
             this.dispatchEvent(new CustomEvent(
                 'environment-model-error', {detail: {url, error}}));
           } finally {

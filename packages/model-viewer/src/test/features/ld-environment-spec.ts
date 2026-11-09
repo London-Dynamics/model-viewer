@@ -3,12 +3,12 @@
  */
 
 import {expect} from 'chai';
-import {BoxGeometry, Euler, Mesh, MeshBasicMaterial, Quaternion, Vector3} from 'three';
+import {Box3, BoxGeometry, Camera, Euler, Mesh, MeshBasicMaterial, Object3D, Quaternion, Vector3} from 'three';
 
 import {$controls} from '../../features/controls.js';
 import {$markLoaded, $renderer, $scene, $tick} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
-import {CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
+import {$environmentEvictionPolicy, CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
 import {timePasses, waitForEvent as waitForEventUnbounded,} from '../../utilities.js';
 import {assetPath} from '../helpers.js';
 
@@ -26,6 +26,28 @@ const MAIN_MODEL = assetPath('models/Astronaut.glb');
 const OTHER_MODEL = assetPath('models/cube.gltf');
 const ENVIRONMENT_MODEL = assetPath('models/reflective-sphere.gltf');
 const OTHER_ENVIRONMENT = assetPath('models/Triangle.gltf');
+const THIRD_ENVIRONMENT = assetPath('models/cube.gltf');
+const MISSING_ENVIRONMENT = assetPath('models/does-not-exist.glb');
+
+function viewDepth(object: Object3D, camera: Camera): number {
+  object.updateWorldMatrix(true, true);
+  camera.updateWorldMatrix(true, false);
+  const box = new Box3().setFromObject(object);
+  if (box.isEmpty()) {
+    return 0;
+  }
+  const corner = new Vector3();
+  let depth = 0;
+  for (const x of [box.min.x, box.max.x]) {
+    for (const y of [box.min.y, box.max.y]) {
+      for (const z of [box.min.z, box.max.z]) {
+        corner.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+        depth = Math.max(depth, -corner.z);
+      }
+    }
+  }
+  return depth;
+}
 
 function resourceFetches(fragment: string): number {
   return performance.getEntriesByType('resource')
@@ -586,6 +608,222 @@ suite('LDEnvironment', function() {
     expect(rotation.y).to.be.closeTo(30 * Math.PI / 180, 0.0001);
     expect(rotation.z).to.be.closeTo(10 * Math.PI / 180, 0.0001);
   });
+
+  test(
+      'keeps the current environment visible until the next one loads',
+      async () => {
+        element.cameraControls = true;
+        element.interactionPrompt = 'none';
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
+        const load = waitForEvent(element, 'load');
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.src = MAIN_MODEL;
+        await Promise.all([environmentLoad, load]);
+        await within(element.updateComplete, 8000, 'updateComplete');
+
+        const scene = element[$scene];
+        const current = scene.environmentRoot.children[0];
+        const camera = scene.camera;
+        expect(current).to.be.ok;
+        expect(scene.hasEnvironmentBounds()).to.equal(true);
+        expect(camera.far).to.be.at.least(scene.environmentViewDepth(camera));
+
+        const gate = delayLoaderUrl(element, 'Triangle.gltf');
+        const replaced = waitForEvent(element, 'environment-model-load');
+        let queuedRenders = 0;
+        const queueRender = scene.queueRender.bind(scene);
+        try {
+          element.environmentModel = OTHER_ENVIRONMENT;
+          await timePasses(50);
+
+          expect(scene.environmentRoot.children).to.deep.equal([current]);
+          expect(current.parent).to.equal(scene.environmentRoot);
+          expect(current.visible).to.equal(true);
+          expect(scene.environmentRoot.visible).to.equal(true);
+          expect(scene.hasEnvironmentBounds()).to.equal(true);
+          expect(scene.environmentViewDepth(camera))
+              .to.be.closeTo(viewDepth(current, camera), 1e-2);
+          expect(camera.far)
+              .to.be.at.least(scene.environmentViewDepth(camera) - 1e-3);
+
+          scene.queueRender = () => {
+            queuedRenders++;
+            queueRender();
+          };
+          gate.release();
+          await within(replaced, 8000, 'replacement environment');
+          await timePasses();
+
+          const next = scene.environmentRoot.children[0];
+          expect(scene.environmentRoot.children).to.have.lengthOf(1);
+          expect(next).to.not.equal(current);
+          expect(current.parent).to.equal(null);
+          expect(next.visible).to.equal(true);
+          expect(scene.environmentRoot.visible).to.equal(true);
+          expect(scene.hasEnvironmentBounds()).to.equal(true);
+          expect(scene.environmentViewDepth(camera))
+              .to.be.closeTo(viewDepth(next, camera), 1e-2);
+          expect(camera.far)
+              .to.be.at.least(scene.environmentViewDepth(camera) - 1e-3);
+          expect(queuedRenders).to.be.greaterThan(0);
+        } finally {
+          scene.queueRender = queueRender;
+          gate.release();
+          gate.restore();
+        }
+      });
+
+  test('shows only the latest environment when loads overlap', async () => {
+    const environmentLoad = waitForEvent(element, 'environment-model-load');
+    element.environmentModel = ENVIRONMENT_MODEL;
+    element.src = MAIN_MODEL;
+    await environmentLoad;
+
+    const scene = element[$scene];
+    const current = scene.environmentRoot.children[0];
+    const loader = element[$renderer].loader;
+    const load = loader.load.bind(loader);
+    const finished: string[] = [];
+    loader.load = ((url, el, progress, bucket) => {
+                    return load(url, el, progress, bucket).then((gltf) => {
+                      finished.push(url);
+                      return gltf;
+                    });
+                  }) as typeof loader.load;
+    const gateB = delayLoaderUrl(element, 'Triangle.gltf');
+    const gateC = delayLoaderUrl(element, 'cube.gltf');
+    const policy = CachingGLTFLoader[$environmentEvictionPolicy];
+    try {
+      element.environmentModel = OTHER_ENVIRONMENT;
+      await timePasses(20);
+      element.environmentModel = THIRD_ENVIRONMENT;
+      await timePasses(20);
+
+      expect(scene.environmentRoot.children).to.deep.equal([current]);
+
+      gateB.release();
+      await within(
+          (async () => {
+            while (!finished.some((url) => url.includes('Triangle.gltf'))) {
+              await timePasses(20);
+            }
+          })(),
+          8000,
+          'stale environment load');
+      await timePasses(30);
+
+      expect(scene.environmentRoot.children).to.deep.equal([current]);
+      expect(policy.retainerCount(OTHER_ENVIRONMENT)).to.equal(0);
+      expect(finished.some((url) => url.includes('cube.gltf'))).to.equal(false);
+
+      const shown = waitForEvent(element, 'environment-model-load');
+      gateC.release();
+      await within(shown, 8000, 'latest environment');
+      await timePasses();
+
+      expect(scene.environmentRoot.children).to.have.lengthOf(1);
+      expect(scene.environmentRoot.children[0]).to.not.equal(current);
+      expect(current.parent).to.equal(null);
+      expect(policy.retainerCount(OTHER_ENVIRONMENT)).to.equal(0);
+      expect(policy.retainerCount(THIRD_ENVIRONMENT)).to.be.greaterThan(0);
+      expect(scene.environmentRoot.visible).to.equal(true);
+      expect(scene.hasEnvironmentBounds()).to.equal(true);
+    } finally {
+      gateB.release();
+      gateC.release();
+      gateC.restore();
+      gateB.restore();
+      loader.load = load;
+    }
+  });
+
+  test(
+      'clears the environment immediately when environment-model is emptied',
+      async () => {
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.src = MAIN_MODEL;
+        await environmentLoad;
+
+        const scene = element[$scene];
+        const gate = delayLoaderUrl(element, 'Triangle.gltf');
+        try {
+          element.environmentModel = OTHER_ENVIRONMENT;
+          await timePasses(20);
+
+          element.environmentModel = null;
+          await within(element.updateComplete, 8000, 'clear null');
+          expect(scene.environmentRoot.children).to.have.lengthOf(0);
+          expect(scene.hasEnvironmentBounds()).to.equal(false);
+
+          gate.release();
+          await timePasses(200);
+          expect(scene.environmentRoot.children).to.have.lengthOf(0);
+          expect(scene.hasEnvironmentBounds()).to.equal(false);
+        } finally {
+          gate.release();
+          gate.restore();
+        }
+
+        const reloaded = waitForEvent(element, 'environment-model-load');
+        element.environmentModel = ENVIRONMENT_MODEL;
+        await within(reloaded, 8000, 'reload environment');
+        const emptyGate = delayLoaderUrl(element, 'Triangle.gltf');
+        try {
+          element.environmentModel = OTHER_ENVIRONMENT;
+          await timePasses(20);
+          element.environmentModel = '';
+          await within(element.updateComplete, 8000, 'clear empty');
+          expect(scene.environmentRoot.children).to.have.lengthOf(0);
+          expect(scene.hasEnvironmentBounds()).to.equal(false);
+
+          emptyGate.release();
+          await timePasses(200);
+          expect(scene.environmentRoot.children).to.have.lengthOf(0);
+        } finally {
+          emptyGate.release();
+          emptyGate.restore();
+        }
+      });
+
+  test(
+      'removes the old environment and fires environment-model-error on failure',
+      async () => {
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.src = MAIN_MODEL;
+        await environmentLoad;
+
+        const scene = element[$scene];
+        const current = scene.environmentRoot.children[0];
+        const gate = delayLoaderUrl(element, 'does-not-exist');
+        const environmentError =
+            waitForEvent<CustomEvent<{url: string; error: unknown}>>(
+                element, 'environment-model-error');
+        try {
+          element.environmentModel = MISSING_ENVIRONMENT;
+          await timePasses(40);
+
+          expect(scene.environmentRoot.children).to.deep.equal([current]);
+          expect(current.parent).to.equal(scene.environmentRoot);
+          expect(scene.hasEnvironmentBounds()).to.equal(true);
+
+          gate.release();
+          const event =
+              await within(environmentError, 8000, 'environment-model-error');
+          await timePasses();
+
+          expect(event.detail.url).to.equal(MISSING_ENVIRONMENT);
+          expect(scene.environmentRoot.children).to.have.lengthOf(0);
+          expect(current.parent).to.equal(null);
+          expect(scene.hasEnvironmentBounds()).to.equal(false);
+          expect(scene.environmentViewDepth(scene.camera)).to.equal(0);
+          expect(scene.model).to.be.ok;
+        } finally {
+          gate.release();
+          gate.restore();
+        }
+      });
 
   test('animates skybox rotation around the configured axis', async () => {
     element.skyboxRotation = '0deg 0deg 0deg';
