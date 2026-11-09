@@ -85,8 +85,50 @@ const fetchScript = (src: string): Promise<Event> => {
   });
 };
 
-const cache = new Map<string, Promise<GLTFInstance>>();
-const preloaded = new Map<string, boolean>();
+export type GLTFCacheBucket = 'model'|'environment';
+
+/**
+ * Released environment models kept so a viewer can switch among a few sets,
+ * such as day and night, without fetching again. Copies that are still in
+ * use are retained and are never evicted. This limit is not modelCacheSize.
+ */
+const ENVIRONMENT_MODEL_CACHE_SIZE = 5;
+
+interface CacheStores {
+  entries: Map<string, Promise<GLTFInstance>>;
+  preloaded: Map<string, boolean>;
+}
+
+const modelStores: CacheStores = {
+  entries: new Map(),
+  preloaded: new Map(),
+};
+
+const environmentStores: CacheStores = {
+  entries: new Map(),
+  preloaded: new Map(),
+};
+
+function storesFor(bucket: GLTFCacheBucket): CacheStores {
+  return bucket === 'environment' ? environmentStores : modelStores;
+}
+
+async function deleteFromStores(stores: CacheStores, url: string) {
+  if (!stores.entries.has(url)) {
+    return;
+  }
+
+  const gltfLoads = stores.entries.get(url);
+  stores.preloaded.delete(url);
+  stores.entries.delete(url);
+
+  try {
+    const gltf = await gltfLoads;
+    gltf!.dispose();
+  } catch {
+    // Failed loads have nothing to dispose.
+  }
+}
 
 let dracoDecoderLocation: string;
 const dracoLoader = new DRACOLoader();
@@ -99,6 +141,7 @@ let meshoptDecoder: Promise<typeof MeshoptDecoder>|undefined;
 
 export const $loader = Symbol('loader');
 export const $evictionPolicy = Symbol('evictionPolicy');
+export const $environmentEvictionPolicy = Symbol('environmentEvictionPolicy');
 const $GLTFInstance = Symbol('GLTFInstance');
 
 export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
@@ -140,42 +183,52 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
     ktx2Loader.detectSupport(renderer);
   }
 
-  static[$evictionPolicy]: CacheEvictionPolicy =
-      new CacheEvictionPolicy(CachingGLTFLoader);
+  /**
+   * Evicts unused product `src` models. modelCacheSize writes this threshold.
+   * Environment models are tracked by $environmentEvictionPolicy instead, so
+   * they do not consume these slots and are not evicted by src loads.
+   */
+  static[$evictionPolicy]: CacheEvictionPolicy = new CacheEvictionPolicy({
+    delete(url: string) {
+      void deleteFromStores(modelStores, url);
+    },
+  });
 
+  static[$environmentEvictionPolicy]: CacheEvictionPolicy =
+      new CacheEvictionPolicy(
+          {
+            delete(url: string) {
+              void deleteFromStores(environmentStores, url);
+            },
+          },
+          ENVIRONMENT_MODEL_CACHE_SIZE);
+
+  /** Product src entries. Environment models live in a separate map. */
   static get cache() {
-    return cache;
+    return modelStores.entries;
   }
 
   /** @nocollapse */
   static clearCache() {
-    cache.forEach((_value, url) => {
-      this.delete(url);
-    });
+    const urls = [
+      ...modelStores.entries.keys(),
+      ...environmentStores.entries.keys(),
+    ];
+    for (const url of urls) {
+      void this.delete(url);
+    }
     this[$evictionPolicy].reset();
+    this[$environmentEvictionPolicy].reset();
   }
 
   static has(url: string) {
-    return cache.has(url);
+    return modelStores.entries.has(url) || environmentStores.entries.has(url);
   }
 
   /** @nocollapse */
   static async delete(url: string) {
-    if (!this.has(url)) {
-      return;
-    }
-
-    const gltfLoads = cache.get(url);
-    preloaded.delete(url);
-    cache.delete(url);
-
-    try {
-      const gltf = await gltfLoads;
-      // Dispose of the cached glTF's materials and geometries:
-      gltf!.dispose();
-    } catch {
-      // Failed loads have nothing to dispose.
-    }
+    await deleteFromStores(modelStores, url);
+    await deleteFromStores(environmentStores, url);
   }
 
   /**
@@ -183,7 +236,8 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
    * available in our local cache.
    */
   static hasFinishedLoading(url: string) {
-    return !!preloaded.get(url);
+    return modelStores.preloaded.get(url) === true ||
+        environmentStores.preloaded.get(url) === true;
   }
 
   constructor(GLTFInstance: T) {
@@ -207,10 +261,12 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
    */
   async preload(
       url: string, element: ModelViewerElementBase,
-      progressCallback: ProgressCallback = () => {}) {
+      progressCallback: ProgressCallback = () => {},
+      bucket: GLTFCacheBucket = 'model') {
+    const stores = storesFor(bucket);
     this[$loader].setWithCredentials(element.withCredentials);
     this.dispatchEvent({type: 'preload', element: element, src: url});
-    if (!cache.has(url)) {
+    if (!stores.entries.has(url)) {
       if (meshoptDecoder != null) {
         this[$loader].setMeshoptDecoder(await meshoptDecoder);
       }
@@ -221,29 +277,30 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
           });
 
       const GLTFInstance = this[$GLTFInstance];
-      const gltfInstanceLoads = rawGLTFLoads
-                                    .then((rawGLTF) => {
-                                      return GLTFInstance.prepare(rawGLTF);
-                                    })
-                                    .then((preparedGLTF) => {
-                                      progressCallback(0.9);
-                                      return new GLTFInstance(preparedGLTF);
-                                    })
-                                    .catch((reason: unknown) => {
-                                      const error = toModelLoadError(reason);
-                                      console.error(error);
-                                      if (cache.get(url) === gltfInstanceLoads) {
-                                        cache.delete(url);
-                                        preloaded.delete(url);
-                                      }
-                                      throw error;
-                                    });
-      cache.set(url, gltfInstanceLoads);
+      const gltfInstanceLoads =
+          rawGLTFLoads
+              .then((rawGLTF) => {
+                return GLTFInstance.prepare(rawGLTF);
+              })
+              .then((preparedGLTF) => {
+                progressCallback(0.9);
+                return new GLTFInstance(preparedGLTF);
+              })
+              .catch((reason: unknown) => {
+                const error = toModelLoadError(reason);
+                console.error(error);
+                if (stores.entries.get(url) === gltfInstanceLoads) {
+                  stores.entries.delete(url);
+                  stores.preloaded.delete(url);
+                }
+                throw error;
+              });
+      stores.entries.set(url, gltfInstanceLoads);
     }
 
-    await cache.get(url);
+    await stores.entries.get(url);
 
-    preloaded.set(url, true);
+    stores.preloaded.set(url, true);
 
     if (progressCallback) {
       progressCallback(1.0);
@@ -257,18 +314,24 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
    */
   async load(
       url: string, element: ModelViewerElementBase,
-      progressCallback: ProgressCallback = () => {}): Promise<InstanceType<T>> {
-    await this.preload(url, element, progressCallback);
+      progressCallback: ProgressCallback = () => {},
+      bucket: GLTFCacheBucket = 'model'): Promise<InstanceType<T>> {
+    await this.preload(url, element, progressCallback, bucket);
 
-    const gltf = await cache.get(url)!;
+    const gltf = await storesFor(bucket).entries.get(url)!;
     const clone = await gltf.clone() as InstanceType<T>;
+    const policy = bucket === 'environment' ?
+        (this.constructor as
+         typeof CachingGLTFLoader)[$environmentEvictionPolicy] :
+        this[$evictionPolicy];
 
-    this[$evictionPolicy].retain(url);
+    policy.retain(url);
 
     // Patch dispose so that we can properly account for instance use
-    // in the caching layer:
+    // in the caching layer. Environment retains do not share the src policy,
+    // so modelCacheSize cannot evict an environment model that is in use.
     clone.dispose = () => {
-      this[$evictionPolicy].release(url);
+      policy.release(url);
     };
 
     return clone;

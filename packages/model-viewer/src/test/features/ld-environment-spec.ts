@@ -8,13 +8,23 @@ import {BoxGeometry, Euler, Mesh, MeshBasicMaterial, Quaternion, Vector3} from '
 import {$controls} from '../../features/controls.js';
 import {$scene, $tick} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
-import {waitForEvent} from '../../utilities.js';
+import {CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
+import {timePasses, waitForEvent} from '../../utilities.js';
 import {assetPath, rafPasses} from '../helpers.js';
 
 const MAIN_MODEL = assetPath('models/Astronaut.glb');
+const OTHER_MODEL = assetPath('models/cube.gltf');
 const ENVIRONMENT_MODEL = assetPath('models/reflective-sphere.gltf');
+const OTHER_ENVIRONMENT = assetPath('models/Triangle.gltf');
 
-suite('LDEnvironment', () => {
+function resourceFetches(fragment: string): number {
+  return performance.getEntriesByType('resource')
+      .filter((entry) => entry.name.includes(fragment))
+      .length;
+}
+
+suite('LDEnvironment', function() {
+  this.timeout(15000);
   let element: ModelViewerElement;
 
   setup(() => {
@@ -22,8 +32,10 @@ suite('LDEnvironment', () => {
     document.body.insertBefore(element, document.body.firstChild);
   });
 
-  teardown(() => {
+  teardown(async () => {
     element.remove();
+    // Scene disposal releases cache retainers on a short timeout.
+    await timePasses(30);
   });
 
   test('keeps environment objects outside the main target', async () => {
@@ -44,22 +56,57 @@ suite('LDEnvironment', () => {
     expect(scene.target.children).not.to.include(environment);
   });
 
-  test('loads the environment model after the main load event', async () => {
-    const events: string[] = [];
-    const load = waitForEvent(element, 'load');
-    const environmentLoad = waitForEvent(element, 'environment-model-load');
+  test(
+      'loads the environment model independently of the main load event',
+      async () => {
+        const events: string[] = [];
+        const load = waitForEvent(element, 'load');
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
 
-    element.environmentModel = ENVIRONMENT_MODEL;
-    element.addEventListener('load', () => events.push('load'));
-    element.addEventListener(
-        'environment-model-load', () => events.push('environment-model-load'));
-    element.src = MAIN_MODEL;
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.addEventListener('load', () => events.push('load'));
+        element.addEventListener(
+            'environment-model-load',
+            () => events.push('environment-model-load'));
+        element.src = MAIN_MODEL;
 
-    await load;
-    await environmentLoad;
+        await Promise.all([load, environmentLoad]);
 
-    expect(events[0]).to.equal('load');
-    expect(events).to.include('environment-model-load');
+        expect(events).to.include('load');
+        expect(events).to.include('environment-model-load');
+      });
+
+  test('loads the environment model without waiting for src', async () => {
+    const scene = element[$scene];
+    const originalSetSource = scene.setSource.bind(scene);
+    let releaseSrc = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseSrc = resolve;
+    });
+    scene.setSource = async (url, progressCallback) => {
+      await gate;
+      return originalSetSource(url, progressCallback);
+    };
+
+    try {
+      const environmentLoad = waitForEvent(element, 'environment-model-load');
+      element.environmentModel = ENVIRONMENT_MODEL;
+      element.src = MAIN_MODEL;
+
+      const result = await Promise.race([
+        environmentLoad.then(() => 'loaded' as const),
+        timePasses(1000).then(() => 'timeout' as const),
+      ]);
+
+      expect(result).to.equal('loaded');
+      expect(element.loaded).to.equal(false);
+      expect(scene.environmentRoot.children.length).to.be.greaterThan(0);
+      expect(scene.target.children)
+          .to.not.include(scene.environmentRoot.children[0]);
+    } finally {
+      releaseSrc();
+      scene.setSource = originalSetSource;
+    }
   });
 
   test(
@@ -93,10 +140,168 @@ suite('LDEnvironment', () => {
     });
   });
 
+  test(
+      'keeps the same environment model visible when src changes', async () => {
+        element.environmentModelPosition = '1m 2m 3m';
+        element.environmentModelScale = '2 3 4';
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
+        const load = waitForEvent(element, 'load');
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.src = MAIN_MODEL;
+        await Promise.all([environmentLoad, load]);
+        element.cameraControls = true;
+        element.interactionPrompt = 'none';
+        await element.updateComplete;
+
+        const scene = element[$scene];
+        const environment = scene.environmentRoot.children[0];
+        const framedRadius = scene.boundingSphere.radius;
+        const product = scene.model;
+        expect(environment).to.be.ok;
+        expect(scene.environmentRoot.visible).to.equal(true);
+        expect(environment.visible).to.equal(true);
+        expect(scene.hasEnvironmentBounds()).to.equal(true);
+
+        const envFetches = resourceFetches('reflective-sphere');
+        const nextLoad = waitForEvent(element, 'load');
+        element.src = OTHER_MODEL;
+        await element.updateComplete;
+
+        expect(scene.environmentRoot.children[0]).to.equal(environment);
+        expect(environment.parent).to.equal(scene.environmentRoot);
+        expect(scene.environmentRoot.visible).to.equal(true);
+        expect(environment.visible).to.equal(true);
+        expect(scene.hasEnvironmentBounds()).to.equal(true);
+        expect(scene.target.children).to.not.include(environment);
+
+        await nextLoad;
+        await timePasses(300);
+
+        expect(scene.environmentRoot.children[0]).to.equal(environment);
+        expect(scene.environmentRoot.visible).to.equal(true);
+        expect(resourceFetches('reflective-sphere')).to.equal(envFetches);
+        expect(scene.model).to.not.equal(product);
+        expect(scene.boundingSphere.radius).to.not.equal(framedRadius);
+        expect(scene.target.children).to.not.include(environment);
+        expect(scene.environmentRoot.position.x).to.equal(1);
+        expect(scene.environmentRoot.position.y).to.equal(2);
+        expect(scene.environmentRoot.position.z).to.equal(3);
+        expect(scene.environmentRoot.scale.x).to.equal(2);
+        expect(scene.environmentRoot.scale.y).to.equal(3);
+        expect(scene.environmentRoot.scale.z).to.equal(4);
+        environment.traverse((node) => {
+          if ('castShadow' in node && node !== scene.environmentRoot) {
+            expect((node as {castShadow?: boolean}).castShadow).to.equal(false);
+            expect((node as {receiveShadow?: boolean}).receiveShadow)
+                .to.equal(false);
+          }
+        });
+        const camera = scene.camera;
+        expect(camera.far).to.be.at.least(scene.environmentViewDepth(camera));
+      });
+
+  for (const cacheSize of [0, 1]) {
+    test(
+        `modelCacheSize ${
+            cacheSize} does not evict the in-use environment model`,
+        async () => {
+          const previousCacheSize = ModelViewerElement.modelCacheSize;
+          ModelViewerElement.modelCacheSize = cacheSize;
+          try {
+            const environmentLoad =
+                waitForEvent(element, 'environment-model-load');
+            const load = waitForEvent(element, 'load');
+            element.environmentModel = ENVIRONMENT_MODEL;
+            element.src = MAIN_MODEL;
+            await Promise.all([environmentLoad, load]);
+
+            const environment = element[$scene].environmentRoot.children[0];
+            expect(CachingGLTFLoader.has(ENVIRONMENT_MODEL)).to.equal(true);
+            expect(CachingGLTFLoader.cache.has(ENVIRONMENT_MODEL))
+                .to.equal(false);
+
+            const envFetches = resourceFetches('reflective-sphere');
+            const nextLoad = waitForEvent(element, 'load');
+            element.src = OTHER_MODEL;
+            await element.updateComplete;
+            expect(CachingGLTFLoader.has(ENVIRONMENT_MODEL)).to.equal(true);
+            expect(element[$scene].environmentRoot.children[0])
+                .to.equal(environment);
+
+            await nextLoad;
+            await timePasses(300);
+
+            expect(CachingGLTFLoader.has(ENVIRONMENT_MODEL)).to.equal(true);
+            expect(element[$scene].environmentRoot.children[0])
+                .to.equal(environment);
+            expect(element[$scene].environmentRoot.visible).to.equal(true);
+            expect(resourceFetches('reflective-sphere')).to.equal(envFetches);
+          } finally {
+            ModelViewerElement.modelCacheSize = previousCacheSize;
+          }
+        });
+  }
+
+  test(
+      'replaces the environment model when environment-model changes',
+      async () => {
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.src = MAIN_MODEL;
+        await waitForEvent(element, 'environment-model-load');
+
+        const scene = element[$scene];
+        const first = scene.environmentRoot.children[0];
+        const nextEnvironment = waitForEvent(element, 'environment-model-load');
+        element.environmentModel = OTHER_ENVIRONMENT;
+        await nextEnvironment;
+
+        expect(scene.environmentRoot.children).to.have.lengthOf(1);
+        expect(scene.environmentRoot.children[0]).to.not.equal(first);
+        expect(scene.environmentRoot.children[0].visible).to.equal(true);
+        expect(scene.environmentRoot.visible).to.equal(true);
+        expect(first.parent).to.equal(null);
+      });
+
+  test(
+      'keeps a replaced environment model cached when modelCacheSize is 0',
+      async () => {
+        const previousCacheSize = ModelViewerElement.modelCacheSize;
+        ModelViewerElement.modelCacheSize = 0;
+        try {
+          const environmentLoad =
+              waitForEvent(element, 'environment-model-load');
+          const load = waitForEvent(element, 'load');
+          element.environmentModel = ENVIRONMENT_MODEL;
+          element.src = MAIN_MODEL;
+          await Promise.all([environmentLoad, load]);
+          expect(CachingGLTFLoader.has(ENVIRONMENT_MODEL)).to.equal(true);
+
+          const replacement = waitForEvent(element, 'environment-model-load');
+          element.environmentModel = OTHER_ENVIRONMENT;
+          await replacement;
+          expect(element[$scene].environmentRoot.children).to.have.lengthOf(1);
+          expect(CachingGLTFLoader.has(ENVIRONMENT_MODEL)).to.equal(true);
+          expect(CachingGLTFLoader.has(OTHER_ENVIRONMENT)).to.equal(true);
+
+          const envFetches = resourceFetches('reflective-sphere');
+          const restored = waitForEvent(element, 'environment-model-load');
+          element.environmentModel = ENVIRONMENT_MODEL;
+          await restored;
+          await timePasses(300);
+          expect(resourceFetches('reflective-sphere')).to.equal(envFetches);
+          expect(element[$scene].environmentRoot.children).to.have.lengthOf(1);
+          expect(element[$scene].environmentRoot.visible).to.equal(true);
+        } finally {
+          ModelViewerElement.modelCacheSize = previousCacheSize;
+        }
+      });
+
   test('removing environment-model leaves the main model loaded', async () => {
+    const environmentLoad = waitForEvent(element, 'environment-model-load');
+    const load = waitForEvent(element, 'load');
     element.environmentModel = ENVIRONMENT_MODEL;
     element.src = MAIN_MODEL;
-    await waitForEvent(element, 'environment-model-load');
+    await Promise.all([environmentLoad, load]);
 
     const mainModel = element[$scene].model;
     element.environmentModel = null;

@@ -656,15 +656,11 @@ export default class ModelViewerElementBase extends ReactiveElement {
           });
         });
       });
-
-      const updateLDEnvironment = (this as any)[$updateLDEnvironment];
-      if (typeof updateLDEnvironment === 'function') {
-        updateLDEnvironment.call(this);
-      }
     } catch (error) {
       const issues = classifyLoadError(error);
       this.dispatchEvent(new CustomEvent(
-          'error', {detail: {type: 'loadfailure', sourceError: error, issues}}));
+          'error',
+          {detail: {type: 'loadfailure', sourceError: error, issues}}));
     } finally {
       updateSourceProgress(1.0);
     }
