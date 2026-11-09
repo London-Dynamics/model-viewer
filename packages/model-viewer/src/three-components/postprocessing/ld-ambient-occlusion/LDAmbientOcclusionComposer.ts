@@ -57,6 +57,8 @@ export interface AmbientOcclusionOptions {
   pdRadiusExponent: number;
   pdRings: number;
   pdSamples: number;
+  /** When true, environment-model is sampled and darkened by AO. */
+  includeEnvironmentModel: boolean;
 }
 
 const DEFAULT_OPTIONS: AmbientOcclusionOptions = {
@@ -80,6 +82,7 @@ const DEFAULT_OPTIONS: AmbientOcclusionOptions = {
   pdRadiusExponent: 1,
   pdRings: 2,
   pdSamples: 16,
+  includeEnvironmentModel: false,
 };
 
 export class LDAmbientOcclusionComposer implements EffectComposerInterface,
@@ -266,7 +269,9 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     }
 
     // Scale from the src model's framing sphere only. environment-model is
-    // not part of that sphere; including it shrinks AO until it disappears.
+    // not part of that sphere, even when includeEnvironmentModel puts the set
+    // back into the AO depth. Including the set in the scale shrinks AO until
+    // it disappears.
     const scaled = scaleAmbientOcclusionRadius(
         this.options.radius,
         this.options.thickness,
@@ -276,6 +281,8 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
 
     this.aoPass.intensity = this.options.intensity;
     this.aoPass.output = this.options.output;
+    this.aoPass.includeEnvironmentModel =
+        this.options.includeEnvironmentModel === true;
     this.aoPass.updateAoMaterial({
       algorithm: this.options.algorithm,
       radius: scaledRadius,

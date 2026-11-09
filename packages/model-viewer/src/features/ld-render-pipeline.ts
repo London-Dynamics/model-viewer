@@ -88,6 +88,7 @@ const PIPELINE_OPTION_PROPERTIES = [
   'aoDenoiseLumaPhi',
   'aoDenoiseDepthPhi',
   'aoDenoiseNormalPhi',
+  'environmentModelAo',
   'bloom',
   'bloomTargets',
   'bloomMode',

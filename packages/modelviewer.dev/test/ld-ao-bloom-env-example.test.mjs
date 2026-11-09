@@ -66,6 +66,20 @@ assert.match(
     'empty optional URL controls should remove their model-viewer attributes');
 assert.match(
     html,
+    /id="environment-model-ao"/,
+    'LD+AO+Bloom example should expose an environment-model-ao checkbox');
+assert.match(
+    html,
+    /environmentModelAo\.addEventListener\('change'[\s\S]*setAttribute\(\s*'environment-model-ao'/,
+    'the checkbox should only toggle the environment-model-ao attribute');
+const modelViewerTag = html.match(/<model-viewer[\s\S]*?>/);
+assert.ok(modelViewerTag, 'demo model-viewer tag should exist');
+assert.doesNotMatch(
+    modelViewerTag[0],
+    /environment-model-ao/,
+    'environment-model-ao stays off on the demo element until the checkbox is used');
+assert.match(
+    html,
     /id="ao-bloom-apply-urls"/,
     'LD+AO+Bloom example should expose an apply URLs button');
 assert.match(

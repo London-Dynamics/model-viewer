@@ -27,6 +27,19 @@ const clipToEnvConverter = {
   },
 };
 
+/**
+ * Default is false when the attribute is omitted. Same "false" string handling
+ * as clip-to-env: a present attribute is on unless the value is false.
+ */
+const environmentModelAoConverter = {
+  fromAttribute(value: string|null): boolean {
+    if (value == null) {
+      return false;
+    }
+    return value.trim().toLowerCase() !== 'false';
+  },
+};
+
 export declare interface LDEnvironmentInterface {
   environmentModel: string|null;
   environmentModelPosition: string;
@@ -39,6 +52,12 @@ export declare interface LDEnvironmentInterface {
    * Near, zoom limits, and product framing are unchanged either way.
    */
   clipToEnv: boolean;
+  /**
+   * When false (default), real-time AO ignores environment-model. When true,
+   * the environment is included in the AO depth and composite. The sample
+   * radius stays based on the src model either way.
+   */
+  environmentModelAo: boolean;
 }
 
 export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
@@ -61,6 +80,12 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
       converter: clipToEnvConverter,
     })
     clipToEnv = true;
+
+    @property({
+      attribute: 'environment-model-ao',
+      converter: environmentModelAoConverter,
+    })
+    environmentModelAo = false;
 
     private environmentModelLoadId = 0;
 
@@ -87,6 +112,10 @@ export const LDEnvironmentMixin = <T extends Constructor<ModelViewerElementBase>
 
       if (changedProperties.has('clipToEnv')) {
         this[$updateCameraClipping]();
+      }
+
+      if (changedProperties.has('environmentModelAo')) {
+        this[$needsRender]();
       }
     }
 

@@ -125,6 +125,7 @@ const AO_OPTION_PROPERTIES = [
   'aoDenoiseLumaPhi',
   'aoDenoiseDepthPhi',
   'aoDenoiseNormalPhi',
+  'environmentModelAo',
 ] as const;
 
 const $composer = Symbol('composer');
@@ -730,6 +731,8 @@ export class LDBloomComposer implements EffectComposerInterface,
       return;
     }
 
+    // Keep the src-model scale when environment-model-ao includes the set.
+    // A large environment in this denominator makes the effect disappear.
     const scaled = scaleAmbientOcclusionRadius(
       options.radius,
       options.thickness,
@@ -741,10 +744,12 @@ export class LDBloomComposer implements EffectComposerInterface,
     const aoPass = this.aoPass as AOPass & {
       intensity: number;
       output: number;
+      includeEnvironmentModel: boolean;
     };
 
     aoPass.intensity = options.intensity;
     aoPass.output = options.output;
+    aoPass.includeEnvironmentModel = options.includeEnvironmentModel === true;
     aoPass.updateAoMaterial({
       algorithm: options.algorithm,
       radius: scaledRadius,

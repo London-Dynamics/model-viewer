@@ -4,6 +4,10 @@
  * parented under `environmentRoot` and is not included. Folding the
  * environment into the scale shrinks the effect until it disappears on a
  * small product sitting in a large set.
+ *
+ * `environment-model-ao` puts the set back into the AO depth and composite.
+ * It does not change this scale. A road-sized set would otherwise divide the
+ * radius down until contact shadows on the product vanish.
  */
 export const AO_RADIUS_MIN_REFERENCE = 0.5;
 export const AO_RADIUS_FINE_TUNE = 0.1;

@@ -242,6 +242,7 @@ export const LDPathTracerMixin = <
         'aoDenoiseLumaPhi',
         'aoDenoiseDepthPhi',
         'aoDenoiseNormalPhi',
+        'environmentModelAo',
       ];
 
       if (knobs.some((prop) => changedProperties.has(prop))) {
