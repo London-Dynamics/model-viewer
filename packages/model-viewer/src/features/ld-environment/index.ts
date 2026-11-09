@@ -1,7 +1,7 @@
 import {property} from 'lit/decorators.js';
 import {Euler, Object3D} from 'three';
 
-import ModelViewerElementBase, {$needsRender, $renderer, $scene, $updateCameraClipping, $updateLDEnvironment,} from '../../model-viewer-base.js';
+import ModelViewerElementBase, {$awaitInitialEnvironment, $markLoaded, $needsRender, $renderer, $scene, $updateCameraClipping, $updateLDEnvironment,} from '../../model-viewer-base.js';
 import {normalizeUnit} from '../../styles/conversions.js';
 import {NumberNode, parseExpressions} from '../../styles/parsers.js';
 import {Constructor, deserializeUrl} from '../../utilities.js';
@@ -58,14 +58,27 @@ export const LDEnvironmentMixin =
         clipToEnv = true;
 
         private environmentModelLoadId = 0;
+        private hasRevealedProduct = false;
+        private environmentGatePending = false;
+        private environmentGateId = 0;
+        private loadedEnvironmentUrl: string|null = null;
+        private environmentGate: Promise<void> = Promise.resolve();
+        private finishEnvironmentGate: () => void = () => {};
 
         updated(changedProperties: Map<string|number|symbol, unknown>) {
+          if (!this.hasRevealedProduct) {
+            this.beginEnvironmentGate();
+          }
+
           super.updated(changedProperties);
 
           // The environment model is independent of the product src. A src
-          // change must not clear, hide, or reload it.
+          // change must not clear, hide, or reload it. The first reveal waits
+          // until this load settles; later src changes do not.
           if (changedProperties.has('environmentModel')) {
             if (this.environmentModel == null) {
+              this.loadedEnvironmentUrl = null;
+              this.finishEnvironmentGate();
               this.clearEnvironmentModel();
             } else {
               this[$updateLDEnvironment]();
@@ -140,6 +153,55 @@ export const LDEnvironmentMixin =
           this[$updateCameraClipping]();
         }
 
+        [$markLoaded]() {
+          super[$markLoaded]();
+          this.hasRevealedProduct = true;
+        }
+
+        /**
+         * Resolves when the environment model for the first reveal has loaded
+         * or failed. Product-only scenes and later src changes resolve
+         * immediately.
+         */
+        [$awaitInitialEnvironment](): Promise<void> {
+          if (this.hasRevealedProduct) {
+            return Promise.resolve();
+          }
+          const url = deserializeUrl(this.environmentModel);
+          if (url == null || url === this.loadedEnvironmentUrl) {
+            return Promise.resolve();
+          }
+          this.beginEnvironmentGate();
+          return this.environmentGate;
+        }
+
+        private beginEnvironmentGate() {
+          if (this.hasRevealedProduct || this.environmentGatePending) {
+            return;
+          }
+          const url = deserializeUrl(this.environmentModel);
+          if (url == null || url === this.loadedEnvironmentUrl) {
+            return;
+          }
+          this.environmentGatePending = true;
+          const gateId = ++this.environmentGateId;
+          this.environmentGate = new Promise((resolve) => {
+            this.finishEnvironmentGate = () => {
+              if (gateId !== this.environmentGateId) {
+                return;
+              }
+              this.environmentGatePending = false;
+              this.finishEnvironmentGate = () => {};
+              resolve();
+            };
+          });
+        }
+
+        private completeEnvironmentGate(url: string) {
+          this.loadedEnvironmentUrl = url;
+          this.finishEnvironmentGate();
+        }
+
         async[$updateLDEnvironment]() {
           const loadId = ++this.environmentModelLoadId;
           const url = deserializeUrl(this.environmentModel);
@@ -152,9 +214,10 @@ export const LDEnvironmentMixin =
           }
 
           try {
-            // Load beside src. Framing stays on the product scene; this root is
-            // not part of the target bounds. The environment bucket is not
-            // subject to modelCacheSize.
+            // Load beside src. Framing stays on the product scene; this root
+            // is not part of the target bounds. The environment bucket is not
+            // subject to modelCacheSize. The first reveal waits for this
+            // attempt to settle.
             const gltf = await this[$renderer].loader.load(
                 url, this, undefined, 'environment');
             if (loadId !== this.environmentModelLoadId ||
@@ -175,6 +238,9 @@ export const LDEnvironmentMixin =
             this.dispatchEvent(new CustomEvent(
                 'environment-model-error', {detail: {url, error}}));
           } finally {
+            if (loadId === this.environmentModelLoadId) {
+              this.completeEnvironmentGate(url);
+            }
             this[$needsRender]();
           }
         }

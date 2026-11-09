@@ -71,6 +71,7 @@ export const $getLoaded = Symbol('getLoaded');
 export const $getModelIsVisible = Symbol('getModelIsVisible');
 export const $shouldAttemptPreload = Symbol('shouldAttemptPreload');
 export const $updateLDEnvironment = Symbol('updateLDEnvironment');
+export const $awaitInitialEnvironment = Symbol('awaitInitialEnvironment');
 export const $updateCameraClipping = Symbol('updateCameraClipping');
 export const $collectLoadWarnings = Symbol('collectLoadWarnings');
 
@@ -565,6 +566,14 @@ export default class ModelViewerElementBase extends ReactiveElement {
     this[$loadedTime] = performance.now();
   }
 
+  /**
+   * First reveal waits for an environment model when one is set. The default
+   * resolves immediately. Later src changes do not use this gate.
+   */
+  [$awaitInitialEnvironment](): Promise<void> {
+    return Promise.resolve();
+  }
+
   [$needsRender]() {
     this[$scene].queueRender();
   }
@@ -633,6 +642,9 @@ export default class ModelViewerElementBase extends ReactiveElement {
       const envUpdated = (this as any)[$updateEnvironment]();
 
       await Promise.all([srcUpdated, envUpdated]);
+      // When an environment model is set before the first reveal, wait until
+      // it has loaded or failed so the product and environment appear together.
+      await this[$awaitInitialEnvironment]();
 
       this[$markLoaded]();
       this[$onModelLoad]();

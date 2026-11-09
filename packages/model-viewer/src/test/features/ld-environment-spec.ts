@@ -6,11 +6,21 @@ import {expect} from 'chai';
 import {BoxGeometry, Euler, Mesh, MeshBasicMaterial, Quaternion, Vector3} from 'three';
 
 import {$controls} from '../../features/controls.js';
-import {$scene, $tick} from '../../model-viewer-base.js';
+import {$markLoaded, $renderer, $scene, $tick} from '../../model-viewer-base.js';
 import {ModelViewerElement} from '../../model-viewer.js';
 import {CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
-import {timePasses, waitForEvent} from '../../utilities.js';
-import {assetPath, rafPasses} from '../helpers.js';
+import {timePasses, waitForEvent as waitForEventUnbounded,} from '../../utilities.js';
+import {assetPath} from '../helpers.js';
+
+function waitForEvent<T>(
+    target: EventTarget,
+    eventName: string,
+    predicate?: ((event: T) => boolean)|null): Promise<T> {
+  return within(
+      waitForEventUnbounded(target, eventName, predicate ?? null),
+      8000,
+      eventName);
+}
 
 const MAIN_MODEL = assetPath('models/Astronaut.glb');
 const OTHER_MODEL = assetPath('models/cube.gltf');
@@ -21,6 +31,53 @@ function resourceFetches(fragment: string): number {
   return performance.getEntriesByType('resource')
       .filter((entry) => entry.name.includes(fragment))
       .length;
+}
+
+async function within<T>(
+    promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer = 0;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(
+        () => reject(new Error(`timed out waiting for ${label}`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function posterShown(element: ModelViewerElement): boolean {
+  const poster = element.shadowRoot?.querySelector('.slot.poster');
+  return !!poster && poster.classList.contains('show');
+}
+
+function delayLoaderUrl(element: ModelViewerElement, fragment: string) {
+  const loader = element[$renderer].loader;
+  const original = loader.load.bind(loader);
+  let open = true;
+  let releaseGate = () => {};
+  const gate = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+  const wrapped: typeof loader.load = (url, el, progress, bucket) => {
+    if (open && url.includes(fragment)) {
+      return gate.then(() => original(url, el, progress, bucket));
+    }
+    return original(url, el, progress, bucket);
+  };
+  loader.load = wrapped;
+  return {
+    release() {
+      open = false;
+      releaseGate();
+    },
+    restore() {
+      if (loader.load === wrapped) {
+        loader.load = original as typeof loader.load;
+      }
+    },
+  };
 }
 
 suite('LDEnvironment', function() {
@@ -76,6 +133,138 @@ suite('LDEnvironment', function() {
         expect(events).to.include('environment-model-load');
       });
 
+  test(
+      'does not reveal either model until a slower environment is ready',
+      async () => {
+        const gate = delayLoaderUrl(element, 'reflective-sphere');
+        let sawBothAtReveal = false;
+        const markLoaded = element[$markLoaded].bind(element);
+        element[$markLoaded] = () => {
+          const scene = element[$scene];
+          sawBothAtReveal = scene.model != null &&
+              scene.environmentRoot.children.length > 0 &&
+              scene.environmentRoot.visible;
+          markLoaded();
+        };
+        let loadFired = false;
+        element.addEventListener('load', () => {
+          loadFired = true;
+        });
+        const load = waitForEvent(element, 'load');
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
+        try {
+          element.environmentModel = ENVIRONMENT_MODEL;
+          element.src = MAIN_MODEL;
+          let appeared = false;
+          for (let i = 0; i < 40 && !appeared; i++) {
+            appeared = element[$scene].model != null;
+            if (!appeared) {
+              await timePasses(100);
+            }
+          }
+          expect(appeared, `loaded=${element.loaded}`).to.equal(true);
+          await timePasses(50);
+
+          expect(loadFired).to.equal(false);
+          expect(element.loaded).to.equal(false);
+          expect(posterShown(element)).to.equal(true);
+          expect(element[$scene].renderCount).to.equal(0);
+          expect(element[$scene].environmentRoot.children).to.have.lengthOf(0);
+
+          gate.release();
+          await within(
+              Promise.all([load, environmentLoad]), 8000, 'reveal together');
+          await timePasses();
+
+          expect(sawBothAtReveal).to.equal(true);
+          expect(element.loaded).to.equal(true);
+          expect(posterShown(element)).to.equal(false);
+          expect(element[$scene].model).to.be.ok;
+          expect(element[$scene].environmentRoot.children.length)
+              .to.be.greaterThan(0);
+        } finally {
+          gate.release();
+          gate.restore();
+        }
+      });
+
+  test('does not reveal a faster environment model before src', async () => {
+    const gate = delayLoaderUrl(element, 'Astronaut.glb');
+    let sawBothAtReveal = false;
+    const markLoaded = element[$markLoaded].bind(element);
+    element[$markLoaded] = () => {
+      const scene = element[$scene];
+      sawBothAtReveal = scene.model != null &&
+          scene.environmentRoot.children.length > 0 &&
+          scene.environmentRoot.visible;
+      markLoaded();
+    };
+    const environmentLoad = waitForEvent(element, 'environment-model-load');
+    const load = waitForEvent(element, 'load');
+    try {
+      element.environmentModel = ENVIRONMENT_MODEL;
+      element.src = MAIN_MODEL;
+      await within(environmentLoad, 8000, 'environment before src');
+      await timePasses(50);
+
+      expect(element.loaded).to.equal(false);
+      expect(posterShown(element)).to.equal(true);
+      expect(element[$scene].renderCount).to.equal(0);
+      expect(element[$scene].environmentRoot.children.length)
+          .to.be.greaterThan(0);
+      expect(element[$scene].model).to.equal(null);
+
+      gate.release();
+      await within(load, 8000, 'src reveal');
+      await timePasses();
+
+      expect(sawBothAtReveal).to.equal(true);
+      expect(element.loaded).to.equal(true);
+      expect(posterShown(element)).to.equal(false);
+      expect(element[$scene].model).to.be.ok;
+    } finally {
+      gate.release();
+      gate.restore();
+    }
+  });
+
+  test(
+      'does not wait for a new environment model when src changes later',
+      async () => {
+        const environmentLoad = waitForEvent(element, 'environment-model-load');
+        const load = waitForEvent(element, 'load');
+        element.environmentModel = ENVIRONMENT_MODEL;
+        element.src = MAIN_MODEL;
+        await Promise.all([environmentLoad, load]);
+
+        const environment = element[$scene].environmentRoot.children[0];
+        const gate = delayLoaderUrl(element, 'Triangle.gltf');
+        const nextLoad = waitForEvent(element, 'load');
+        try {
+          element.environmentModel = OTHER_ENVIRONMENT;
+          element.src = OTHER_MODEL;
+          const result = await Promise.race([
+            nextLoad.then(() => 'loaded' as const),
+            timePasses(1000).then(() => 'timeout' as const),
+          ]);
+
+          expect(result).to.equal('loaded');
+          expect(element.loaded).to.equal(true);
+          expect(posterShown(element)).to.equal(false);
+
+          const replaced = waitForEvent(element, 'environment-model-load');
+          gate.release();
+          await within(replaced, 8000, 'replacement environment');
+          const nextEnvironment = element[$scene].environmentRoot.children[0];
+          expect(nextEnvironment).to.be.ok;
+          expect(nextEnvironment).to.not.equal(environment);
+          expect(element[$scene].environmentRoot.visible).to.equal(true);
+        } finally {
+          gate.release();
+          gate.restore();
+        }
+      });
+
   test('loads the environment model without waiting for src', async () => {
     const scene = element[$scene];
     const originalSetSource = scene.setSource.bind(scene);
@@ -119,17 +308,19 @@ suite('LDEnvironment', function() {
         element.environmentModel = assetPath('models/does-not-exist.glb');
         element.src = MAIN_MODEL;
 
-        await load;
-        await environmentError;
+        await Promise.all([load, environmentError]);
 
         expect(element.loaded).to.equal(true);
+        expect(posterShown(element)).to.equal(false);
         expect(element[$scene].currentGLTF).to.be.ok;
       });
 
   test('marks environment model nodes non-interactive', async () => {
+    const environmentLoad = waitForEvent(element, 'environment-model-load');
+    const load = waitForEvent(element, 'load');
     element.environmentModel = ENVIRONMENT_MODEL;
     element.src = MAIN_MODEL;
-    await waitForEvent(element, 'environment-model-load');
+    await Promise.all([environmentLoad, load]);
 
     const environmentRoot = element[$scene].environmentRoot;
     environmentRoot.traverse((node) => {
@@ -151,7 +342,7 @@ suite('LDEnvironment', function() {
         await Promise.all([environmentLoad, load]);
         element.cameraControls = true;
         element.interactionPrompt = 'none';
-        await element.updateComplete;
+        await within(element.updateComplete, 8000, 'updateComplete');
 
         const scene = element[$scene];
         const environment = scene.environmentRoot.children[0];
@@ -165,7 +356,7 @@ suite('LDEnvironment', function() {
         const envFetches = resourceFetches('reflective-sphere');
         const nextLoad = waitForEvent(element, 'load');
         element.src = OTHER_MODEL;
-        await element.updateComplete;
+        await within(element.updateComplete, 8000, 'updateComplete');
 
         expect(scene.environmentRoot.children[0]).to.equal(environment);
         expect(environment.parent).to.equal(scene.environmentRoot);
@@ -223,7 +414,7 @@ suite('LDEnvironment', function() {
             const envFetches = resourceFetches('reflective-sphere');
             const nextLoad = waitForEvent(element, 'load');
             element.src = OTHER_MODEL;
-            await element.updateComplete;
+            await within(element.updateComplete, 8000, 'updateComplete');
             expect(CachingGLTFLoader.has(ENVIRONMENT_MODEL)).to.equal(true);
             expect(element[$scene].environmentRoot.children[0])
                 .to.equal(environment);
@@ -305,7 +496,7 @@ suite('LDEnvironment', function() {
 
     const mainModel = element[$scene].model;
     element.environmentModel = null;
-    await rafPasses();
+    await timePasses(50);
 
     expect(element[$scene].environmentRoot.children).to.have.lengthOf(0);
     expect(element[$scene].model).to.equal(mainModel);
@@ -334,7 +525,7 @@ suite('LDEnvironment', function() {
         element.environmentModelPosition = '1m 2m 3m';
         element.environmentModelOrientation = '10deg 20deg 30deg';
         element.environmentModelScale = '2 3 4';
-        await element.updateComplete;
+        await within(element.updateComplete, 8000, 'updateComplete');
 
         const expectedQuaternion = new Quaternion().setFromEuler(new Euler(
             20 * Math.PI / 180, 30 * Math.PI / 180, 10 * Math.PI / 180, 'YXZ'));
@@ -356,14 +547,14 @@ suite('LDEnvironment', function() {
       async () => {
         element.cameraControls = true;
         element.environmentModel = ENVIRONMENT_MODEL;
-        await element.updateComplete;
+        await within(element.updateComplete, 8000, 'updateComplete');
 
         const scene = element[$scene];
         const controls = (element as any)[$controls];
         const originalSceneTarget = scene.getTarget();
 
         element.cameraTarget = '0m 0.45m 0m';
-        await element.updateComplete;
+        await within(element.updateComplete, 8000, 'updateComplete');
 
         const controlsTarget = new Vector3();
         controls.thirdPartyControls.getTarget(controlsTarget);
@@ -376,7 +567,7 @@ suite('LDEnvironment', function() {
 
   test('applies skybox rotation to the visible skybox', async () => {
     element.skyboxRotation = '10deg 20deg 30deg';
-    await element.updateComplete;
+    await within(element.updateComplete, 8000, 'updateComplete');
 
     const rotation = element[$scene].getSkyboxRotation();
 
@@ -387,7 +578,7 @@ suite('LDEnvironment', function() {
 
   test('applies skybox rotation to the render environment', async () => {
     element.skyboxRotation = '10deg 20deg 30deg';
-    await element.updateComplete;
+    await within(element.updateComplete, 8000, 'updateComplete');
 
     const rotation = element[$scene].environmentRotation;
 
@@ -401,7 +592,7 @@ suite('LDEnvironment', function() {
     element.skyboxRotationAnimation = true;
     element.skyboxRotationAxis = 'y';
     element.skyboxRotationSpeed = '90deg/s';
-    await element.updateComplete;
+    await within(element.updateComplete, 8000, 'updateComplete');
 
     element[$tick](performance.now(), 50);
 
