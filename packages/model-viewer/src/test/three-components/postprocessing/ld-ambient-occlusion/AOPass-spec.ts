@@ -106,9 +106,13 @@ suite('AOPass src-model isolation', function() {
     return item;
   };
 
-  const renderComposite = (scene: Scene): {
+  const renderComposite = (scene: Scene, includeEnvironmentModel = false): {
     beauty: Uint8Array,
-    composite: Uint8Array
+    composite: Uint8Array,
+    sceneRenders: number,
+    usedModelDepthPass: boolean,
+    occlusionMask: number,
+    samplesSceneDepth: boolean,
   } => {
     const camera = new PerspectiveCamera(50, 1, 0.1, 50);
     camera.position.set(0, 0.15, 5.2);
@@ -135,6 +139,10 @@ suite('AOPass src-model isolation', function() {
     {
       output: number;
       intensity: number;
+      includeEnvironmentModel: boolean;
+      modelDepthTarget: WebGLRenderTarget|null;
+      depthTexture: DepthTexture;
+      aoMaterial: {defines: {AO_OCCLUSION_MASK?: number}};
       setGBuffer(depthTexture: DepthTexture, normalTexture: undefined): void;
       updateAoMaterial(parameters: object): void;
       render(
@@ -143,6 +151,7 @@ suite('AOPass src-model isolation', function() {
           readBuffer: WebGLRenderTarget): void;
     };
     pass.setGBuffer(depthTexture, undefined);
+    pass.includeEnvironmentModel = includeEnvironmentModel;
     pass.output =
         (AOPass as unknown as {OUTPUT: {Default: number}}).OUTPUT.Default;
     pass.intensity = 1;
@@ -158,10 +167,32 @@ suite('AOPass src-model isolation', function() {
       nvAlignedSamples: 1,
       screenSpaceRadius: 0,
     });
-    pass.render(renderer, outputTarget, beautyTarget);
+    const originalRender = renderer.render.bind(renderer);
+    let sceneRenders = 0;
+    renderer.render =
+        ((...args: unknown[]) => {
+          if (args[0] === scene) {
+            sceneRenders++;
+          }
+          return (originalRender as (...renderArgs: unknown[]) => void)(
+              ...args);
+        }) as typeof renderer.render;
+    try {
+      pass.render(renderer, outputTarget, beautyTarget);
+    } finally {
+      renderer.render = originalRender;
+    }
     const composite = readTarget(renderer, outputTarget);
+    const result = {
+      beauty,
+      composite,
+      sceneRenders,
+      usedModelDepthPass: pass.modelDepthTarget != null,
+      occlusionMask: pass.aoMaterial.defines.AO_OCCLUSION_MASK ?? 0,
+      samplesSceneDepth: pass.depthTexture === depthTexture,
+    };
     pass.dispose();
-    return {beauty, composite};
+    return result;
   };
 
   test(
@@ -240,4 +271,166 @@ suite('AOPass src-model isolation', function() {
             `environment in front of the model should hide it without AO (drop ${
                 environmentDrop})`);
   });
+
+  test(
+      'includes the environment in AO when asked, and skips the extra depth pass',
+      () => {
+        const scene = new Scene();
+        const model = new Group();
+        const green = track(new MeshBasicMaterial({color: 0x00ff00}));
+        const back = new Mesh(new BoxGeometry(1.4, 1.4, 0.16), green);
+        model.add(back);
+        const environment = new Group();
+        environment.name = 'EnvironmentRoot';
+        const red = track(new MeshBasicMaterial({color: 0xff0000}));
+        const side = new Mesh(new BoxGeometry(0.16, 1.4, 1.4), red);
+        // Side wall meets the src wall, so it can occlude that corner.
+        side.position.set(-0.7, 0, 0.62);
+        environment.add(side);
+        (scene as Scene & {environmentRoot: Group}).environmentRoot =
+            environment;
+        scene.add(model);
+        scene.add(environment);
+
+        const excluded = renderComposite(scene, false);
+        const included = renderComposite(scene, true);
+        const excludedEnv =
+            maxChannelDrop(excluded.beauty, excluded.composite, 0, 200);
+        const includedEnv =
+            maxChannelDrop(included.beauty, included.composite, 0, 200);
+        const excludedModel =
+            maxChannelDrop(excluded.beauty, excluded.composite, 1, 200);
+        const includedModel =
+            maxChannelDrop(included.beauty, included.composite, 1, 200);
+
+        expect(excluded.sceneRenders)
+            .to.equal(1, 'excluded AO renders a second depth of the src model');
+        expect(excluded.usedModelDepthPass).to.equal(true);
+        expect(excluded.occlusionMask).to.equal(1);
+        expect(excluded.samplesSceneDepth).to.equal(false);
+        expect(excludedEnv)
+            .to.be.lessThan(
+                8,
+                `environment stays undarkened by default (drop ${
+                    excludedEnv})`);
+
+        expect(included.sceneRenders)
+            .to.equal(
+                0,
+                'included AO samples the beauty depth and skips the extra pass');
+        expect(included.usedModelDepthPass).to.equal(false);
+        expect(included.occlusionMask).to.equal(0);
+        expect(included.samplesSceneDepth).to.equal(true);
+        expect(includedEnv)
+            .to.be.greaterThan(
+                excludedEnv + 6,
+                `environment should darken when included (drop ${
+                    includedEnv})`);
+        expect(includedModel)
+            .to.be.greaterThan(
+                excludedModel + 4,
+                `environment should occlude the src model (drop ${
+                    includedModel} vs ${excludedModel})`);
+      });
+
+  test(
+      'toggling includeEnvironmentModel on one pass updates the next render',
+      () => {
+        const scene = new Scene();
+        const model = new Group();
+        addCorner(
+            model,
+            new Vector3(1.35, 0, 0),
+            track(new MeshBasicMaterial({color: 0x00ff00})));
+        const environment = new Group();
+        environment.name = 'EnvironmentRoot';
+        addCorner(
+            environment,
+            new Vector3(-1.55, 0, 0.2),
+            track(new MeshBasicMaterial({color: 0xff0000})));
+        (scene as Scene & {environmentRoot: Group}).environmentRoot =
+            environment;
+        scene.add(model);
+        scene.add(environment);
+
+        const camera = new PerspectiveCamera(50, 1, 0.1, 50);
+        camera.position.set(0, 0.15, 5.2);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+        const depthTexture = track(new DepthTexture(WIDTH, HEIGHT));
+        const beautyTarget = track(new WebGLRenderTarget(WIDTH, HEIGHT, {
+          depthTexture,
+          samples: 0,
+        }));
+        const outputTarget =
+            track(new WebGLRenderTarget(WIDTH, HEIGHT, {samples: 0}));
+        renderer.setRenderTarget(beautyTarget);
+        renderer.clear(true, true, true);
+        renderer.render(scene, camera);
+
+        const pass = new AOPass(
+                         scene,
+                         camera,
+                         WIDTH,
+                         HEIGHT,
+                         undefined,
+                         undefined,
+                         undefined) as AOPass &
+        {
+          includeEnvironmentModel: boolean;
+          modelDepthTarget: WebGLRenderTarget|null;
+          aoMaterial: {defines: {AO_OCCLUSION_MASK?: number}};
+          output: number;
+          intensity: number;
+          setGBuffer(
+              depthTexture: DepthTexture, normalTexture: undefined): void;
+          updateAoMaterial(parameters: object): void;
+          render(
+              renderer: WebGLRenderer,
+              writeBuffer: WebGLRenderTarget,
+              readBuffer: WebGLRenderTarget): void;
+        };
+        pass.setGBuffer(depthTexture, undefined);
+        pass.output =
+            (AOPass as unknown as {OUTPUT: {Default: number}}).OUTPUT.Default;
+        pass.intensity = 1;
+        pass.updateAoMaterial({
+          algorithm: AOShader.ALGORITHM.SAO,
+          radius: 1.25,
+          samples: 8,
+          screenSpaceRadius: 0,
+        });
+
+        const originalRender = renderer.render.bind(renderer);
+        let sceneRenders = 0;
+        renderer.render =
+            ((...args: unknown[]) => {
+              if (args[0] === scene) {
+                sceneRenders++;
+              }
+              return (originalRender as (...renderArgs: unknown[]) => void)(
+                  ...args);
+            }) as typeof renderer.render;
+        try {
+          pass.render(renderer, outputTarget, beautyTarget);
+          expect(sceneRenders).to.equal(1);
+          expect(pass.aoMaterial.defines.AO_OCCLUSION_MASK).to.equal(1);
+
+          sceneRenders = 0;
+          pass.includeEnvironmentModel = true;
+          pass.render(renderer, outputTarget, beautyTarget);
+          expect(sceneRenders)
+              .to.equal(0, 'turning inclusion on skips the extra depth pass');
+          expect(pass.aoMaterial.defines.AO_OCCLUSION_MASK).to.equal(0);
+
+          sceneRenders = 0;
+          pass.includeEnvironmentModel = false;
+          pass.render(renderer, outputTarget, beautyTarget);
+          expect(sceneRenders).to.equal(1);
+          expect(pass.aoMaterial.defines.AO_OCCLUSION_MASK).to.equal(1);
+        } finally {
+          renderer.render = originalRender;
+          pass.dispose();
+        }
+      });
 });

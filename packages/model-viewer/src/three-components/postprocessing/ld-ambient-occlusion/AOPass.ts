@@ -147,6 +147,7 @@ class AOPass extends Pass {
 		this.originalClearColor = new Color();
 		this.sceneDepthTexture = null;
 		this.modelDepthTarget = null;
+		this.includeEnvironmentModel = false;
 
 		this.setGBuffer( parameters ? parameters.depthTexture : undefined, parameters ? parameters.normalTexture : undefined );
 
@@ -407,10 +408,6 @@ class AOPass extends Pass {
 
 	updateBeforeOutput( renderer ) {
 
-		// Beauty-pass depth includes environment-model. AO samples a second
-		// depth with that root hidden, so a large set cannot dominate the
-		// src model. The mask keeps environment pixels undarkened, including
-		// where the set is in front of the model.
 		this.prepareModelDepth( renderer );
 
 		// render normals and depth (honor only meshes, points and lines do not contribute to AO)
@@ -641,7 +638,13 @@ class AOPass extends Pass {
 
 	prepareModelDepth( renderer ) {
 
-		if ( !this.environmentRootAffectsDepth() ) {
+		// Beauty-pass depth includes environment-model. By default AO samples
+		// a second depth with that root hidden, so a large set cannot dominate
+		// the src model, and the mask keeps environment pixels undarkened,
+		// including where the set is in front of the model. includeEnvironmentModel
+		// samples the beauty depth instead: the set is darkened and occludes,
+		// and this extra pass is skipped.
+		if ( !this.environmentRootAffectsDepth() || this.includeEnvironmentModel ) {
 
 			if ( this.sceneDepthTexture ) {
 

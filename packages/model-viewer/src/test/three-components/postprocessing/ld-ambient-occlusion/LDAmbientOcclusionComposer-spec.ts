@@ -134,4 +134,46 @@ suite('LDAmbientOcclusionComposer', () => {
         // thickness uses the same src-model scale
         expect(scaledThickness).to.be.closeTo(0.25, 1e-6);
       });
+
+  test(
+      'keeps the src-model radius when the environment is included in AO',
+      () => {
+        const composer = new LDAmbientOcclusionComposer();
+        const environment = new Group();
+        environment.add(
+            new Mesh(new BoxGeometry(220, 2, 220), new MeshBasicMaterial()));
+        let scaledRadius = NaN;
+        const aoPass: {
+          includeEnvironmentModel?: boolean; intensity: number; output: number;
+          updateAoMaterial(params: {radius: number}): void;
+          updatePdMaterial(): void;
+        } = {
+          intensity: 0,
+          output: 0,
+          updateAoMaterial(params: {radius: number}) {
+            scaledRadius = params.radius;
+          },
+          updatePdMaterial() {},
+        };
+        (composer as unknown as {
+          scene: object;
+          aoPass: object
+        }).scene = {
+          boundingSphere: {radius: 4},
+          environmentRoot: environment,
+        };
+        (composer as unknown as {aoPass: object}).aoPass = aoPass;
+
+        composer.updateOptions({
+          radius: 4,
+          thickness: 10,
+          includeEnvironmentModel: true,
+        } as {
+          radius: number;
+          thickness: number
+        });
+
+        expect(scaledRadius).to.be.closeTo(0.1, 1e-6);
+        expect(aoPass.includeEnvironmentModel).to.equal(true);
+      });
 });

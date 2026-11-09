@@ -35,7 +35,69 @@ suite('LD Render Pipeline', () => {
     const options = element.getAmbientOcclusionOptions();
     expect(options.algorithm).to.equal(AOShader.ALGORITHM.SAO);
     expect(options.screenSpaceRadius).to.equal(true);
+    expect((options as {includeEnvironmentModel?: boolean})
+               .includeEnvironmentModel)
+        .to.equal(false);
   });
+
+  test(
+      'environment-model-ao follows the clip-to-env reflection rules and defaults off',
+      async () => {
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(false);
+        expect(element.hasAttribute('environment-model-ao')).to.equal(false);
+        expect((element.getAmbientOcclusionOptions() as {
+                 includeEnvironmentModel?: boolean
+               }).includeEnvironmentModel)
+            .to.equal(false);
+
+        element.setAttribute('environment-model-ao', 'false');
+        await element.updateComplete;
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(false);
+
+        element.setAttribute('environment-model-ao', 'FALSE');
+        await element.updateComplete;
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(false);
+        expect((element.getAmbientOcclusionOptions() as {
+                 includeEnvironmentModel?: boolean
+               }).includeEnvironmentModel)
+            .to.equal(false);
+
+        element.setAttribute('environment-model-ao', 'true');
+        await element.updateComplete;
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(true);
+        expect((element.getAmbientOcclusionOptions() as {
+                 includeEnvironmentModel?: boolean
+               }).includeEnvironmentModel)
+            .to.equal(true);
+
+        element.setAttribute('environment-model-ao', '');
+        await element.updateComplete;
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(true);
+
+        element.removeAttribute('environment-model-ao');
+        await element.updateComplete;
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(false);
+        expect(element.hasAttribute('environment-model-ao')).to.equal(false);
+        expect((element.getAmbientOcclusionOptions() as {
+                 includeEnvironmentModel?: boolean
+               }).includeEnvironmentModel)
+            .to.equal(false);
+
+        (element as {environmentModelAo?: boolean}).environmentModelAo = true;
+        await element.updateComplete;
+        expect((element as {environmentModelAo?: boolean}).environmentModelAo)
+            .to.equal(true);
+        expect((element.getAmbientOcclusionOptions() as {
+                 includeEnvironmentModel?: boolean
+               }).includeEnvironmentModel)
+            .to.equal(true);
+      });
 
   test('registers one pipeline when ambient occlusion is enabled', async () => {
     element.ambientOcclusion = true;

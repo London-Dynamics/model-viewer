@@ -1332,7 +1332,7 @@
       {
         "name": "ambient-occlusion",
         "htmlName": "ambientOcclusion",
-        "description": "Enable or disable real-time ambient occlusion post-processing.",
+        "description": "Enable or disable real-time ambient occlusion post-processing. A loaded <span class='attribute'>environment-model</span> is left out of AO unless <span class='attribute'>environment-model-ao</span> is set.",
         "links": [
           "<a href=\"../examples/ld_ambient_occlusion/#ld-ambient-occlusion\">Related examples</a>"
         ],
@@ -1590,6 +1590,18 @@
         ],
         "default": {
           "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "environment-model-ao",
+        "htmlName": "environmentModelAo",
+        "description": "Includes the loaded <span class='attribute'>environment-model</span> in real-time ambient occlusion. It does not show or hide the environment, and it does not change product framing.<br/><br/>Default is <b>false</b> when the attribute is omitted: AO is sampled from the <span class='attribute'>src</span> model only. The environment is left out of the AO depth and is not darkened. The sample radius stays based on the src model's framing sphere.<br/><br/>Set a bare <code>environment-model-ao</code>, <code>environment-model-ao=\"true\"</code>, or <code>element.environmentModelAo = true</code> to include the environment again. It is darkened and occludes the src model, using the beauty-pass depth so there is no extra depth pass. The AO radius stays on the src model either way, so a large set does not shrink the effect away.<br/><br/>The string <code>false</code> is respected, including <code>FALSE</code>. Removing the attribute restores the default. Toggling the attribute or the property updates the next frame without a reload.<br/><br/>Usage:<br/><code>&lt;model-viewer src=\"product.glb\" environment-model=\"harbor.glb\" ambient-occlusion&gt;&lt;/model-viewer&gt;</code><br/><code>&lt;model-viewer src=\"product.glb\" environment-model=\"harbor.glb\" ambient-occlusion environment-model-ao&gt;&lt;/model-viewer&gt;</code>",
+        "links": [
+          "<a href=\"../examples/ld_ao_bloom_env/#ao-bloom-environment-model\">AO, bloom, and environment example</a>"
+        ],
+        "default": {
+          "default": "false",
           "options": "true, false"
         }
       },

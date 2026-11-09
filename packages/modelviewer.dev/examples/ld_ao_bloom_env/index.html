@@ -135,6 +135,25 @@
         padding: 0.55rem 0.65rem;
       }
 
+      .ld-environment-ao-toggle {
+        align-items: center;
+        color: #475569;
+        display: flex;
+        flex-direction: row;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+
+      .ld-environment-controls input[type='checkbox'] {
+        flex: 0 0 auto;
+        height: 1rem;
+        min-height: 0;
+        padding: 0;
+        width: 1rem;
+      }
+
       .ld-environment-controls input:focus {
         border-color: #2563eb;
         box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
@@ -230,6 +249,9 @@
                 <h4>
                   Same car, road, and sky as LD AO+Env, with bloom targets
                   copied from the car test case in the LD Bloom example.
+                  <span class="attribute">environment-model-ao</span> is off
+                  by default, so the road is left out of ambient occlusion.
+                  Turn it on to include the road.
                 </h4>
               </div>
               <example-snippet
@@ -354,6 +376,10 @@
                             </span>
                           </label>
                         </div>
+                        <label class="ld-environment-ao-toggle">
+                          <input id="environment-model-ao" type="checkbox" />
+                          Include environment in AO
+                        </label>
                         <button
                           id="ao-bloom-apply-urls"
                           type="submit"
@@ -384,6 +410,9 @@
                       );
                       const environmentModelUrlInput = document.querySelector(
                         '#ao-bloom-environment-model-url'
+                      );
+                      const environmentModelAo = document.querySelector(
+                        '#environment-model-ao'
                       );
                       const urlFields = [
                         {
@@ -520,6 +549,12 @@
                           resetUrlControl(input);
                         });
                       }
+                      environmentModelAo.addEventListener('change', () => {
+                        modelViewer.setAttribute(
+                          'environment-model-ao',
+                          environmentModelAo.checked ? 'true' : 'false'
+                        );
+                      });
                     })();
                   </script>
                 </template>

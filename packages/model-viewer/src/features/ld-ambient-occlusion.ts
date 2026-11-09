@@ -163,6 +163,7 @@ export const LDAmbientOcclusionMixin = <
         'aoDenoiseLumaPhi',
         'aoDenoiseDepthPhi',
         'aoDenoiseNormalPhi',
+        'environmentModelAo',
       ];
 
       if (knobs.some((prop) => changedProperties.has(prop))) {
@@ -198,6 +199,9 @@ export const LDAmbientOcclusionMixin = <
         pdRadiusExponent: this.aoDenoiseRadiusExponent,
         pdRings: this.aoDenoiseRings,
         pdSamples: Math.max(2, Math.floor(this.aoDenoiseSamples)),
+        includeEnvironmentModel:
+            (this as {environmentModelAo?: boolean}).environmentModelAo ===
+            true,
       };
     }
 
