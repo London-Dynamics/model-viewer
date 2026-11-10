@@ -16,6 +16,7 @@ import {
   getMaxFromFloorConstraint,
   getMinFromFloorConstraint,
   getPrimarySurfaceSnapPoint,
+  getSnappingPointWorldPosition,
   getSurfaceSnapOffset,
   requiresSurfaceSnap,
   type SurfaceType,
@@ -49,6 +50,7 @@ const LOCAL_AXIS_Y = new Vector3(0, 1, 0);
 const LOCAL_AXIS_Z = new Vector3(0, 0, 1);
 const OBJECT_LOCAL_BOUNDS_CACHE = new WeakMap<Object3D, Box3>();
 const ROOM_SURFACE_INDEX_CACHE = new WeakMap<Object3D, RoomSurfaceIndex>();
+const ROOM_CEILING_Y_CACHE = new WeakMap<Object3D, number | null>();
 const TMP_ROOT_INV = new Matrix4();
 const TMP_CHILD_TO_OBJECT = new Matrix4();
 const TMP_HIT_LOCAL_POINT = new Vector3();
@@ -78,6 +80,7 @@ export function invalidateRoomSurfaceIndexCache(
   if (!roomObject) return;
   ROOM_SURFACE_INDEX_CACHE.delete(roomObject);
   ROOM_LEVEL_SURFACES_CACHE.delete(roomObject);
+  ROOM_CEILING_Y_CACHE.delete(roomObject);
 }
 
 function getSnapPointLocalPosition(snapPoint: SnapPoint): Vector3 {
@@ -1041,4 +1044,108 @@ export function tryResnapToNearestWall(
   const floorY = getRoomFloorY(roomObject);
   applySurfaceSnapTransform(object, snapPoint, bestHit, floorY);
   return true;
+}
+
+/** Default gap between a ceiling-height part's origin and the wall top, in meters (1 mm). */
+export const CEILING_HEIGHT_CLEARANCE_DEFAULT = 0.001;
+
+/**
+ * True when the snap point is restricted to ceiling surfaces and not walls,
+ * e.g. ceiling lamps. Such parts follow the floor in XZ and lock to the wall top.
+ */
+export function isCeilingHeightSnapPoint(
+  snapPoint: SnapPoint | null | undefined
+): boolean {
+  const allowed = (snapPoint as any)?.allowedSurfaces as SurfaceType[] | undefined;
+  if (!Array.isArray(allowed)) return false;
+  return allowed.includes('ceiling') && !allowed.includes('wall');
+}
+
+/** True when the object's primary surface snap point is ceiling-height. */
+export function isCeilingHeightObject(object: Object3D): boolean {
+  return isCeilingHeightSnapPoint(getPrimarySurfaceSnapPoint(object));
+}
+
+/** Clearance below the wall top: `surfaceSnap.offset` when set, else the 1 mm default. */
+export function getCeilingHeightClearance(snapPoint: SnapPoint): number {
+  const offset = (snapPoint as any)?.surfaceSnap?.offset;
+  if (typeof offset === 'number' && Number.isFinite(offset)) {
+    return Math.max(offset, 0);
+  }
+  return CEILING_HEIGHT_CLEARANCE_DEFAULT;
+}
+
+function isRoomCeilingHeightShellNode(name: string | undefined): boolean {
+  const n = (name || '').toLowerCase();
+  return n.startsWith('wall_') || n.startsWith('innerwall_');
+}
+
+/**
+ * World Y of the room's wall top: the highest `wall_*` / `innerWall_*` shell
+ * bounds. Falls back to the room bounding box top when there are no wall shells
+ * (e.g. custom GLBs). Cached per room until invalidateRoomSurfaceIndexCache.
+ */
+export function getRoomCeilingY(roomObject: Object3D): number | null {
+  if (ROOM_CEILING_Y_CACHE.has(roomObject)) {
+    return ROOM_CEILING_Y_CACHE.get(roomObject) ?? null;
+  }
+
+  roomObject.updateMatrixWorld(true);
+  let wallTop = -Infinity;
+  roomObject.traverse((child) => {
+    if (!isRoomCeilingHeightShellNode(child.name)) return;
+    const bounds = new Box3().setFromObject(child);
+    if (!bounds.isEmpty() && Number.isFinite(bounds.max.y)) {
+      wallTop = Math.max(wallTop, bounds.max.y);
+    }
+  });
+
+  let ceilingY: number | null = Number.isFinite(wallTop) ? wallTop : null;
+  if (ceilingY == null) {
+    const bounds = new Box3().setFromObject(roomObject);
+    if (!bounds.isEmpty() && Number.isFinite(bounds.max.y)) {
+      ceilingY = bounds.max.y;
+    }
+  }
+
+  ROOM_CEILING_Y_CACHE.set(roomObject, ceilingY);
+  return ceilingY;
+}
+
+/**
+ * Moves a ceiling-height part vertically so its snap point sits `clearance`
+ * below the room's wall top. XZ and rotation are left as the caller set them.
+ * Returns the snap point's world position, or null when no ceiling height exists.
+ */
+export function applyCeilingHeightSnapTransform(
+  object: Object3D,
+  snapPoint: SnapPoint,
+  roomObject: Object3D
+): Vector3 | null {
+  const ceilingY = getRoomCeilingY(roomObject);
+  if (ceilingY == null) return null;
+
+  object.updateMatrixWorld(true);
+  const targetY = ceilingY - getCeilingHeightClearance(snapPoint);
+  const deltaY = targetY - getSnappingPointWorldPosition(object, snapPoint).y;
+  if (Math.abs(deltaY) > EPSILON) {
+    const worldPos = object.getWorldPosition(new Vector3());
+    worldPos.y += deltaY;
+    if (object.parent) {
+      object.parent.updateMatrixWorld(true);
+      object.parent.worldToLocal(worldPos);
+    }
+    object.position.copy(worldPos);
+    object.updateMatrixWorld(true);
+  }
+
+  object.userData = object.userData || {};
+  object.userData.isSurfaceSnapped = true;
+  object.userData.attachedSurfaceType = 'ceiling';
+  delete object.userData.attachedSurfaceName;
+  delete object.userData.attachedSurfaceUuid;
+  delete object.userData.attachedWallName;
+  delete object.userData.attachedWallUuid;
+
+  return getSnappingPointWorldPosition(object, snapPoint);
 }

@@ -554,6 +554,10 @@
         "name": "Room surface snap (walls)"
       },
       {
+        "htmlId": "room-ceiling-snap",
+        "name": "Room ceiling snap (lamps)"
+      },
+      {
         "htmlId": "load-scanned-room",
         "name": "Load Scanned Room"
       },

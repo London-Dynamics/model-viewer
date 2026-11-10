@@ -34,6 +34,7 @@ import {
   requiresSurfaceSnap,
 } from '../../utilities/snapping-points.js';
 import {
+  applyCeilingHeightSnapTransform,
   applySurfaceSnapTransform,
   clientToNdc,
   countRoomShellNodes,
@@ -45,6 +46,8 @@ import {
   getBaseModelObject,
   getRoomFloorY,
   invalidateRoomSurfaceIndexCache,
+  isCeilingHeightObject,
+  isCeilingHeightSnapPoint,
   isRoomFloorShellNode,
   isRoomWallNode,
   isRoomWallShellNode,
@@ -4879,12 +4882,43 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return false;
     }
 
+    /**
+     * Ceiling-height parts: XZ is set by the caller (floor drag or placement
+     * cursor); this only locks Y to the room's wall top.
+     */
+    private _applyCeilingHeightSnap(object: Object3D): SurfaceSnapHit | null {
+      const snapPoint = getPrimarySurfaceSnapPoint(object);
+      const roomObject = this._findRoomSurfaceObject();
+      if (!snapPoint || !roomObject) return null;
+
+      const mountWorld = applyCeilingHeightSnapTransform(
+        object,
+        snapPoint,
+        roomObject
+      );
+      if (!mountWorld) return null;
+
+      if (object.userData?.isPlacedObject === true) {
+        this._markRoomWallVisibilityCacheDirty();
+      }
+      this._setPendingSnapConnection(null);
+      return {
+        point: mountWorld,
+        normal: new Vector3(0, -1, 0),
+        surfaceType: 'ceiling',
+        object: roomObject,
+      };
+    }
+
     private _applySurfaceSnapForNdc(
       object: Object3D,
       ndc: Vector2
     ): SurfaceSnapHit | null {
       const snapPoint = getPrimarySurfaceSnapPoint(object);
       if (!snapPoint) return null;
+      if (isCeilingHeightSnapPoint(snapPoint)) {
+        return this._applyCeilingHeightSnap(object);
+      }
 
       const scene = (this as any)[$scene];
       const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
@@ -4917,7 +4951,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const rect = this.getBoundingClientRect();
       const ndc = clientToNdc(clientX, clientY, rect);
       if (!ndc) return null;
-      return this._applySurfaceSnapForNdc(object, ndc);
+      const hit = this._applySurfaceSnapForNdc(object, ndc);
+      if (hit?.surfaceType === 'ceiling') {
+        // No wall under the cursor for ceiling parts: show the disc at the mount.
+        this._placementCursorMesh?.showOnSurface(hit.point, hit.normal);
+      }
+      return hit;
     }
 
     private _applySurfaceSnapForCurrentMouse(object: Object3D): boolean {
@@ -6158,7 +6197,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       for (const object of this._dragTargets) {
         const isSurfaceSnapObject = requiresSurfaceSnap(object);
-        if (isSurfaceSnapObject) {
+        // Ceiling-height parts move like floor parts in XZ, then lock Y to the wall top.
+        const isCeilingHeight =
+          isSurfaceSnapObject && isCeilingHeightObject(object);
+        if (isSurfaceSnapObject && !isCeilingHeight) {
           const valid = this._applySurfaceSnapForCurrentMouse(object);
           if (!valid) {
             allSurfaceSnapValid = false;
@@ -6206,11 +6248,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           desiredY,
           this._tmpDragDesiredLocal.z
         );
-        this._restObjectOnRoomLevel(object, cursorLevelY);
+        if (isCeilingHeight) {
+          if (!this._applyCeilingHeightSnap(object)) {
+            allSurfaceSnapValid = false;
+            continue;
+          }
+        } else {
+          this._restObjectOnRoomLevel(object, cursorLevelY);
 
-        this._setPendingSnapConnection(null);
-        if (this.snappingEnabled) {
-          this.checkAndApplySnapping(object, intersectionPoint);
+          this._setPendingSnapConnection(null);
+          if (this.snappingEnabled) {
+            this.checkAndApplySnapping(object, intersectionPoint);
+          }
         }
 
         if (this._dragTargets.length === 1) {
@@ -8484,6 +8533,8 @@ class PlacementSession extends EventTarget {
     surfaceHit: SurfaceSnapHit
   ): Vector3 | null {
     if (!this.placeholder) return null;
+    // Ceiling parts snap at the mount point, not the wall-face projection.
+    if (surfaceHit.surfaceType === 'ceiling') return null;
     const bbox = new Box3().setFromObject(this.placeholder);
     if (
       !Number.isFinite(bbox.min.x) ||
