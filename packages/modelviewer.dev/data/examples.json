@@ -516,6 +516,16 @@
     ]
   },
   {
+    "name": "LD Material Swap",
+    "htmlName": "ld_material_swap",
+    "examples": [
+      {
+        "htmlId": "shared-material",
+        "name": "Shared material swap"
+      }
+    ]
+  },
+  {
     "name": "LD Measure",
     "htmlName": "ld_measure",
     "examples": [
