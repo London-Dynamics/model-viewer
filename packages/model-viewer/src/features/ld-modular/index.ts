@@ -54,6 +54,10 @@ import {
   tryResnapToNearestWall,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
+import {
+  InnerWallModeState,
+  normalizeInnerWallMode,
+} from '../../utilities/inner-wall-mode.js';
 import type { ModelLoadIssue } from '../../three-components/load-issues.js';
 import {PlacementCursor} from './placement-cursor.js';
 import {
@@ -410,6 +414,8 @@ export declare interface LDModularInterface {
   roomScale: number;
   walls: boolean;
   floor: boolean;
+  /** `solid`, `transparent`, or `hidden`. Any other value behaves as `solid`. */
+  innerWallMode: string;
   rotationControls: boolean;
   disableXRotationControls: boolean;
   disableYRotationControls: boolean;
@@ -610,6 +616,9 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'floor' })
     floor: boolean = false;
 
+    @property({ type: String, attribute: 'inner-wall-mode' })
+    innerWallMode: string = 'solid';
+
     @property({ type: Boolean, attribute: 'rotation-controls' })
     rotationControls: boolean = false;
 
@@ -649,6 +658,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _removeSelectedMergedOptions: { animate?: boolean } | undefined =
       undefined;
     private _roomWallVisibilityCacheDirty: boolean = true;
+    private _innerWallModeState = new InnerWallModeState();
     private _roomWallEntries: Map<
       string,
       {
@@ -723,6 +733,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
         this._markRoomWallVisibilityCacheDirty();
         this._applyRoomTaggedSurfaceVisibility();
+        this._applyInnerWallMode();
         try {
           ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
         } catch (_) {}
@@ -768,6 +779,14 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (
+        changedProperties.has('innerWallMode') ||
+        changedProperties.has('srcIsRoom') ||
+        changedProperties.has('src')
+      ) {
+        this._applyInnerWallMode();
+      }
+
+      if (
         changedProperties.has('walls') ||
         changedProperties.has('floor') ||
         changedProperties.has('srcIsRoom')
@@ -809,6 +828,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.srcIsRoom) {
         this._resetRoomTaggedSurfaceVisibilityOverrides();
         this._resetRoomAttachedVisibility();
+        this._restoreInnerWallMode();
         try {
           ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
         } catch (_) {}
@@ -851,6 +871,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.cancelRequestedShadowUpdate();
       this._resetRoomTaggedSurfaceVisibilityOverrides();
       this._resetRoomAttachedVisibility();
+      this._restoreInnerWallMode();
 
       // Clean up event listener
       if (this._boundSelectionChangeHandler) {
@@ -1290,6 +1311,30 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           child.visible = true;
         }
       });
+      (this as any)[$needsRender]();
+    }
+
+    /**
+     * Applies `inner-wall-mode` to inner-wall meshes when `src-is-room` is set.
+     * Outside room mode the meshes go back to their authored materials.
+     */
+    private _applyInnerWallMode() {
+      const room = this._findRoomSurfaceObject();
+      if (!room || !this.srcIsRoom) {
+        this._restoreInnerWallMode();
+        return;
+      }
+      this._innerWallModeState.apply(
+        room,
+        normalizeInnerWallMode(this.innerWallMode)
+      );
+      (this as any)[$needsRender]();
+    }
+
+    private _restoreInnerWallMode() {
+      const room = this._findRoomSurfaceObject();
+      if (room) this._innerWallModeState.apply(room, 'solid');
+      else this._innerWallModeState.reset();
       (this as any)[$needsRender]();
     }
 

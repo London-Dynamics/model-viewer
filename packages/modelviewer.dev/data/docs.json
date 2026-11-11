@@ -2239,6 +2239,18 @@
           "default": "false",
           "options": "true, false"
         }
+      },
+      {
+        "name": "innerWallMode",
+        "htmlName": "inner-wall-mode",
+        "description": "When <span class=\"attribute\">src-is-room</span> is true, sets how internal wall meshes are drawn. Matches <code>innerWall_&lt;n&gt;_left</code>, <code>_right</code>, <code>_top</code>, <code>_cap_start</code>, <code>_cap_end</code>, <code>_reveal</code>, and <code>innerSkirting_</code> / <code>innerPanelling_</code> on a side. <code>solid</code> keeps the authored materials. <code>transparent</code> draws those meshes translucent from one shared glass material per authored material, independent of the camera. <code>hidden</code> hides that same set. Perimeter <code>wall_*</code> meshes are not affected. Any other value behaves as <code>solid</code>. No effect when src-is-room is false.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Room surface snap</a>"
+        ],
+        "default": {
+          "default": "solid",
+          "options": "solid, transparent, hidden"
+        }
       }
     ],
     "Methods": [

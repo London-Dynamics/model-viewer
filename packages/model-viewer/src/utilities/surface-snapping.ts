@@ -163,6 +163,18 @@ export function isRoomWallShellNode(name: string | undefined): boolean {
   return n === 'walls' || n.startsWith('wall_');
 }
 
+const INNER_WALL_PART =
+  /^(?:innerWall_(\d+)_(left|right|top|cap_start|cap_end|reveal)|inner(?:Skirting|Panelling)_(\d+)_(left|right))$/i;
+
+/**
+ * An inner-wall surface: side skins, top, caps, reveal, and the skirting or
+ * panelling on a side. The `innerWall_<n>` group and perimeter `wall_*` nodes
+ * are not included.
+ */
+export function isInnerWallPart(name: string | undefined): boolean {
+  return INNER_WALL_PART.test(name || '');
+}
+
 /** Floor shell naming: `floor` group/mesh or any `floor_*` node. */
 export function isRoomFloorShellNode(name: string | undefined): boolean {
   const n = (name || '').toLowerCase();

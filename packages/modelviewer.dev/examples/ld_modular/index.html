@@ -1511,13 +1511,15 @@
                   surface placement. With
                   <span class="attribute">src-is-room</span> and
                   <span class="attribute">shadow-intensity</span>, soft shadows
-                  from placed objects project onto the room floor shells.
+                  from placed objects project onto the room floor shells. The room
+                  has a thin inner wall and a thick inner wall with a door.
+                  Solid, Transparent, and Hidden change those inner walls only.
                 </p>
               </div>
               <example-snippet stamp-to="room-surface-snap" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    src="../../shared-assets/models/rooms/surface-snap.glb"
                     id="room-surface-snap-demo"
                     camera-controls
                     touch-action="pan-y"
@@ -1538,6 +1540,7 @@
                     src-is-room
                     walls
                     floor
+                    inner-wall-mode="solid"
                     viewport-gizmo
                   >
                     <div slot="floating-object-anchor">
@@ -1625,6 +1628,29 @@
                                 >
                               </div>
                             </div>
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="solid"
+                              >
+                                Solid
+                              </button>
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="transparent"
+                              >
+                                Transparent
+                              </button>
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="hidden"
+                              >
+                                Hidden
+                              </button>
+                            </div>
                             <p class="ld-helper-text m-0">
                               Release over a wall to commit placement.
                             </p>
@@ -1658,6 +1684,17 @@
 
                       bindBoolAttrToggle('room-surface-toggle-walls', 'walls');
                       bindBoolAttrToggle('room-surface-toggle-floor', 'floor');
+
+                      modelViewer
+                        .querySelectorAll('.inner-wall-mode')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            modelViewer.setAttribute(
+                              'inner-wall-mode',
+                              button.dataset.mode
+                            );
+                          });
+                        });
 
                       const snapPointsByPart = {
                         window: [
