@@ -177,6 +177,7 @@ export const $loader = Symbol('loader');
 export const $evictionPolicy = Symbol('evictionPolicy');
 export const $environmentEvictionPolicy = Symbol('environmentEvictionPolicy');
 const $GLTFInstance = Symbol('GLTFInstance');
+const $materialLoadChain = Symbol('materialLoadChain');
 
 export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
                                              GLTFInstanceConstructor> extends
@@ -288,6 +289,12 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
   protected[$loader]: GLTFLoader = new DiagnosingGLTFLoader().register(
       parser => new GLTFMaterialsVariantsExtension(parser));
   protected[$GLTFInstance]: T;
+  /**
+   * Material GLBs are parsed on this loader (Draco, KTX2, meshopt) but are
+   * not inserted into the src or environment caches. Loads are serialized so
+   * withCredentials and the meshopt decoder stay consistent.
+   */
+  private[$materialLoadChain]: Promise<void> = Promise.resolve();
 
   protected get[$evictionPolicy](): CacheEvictionPolicy {
     return (this.constructor as typeof CachingGLTFLoader)[$evictionPolicy];
@@ -377,5 +384,40 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
     };
 
     return clone;
+  }
+
+  /**
+   * Parses a material GLB with the same loader as product models and returns
+   * its first material. Puzzle uses that first material and ignores the rest.
+   * The result is not cached here; the material-swap cache owns it. Files
+   * with no scene are valid.
+   */
+  async loadMaterial(url: string, withCredentials: boolean):
+      Promise<{material: Material; warnings: string[]}> {
+    const run = this[$materialLoadChain].then(
+        () => this.loadMaterialNow(url, withCredentials));
+    this[$materialLoadChain] = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async loadMaterialNow(url: string, withCredentials: boolean):
+      Promise<{material: Material; warnings: string[]}> {
+    this[$loader].setWithCredentials(withCredentials);
+    if (meshoptDecoder != null) {
+      this[$loader].setMeshoptDecoder(await meshoptDecoder);
+    }
+    const gltf = await loadWithLoader(url, this[$loader]);
+    const json = gltf.parser.json as {materials?: Array<{name?: string}>};
+    const materials = json.materials ?? [];
+    if (materials.length === 0) {
+      throw new Error(`Material file has no materials: ${url}`);
+    }
+    const warnings: string[] = [];
+    if (materials.length > 1) {
+      warnings.push(`Material file ${url} has ${
+          materials.length} materials; using the first.`);
+    }
+    const material = await gltf.parser.getDependency('material', 0) as Material;
+    return {material, warnings};
   }
 }

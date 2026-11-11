@@ -1854,6 +1854,48 @@
     ]
   },
   {
+    "Title": "LD Material Swap",
+    "htmlName": "ld_material_swap",
+    "Methods": [
+      {
+        "name": "applyMaterialSwaps(swaps, options?)",
+        "htmlName": "applyMaterialSwaps",
+        "description": "Applies Puzzle material swaps on the loaded model without a server rebuild or a <span class='attribute'>src</span> change. <b>swaps</b> is the full ordered list for the current selection. Each entry is <code>{ url, targets?, targetPatterns?, key? }</code>. <b>targets</b> are exact glTF mesh names (<code>meshes[].name</code>, not three.js object names). <b>targetPatterns</b> use Puzzle's prefix rule: a trailing <code>*</code> matches mesh names that start with the prefix. Every primitive of each matched mesh is pointed at the material file's first material. Later entries win when they name the same mesh. Meshes left out of the list are left as they are; there is no unset. One owned material is kept per <b>key</b> (default <b>url</b>) and reused, and only shader-define changes mark it for recompile. The owned material is registered on <code>model</code> under the material file's name, so <code>getMaterialByName</code> and material adjust keep working. On <b>quality: 'mobile'</b> the loader tries <code>name@mobile.glb</code> and falls back to <b>url</b>. The default quality follows the <code>IS_MOBILE</code> user-agent check; pass <b>quality</b> when Agora's Puzzle quality is different. Resolves with <code>{ applied, missingTargets, warnings, quality }</code>. A load or validation failure rejects with <code>MaterialSwapError</code> and leaves the scene unchanged.",
+        "links": [
+          "<a href=\"../examples/ld_material_swap/#shared-material\">Shared material swap</a>"
+        ]
+      }
+    ],
+    "Static Methods": [
+      {
+        "name": "materialSwapCacheSize",
+        "htmlName": "materialSwapCacheSize",
+        "description": "How many unused decoded material files to keep. Files still held by a viewer are never evicted and do not use this budget. This cache is separate from <span class='attribute'>modelCacheSize</span> and from environment models. The default is 8. Evicted files dispose their material and textures.",
+        "default": {
+          "default": "8",
+          "options": "number"
+        }
+      },
+      {
+        "name": "clearMaterialSwapCache()",
+        "htmlName": "clearMaterialSwapCache",
+        "description": "Drops every decoded material file and disposes its material and textures. Viewers that still show a swap keep their owned clones, which share those textures, so call this only when no swap is on screen."
+      }
+    ],
+    "Events": [
+      {
+        "name": "material-swap",
+        "htmlName": "material-swap",
+        "description": "Fired after a swap call finishes, including a call that applied nothing because the model reloaded mid-flight. <code>event.detail</code> is the same object the promise resolves to: <code>applied</code>, <code>missingTargets</code>, <code>warnings</code> and <code>quality</code>. Missing mesh names are not a failure; Puzzle logs those and continues. Agora can re-apply material adjusts after this event."
+      },
+      {
+        "name": "material-swap-error",
+        "htmlName": "material-swap-error",
+        "description": "Fired when a swap cannot be applied and the scene is left unchanged. <code>event.detail.reason</code> is <code>load</code>, <code>no-model</code>, <code>invalid</code> or <code>aborted</code>. The promise also rejects with <code>MaterialSwapError</code>. Agora can fall back to a Puzzle rebuild on this event. A <span class='attribute'>src</span> change that wins the race is not an error; it arrives as <code>material-swap</code> with a warning, because the new GLB already replaced the scene."
+      }
+    ]
+  },
+  {
     "Title": "LD Measure",
     "htmlName": "ld_measure",
     "Attributes": [
