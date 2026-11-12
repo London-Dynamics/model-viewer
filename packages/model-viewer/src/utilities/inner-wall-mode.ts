@@ -1,17 +1,34 @@
 import {Material, Mesh, Object3D} from 'three';
 
-import {isInnerWallPart} from './surface-snapping.js';
+import {isInnerWallCutaway, isInnerWallPart} from './surface-snapping.js';
 
-export type InnerWallMode = 'solid' | 'transparent' | 'hidden';
+export type InnerWallMode = 'solid'|'transparent'|'hidden'|'cutaway';
 
 const GLASS_OPACITY = 0.2;
 
-/** `solid` for any value other than `transparent` or `hidden`. */
-export function normalizeInnerWallMode(
-  value: string | null | undefined
-): InnerWallMode {
-  if (value === 'transparent' || value === 'hidden') return value;
+/** `solid` for any value other than `transparent`, `hidden`, or `cutaway`. */
+export function normalizeInnerWallMode(value: string|null|
+                                       undefined): InnerWallMode {
+  if (value === 'transparent' || value === 'hidden' || value === 'cutaway') {
+    return value;
+  }
   return 'solid';
+}
+
+/**
+ * A placed object snapped to a full-height inner wall. Perimeter `wall_*`
+ * attachments and floor attachments are not included.
+ */
+export function isAttachedToInnerWall(
+    userData: {attachedWallName?: unknown; attachedSurfaceName?: unknown;}|
+    undefined): boolean {
+  const wallName = typeof userData?.attachedWallName === 'string' ?
+      userData.attachedWallName :
+      undefined;
+  const surfaceName = typeof userData?.attachedSurfaceName === 'string' ?
+      userData.attachedSurfaceName :
+      undefined;
+  return isInnerWallPart(wallName) || isInnerWallPart(surfaceName);
 }
 
 /**
@@ -20,45 +37,62 @@ export function normalizeInnerWallMode(
  * Perimeter meshes are never visited.
  */
 export class InnerWallModeState {
-  private originals = new Map<Mesh, Material | Material[]>();
+  private originals = new Map<Mesh, Material|Material[]>();
   private clones = new Map<string, Material>();
+  private root: Object3D|null = null;
 
   apply(root: Object3D, mode: InnerWallMode): void {
-    const meshes = this.parts(root);
+    if (this.root !== root) {
+      this.originals.clear();
+      this.disposeClones();
+      this.root = root;
+    }
+    const full = this.parts(root, isInnerWallPart);
+    const cutaway = this.parts(root, isInnerWallCutaway);
     if (mode === 'transparent') {
-      for (const mesh of meshes) {
-        if (!this.originals.has(mesh)) this.originals.set(mesh, mesh.material);
+      for (const mesh of cutaway)
+        mesh.visible = false;
+      for (const mesh of full) {
+        if (!this.originals.has(mesh))
+          this.originals.set(mesh, mesh.material);
         mesh.visible = true;
         mesh.material = this.glass(this.originals.get(mesh)!);
       }
       return;
     }
-    for (const mesh of meshes) {
+    for (const mesh of full) {
       const authored = this.originals.get(mesh);
-      if (authored) mesh.material = authored;
+      if (authored)
+        mesh.material = authored;
       mesh.visible = mode === 'solid';
     }
+    for (const mesh of cutaway)
+      mesh.visible = mode === 'cutaway';
     this.originals.clear();
     this.disposeClones();
   }
 
   /** Drop bookkeeping when the room mesh is going away. */
   reset(): void {
+    this.root = null;
     this.originals.clear();
     this.disposeClones();
   }
 
-  private parts(root: Object3D): Mesh[] {
+  private parts(root: Object3D, match: (name: string|undefined) => boolean):
+      Mesh[] {
     const meshes: Mesh[] = [];
     root.traverse((child) => {
       const mesh = child as Mesh;
-      if (mesh.isMesh && isInnerWallPart(mesh.name)) meshes.push(mesh);
+      if (mesh.isMesh && match(mesh.name))
+        meshes.push(mesh);
     });
     return meshes;
   }
 
-  private glass(source: Material | Material[]): Material | Material[] {
-    if (Array.isArray(source)) return source.map((material) => this.clone(material));
+  private glass(source: Material|Material[]): Material|Material[] {
+    if (Array.isArray(source))
+      return source.map((material) => this.clone(material));
     return this.clone(source);
   }
 
@@ -75,7 +109,8 @@ export class InnerWallModeState {
   }
 
   private disposeClones(): void {
-    for (const clone of this.clones.values()) clone.dispose();
+    for (const clone of this.clones.values())
+      clone.dispose();
     this.clones.clear();
   }
 }

@@ -48,6 +48,8 @@ import {
   invalidateRoomSurfaceIndexCache,
   isCeilingHeightObject,
   isCeilingHeightSnapPoint,
+  isInnerWallCutaway,
+  isInnerWallPart,
   isRoomFloorShellNode,
   isRoomWallNode,
   isRoomWallShellNode,
@@ -56,6 +58,7 @@ import {
 } from '../../utilities/surface-snapping.js';
 import {
   InnerWallModeState,
+  isAttachedToInnerWall,
   normalizeInnerWallMode,
 } from '../../utilities/inner-wall-mode.js';
 import type { ModelLoadIssue } from '../../three-components/load-issues.js';
@@ -414,7 +417,7 @@ export declare interface LDModularInterface {
   roomScale: number;
   walls: boolean;
   floor: boolean;
-  /** `solid`, `transparent`, or `hidden`. Any other value behaves as `solid`. */
+  /** `solid`, `transparent`, `cutaway`, or `hidden`. Any other value behaves as `solid`. */
   innerWallMode: string;
   rotationControls: boolean;
   disableXRotationControls: boolean;
@@ -780,6 +783,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (
         changedProperties.has('innerWallMode') ||
+        changedProperties.has('walls') ||
         changedProperties.has('srcIsRoom') ||
         changedProperties.has('src')
       ) {
@@ -1254,7 +1258,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
     }
 
-    /** Wall shell: `wall_*` meshes or a `walls` group (e.g. Babylon exports). */
+    /** Wall shell: perimeter `wall_*` / `walls` and interior `innerWall_*` / `innerWalls`. */
     private _isRoomWallShellNode(name: string | undefined): boolean {
       return isRoomWallShellNode(name);
     }
@@ -1287,7 +1291,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           code: 'no-room-surfaces',
           severity: 'warning',
           message:
-            `No tagged ${missing} found (expected \`wall_*\` / \`floor_*\` names); ` +
+            `No tagged ${missing} found (expected \`wall_*\`, \`innerWall_*\`, or \`floor_*\` names); ` +
             'snapping will rely on surface orientation.',
           details: { walls, floors },
         },
@@ -1304,6 +1308,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const baseModel = getBaseModelObject(scene);
       if (!baseModel) return;
       baseModel.traverse((child) => {
+        if (isInnerWallCutaway(child.name)) return;
         if (
           this._isRoomWallShellNode(child.name) ||
           this._isRoomFloorShellNode(child.name)
@@ -1324,9 +1329,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         this._restoreInnerWallMode();
         return;
       }
-      this._innerWallModeState.apply(
-        room,
-        normalizeInnerWallMode(this.innerWallMode)
+      // The walls toggle hides every inner-wall representation. Mode chooses
+      // among them only while walls are on.
+      if (!this.walls) {
+        this._innerWallModeState.apply(room, 'hidden');
+        this._syncInnerWallAttachmentVisibility(false);
+        (this as any)[$needsRender]();
+        return;
+      }
+      const mode = normalizeInnerWallMode(this.innerWallMode);
+      this._innerWallModeState.apply(room, mode);
+      this._syncInnerWallAttachmentVisibility(
+        mode === 'solid' || mode === 'transparent'
       );
       (this as any)[$needsRender]();
     }
@@ -1335,12 +1349,28 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const room = this._findRoomSurfaceObject();
       if (room) this._innerWallModeState.apply(room, 'solid');
       else this._innerWallModeState.reset();
+      this._syncInnerWallAttachmentVisibility(true);
       (this as any)[$needsRender]();
     }
 
     /**
-     * Applies `walls` / `floor` to wall shell nodes (`wall_*`, optional `walls`
-     * group) and floor shell nodes (`floor_*`, or a node named `floor`) when
+     * Hides placed objects snapped to a full-height inner wall while that wall
+     * is not shown. They stay in the scene with their attachment data.
+     */
+    private _syncInnerWallAttachmentVisibility(show: boolean) {
+      const target = this.findTargetObject();
+      if (!target) return;
+      target.traverse((child) => {
+        if (child.userData?.isPlacedObject !== true) return;
+        if (!isAttachedToInnerWall(child.userData)) return;
+        this._resolvePlacedObjectVisible(child, show);
+      });
+    }
+
+    /**
+     * Applies `walls` / `floor` to wall shell nodes (`wall_*`, `innerWall_*`,
+     * optional `walls` / `innerWalls` groups) and floor shell nodes (`floor_*`,
+     * or a node named `floor`) when
      * `src-is-room` is set; no-op otherwise (and clears overrides when room mode
      * is off).
      */
@@ -1355,7 +1385,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!baseModel) return;
       baseModel.traverse((child) => {
         if (this._isRoomWallShellNode(child.name)) {
-          child.visible = !!this.walls;
+          const modeOwnsMesh =
+            isInnerWallPart(child.name) || isInnerWallCutaway(child.name);
+          // Inner-wall mode chooses solid, glass, or cutaway meshes. Forcing
+          // them visible here would show both representations.
+          if (!modeOwnsMesh || !this.walls) {
+            child.visible = !!this.walls;
+          }
         } else if (this._isRoomFloorShellNode(child.name)) {
           child.visible = !!this.floor;
         }
@@ -1377,7 +1413,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               ? ' (untagged surfaces snap by face orientation)'
               : '') +
             '. ' +
-            'Wall shell: `walls` or `wall_*`; floor shell: `floor` or `floor_*`. ' +
+            'Wall shell: `walls`, `wall_*`, `innerWalls`, or `innerWall_*`; floor shell: `floor` or `floor_*`. ' +
             'Wall attachments follow `walls` and camera backface; floor-surface attachments follow `floor`.'
         );
       }

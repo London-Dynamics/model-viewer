@@ -23,6 +23,7 @@ import {
   removeGridShapeLines as removeGridShapeLinesImpl,
   setGridShapesVisible as setGridShapesVisibleImpl,
   syncGridShapesVisibility as syncGridShapesVisibilityImpl,
+  type GridShapePaths,
 } from './grid-shapes.js';
 import {
   clearMeasurements as clearMeasurementsImpl,
@@ -52,7 +53,7 @@ export declare interface LDMeasureInterface {
   measure: boolean;
   gridShapes: boolean;
   addGridShapeLines(
-    paths: Array<Array<[number, number]>> | Array<[number, number]>,
+    paths: GridShapePaths,
     options?: {
       id?: string;
       color?: string | number;
@@ -451,7 +452,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     addGridShapeLines(
-      paths: Array<Array<[number, number]>> | Array<[number, number]>,
+      paths: GridShapePaths,
       options: {
         id?: string;
         color?: string | number;

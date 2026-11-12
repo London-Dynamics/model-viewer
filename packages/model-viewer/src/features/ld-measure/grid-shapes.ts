@@ -16,6 +16,109 @@ type GridShapeDeps = {
 };
 
 const GRID_SHAPES_CONTAINER_NAME = 'ld-grid-shapes';
+const DEFAULT_GRID_SHAPE_THICKNESS = 0.025;
+
+/**
+ * One floor-grid stroke. Plan [x, y] is world [x, z].
+ * Matches `@london-dynamics/types` `GridShapeLine` without importing that package.
+ */
+export type GridShapeLine = {
+  points: Array<[number, number]>;
+  /** Width in meters. Omitted strokes use the call's thickness. */
+  thickness?: number;
+  /**
+   * Join the last point to the first.
+   * Omitted keeps the legacy rule: close when there are more than two points.
+   */
+  closed?: boolean;
+};
+
+export type GridShapePaths =
+  | GridShapeLine[]
+  | Array<Array<[number, number]>>
+  | Array<[number, number]>;
+
+export type ResolvedGridShapeStroke = {
+  points: Array<[number, number]>;
+  thickness: number;
+  closed: boolean;
+};
+
+function isCoordinate(value: unknown): value is [number, number] {
+  return (
+    Array.isArray(value) &&
+    typeof value[0] === 'number' &&
+    typeof value[1] === 'number'
+  );
+}
+
+function isGridShapeLine(value: unknown): value is GridShapeLine {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  return Array.isArray((value as GridShapeLine).points);
+}
+
+/** A path with more than two points is drawn as a closed ring. */
+export function gridShapePathIsClosed(path: Array<[number, number]>): boolean {
+  return path.length > 2;
+}
+
+/**
+ * Normalises a legacy path list or a stroke list into strokes that share one
+ * bounding-box centre. An empty list throws, matching `addGridShapeLines`.
+ */
+export function resolveGridShapeStrokes(
+  paths: GridShapePaths,
+  fallbackThickness = DEFAULT_GRID_SHAPE_THICKNESS
+): {strokes: ResolvedGridShapeStroke[]; center: [number, number]} {
+  if (!paths.length) {
+    throw new Error('addGridShapeLines requires at least one path');
+  }
+
+  let strokes: ResolvedGridShapeStroke[];
+  if (isGridShapeLine(paths[0])) {
+    strokes = (paths as GridShapeLine[]).map((stroke) => ({
+      points: stroke.points,
+      thickness: stroke.thickness ?? fallbackThickness,
+      closed: stroke.closed ?? gridShapePathIsClosed(stroke.points),
+    }));
+  } else if (isCoordinate(paths[0])) {
+    const path = paths as Array<[number, number]>;
+    strokes = [
+      {
+        points: path,
+        thickness: fallbackThickness,
+        closed: gridShapePathIsClosed(path),
+      },
+    ];
+  } else {
+    strokes = (paths as Array<Array<[number, number]>>).map((path) => ({
+      points: path,
+      thickness: fallbackThickness,
+      closed: gridShapePathIsClosed(path),
+    }));
+  }
+
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const stroke of strokes) {
+    for (const [x, z] of stroke.points) {
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    }
+  }
+  const centerX =
+    Number.isFinite(minX) && Number.isFinite(maxX) ? (minX + maxX) / 2 : 0;
+  const centerZ =
+    Number.isFinite(minZ) && Number.isFinite(maxZ) ? (minZ + maxZ) / 2 : 0;
+
+  return {strokes, center: [centerX, centerZ]};
+}
 
 function getOrCreateGridRootContainer(
   host: any,
@@ -209,7 +312,7 @@ export function createPlanarStrokeGeometry(
 export function addGridShapeLines(
   host: any,
   deps: GridShapeDeps,
-  paths: Array<Array<[number, number]>> | Array<[number, number]>,
+  paths: GridShapePaths,
   options: {
     id?: string;
     color?: string | number;
@@ -217,34 +320,13 @@ export function addGridShapeLines(
     coordinate?: [number, number];
   } = {}
 ): string {
-  const pathGroups =
-    paths.length > 0 && typeof paths[0][0] === 'number'
-      ? [paths as Array<[number, number]>]
-      : (paths as Array<Array<[number, number]>>);
-
-  if (!pathGroups.length) {
-    throw new Error('addGridShapeLines requires at least one path');
-  }
-
+  const {strokes, center} = resolveGridShapeStrokes(
+    paths,
+    options.thickness ?? DEFAULT_GRID_SHAPE_THICKNESS
+  );
   const id = options.id ?? `ld-grid-shape-${Date.now()}-${Math.random()}`;
   const color = options.color ?? 'rgb(120, 113, 108)';
-  const lineWidth = options.thickness ?? 0.025;
-  let minX = Infinity;
-  let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
-  pathGroups.forEach((path) => {
-    path.forEach(([x, z]) => {
-      minX = Math.min(minX, x);
-      minZ = Math.min(minZ, z);
-      maxX = Math.max(maxX, x);
-      maxZ = Math.max(maxZ, z);
-    });
-  });
-  const sourceCenterX =
-    Number.isFinite(minX) && Number.isFinite(maxX) ? (minX + maxX) / 2 : 0;
-  const sourceCenterZ =
-    Number.isFinite(minZ) && Number.isFinite(maxZ) ? (minZ + maxZ) / 2 : 0;
+  const [sourceCenterX, sourceCenterZ] = center;
 
   const [targetCenterX, targetCenterZ] = options.coordinate ?? [0, 0];
   const offsetX = targetCenterX - sourceCenterX;
@@ -258,23 +340,18 @@ export function addGridShapeLines(
   const shapeGroup = new Object3D();
   shapeGroup.name = `ld-grid-shape:${id}`;
 
-  pathGroups.forEach((path) => {
-    if (path.length < 2) {
+  strokes.forEach((stroke) => {
+    if (stroke.points.length < 2) {
       return;
     }
 
-    const isClosed =
-      path.length > 2 &&
-      path[0][0] === path[path.length - 1][0] &&
-      path[0][1] === path[path.length - 1][1];
-    const shouldClosePath = path.length > 2 || isClosed;
     const geometry = createPlanarStrokeGeometry(
-      path,
-      lineWidth,
+      stroke.points,
+      stroke.thickness,
       gridY,
       offsetX,
       offsetZ,
-      shouldClosePath
+      stroke.closed
     );
     if (!geometry) {
       return;

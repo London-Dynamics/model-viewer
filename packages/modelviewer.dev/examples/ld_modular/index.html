@@ -1512,14 +1512,15 @@
                   <span class="attribute">src-is-room</span> and
                   <span class="attribute">shadow-intensity</span>, soft shadows
                   from placed objects project onto the room floor shells. The room
-                  has a thin inner wall and a thick inner wall with a door.
-                  Solid, Transparent, and Hidden change those inner walls only.
+                  has a thin inner wall and a thick inner wall with two doors and a
+                  window. Solid, Transparent, Cutaway, and Hidden change those
+                  inner walls only.
                 </p>
               </div>
               <example-snippet stamp-to="room-surface-snap" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="../../shared-assets/models/rooms/surface-snap.glb"
+                    src="../../shared-assets/models/rooms/inner-wall-cutaway.glb"
                     id="room-surface-snap-demo"
                     camera-controls
                     touch-action="pan-y"
@@ -1642,6 +1643,13 @@
                                 data-mode="transparent"
                               >
                                 Transparent
+                              </button>
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="cutaway"
+                              >
+                                Cutaway
                               </button>
                               <button
                                 type="button"

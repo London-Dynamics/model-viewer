@@ -157,10 +157,22 @@ export function isRoomWallNode(name: string | undefined): boolean {
   return (name || '').toLowerCase().startsWith('wall_');
 }
 
-/** Wall shell naming: a `walls` group or any `wall_*` node. */
+/**
+ * Wall shell naming: `walls` / `wall_*`, and interior shells `innerWalls` /
+ * `innerWall_*` plus the cutaway group and meshes. The walls toggle hides
+ * these. Inner-wall mode still owns which inner meshes are shown while walls
+ * are on.
+ */
 export function isRoomWallShellNode(name: string | undefined): boolean {
   const n = (name || '').toLowerCase();
-  return n === 'walls' || n.startsWith('wall_');
+  return (
+    n === 'walls' ||
+    n.startsWith('wall_') ||
+    n === 'innerwalls' ||
+    n.startsWith('innerwall_') ||
+    n === 'innerwallscutaway' ||
+    n.startsWith('innerwallcutaway_')
+  );
 }
 
 const INNER_WALL_PART =
@@ -173,6 +185,24 @@ const INNER_WALL_PART =
  */
 export function isInnerWallPart(name: string | undefined): boolean {
   return INNER_WALL_PART.test(name || '');
+}
+
+const INNER_WALL_CUTAWAY =
+  /^innerWallCutaway_\d+_(left|right|top|cap_start|cap_end|jamb)$/i;
+
+/** A mesh in the low inner-wall representation. Not a full-height part. */
+export function isInnerWallCutaway(name: string | undefined): boolean {
+  return INNER_WALL_CUTAWAY.test(name || '');
+}
+
+function isCutawayRepresentation(object: Object3D): boolean {
+  let current: Object3D | null = object;
+  while (current) {
+    if ((current.name || '').toLowerCase() === 'innerwallscutaway') return true;
+    if (isInnerWallCutaway(current.name)) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 /** Floor shell naming: `floor` group/mesh or any `floor_*` node. */
@@ -706,6 +736,7 @@ function getRoomSurfaceIndex(roomObject: Object3D): RoomSurfaceIndex {
   };
 
   roomObject.traverse((child) => {
+    if (isCutawayRepresentation(child)) return;
     const geometry = (child as any)?.geometry;
     if (!geometry) return;
     index.all.push(child);
