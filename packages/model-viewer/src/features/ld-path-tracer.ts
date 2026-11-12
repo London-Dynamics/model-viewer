@@ -42,6 +42,8 @@ export declare interface LDPathTracerInterface {
   pathTracerFade: number;
   pathTracerOpacity: number;
   pathTracerFreezeRealtime: boolean;
+  pathTracerCoverage: boolean;
+  pathTracerShowRegion: boolean;
   pathTracerBounces: number;
   pathTracerRenderScale: number;
   pathTracerPixelRatio: number;
@@ -130,6 +132,12 @@ export const LDPathTracerMixin = <
 
     @property({type: Boolean, attribute: 'path-tracer-freeze-realtime'})
     pathTracerFreezeRealtime = DEFAULT_PATH_TRACER_OPTIONS.freezeRealtime;
+
+    @property({type: Boolean, attribute: 'path-tracer-coverage'})
+    pathTracerCoverage = DEFAULT_PATH_TRACER_OPTIONS.coverage;
+
+    @property({type: Boolean, attribute: 'path-tracer-show-region'})
+    pathTracerShowRegion = DEFAULT_PATH_TRACER_OPTIONS.showRegion;
 
     @property({type: Number, attribute: 'path-tracer-bounces'})
     pathTracerBounces = DEFAULT_PATH_TRACER_OPTIONS.bounces;
@@ -297,6 +305,8 @@ export const LDPathTracerMixin = <
         'pathTracerFade',
         'pathTracerOpacity',
         'pathTracerFreezeRealtime',
+        'pathTracerCoverage',
+        'pathTracerShowRegion',
         'pathTracerBounces',
         'pathTracerRenderScale',
         'pathTracerPixelRatio',
@@ -418,6 +428,8 @@ export const LDPathTracerMixin = <
                     this.pathTracerOpacity :
                     DEFAULT_PATH_TRACER_OPTIONS.opacity)),
         freezeRealtime: this.pathTracerFreezeRealtime,
+        coverage: this.pathTracerCoverage,
+        showRegion: this.pathTracerShowRegion,
         bounces: Math.max(1, Math.floor(this.pathTracerBounces)),
         renderScale: this.pathTracerRenderScale,
         pixelRatio: this.pathTracerPixelRatio,
@@ -443,7 +455,8 @@ export const LDPathTracerMixin = <
             this.pathTracerFloorMetalness,
             DEFAULT_PATH_TRACER_OPTIONS.floorMetalness),
         floorOpacity: clampPathTracerUnit(
-            this.pathTracerFloorOpacity, DEFAULT_PATH_TRACER_OPTIONS.floorOpacity),
+            this.pathTracerFloorOpacity,
+            DEFAULT_PATH_TRACER_OPTIONS.floorOpacity),
         paused: this.pathTracerPaused,
         frameBudget: Math.max(1, Math.floor(this.pathTracerFrameBudget)),
         multipleImportanceSampling: this.pathTracerMultipleImportanceSampling,

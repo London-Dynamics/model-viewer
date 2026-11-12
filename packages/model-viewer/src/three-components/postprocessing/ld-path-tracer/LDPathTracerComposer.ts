@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer,} from 'three';
+import {Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {GradientEquirectTexture, PhysicalCamera} from 'three-gpu-pathtracer';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -23,6 +23,7 @@ import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambien
 
 import {resolvePathTracerRenderScale} from './path-tracer-scale.js';
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
+import {coverageMarginPixels, expandCropForDenoiseEdge, measureTraceCoverage, TraceCoverageMeasure, TraceCrop,} from './trace-coverage.js';
 import {PATH_TRACER_UNAVAILABLE_EVENT, WebGPUPathTracerSession} from './WebGPUPathTracerSession.js';
 
 export const PATH_TRACER_READY_EVENT = 'path-tracer-ready';
@@ -59,34 +60,34 @@ const cssChannel = (value: string): number => {
   return Math.min(1, Math.max(0, scaled));
 };
 
-const parseCssRgb = (value: string):
-    {r: number; g: number; b: number; a: number;}|null => {
-  const hex = value.trim().match(/^#([0-9a-fA-F]{6})$/);
-  if (hex != null) {
-    const raw = hex[1];
-    return {
-      r: parseInt(raw.slice(0, 2), 16) / 255,
-      g: parseInt(raw.slice(2, 4), 16) / 255,
-      b: parseInt(raw.slice(4, 6), 16) / 255,
-      a: 1,
-    };
-  }
-  const match = CSS_RGB.exec(value.trim());
-  if (match == null) {
-    return null;
-  }
-  const alphaSource = match[4];
-  const alpha = alphaSource == null ?
-      1 :
-      alphaSource.trim().endsWith('%') ? Number.parseFloat(alphaSource) / 100 :
+const parseCssRgb =
+    (value: string): {r: number; g: number; b: number; a: number;}|null => {
+      const hex = value.trim().match(/^#([0-9a-fA-F]{6})$/);
+      if (hex != null) {
+        const raw = hex[1];
+        return {
+          r: parseInt(raw.slice(0, 2), 16) / 255,
+          g: parseInt(raw.slice(2, 4), 16) / 255,
+          b: parseInt(raw.slice(4, 6), 16) / 255,
+          a: 1,
+        };
+      }
+      const match = CSS_RGB.exec(value.trim());
+      if (match == null) {
+        return null;
+      }
+      const alphaSource = match[4];
+      const alpha = alphaSource == null ? 1 :
+          alphaSource.trim().endsWith('%') ?
+                                          Number.parseFloat(alphaSource) / 100 :
                                           Number.parseFloat(alphaSource);
-  return {
-    r: cssChannel(match[1]),
-    g: cssChannel(match[2]),
-    b: cssChannel(match[3]),
-    a: Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1,
-  };
-};
+      return {
+        r: cssChannel(match[1]),
+        g: cssChannel(match[2]),
+        b: cssChannel(match[3]),
+        a: Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1,
+      };
+    };
 
 const cssByte = (channel: number): string =>
     Math.round(Math.min(1, Math.max(0, channel)) * 255)
@@ -128,7 +129,7 @@ export const normalizePathTracerFloorColor = (value: string): string => {
   const trimmed = value.trim();
   const hex = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
   return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.toLowerCase() :
-                                          DEFAULT_PATH_TRACER_FLOOR_COLOR;
+                                         DEFAULT_PATH_TRACER_FLOOR_COLOR;
 };
 
 export interface PathTracerPresentedFrame {
@@ -193,6 +194,7 @@ const PATH_TRACER_RESET_OPTION_KEYS = [
   'apertureBlades',
   'apertureRotation',
   'anamorphicRatio',
+  'coverage',
 ] as const;
 
 export interface PathTracerOptions {
@@ -206,6 +208,13 @@ export interface PathTracerOptions {
    */
   opacity: number;
   freezeRealtime: boolean;
+  /**
+   * Trace only the rectangle around the product silhouette, a margin, and
+   * the floor. Off keeps the full frame.
+   */
+  coverage: boolean;
+  /** Draw the crop rectangle. The crop still traces when this is off. */
+  showRegion: boolean;
   bounces: number;
   renderScale: number;
   /**
@@ -245,6 +254,8 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   fadeSeconds: 0.3,
   opacity: 1,
   freezeRealtime: true,
+  coverage: false,
+  showRegion: false,
   bounces: 5,
   renderScale: 1,
   pixelRatio: 0,
@@ -300,6 +311,23 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private realtimePictureKey = '';
   private traceOpacity = 0;
   private lastFadeAt = 0;
+  private readonly coverageCamera = new PerspectiveCamera();
+  private readonly coverageMaterial = new MeshBasicMaterial({
+    color: 0xffffff,
+    toneMapped: false,
+    side: DoubleSide,
+    depthTest: true,
+    depthWrite: true,
+  });
+  private coverageTarget: WebGLRenderTarget|null = null;
+  private coveragePixels: Uint8Array|null = null;
+  private coverageKey = '';
+  private coverageCrop: TraceCrop|null = null;
+  // The measured subject rect. coverageCrop may be larger so the denoiser
+  // fringe falls outside this one.
+  private coverageVisible: TraceCrop|null = null;
+  private coverageMeasure: TraceCoverageMeasure|null = null;
+  private readonly coverageClear = new Color();
   private readonly activePointers = new Set<number>();
   private holdTraceUntil = 0;
   private interactionElement: HTMLElement|null = null;
@@ -446,6 +474,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const interacting = this.activePointers.size > 0 || !this.cameraSettled ||
         performance.now() < this.holdTraceUntil || this.animationIsPlaying();
     if (interacting) {
+      // Keep the last rectangle on screen. The next trace measures a new one
+      // on its first frame.
+      this.coverageKey = '';
+      this.pathTracer.setShowRegion(this.options.showRegion);
       this.realtimeFrozen = false;
       this.scene.lockRenderScale = false;
       this.traceOpacity = 0;
@@ -511,8 +543,40 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     });
     const cssWidth = this.scene.element.clientWidth || this.scene.width;
     const cssHeight = this.scene.element.clientHeight || this.scene.height;
+    this.pathTracer.setShowRegion(this.options.showRegion);
+    this.syncTraceCoverage();
+    const visible = this.coverageVisible;
+    const buffer = this.drawingBufferSize;
+    if (visible == null || buffer.x < 1 || buffer.y < 1) {
+      this.coverageCrop = null;
+      this.syncPathTracerCamera();
+      this.pathTracer.layout(
+          cssWidth, cssHeight, resolved.width, resolved.height, 0, 0, true);
+      return;
+    }
+    const scaleX = resolved.width / buffer.x;
+    const scaleY = resolved.height / buffer.y;
+    const padded =
+        expandCropForDenoiseEdge(visible, buffer.x, buffer.y, scaleX, scaleY);
+    this.coverageCrop = padded.traced;
+    this.syncPathTracerCamera();
+    const traced = padded.traced;
+    const cssScaleX = cssWidth / buffer.x;
+    const cssScaleY = cssHeight / buffer.y;
     this.pathTracer.layout(
-        cssWidth, cssHeight, resolved.width, resolved.height);
+        traced.width * cssScaleX,
+        traced.height * cssScaleY,
+        Math.max(1, Math.round(traced.width * scaleX)),
+        Math.max(1, Math.round(traced.height * scaleY)),
+        traced.x * cssScaleX,
+        traced.y * cssScaleY,
+        true,
+        {
+          x: visible.x * cssScaleX,
+          y: visible.y * cssScaleY,
+          width: visible.width * cssScaleX,
+          height: visible.height * cssScaleY,
+        });
   }
 
   updateOptions(partial: Partial<PathTracerOptions>) {
@@ -636,6 +700,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.tracePresentQuad = null;
     this.tracePresentTexture?.dispose();
     this.tracePresentTexture = null;
+    this.coverageTarget?.dispose();
+    this.coverageTarget = null;
+    this.coverageMaterial.dispose();
     this.ambientOcclusionPreviewComposer?.dispose();
     this.ambientOcclusionPreviewComposer = null;
     this.currentAmbientOcclusionPreviewOptions = null;
@@ -716,24 +783,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private applyRenderScale() {
-    if (this.pathTracer == null || this.renderer == null) {
-      return;
-    }
-
-    this.renderer.getDrawingBufferSize(this.drawingBufferSize);
-    const resolved = resolvePathTracerRenderScale({
-      renderScale: this.options.renderScale,
-      pixelRatio: this.options.pixelRatio,
-      devicePixelRatio: window.devicePixelRatio || 1,
-      drawingBufferWidth: this.drawingBufferSize.x,
-      drawingBufferHeight: this.drawingBufferSize.y,
-      maxTextureSize: this.pathTracer.maxTextureSize,
-    });
-    const cssWidth = this.scene?.element.clientWidth || this.scene?.width || 0;
-    const cssHeight =
-        this.scene?.element.clientHeight || this.scene?.height || 0;
-    this.pathTracer.layout(
-        cssWidth, cssHeight, resolved.width, resolved.height);
+    // layoutTrace places either the full frame or the subject crop. Laying the
+    // full frame out here would resize the tracer and drop the crop.
+    this.layoutTrace();
   }
 
   private publishTracedSize() {
@@ -894,6 +946,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.pathTracer.minSamples = 1;
     this.pathTracer.fadeDuration = 1;
     this.applyRenderScale();
+    this.pathTracer.setShowRegion(this.options.showRegion);
     this.pathTracer.tiles.copy(this.options.tiles);
     this.pathTracer.setDenoise(
         this.options.denoise && this.options.display !== 'before-denoise');
@@ -1186,13 +1239,19 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     shadow.needsUpdate = true;
     scene.renderShadow(renderer);
     renderer.setViewport(
-        this.shadowViewport.x, this.shadowViewport.y, this.shadowViewport.z,
+        this.shadowViewport.x,
+        this.shadowViewport.y,
+        this.shadowViewport.z,
         this.shadowViewport.w);
     shadow.renderFloor(renderer, scene, scene.getCamera());
   }
 
   getDenoiseStatus(): string {
     return this.pathTracer?.denoiseStatus ?? '';
+  }
+
+  getTraceCoverage(): TraceCoverageMeasure|null {
+    return this.coverageMeasure;
   }
 
   private shouldRenderAmbientOcclusionPreview() {
@@ -1371,9 +1430,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private getPathTracerCamera(): Camera {
-    if (!this.options.depthOfField ||
-        !(this.camera instanceof PerspectiveCamera)) {
+    if (!(this.camera instanceof PerspectiveCamera)) {
       return this.camera!;
+    }
+    if (!this.options.depthOfField) {
+      return this.coverageCrop == null ?
+          this.camera :
+          this.prepareCoverageCamera(this.camera);
     }
 
     this.physicalCamera.copy(this.camera);
@@ -1388,8 +1451,181 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         Math.max(0.01, this.options.anamorphicRatio);
     this.physicalCamera.updateProjectionMatrix();
     this.physicalCamera.updateMatrixWorld();
+    this.applyCoverageOffset(this.physicalCamera);
 
     return this.physicalCamera;
+  }
+
+  private prepareCoverageCamera(source: PerspectiveCamera): PerspectiveCamera {
+    const camera = this.coverageCamera;
+    camera.fov = source.fov;
+    camera.aspect = source.aspect;
+    camera.near = source.near;
+    camera.far = source.far;
+    camera.zoom = source.zoom;
+    camera.filmGauge = source.filmGauge;
+    camera.filmOffset = source.filmOffset;
+    camera.matrixAutoUpdate = false;
+    camera.matrixWorldAutoUpdate = false;
+    camera.matrix.copy(source.matrix);
+    camera.matrixWorld.copy(source.matrixWorld);
+    camera.matrixWorldNeedsUpdate = false;
+    this.applyCoverageOffset(camera);
+    return camera;
+  }
+
+  private applyCoverageOffset(camera: PerspectiveCamera) {
+    const crop = this.coverageCrop;
+    camera.coordinateSystem = WebGPUCoordinateSystem;
+    if (crop == null || crop.width < 1 || crop.height < 1) {
+      camera.clearViewOffset();
+      return;
+    }
+    camera.setViewOffset(
+        this.drawingBufferSize.x,
+        this.drawingBufferSize.y,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height);
+  }
+
+  private syncPathTracerCamera() {
+    if (this.pathTracer == null || this.camera == null) {
+      return;
+    }
+    const pathTracerCamera = this.getPathTracerCamera();
+    pathTracerCamera.updateMatrixWorld();
+    if (this.cameraStateInitialized &&
+        this.lastCameraWorldMatrix.equals(pathTracerCamera.matrixWorld) &&
+        this.lastCameraProjectionMatrix.equals(
+            pathTracerCamera.projectionMatrix)) {
+      return;
+    }
+    this.pathTracer.setCamera(pathTracerCamera);
+    this.rememberCameraState(pathTracerCamera);
+  }
+
+  private syncTraceCoverage() {
+    if (!this.options.coverage || this.renderer == null || this.scene == null ||
+        this.camera == null || this.drawingBufferSize.x < 1 ||
+        this.drawingBufferSize.y < 1) {
+      this.coverageCrop = null;
+      this.coverageVisible = null;
+      this.coverageMeasure = null;
+      this.coverageKey = '';
+      return;
+    }
+
+    this.camera.updateMatrixWorld();
+    this.shadowCatcher?.updateMatrixWorld();
+    const buffer = this.drawingBufferSize;
+    const key = [
+      buffer.x,
+      buffer.y,
+      this.options.floor ? 1 : 0,
+      this.camera.matrixWorld.elements.join(','),
+      this.camera.projectionMatrix.elements.join(','),
+      this.shadowCatcher?.matrixWorld.elements.join(',') ?? '',
+    ].join('|');
+    if (key === this.coverageKey) {
+      return;
+    }
+    this.coverageKey = key;
+
+    const rgba = this.renderCoverageMask(buffer.x, buffer.y);
+    const target = this.coverageTarget;
+    if (rgba == null || target == null) {
+      this.coverageCrop = null;
+      this.coverageVisible = null;
+      this.coverageMeasure = null;
+      return;
+    }
+    const measured = measureTraceCoverage(
+        rgba,
+        target.width,
+        target.height,
+        buffer.x,
+        buffer.y,
+        coverageMarginPixels(buffer.x, buffer.y));
+    this.coverageMeasure = measured;
+    this.coverageVisible = measured.crop;
+    this.coverageCrop = measured.crop;
+    // An empty read is usually the model not being ready yet. Don't keep that
+    // result, or the crop stays full-frame until the camera moves.
+    if (measured.maskPixels === 0) {
+      this.coverageKey = '';
+    }
+  }
+
+  private renderCoverageMask(fullWidth: number, fullHeight: number): Uint8Array
+      |null {
+    const renderer = this.renderer;
+    const scene = this.scene;
+    const camera = this.camera;
+    if (renderer == null || scene == null || camera == null) {
+      return null;
+    }
+
+    const longest = Math.max(fullWidth, fullHeight);
+    const scale = longest > 480 ? 480 / longest : 1;
+    const maskWidth = Math.max(1, Math.round(fullWidth * scale));
+    const maskHeight = Math.max(1, Math.round(fullHeight * scale));
+    if (this.coverageTarget == null) {
+      this.coverageTarget = new WebGLRenderTarget(maskWidth, maskHeight);
+    } else if (
+        this.coverageTarget.width !== maskWidth ||
+        this.coverageTarget.height !== maskHeight) {
+      this.coverageTarget.setSize(maskWidth, maskHeight);
+    }
+    const pixelCount = maskWidth * maskHeight * 4;
+    if (this.coveragePixels == null ||
+        this.coveragePixels.length !== pixelCount) {
+      this.coveragePixels = new Uint8Array(pixelCount);
+    }
+
+    const previousTarget = renderer.getRenderTarget();
+    const previousAutoClear = renderer.autoClear;
+    const previousAlpha = renderer.getClearAlpha();
+    const previousBackground = scene.background;
+    const previousOverride = scene.overrideMaterial;
+    const layerMask = camera.layers.mask;
+    renderer.getClearColor(this.coverageClear);
+    renderer.getViewport(this.shadowViewport);
+
+    renderer.setRenderTarget(this.coverageTarget);
+    renderer.setClearColor(0x000000, 1);
+    renderer.autoClear = true;
+    scene.background = null;
+    scene.overrideMaterial = this.coverageMaterial;
+    camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
+    // The soft-shadow plane is not part of the trace. Painted solid, it
+    // stretches the crop from the product down to the near edge of the shadow.
+    const restoreShadowReceivers = this.hideShadowReceivers();
+    try {
+      renderer.render(scene, camera);
+      renderer.readRenderTargetPixels(
+          this.coverageTarget,
+          0,
+          0,
+          maskWidth,
+          maskHeight,
+          this.coveragePixels);
+    } finally {
+      restoreShadowReceivers();
+      camera.layers.mask = layerMask;
+      scene.overrideMaterial = previousOverride;
+      scene.background = previousBackground;
+      renderer.setClearColor(this.coverageClear, previousAlpha);
+      renderer.autoClear = previousAutoClear;
+      renderer.setRenderTarget(previousTarget);
+      renderer.setViewport(
+          this.shadowViewport.x,
+          this.shadowViewport.y,
+          this.shadowViewport.z,
+          this.shadowViewport.w);
+    }
+    return this.coveragePixels;
   }
 
   private queueNextProgressiveRender() {
@@ -1440,7 +1676,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const cap = Math.max(1, this.options.samples);
     const threshold = Math.max(1, Math.floor(this.options.samplesThreshold));
     if (this.options.display === 'progressive') {
-      return pathTracer.sampleMin >= threshold || pathTracer.samples >= threshold;
+      return pathTracer.sampleMin >= threshold ||
+          pathTracer.samples >= threshold;
     }
     if (this.options.display === 'before-denoise') {
       return pathTracer.sampleMin >= cap;
@@ -1468,13 +1705,38 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
     const now = performance.now();
-    const delta = this.lastFadeAt === 0 ? 0 : Math.min(100, now - this.lastFadeAt);
+    const delta =
+        this.lastFadeAt === 0 ? 0 : Math.min(100, now - this.lastFadeAt);
     this.lastFadeAt = now;
     if (this.traceOpacity < target) {
-      this.traceOpacity = Math.min(target, this.traceOpacity + delta / duration);
+      this.traceOpacity =
+          Math.min(target, this.traceOpacity + delta / duration);
     } else if (this.traceOpacity > target) {
-      this.traceOpacity = Math.max(target, this.traceOpacity - delta / duration);
+      this.traceOpacity =
+          Math.max(target, this.traceOpacity - delta / duration);
     }
+  }
+
+  // The traced canvas includes a denoise margin. Sample only the visible crop.
+  private cropPresentTexture() {
+    const texture = this.tracePresentTexture;
+    if (texture == null) {
+      return;
+    }
+    const traced = this.coverageCrop;
+    const visible = this.coverageVisible;
+    if (traced == null || visible == null || traced.width < 1 ||
+        traced.height < 1) {
+      texture.offset.set(0, 0);
+      texture.repeat.set(1, 1);
+      return;
+    }
+    const left = (visible.x - traced.x) / traced.width;
+    const bottom = ((traced.y + traced.height) - (visible.y + visible.height)) /
+        traced.height;
+    texture.offset.set(left, bottom);
+    texture.repeat.set(
+        visible.width / traced.width, visible.height / traced.height);
   }
 
   private drawTraceIntoCanvas() {
@@ -1497,9 +1759,21 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.tracePresentQuad = new FullScreenQuad(material);
     }
     this.tracePresentTexture.needsUpdate = true;
+    this.cropPresentTexture();
     const autoClear = renderer.autoClear;
     renderer.autoClear = false;
+    const crop = this.coverageVisible ?? this.coverageCrop;
+    renderer.getViewport(this.shadowViewport);
+    if (crop != null) {
+      const glY = this.drawingBufferSize.y - crop.y - crop.height;
+      renderer.setViewport(crop.x, glY, crop.width, crop.height);
+    }
     this.tracePresentQuad?.render(renderer);
+    renderer.setViewport(
+        this.shadowViewport.x,
+        this.shadowViewport.y,
+        this.shadowViewport.z,
+        this.shadowViewport.w);
     renderer.autoClear = autoClear;
   }
 
@@ -1515,8 +1789,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (scene == null) {
       return;
     }
-    const environment = this.lastEnvironment as {uuid?: string}|null;
-    const background = this.lastBackground as {uuid?: string}|null;
+    const environment = this.lastEnvironment as {uuid?: string} | null;
+    const background = this.lastBackground as {uuid?: string} | null;
     const key = [
       scene.exposure,
       scene.toneMapping,
@@ -1536,7 +1810,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   private animationIsPlaying(): boolean {
-    const element = this.scene?.element as {paused?: boolean}|undefined;
+    const element = this.scene?.element as {paused?: boolean} | undefined;
     return element != null && element.paused === false;
   }
 
@@ -1567,7 +1841,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const parts: string[] = [];
     this.scene.traverse((object) => {
       const light = object as {
-        isLight?: boolean; uuid: string; visible: boolean; intensity?: number;
+        isLight?: boolean;
+        uuid: string;
+        visible: boolean;
+        intensity?: number;
         material?: {emissiveIntensity?: number; uuid: string;}|
             Array<{emissiveIntensity?: number; uuid: string;}>;
       };
@@ -1575,9 +1852,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         parts.push(
             `${light.uuid}:${light.visible ? 1 : 0}:${light.intensity ?? 0}`);
       }
-      const materials = light.material == null ?
-          [] :
-          Array.isArray(light.material) ? light.material : [light.material];
+      const materials = light.material == null ? [] :
+          Array.isArray(light.material)        ? light.material :
+                                                 [light.material];
       for (const material of materials) {
         if (material.emissiveIntensity == null) {
           continue;
@@ -1628,8 +1905,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     const victims: Object3D[] = [];
     scene.traverse((object) => {
-      if (victims.some((victim) => victim === object.parent ||
-                       this.containsObject(victim, object))) {
+      if (victims.some(
+              (victim) => victim === object.parent ||
+                  this.containsObject(victim, object))) {
         return;
       }
       if (this.shouldDetachFromTrace(object)) {
@@ -1665,8 +1943,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (this.isShadowReceiver(object)) {
       return true;
     }
-    const material = (object as Mesh).material as
-        {color?: unknown}|Array<{color?: unknown}>|undefined;
+    const material = (object as Mesh).material as {color?: unknown} |
+        Array<{color?: unknown}>| undefined;
     if (material == null) {
       return false;
     }

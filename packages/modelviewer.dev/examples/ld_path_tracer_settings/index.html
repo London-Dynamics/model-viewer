@@ -410,6 +410,8 @@
         pathTracerFade: 0.3,
         pathTracerOpacity: 1,
         pathTracerFreezeRealtime: true,
+        pathTracerCoverage: false,
+        pathTracerShowRegion: false,
         pathTracerBounces: 15,
         pathTracerPixelRatio: 0,
         pathTracerRenderScale: 1,
@@ -467,6 +469,8 @@
             'pathTracerFade',
             'pathTracerOpacity',
             'pathTracerFreezeRealtime',
+            'pathTracerCoverage',
+            'pathTracerShowRegion',
             'pathTracerBounces',
             'pathTracerPixelRatio',
             'pathTracerRenderScale',
@@ -589,6 +593,16 @@
           label: 'Freeze realtime',
           kind: 'checkbox',
           attr: 'path-tracer-freeze-realtime',
+        },
+        pathTracerCoverage: {
+          label: 'Trace subject only',
+          kind: 'checkbox',
+          attr: 'path-tracer-coverage',
+        },
+        pathTracerShowRegion: {
+          label: 'Show debug region',
+          kind: 'checkbox',
+          attr: 'path-tracer-show-region',
         },
         pathTracerBounces: {
           label: 'Bounces',
@@ -1310,6 +1324,8 @@
         params.set('path-tracer-fade', String(state.pathTracerFade));
         params.set('path-tracer-opacity', String(state.pathTracerOpacity));
         params.set('path-tracer-freeze-realtime', state.pathTracerFreezeRealtime ? '1' : '0');
+        params.set('path-tracer-coverage', state.pathTracerCoverage ? '1' : '0');
+        params.set('path-tracer-show-region', state.pathTracerShowRegion ? '1' : '0');
         params.set('path-tracer-bounces', String(state.pathTracerBounces));
         params.set('path-tracer-render-scale', String(state.pathTracerRenderScale));
         params.set('path-tracer-pixel-ratio', String(state.pathTracerPixelRatio));
@@ -1388,6 +1404,8 @@
         state.pathTracerFade = readNumber(params, 'path-tracer-fade', state.pathTracerFade);
         state.pathTracerOpacity = readNumber(params, 'path-tracer-opacity', state.pathTracerOpacity);
         state.pathTracerFreezeRealtime = readBool(params, 'path-tracer-freeze-realtime', state.pathTracerFreezeRealtime);
+        state.pathTracerCoverage = readBool(params, 'path-tracer-coverage', state.pathTracerCoverage);
+        state.pathTracerShowRegion = readBool(params, 'path-tracer-show-region', state.pathTracerShowRegion);
         state.pathTracerBounces = readNumber(params, 'path-tracer-bounces', state.pathTracerBounces);
         state.pathTracerRenderScale = readNumber(params, 'path-tracer-render-scale', state.pathTracerRenderScale);
         state.pathTracerPixelRatio = readNumber(params, 'path-tracer-pixel-ratio', state.pathTracerPixelRatio);
@@ -1496,8 +1514,15 @@
       });
 
       const stats = document.querySelector('#trace-stats');
+      let previousSamples = null;
       const tick = () => {
         const samples = Math.floor(Number(viewer.pathTracerRenderedSamples || 0));
+        // A new trace zeroes the sample count without going through Reset.
+        // Start the clock again whenever that count drops.
+        if (previousSamples != null && samples < previousSamples) {
+          restartClock();
+        }
+        previousSamples = samples;
         const ready = viewer.isPathTracerReady ? 'ready' : 'building';
         const denoise = viewer.pathTracerDenoiseStatus || '';
         const finished = denoise === 'denoise finished';

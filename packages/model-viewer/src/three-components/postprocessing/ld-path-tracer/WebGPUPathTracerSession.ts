@@ -13,9 +13,9 @@
  * limitations under the License.
  */
 
+import {initUNetFromURL} from 'oidn-web';
 import {Camera, Mesh, Object3D, Scene, Vector2} from 'three';
 import {OIDNDenoiser, RANDOM_BLUE_DITHER, RANDOM_PCG, RANDOM_SOBOL, WebGPUPathTracer} from 'three-gpu-pathtracer/webgpu';
-import {initUNetFromURL} from 'oidn-web';
 import {AVERAGE, CENTER, MeshBVH, SAH} from 'three-mesh-bvh';
 import {WebGPURenderer} from 'three/webgpu';
 
@@ -41,10 +41,9 @@ const RANDOM_STRATEGY = {
 export const PATH_TRACER_UNAVAILABLE_EVENT = 'path-tracer-unavailable';
 
 interface OIDNTileInputs {
-  progress?: ((
-      output: unknown, tileData: unknown, tile: unknown, index?: number,
-      count?: number) => unknown)|
-      null;
+  progress?:
+      ((output: unknown, tileData: unknown, tile: unknown, index?: number,
+        count?: number) => unknown)|null;
 }
 
 interface OIDNTileExecutor {
@@ -85,6 +84,7 @@ export class WebGPUPathTracerSession {
   private renderer: WebGPURenderer|null = null;
   private tracer: WebGPUPathTracer|null = null;
   private denoiser: OIDNDenoiser|null = null;
+  private tracedScene: Scene|null = null;
   private denoiseWanted = false;
   private worker: PathTracerBVHWorker|null = null;
   private buildOptions:
@@ -108,7 +108,19 @@ export class WebGPUPathTracerSession {
     this.canvas.style.zIndex = '2';
     this.canvas.style.visibility = 'hidden';
     this.canvas.setAttribute('aria-hidden', 'true');
+    this.region = document.createElement('div');
+    this.region.style.position = 'absolute';
+    this.region.style.pointerEvents = 'none';
+    this.region.style.zIndex = '20';
+    this.region.style.transform = 'translateZ(1px)';
+    this.region.style.boxSizing = 'border-box';
+    this.region.style.boxShadow = 'inset 0 0 0 2px #ff4d00';
+    this.region.style.display = 'none';
+    this.region.setAttribute('aria-hidden', 'true');
   }
+
+  private readonly region: HTMLDivElement;
+  private showRegion = false;
 
   get target(): {width: number, height: number}|null {
     if (this.tracedWidth < 1 || this.tracedHeight < 1 || this.samples <= 0) {
@@ -174,6 +186,7 @@ export class WebGPUPathTracerSession {
     const root = this.host.shadowRoot ?? this.host;
     const parent = root.querySelector('.slot.canvas') ?? root;
     parent.appendChild(this.canvas);
+    parent.appendChild(this.region);
 
     let renderer: WebGPURenderer;
     try {
@@ -185,6 +198,7 @@ export class WebGPUPathTracerSession {
       await renderer.init();
     } catch (error) {
       this.canvas.remove();
+      this.region.remove();
       this.markUnavailable(
           error instanceof Error ? error.message :
                                    'WebGPU renderer failed to start');
@@ -193,6 +207,7 @@ export class WebGPUPathTracerSession {
     if (this.disposed) {
       renderer.dispose();
       this.canvas.remove();
+      this.region.remove();
       return;
     }
 
@@ -225,11 +240,40 @@ export class WebGPUPathTracerSession {
     }
   }
 
+  setShowRegion(show: boolean) {
+    this.showRegion = show;
+    this.region.style.display = show ? 'block' : 'none';
+  }
+
   layout(
       cssWidth: number, cssHeight: number, tracedWidth: number,
-      tracedHeight: number) {
+      tracedHeight: number, originX = 0, originY = 0, updateRegion = false,
+      visible?: {x: number, y: number, width: number, height: number}) {
+    this.canvas.style.left = `${originX}px`;
+    this.canvas.style.top = `${originY}px`;
+    this.canvas.style.right = 'auto';
+    this.canvas.style.bottom = 'auto';
     this.canvas.style.width = `${Math.max(1, cssWidth)}px`;
     this.canvas.style.height = `${Math.max(1, cssHeight)}px`;
+    if (visible == null) {
+      this.canvas.style.clipPath = '';
+    } else {
+      const top = Math.max(0, visible.y - originY);
+      const right =
+          Math.max(0, originX + cssWidth - (visible.x + visible.width));
+      const bottom =
+          Math.max(0, originY + cssHeight - (visible.y + visible.height));
+      const left = Math.max(0, visible.x - originX);
+      this.canvas.style.clipPath =
+          `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+    }
+    if (updateRegion) {
+      if (visible == null) {
+        this.placeRegion(originX, originY, cssWidth, cssHeight);
+      } else {
+        this.placeRegion(visible.x, visible.y, visible.width, visible.height);
+      }
+    }
     const width = Math.max(1, Math.floor(tracedWidth));
     const height = Math.max(1, Math.floor(tracedHeight));
     if (width === this.tracedWidth && height === this.tracedHeight) {
@@ -239,6 +283,15 @@ export class WebGPUPathTracerSession {
     this.tracedHeight = height;
     this.renderer?.setSize(width, height, false);
     this.tracer?.setSize(width, height);
+  }
+
+  private placeRegion(
+      originX: number, originY: number, cssWidth: number, cssHeight: number) {
+    this.region.style.left = `${originX}px`;
+    this.region.style.top = `${originY}px`;
+    this.region.style.width = `${Math.max(1, cssWidth)}px`;
+    this.region.style.height = `${Math.max(1, cssHeight)}px`;
+    this.region.style.display = this.showRegion ? 'block' : 'none';
   }
 
   show(visible: boolean) {
@@ -289,6 +342,7 @@ export class WebGPUPathTracerSession {
   }
 
   setScene(scene: Object3D, camera: Camera) {
+    this.tracedScene = scene as Scene;
     this.assignBoundsSync(scene);
     this.tracer?.setScene(scene as Scene, camera);
   }
@@ -299,7 +353,17 @@ export class WebGPUPathTracerSession {
   }
 
   setCamera(camera: Camera) {
-    this.tracer?.setCamera(camera);
+    const tracer = this.tracer;
+    if (tracer == null) {
+      return;
+    }
+    tracer.setCamera(camera);
+    // setCamera leaves the denoiser on the previous camera. A crop then
+    // denoises the beauty pass with full-frame albedo and normals, which
+    // comes back purple on glass and other surfaces.
+    if (this.tracedScene != null) {
+      this.denoiser?.setScene(this.tracedScene, camera);
+    }
   }
 
   updateEnvironment() {
@@ -353,6 +417,7 @@ export class WebGPUPathTracerSession {
     this.renderer?.dispose();
     this.renderer = null;
     this.canvas.remove();
+    this.region.remove();
     this.state = 'idle';
   }
 
@@ -420,7 +485,7 @@ export class WebGPUPathTracerSession {
   }
 
   private watchDenoiseTiles(denoiser: OIDNDenoiser) {
-    const host = denoiser as OIDNDenoiser&{
+    const host = denoiser as OIDNDenoiser & {
       _initUNet: (useAuxiliary: boolean) => Promise<OIDNTileExecutor>;
     };
     const init = host._initUNet.bind(host);
@@ -433,7 +498,10 @@ export class WebGPUPathTracerSession {
       unet.tileExecute = (inputs: OIDNTileInputs) => {
         const report = inputs.progress;
         inputs.progress = async (
-            output: unknown, tileData: unknown, tile: unknown, index?: number,
+            output: unknown,
+            tileData: unknown,
+            tile: unknown,
+            index?: number,
             count?: number) => {
           if (typeof index === 'number' && typeof count === 'number') {
             this.denoiseTile = index + 1;
