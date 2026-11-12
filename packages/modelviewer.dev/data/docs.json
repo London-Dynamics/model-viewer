@@ -2018,7 +2018,7 @@
       {
         "name": "addGridShapeLines(paths, options?)",
         "htmlName": "addGridShapeLines",
-        "description": "Adds one or more custom line paths on top of the measurement grid and returns an id that can be used to remove them later. The optional options object supports: id (string, custom identifier), color (CSS color string or number), thickness (number, world-space line thickness), and coordinate ([x, z] offset in the current measurement unit).",
+        "description": "Adds one or more custom line paths on top of the measurement grid and returns an id that can be used to remove them later. The optional options object supports: id (string, custom identifier), color (CSS color string or number), thickness (number, world-space line thickness), and coordinate ([x, z] offset in the current measurement unit). Strokes in one call that share an endpoint (within 1e-6) and the same thickness are joined. Two strokes become one polyline with a mitered corner. A loop of joined strokes is drawn closed. Three or more strokes at one point keep their ends and get a filled joint. A different thickness, another call, or a crossing that is not a shared point stays separate. The Grid shape lines example draws its square as four open sides that join this way.",
         "links": [
           "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>"
         ]

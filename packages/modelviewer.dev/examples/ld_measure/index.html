@@ -550,8 +550,13 @@
               <div class="heading">
                 <h2 class="demo-title">Grid shape lines</h2>
                 <p>
-                  Add custom line shapes on top of the LD Measure grid using the
-                  new grid-shape API.
+                  Add custom line shapes on top of the LD Measure grid. The
+                  square is four separate open sides passed together in one
+                  <code>addGridShapeLines</code> call. Sides that meet at the
+                  same point and share a thickness join into one outline, with
+                  a miter at each corner. A loop of joined sides is drawn
+                  closed, so the square closes. The circle and cross stay
+                  separate because those strokes do not share endpoints.
                 </p>
               </div>
               <example-snippet stamp-to="grid-shapes" highlight-as="html">
@@ -616,11 +621,11 @@
                       );
 
                       modelViewer.addEventListener('load', () => {
-                        const squarePath = [
-                          [0, 0],
-                          [1.1, 0],
-                          [1.1, 1.1],
-                          [0, 1.1],
+                        const squareStrokes = [
+                          {points: [[0, 0], [1.1, 0]], closed: false},
+                          {points: [[1.1, 0], [1.1, 1.1]], closed: false},
+                          {points: [[1.1, 1.1], [0, 1.1]], closed: false},
+                          {points: [[0, 1.1], [0, 0]], closed: false},
                         ];
 
                         const circleEdges = 32;
@@ -645,8 +650,9 @@
                           ],
                         ];
 
-                        modelViewer.addGridShapeLines(squarePath, {
+                        modelViewer.addGridShapeLines(squareStrokes, {
                           id: 'square-1m',
+                          thickness: 0.08,
                         });
 
                         modelViewer.addGridShapeLines(circlePlusPaths, {
