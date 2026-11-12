@@ -42,6 +42,7 @@ suite('ld-modular inner wall mode', () => {
     onFloor.userData.attachedSurfaceType = 'floor';
 
     element.srcIsRoom = true;
+    element.walls = true;
     element.innerWallMode = 'cutaway';
     apply();
 
