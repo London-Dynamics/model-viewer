@@ -61,6 +61,7 @@ import {
   isAttachedToInnerWall,
   normalizeInnerWallMode,
 } from '../../utilities/inner-wall-mode.js';
+import {readRoomSource, type RoomSource} from '../../utilities/ld-builder.js';
 import type { ModelLoadIssue } from '../../three-components/load-issues.js';
 import {PlacementCursor} from './placement-cursor.js';
 import {
@@ -419,6 +420,12 @@ export declare interface LDModularInterface {
   floor: boolean;
   /** `solid`, `transparent`, `cutaway`, or `hidden`. Any other value behaves as `solid`. */
   innerWallMode: string;
+  /**
+   * Where the loaded room's feature data came from. `ldBuilder` is the
+   * validated extras object. `detected` is reserved for a later calculation.
+   * Null when the model has neither.
+   */
+  readonly roomSource: RoomSource | null;
   rotationControls: boolean;
   disableXRotationControls: boolean;
   disableYRotationControls: boolean;
@@ -621,6 +628,17 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({ type: String, attribute: 'inner-wall-mode' })
     innerWallMode: string = 'solid';
+
+    /**
+     * Where the loaded room's feature data came from. `ldBuilder` is the
+     * validated extras object. `detected` is reserved for a later calculation.
+     * Null when the model has neither. Snapping and the wall attributes still
+     * follow mesh names.
+     */
+    get roomSource(): RoomSource | null {
+      const scene = this[$scene];
+      return readRoomSource(scene ? getBaseModelObject(scene) : null);
+    }
 
     @property({ type: Boolean, attribute: 'rotation-controls' })
     rotationControls: boolean = false;
