@@ -2599,6 +2599,102 @@
           "default": "0",
           "type": "number"
         }
+      },
+      {
+        "name": "path-tracer-cache-url",
+        "htmlName": "pathTracerCacheUrl",
+        "description": "URL of a path-tracer cache file for the initial model. Separate from <span class=\"attribute\">src</span>. The file is fetched when path tracing is on. Each cache type is applied only when that type is enabled and its load-at-start flag is on.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      {
+        "name": "path-tracer-cache-verify",
+        "htmlName": "pathTracerCacheVerify",
+        "description": "When set, a cache file is used only if its header fingerprint matches the current GLB, environment, and tracer settings. Off by default: the fingerprint is still written and can be inspected, but a provided cache is used without that check.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-bvh",
+        "htmlName": "pathTracerCacheBvh",
+        "description": "Enable the BVH cache. Geometry only: a camera move, a material edit, and an environment change keep it. A <span class=\"attribute\">src</span> change drops it.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-irradiance",
+        "htmlName": "pathTracerCacheIrradiance",
+        "description": "Enable the world-space irradiance cache. It is reused across camera moves. It is cleared when geometry, a material swap, or the HDRI/lights change. A pure colour or emissive adjust keeps it, because the cache stores lighting with albedo divided out.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-materials",
+        "htmlName": "pathTracerCacheMaterials",
+        "description": "Enable the material-parameter cache. A material swap or a colour/property adjust clears it. Geometry-only and environment changes keep it.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-load-bvh",
+        "htmlName": "pathTracerCacheLoadBvh",
+        "description": "When a cache URL is loaded automatically, apply the BVH entry. Does not affect an explicit <code>loadPathTracerCache()</code> call.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-load-irradiance",
+        "htmlName": "pathTracerCacheLoadIrradiance",
+        "description": "When a cache URL is loaded automatically, apply the irradiance entry.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-load-materials",
+        "htmlName": "pathTracerCacheLoadMaterials",
+        "description": "When a cache URL is loaded automatically, apply the material entry.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
       }
     ],
     "Properties": [
@@ -2650,6 +2746,42 @@
           "<a href=\"../examples/ld_path_tracer_settings/#settings\">Settings example</a>"
         ],
         "signature": "capturePathTracerFrame(options?: { fileType?: string; encoderOptions?: number }): Promise<{ dataUrl: string; width: number; height: number; samples: number }>"
+      },
+      {
+        "name": "exportPathTracerCache(types?)",
+        "htmlName": "exportPathTracerCache",
+        "description": "Serializes the resident cache types into one <code>.ldpt</code> blob. The header always includes a fingerprint of the GLB, environment, and tracer settings. <code>types</code> limits which entries are written.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "exportPathTracerCache(types?: Array<'bvh' | 'irradiance' | 'materials'>): Promise<Blob>"
+      },
+      {
+        "name": "loadPathTracerCache(source, options?)",
+        "htmlName": "loadPathTracerCache",
+        "description": "Loads a cache file from a URL, <code>Blob</code>, or <code>ArrayBuffer</code>. A fingerprint mismatch is ignored only when <span class=\"attribute\">path-tracer-cache-verify</span> is set; otherwise the file is applied. Disabled types are skipped. Pass <code>respectLoadFlags: true</code> to also honour the per-type load-at-start flags (the cache URL does this).",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "loadPathTracerCache(source: string | Blob | ArrayBuffer, options?: { types?: Array<'bvh' | 'irradiance' | 'materials'>; respectLoadFlags?: boolean }): Promise<{ accepted: boolean; reason: string; matched: boolean; applied: string[]; skipped: string[] }>"
+      },
+      {
+        "name": "clearPathTracerCache(types?)",
+        "htmlName": "clearPathTracerCache",
+        "description": "Drops every resident cache, or the listed types (<code>bvh</code>, <code>irradiance</code>, <code>materials</code>).",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "clearPathTracerCache(types?: 'bvh' | 'irradiance' | 'materials' | Array<'bvh' | 'irradiance' | 'materials'>): void"
+      },
+      {
+        "name": "getPathTracerCacheStatus()",
+        "htmlName": "getPathTracerCacheStatus",
+        "description": "Flags, byte sizes, BVH build time, time to the first sample, time to a settled frame, and the last load result.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "getPathTracerCacheStatus(): { flags, sizes, timings, lastLoad, fingerprint }"
       }
     ],
     "Events": [
