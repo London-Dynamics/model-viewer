@@ -69,10 +69,10 @@ assert.equal(
     getInputAttributes('path-tracer-samples-threshold').max,
     '64',
     'combined verification display threshold should be capped at 64 samples');
-assert.match(
+assert.doesNotMatch(
     html,
     /id="path-tracer-denoise-mode"/,
-    'combined verification example should keep the denoise mode control');
+    'combined verification example should not expose a denoise mode control');
 assert.match(
     html,
     /id="server-ai-denoise-scene-description"/,

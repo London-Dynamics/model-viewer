@@ -327,7 +327,7 @@
         path-tracer-floor-roughness="0.2"
         path-tracer-floor-metalness="0"
         path-tracer-floor-opacity="1"
-        path-tracer-denoise-mode="oidn"
+        path-tracer-denoise
       ></model-viewer>
       <div
         id="path-tracer-performance-analyser"
@@ -425,12 +425,6 @@
         pathTracerApertureRotation: 0,
         pathTracerAnamorphicRatio: 1,
         pathTracerDenoise: true,
-        pathTracerDenoiseSigma: 5,
-        pathTracerDenoiseThreshold: 0.1,
-        pathTracerDenoiseKSigma: 1,
-        pathTracerDenoiseMode: 'oidn',
-        serverAIDenoiseAspectRatio: '',
-        sceneDescription: '',
         strategy: 'sah',
         maxLeafTris: 1,
         exposure: 1,
@@ -493,14 +487,7 @@
         {
           title: 'Denoise',
           fields: [
-            'pathTracerDenoiseMode',
             'pathTracerDenoise',
-            'pathTracerDenoiseSigma',
-            'pathTracerDenoiseThreshold',
-            'pathTracerDenoiseKSigma',
-            'serverAIDenoiseAspectRatio',
-            'sceneDescription',
-            'serverAi',
           ],
         },
         {
@@ -682,48 +669,11 @@
           max: 4,
           step: 0.01,
         },
-        pathTracerDenoiseMode: {
-          label: 'Denoise mode',
-          kind: 'select',
-          attr: 'path-tracer-denoise-mode',
-          options: ['off', 'gpu', 'oidn', 'server-ai'],
-        },
         pathTracerDenoise: {
-          label: 'Spatial denoise',
+          label: 'OIDN',
           kind: 'checkbox',
           attr: 'path-tracer-denoise',
         },
-        pathTracerDenoiseSigma: {
-          label: 'Denoise sigma',
-          kind: 'range',
-          attr: 'path-tracer-denoise-sigma',
-          min: 0.1,
-          max: 20,
-          step: 0.1,
-        },
-        pathTracerDenoiseThreshold: {
-          label: 'Denoise threshold',
-          kind: 'range',
-          attr: 'path-tracer-denoise-threshold',
-          min: 0.001,
-          max: 1,
-          step: 0.001,
-        },
-        pathTracerDenoiseKSigma: {
-          label: 'Denoise k-sigma',
-          kind: 'range',
-          attr: 'path-tracer-denoise-k-sigma',
-          min: 0,
-          max: 4,
-          step: 0.05,
-        },
-        serverAIDenoiseAspectRatio: {
-          label: 'Server AI aspect',
-          kind: 'select',
-          attr: 'server-ai-denoise-aspect-ratio',
-          options: ['', '1 / 1', '3 / 2', '2 / 3', '4 / 3', '3 / 4', '16 / 9', '9 / 16'],
-        },
-        sceneDescription: {label: 'Scene description', kind: 'text'},
         strategy: {
           label: 'BVH strategy',
           kind: 'select',
@@ -1110,31 +1060,6 @@
               details.append(wrap);
               continue;
             }
-            if (name === 'serverAi') {
-              const button = actionButton('Run server AI denoise', () => {
-                runServerAI();
-              });
-              const status = document.createElement('p');
-              status.className = 'hint';
-              status.id = 'server-ai-status';
-              status.textContent = 'Calls pathTracerServerAIDenoise().';
-              details.append(button, status);
-              continue;
-            }
-            if (name === 'sceneDescription') {
-              const label = document.createElement('label');
-              label.textContent = 'Scene description';
-              const area = document.createElement('textarea');
-              area.rows = 2;
-              area.addEventListener('change', () => {
-                state.sceneDescription = area.value;
-                writeQuery();
-              });
-              label.append(area);
-              details.append(label);
-              inputs.sceneDescription = area;
-              continue;
-            }
             const spec = fields[name];
             if (spec.kind === 'url') {
               addUrl(details, name, spec);
@@ -1152,7 +1077,7 @@
         const hint = document.createElement('p');
         hint.className = 'hint';
         hint.textContent =
-            'WebGPU only. If WebGPU is unavailable the real-time view stays. Denoise mode oidn runs Open Image Denoise once Samples is reached. Tiles do not split the WebGPU frame. Stop trace turns path-tracer off. Reset trace calls resetPathTracer().';
+            'WebGPU only. If WebGPU is unavailable the real-time view stays. Path tracing denoises with Open Image Denoise once Samples is reached. Tiles do not split the WebGPU frame. Stop trace turns path-tracer off. Reset trace calls resetPathTracer().';
         controls.append(hint);
       };
 
@@ -1338,12 +1263,6 @@
         params.set('path-tracer-aperture-rotation', String(state.pathTracerApertureRotation));
         params.set('path-tracer-anamorphic-ratio', String(state.pathTracerAnamorphicRatio));
         params.set('path-tracer-denoise', state.pathTracerDenoise ? '1' : '0');
-        params.set('path-tracer-denoise-sigma', String(state.pathTracerDenoiseSigma));
-        params.set('path-tracer-denoise-threshold', String(state.pathTracerDenoiseThreshold));
-        params.set('path-tracer-denoise-k-sigma', String(state.pathTracerDenoiseKSigma));
-        params.set('path-tracer-denoise-mode', state.pathTracerDenoiseMode);
-        params.set('server-ai-denoise-aspect-ratio', state.serverAIDenoiseAspectRatio);
-        params.set('scene', state.sceneDescription);
         params.set('strategy', state.strategy);
         params.set('max-leaf-tris', String(state.maxLeafTris));
         params.set('exposure', String(state.exposure));
@@ -1424,12 +1343,6 @@
         state.pathTracerApertureRotation = readNumber(params, 'path-tracer-aperture-rotation', state.pathTracerApertureRotation);
         state.pathTracerAnamorphicRatio = readNumber(params, 'path-tracer-anamorphic-ratio', state.pathTracerAnamorphicRatio);
         state.pathTracerDenoise = readBool(params, 'path-tracer-denoise', state.pathTracerDenoise);
-        state.pathTracerDenoiseSigma = readNumber(params, 'path-tracer-denoise-sigma', state.pathTracerDenoiseSigma);
-        state.pathTracerDenoiseThreshold = readNumber(params, 'path-tracer-denoise-threshold', state.pathTracerDenoiseThreshold);
-        state.pathTracerDenoiseKSigma = readNumber(params, 'path-tracer-denoise-k-sigma', state.pathTracerDenoiseKSigma);
-        state.pathTracerDenoiseMode = params.get('path-tracer-denoise-mode') || state.pathTracerDenoiseMode;
-        state.serverAIDenoiseAspectRatio = params.get('server-ai-denoise-aspect-ratio') ?? state.serverAIDenoiseAspectRatio;
-        state.sceneDescription = params.get('scene') ?? state.sceneDescription;
         state.strategy = params.get('strategy') || state.strategy;
         state.maxLeafTris = readNumber(params, 'max-leaf-tris', state.maxLeafTris);
         state.exposure = readNumber(params, 'exposure', state.exposure);
@@ -1467,29 +1380,12 @@
           inputs.tilesX.value = String(state.tilesX);
           inputs.tilesY.value = String(state.tilesY);
         }
-        if (inputs.sceneDescription) {
-          inputs.sceneDescription.value = state.sceneDescription;
-        }
       };
 
       const restartClock = () => {
         traceStartedAt = performance.now();
         denoiseDoneSeconds = null;
         denoiseFinishArmed = false;
-      };
-
-      const runServerAI = async () => {
-        const status = document.querySelector('#server-ai-status');
-        status.textContent = 'Waiting for samples, then calling pathTracerServerAIDenoise()…';
-        try {
-          const image = await viewer.pathTracerServerAIDenoise({
-            sceneDescription: state.sceneDescription || undefined,
-          });
-          status.textContent = 'Server AI denoise returned an image URL.';
-          status.title = image;
-        } catch (error) {
-          status.textContent = error instanceof Error ? error.message : String(error);
-        }
       };
 
       viewer.addEventListener('load', restartClock);

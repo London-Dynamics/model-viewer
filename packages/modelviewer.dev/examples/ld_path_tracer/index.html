@@ -655,14 +655,6 @@
                         </div>
                         <div class="ld-path-tracer-control-grid">
                           <label>
-                            Denoise
-                            <select id="path-tracer-denoise-mode">
-                              <option value="off">Off</option>
-                              <option value="gpu" selected>GPU</option>
-                              <option value="server-ai">Server AI</option>
-                            </select>
-                          </label>
-                          <label>
                             Scene description
                             <textarea
                               id="server-ai-denoise-scene-description"
@@ -911,9 +903,6 @@
                       const pixelRatioValue = document.querySelector(
                         '#pixel-ratio-value'
                       );
-                      const denoiseMode = document.querySelector(
-                        '#path-tracer-denoise-mode'
-                      );
                       const serverAIDenoiseSceneDescription =
                         document.querySelector(
                           '#server-ai-denoise-scene-description'
@@ -1007,25 +996,7 @@
                         );
                         serverAIDenoiseOverlay.hidden = true;
                         serverAIDenoiseOverlay.removeAttribute('src');
-                        setServerAIDenoiseStatus(
-                          denoiseMode.value === 'server-ai'
-                            ? 'Waiting for target samples'
-                            : 'Server AI off'
-                        );
-                      };
-                      const applyDenoiseMode = () => {
-                        const mode = denoiseMode.value;
-                        modelViewer.setAttribute(
-                          'path-tracer-denoise-mode',
-                          mode
-                        );
-                        if (mode === 'server-ai') {
-                          applyServerAIAspectRatio();
-                          clearServerAIDenoise();
-                        } else {
-                          applyAspectRatio();
-                          clearServerAIDenoise();
-                        }
+                        setServerAIDenoiseStatus('Server AI off');
                       };
                       const handleServerAICameraChange = (event) => {
                         if (event.detail?.source !== 'user-interaction') {
@@ -1035,8 +1006,8 @@
                         clearServerAIDenoise();
                       };
                       const maybeRunServerAIDenoise = async () => {
+                        return;
                         if (
-                          denoiseMode.value !== 'server-ai' ||
                           serverAIDenoiseRunning
                         ) {
                           return;
@@ -1369,13 +1340,7 @@
                         await applySourceOverrides();
                       });
                       aspectRatio.addEventListener('change', () => {
-                        if (denoiseMode.value !== 'server-ai') {
-                          applyAspectRatio();
-                          return;
-                        }
-
-                        applyServerAIAspectRatio();
-                        clearServerAIDenoise();
+                        applyAspectRatio();
                       });
                       savePathTraced.addEventListener(
                         'click',
@@ -1383,11 +1348,6 @@
                       );
                       saveFinal.addEventListener('click', downloadFinalCanvas);
                       window.addEventListener('resize', () => {
-                        if (denoiseMode.value === 'server-ai') {
-                          applyServerAIAspectRatio();
-                          return;
-                        }
-
                         applyAspectRatio();
                       });
                       cameraPresetSelect.addEventListener('change', (event) => {
@@ -1476,7 +1436,6 @@
                           String(value)
                         );
                       });
-                      denoiseMode.addEventListener('change', applyDenoiseMode);
                       serverAIDenoiseSceneDescription.addEventListener(
                         'input',
                         clearServerAIDenoise
@@ -1601,8 +1560,6 @@
                         handleServerAICameraChange
                       );
                       modelViewer.addEventListener('load', clearServerAIDenoise);
-                      setInterval(maybeRunServerAIDenoise, 500);
-                      applyDenoiseMode();
                       applyCameraSettings(CAMERA_PRESETS.none);
                       applyAspectRatio();
                     })();

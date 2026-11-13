@@ -248,15 +248,17 @@ export interface PathTracerOptions {
 }
 
 export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
-  samples: 32,
-  samplesThreshold: 6,
+  // Match the vendor demo sidebar: 16 samples, 15 bounces, show from the
+  // first sample. The frame budget below is the value that demo settles on.
+  samples: 16,
+  samplesThreshold: 1,
   display: 'after-denoise',
   fadeSeconds: 0.3,
   opacity: 1,
   freezeRealtime: true,
   coverage: false,
   showRegion: false,
-  bounces: 5,
+  bounces: 15,
   renderScale: 1,
   pixelRatio: 0,
   tiles: new Vector2(3, 3),
