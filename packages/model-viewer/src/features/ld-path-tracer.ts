@@ -18,6 +18,8 @@ import {Vector2} from 'three';
 
 import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
+import {PathTracerCacheLoadResult} from '../three-components/postprocessing/ld-path-tracer/cache/path-tracer-cache-store.js';
+import {PathTracerCacheType} from '../three-components/postprocessing/ld-path-tracer/cache/path-tracer-cache-types.js';
 import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, normalizePathTracerDisplay, normalizePathTracerFloorColor, PathTracerBuildOptions, PathTracerOptions, PathTracerPresentedFrame, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
 import {Constructor} from '../utilities.js';
 
@@ -78,6 +80,25 @@ export declare interface LDPathTracerInterface {
   resetPathTracer(): void;
   capturePathTracerFrame(options?: CapturePathTracerFrameOptions):
       Promise<PathTracerPresentedFrame>;
+  pathTracerCacheUrl: string;
+  pathTracerCacheVerify: boolean;
+  pathTracerCacheBvh: boolean;
+  pathTracerCacheIrradiance: boolean;
+  pathTracerCacheMaterials: boolean;
+  pathTracerCacheLoadBvh: boolean;
+  pathTracerCacheLoadIrradiance: boolean;
+  pathTracerCacheLoadMaterials: boolean;
+  exportPathTracerCache(types?: readonly PathTracerCacheType[]): Promise<Blob>;
+  loadPathTracerCache(
+      source: string|Blob|ArrayBuffer,
+      options?:
+          {types?: readonly PathTracerCacheType[]; respectLoadFlags?: boolean},
+      ): Promise<PathTracerCacheLoadResult>;
+  clearPathTracerCache(types?: PathTracerCacheType|
+                       readonly PathTracerCacheType[]): void;
+  getPathTracerCacheStatus():
+      ReturnType<LDPathTracerComposer['getPathTracerCacheStatus']>;
+  notePathTracerMaterialChange(kind: 'material-swap'|'material-adjust'): void;
   readonly pathTracerUnavailableReason: string;
 }
 
@@ -217,7 +238,37 @@ export const LDPathTracerMixin = <
     @property({type: String, attribute: 'path-tracer-random'})
     pathTracerRandom = DEFAULT_PATH_TRACER_OPTIONS.randomStrategy;
 
+    @property({type: String, attribute: 'path-tracer-cache-url'})
+    pathTracerCacheUrl = '';
+
+    /**
+     * Off by default: a cache file is used without checking the GLB/HDRI
+     * fingerprint.
+     */
+    @property({type: Boolean, attribute: 'path-tracer-cache-verify'})
+    pathTracerCacheVerify = false;
+
+    @property({type: Boolean, attribute: 'path-tracer-cache-bvh'})
+    pathTracerCacheBvh = false;
+
+    @property({type: Boolean, attribute: 'path-tracer-cache-irradiance'})
+    pathTracerCacheIrradiance = false;
+
+    @property({type: Boolean, attribute: 'path-tracer-cache-materials'})
+    pathTracerCacheMaterials = false;
+
+    @property({type: Boolean, attribute: 'path-tracer-cache-load-bvh'})
+    pathTracerCacheLoadBvh = true;
+
+    @property({type: Boolean, attribute: 'path-tracer-cache-load-irradiance'})
+    pathTracerCacheLoadIrradiance = true;
+
+    @property({type: Boolean, attribute: 'path-tracer-cache-load-materials'})
+    pathTracerCacheLoadMaterials = true;
+
     protected[$pathTracerComposer]: EffectComposerInterface|null = null;
+    private pathTracerCacheSrc = '';
+    private pathTracerCacheLoadedUrl = '';
     private pathTracerBuildOptions: PathTracerBuildOptions = {
       ...DEFAULT_PATH_TRACER_BUILD_OPTIONS,
     };
@@ -267,6 +318,65 @@ export const LDPathTracerMixin = <
 
     resetPathTracer() {
       this.getPathTracerComposer()?.resetSamples();
+    }
+
+    exportPathTracerCache(types?: readonly PathTracerCacheType[]) {
+      const composer = this.getPathTracerComposer();
+      if (composer == null) {
+        return Promise.reject(new Error('Path tracer is not active'));
+      }
+      return composer.exportPathTracerCache(types);
+    }
+
+    loadPathTracerCache(
+        source: string|Blob|ArrayBuffer,
+        options?: {
+          types?: readonly PathTracerCacheType[];
+          respectLoadFlags?: boolean
+        },
+    ) {
+      const composer = this.getPathTracerComposer();
+      if (composer == null) {
+        return Promise.reject(new Error('Path tracer is not active'));
+      }
+      return composer.loadPathTracerCache(source, options);
+    }
+
+    clearPathTracerCache(types?: PathTracerCacheType|
+                         readonly PathTracerCacheType[]) {
+      this.getPathTracerComposer()?.clearPathTracerCache(types);
+    }
+
+    getPathTracerCacheStatus() {
+      return this.getPathTracerComposer()?.getPathTracerCacheStatus() ?? {
+        flags: {
+          enabled: {
+            bvh: this.pathTracerCacheBvh,
+            irradiance: this.pathTracerCacheIrradiance,
+            materials: this.pathTracerCacheMaterials,
+          },
+          load: {
+            bvh: this.pathTracerCacheLoadBvh,
+            irradiance: this.pathTracerCacheLoadIrradiance,
+            materials: this.pathTracerCacheLoadMaterials,
+          },
+          verifyFingerprint: this.pathTracerCacheVerify,
+        },
+        sizes: {bvh: 0, irradiance: 0, materials: 0},
+        timings: {
+          bvhBuildMs: null,
+          bvhRestored: 0,
+          bvhBuilt: 0,
+          firstSampleMs: null,
+          convergedMs: null,
+        },
+        lastLoad: null,
+        fingerprint: {glb: '', environment: '', settings: ''},
+      };
+    }
+
+    notePathTracerMaterialChange(kind: 'material-swap'|'material-adjust') {
+      this.getPathTracerComposer()?.invalidatePathTracerCache(kind);
     }
 
     capturePathTracerFrame(options: CapturePathTracerFrameOptions = {}):
@@ -353,6 +463,24 @@ export const LDPathTracerMixin = <
         'aoDenoiseNormalPhi',
       ];
 
+      const cacheKnobs = [
+        'pathTracerCacheUrl',
+        'pathTracerCacheVerify',
+        'pathTracerCacheBvh',
+        'pathTracerCacheIrradiance',
+        'pathTracerCacheMaterials',
+        'pathTracerCacheLoadBvh',
+        'pathTracerCacheLoadIrradiance',
+        'pathTracerCacheLoadMaterials',
+      ];
+      if (cacheKnobs.some((prop) => changedProperties.has(prop))) {
+        this.syncPathTracerCache();
+        if (changedProperties.has('pathTracerCacheUrl')) {
+          this.pathTracerCacheLoadedUrl = '';
+          this.maybeLoadPathTracerCacheUrl();
+        }
+      }
+
       if (knobs.some((prop) => changedProperties.has(prop))) {
         const options = this.readAttributePathTracerOptions();
         if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
@@ -364,12 +492,50 @@ export const LDPathTracerMixin = <
 
     [$onModelLoad]() {
       super[$onModelLoad]();
+      const src = this.src ?? '';
+      if (this.pathTracerCacheSrc !== '' && this.pathTracerCacheSrc !== src &&
+          this[$pathTracerComposer] instanceof LDPathTracerComposer) {
+        this[$pathTracerComposer].invalidatePathTracerCache('geometry');
+        this.pathTracerCacheLoadedUrl = '';
+      }
+      this.pathTracerCacheSrc = src;
       if (this[$pathTracerComposer] instanceof LDPathTracerComposer) {
         this[$pathTracerComposer].markSceneDirty();
       }
       if (this.pathTracer) {
         this.setupPathTracer();
+        this.maybeLoadPathTracerCacheUrl();
       }
+    }
+
+    private syncPathTracerCache() {
+      this.getPathTracerComposer()?.setPathTracerCacheFlags({
+        verifyFingerprint: this.pathTracerCacheVerify,
+        enabled: {
+          bvh: this.pathTracerCacheBvh,
+          irradiance: this.pathTracerCacheIrradiance,
+          materials: this.pathTracerCacheMaterials,
+        },
+        load: {
+          bvh: this.pathTracerCacheLoadBvh,
+          irradiance: this.pathTracerCacheLoadIrradiance,
+          materials: this.pathTracerCacheLoadMaterials,
+        },
+      });
+    }
+
+    private maybeLoadPathTracerCacheUrl() {
+      const url = this.pathTracerCacheUrl;
+      if (url === '' || url === this.pathTracerCacheLoadedUrl) {
+        return;
+      }
+      this.pathTracerCacheLoadedUrl = url;
+      void this.loadPathTracerCache(url, {respectLoadFlags: true})
+          .catch((error: unknown) => {
+            console.warn(
+                '[model-viewer] Path tracer cache URL could not be loaded.',
+                error);
+          });
     }
 
     private setupPathTracer() {
@@ -388,6 +554,7 @@ export const LDPathTracerMixin = <
             new LDPathTracerComposer(this.readAttributePathTracerOptions());
         composer.setBuildOptions(this.pathTracerBuildOptions);
         this[$pathTracerComposer] = composer;
+        this.syncPathTracerCache();
       }
       if (!this.isRenderPipeline(currentEffect)) {
         this.registerEffectComposer(this[$pathTracerComposer]!);

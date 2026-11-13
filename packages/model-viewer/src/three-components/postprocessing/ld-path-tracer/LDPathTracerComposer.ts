@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
+import {Box3, Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {GradientEquirectTexture, PhysicalCamera} from 'three-gpu-pathtracer';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -21,6 +21,12 @@ import {EffectComposerInterface} from '../../../model-viewer-base.js';
 import {ModelScene} from '../../ModelScene.js';
 import {AmbientOcclusionOptions, LDAmbientOcclusionComposer,} from '../ld-ambient-occlusion/LDAmbientOcclusionComposer.js';
 
+import {captureSceneBvh, decodeBvhRecords, encodeBvhRecords, hashMeshPositions} from './cache/path-tracer-bvh-cache.js';
+import {fnv1aHex, PathTracerCacheFingerprint} from './cache/path-tracer-cache-format.js';
+import {PathTracerCacheLoadResult, PathTracerCacheStore, PathTracerCacheTimings} from './cache/path-tracer-cache-store.js';
+import {PathTracerCacheFlags, PathTracerCacheInvalidation, PathTracerCacheLoadRequest, PathTracerCacheType} from './cache/path-tracer-cache-types.js';
+import {createIrradianceGrid, decodeIrradiancePayload, encodeIrradiancePayload, gridForBounds, IRRADIANCE_MIN_SAMPLES, IRRADIANCE_SLOT_COUNT, IrradianceGridMeta} from './cache/path-tracer-irradiance-cache.js';
+import {collectMaterialRecords, diffMaterialWatch, encodeMaterialRecords, MaterialWatchSample, sampleMaterialWatch} from './cache/path-tracer-material-cache.js';
 import {resolvePathTracerRenderScale} from './path-tracer-scale.js';
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
 import {coverageMarginPixels, expandCropForDenoiseEdge, measureTraceCoverage, TraceCoverageMeasure, TraceCrop,} from './trace-coverage.js';
@@ -381,6 +387,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private reportedTracedWidth = 0;
   private reportedTracedHeight = 0;
   private reportedSupersampled = false;
+  private readonly pathTracerCache = new PathTracerCacheStore();
+  private irradianceGrid = createIrradianceGrid();
+  private irradianceMeta: IrradianceGridMeta = {
+    slots: IRRADIANCE_SLOT_COUNT,
+    origin: [0, 0, 0],
+    cellSize: 1,
+    minSamples: IRRADIANCE_MIN_SAMPLES,
+  };
+  private irradianceGeneration = 0;
+  private irradianceFromFile = false;
+  private materialWatch: MaterialWatchSample[]|null = null;
+  private materialWatchReady = false;
 
   constructor(initialOptions?: Partial<PathTracerOptions>) {
     if (initialOptions) {
@@ -452,6 +470,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.syncScene();
     this.syncEnvironment();
     this.syncLights();
+    this.syncMaterialWatch();
     this.refreshFrozenRealtime();
     this.updateSceneIfGeometryMoved();
     const hadCamera = this.cameraStateInitialized;
@@ -508,6 +527,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.scene.lockRenderScale = this.realtimeFrozen;
     this.pathTracer.show(true);
     this.pathTracer.renderSample();
+    this.pathTracer.noteTraceProgress();
     this.presentTrace();
     if (this.shouldRenderAmbientOcclusionPreview()) {
       this.ambientOcclusionPreviewComposer?.render(_deltaTime);
@@ -864,6 +884,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
+    const environmentChanged = this.environmentStateReady;
     this.lastEnvironmentIntensity = intensity;
     this.lastEnvironment = environment;
     this.lastBackground = background;
@@ -878,6 +899,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.pathTracer.updateEnvironment();
     } finally {
       this.scene.background = sceneBackground;
+    }
+    if (environmentChanged) {
+      this.invalidatePathTracerCache('environment');
     }
   }
 
@@ -1025,9 +1049,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         return;
       }
       this.rememberEnvironmentState();
+      this.captureBuiltCaches();
       this.requestRender();
     };
 
+    this.pushBvhCache(pathTracer);
+    this.pushIrradiance();
     const worker = this.ensureBvhWorker();
     // WebGPU records every mesh, then skips any object whose visible flag is
     // off. Shader materials have no color and crash the material buffer, so
@@ -1868,9 +1895,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (key === this.lightVisibilityKey) {
       return;
     }
+    const lightsChanged = this.lightVisibilityKey !== '';
     this.lightVisibilityKey = key;
     this.pathTracer.updateLights();
     this.pathTracer.updateMaterials();
+    if (lightsChanged) {
+      this.invalidatePathTracerCache('environment');
+    }
   }
 
   private bindInteraction(element: HTMLElement|null) {
@@ -1954,6 +1985,281 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return list.some((entry) => entry != null && entry.color == null);
   }
 
+  setPathTracerCacheFlags(flags: Partial<PathTracerCacheFlags>&{
+    enabled?: Partial<PathTracerCacheFlags['enabled']>;
+    load?: Partial<PathTracerCacheFlags['load']>;
+  }) {
+    const irradianceWas = this.pathTracerCache.flags.enabled.irradiance;
+    this.pathTracerCache.setFlags(flags);
+    if (this.session != null) {
+      this.pushBvhCache(this.session);
+    }
+    if (!irradianceWas && this.pathTracerCache.flags.enabled.irradiance) {
+      this.irradianceFromFile = this.pathTracerCache.has('irradiance');
+    }
+    this.pushIrradiance();
+  }
+
+  getPathTracerCacheStatus(): {
+    flags: PathTracerCacheFlags,
+    sizes: Record<PathTracerCacheType, number>,
+    timings: PathTracerCacheTimings,
+    lastLoad: PathTracerCacheLoadResult|null,
+    fingerprint: PathTracerCacheFingerprint,
+  } {
+    const session = this.session;
+    return {
+      flags: {
+        enabled: {...this.pathTracerCache.flags.enabled},
+        load: {...this.pathTracerCache.flags.load},
+        verifyFingerprint: this.pathTracerCache.flags.verifyFingerprint,
+      },
+      sizes: {
+        bvh: this.pathTracerCache.sizeOf('bvh'),
+        irradiance: this.pathTracerCache.sizeOf('irradiance') ||
+            (this.pathTracerCache.flags.enabled.irradiance ?
+                 this.irradianceGrid.byteLength :
+                 0),
+        materials: this.pathTracerCache.sizeOf('materials'),
+      },
+      timings: {
+        bvhBuildMs:
+            session?.bvhBuildMs ?? this.pathTracerCache.timings.bvhBuildMs,
+        bvhRestored: session?.bvhRestored ?? 0,
+        bvhBuilt: session?.bvhBuilt ?? 0,
+        firstSampleMs: session?.firstSampleMs ?? null,
+        convergedMs: session?.convergedMs ?? null,
+      },
+      lastLoad: this.pathTracerCache.lastLoad,
+      fingerprint: {...this.pathTracerCache.fingerprint},
+    };
+  }
+
+  async exportPathTracerCache(types?: readonly PathTracerCacheType[]):
+      Promise<Blob> {
+    await this.captureLiveCaches();
+    const fingerprint = this.currentFingerprint();
+    this.pathTracerCache.fingerprint = fingerprint;
+    return this.pathTracerCache.exportBlob(fingerprint, types);
+  }
+
+  async loadPathTracerCache(
+      source: string|Blob|ArrayBuffer|Uint8Array,
+      request: PathTracerCacheLoadRequest = {},
+      ): Promise<PathTracerCacheLoadResult> {
+    const bytes = await cacheSourceBytes(source);
+    const fingerprint = this.currentFingerprint();
+    this.pathTracerCache.fingerprint = fingerprint;
+    const result = this.pathTracerCache.loadBytes(bytes, fingerprint, request);
+    if (!result.accepted) {
+      return result;
+    }
+    this.applyLoadedCache(result.applied);
+    return result;
+  }
+
+  clearPathTracerCache(types?: PathTracerCacheType|
+                       readonly PathTracerCacheType[]) {
+    const list =
+        types == null ? undefined : (Array.isArray(types) ? types : [types]);
+    this.pathTracerCache.clear(list);
+    const cleared = list ?? (['bvh', 'irradiance', 'materials'] as const);
+    if (cleared.includes('bvh') && this.session != null) {
+      this.session.setBvhCache(null, this.pathTracerCache.flags.enabled.bvh);
+    }
+    if (cleared.includes('irradiance')) {
+      this.irradianceGrid = createIrradianceGrid();
+      this.irradianceFromFile = false;
+      this.irradianceGeneration++;
+      this.pushIrradiance();
+    }
+  }
+
+  invalidatePathTracerCache(reason: PathTracerCacheInvalidation):
+      PathTracerCacheType[] {
+    const cleared = this.pathTracerCache.invalidate(reason);
+    if (reason === 'geometry') {
+      this.materialWatch = null;
+      this.materialWatchReady = false;
+    }
+    if (cleared.includes('irradiance')) {
+      this.irradianceGrid = createIrradianceGrid();
+      this.irradianceFromFile = false;
+      this.irradianceGeneration++;
+      this.pushIrradiance();
+    }
+    if (cleared.includes('bvh') && this.session != null) {
+      this.session.setBvhCache(null, false);
+    }
+    if (reason === 'material-swap' || reason === 'material-adjust') {
+      this.pathTracer?.updateMaterials();
+    }
+    return cleared;
+  }
+
+  private currentFingerprint(): PathTracerCacheFingerprint {
+    const element = this.scene?.element as {
+      src?: string;
+      environmentImage?: string;
+      skyboxImage?: string;
+    }
+    |undefined;
+    const geometry = this.scene == null ? '' : hashMeshPositions(this.scene);
+    const environment = [
+      element?.environmentImage ?? '',
+      element?.skyboxImage ?? '',
+      String(this.scene?.environmentIntensity ?? ''),
+      String(this.scene?.exposure ?? ''),
+    ].join('|');
+    const settings = [
+      this.options.bounces,
+      this.buildOptions.strategy,
+      this.buildOptions.maxLeafTris,
+      this.options.floor ? 1 : 0,
+      this.options.floorColor,
+      this.options.floorRoughness,
+      this.options.floorMetalness,
+      this.options.multipleImportanceSampling ? 1 : 0,
+      this.lightVisibilityKey,
+    ].join('|');
+    return {
+      glb: fnv1aHex(`${element?.src ?? ''}\n${geometry}`),
+      environment: fnv1aHex(environment),
+      settings: fnv1aHex(settings),
+    };
+  }
+
+  private pushBvhCache(session: WebGPUPathTracerSession) {
+    const entry = this.pathTracerCache.get('bvh');
+    if (!this.pathTracerCache.flags.enabled.bvh || entry == null) {
+      session.setBvhCache(null, this.pathTracerCache.flags.enabled.bvh);
+      return;
+    }
+    session.setBvhCache(
+        decodeBvhRecords(entry.bytes), this.pathTracerCache.flags.enabled.bvh);
+  }
+
+  private pushIrradiance() {
+    const session = this.session;
+    if (session == null) {
+      return;
+    }
+    if (!this.pathTracerCache.flags.enabled.irradiance) {
+      session.setIrradianceCache(null, this.irradianceGeneration);
+      return;
+    }
+    this.fitIrradianceBounds();
+    session.setIrradianceCache(
+        {
+          grid: this.irradianceGrid,
+          origin: this.irradianceMeta.origin,
+          cellSize: this.irradianceMeta.cellSize,
+          minSamples: this.irradianceMeta.minSamples,
+          read: true,
+          write: true,
+        },
+        this.irradianceGeneration);
+  }
+
+  private fitIrradianceBounds() {
+    if (this.irradianceFromFile || this.scene == null) {
+      return;
+    }
+    const box = new Box3().setFromObject(this.scene);
+    if (box.isEmpty()) {
+      return;
+    }
+    const fit = gridForBounds(
+        [box.min.x, box.min.y, box.min.z], [box.max.x, box.max.y, box.max.z]);
+    if (fit.cellSize === this.irradianceMeta.cellSize &&
+        fit.origin[0] === this.irradianceMeta.origin[0] &&
+        fit.origin[1] === this.irradianceMeta.origin[1] &&
+        fit.origin[2] === this.irradianceMeta.origin[2]) {
+      return;
+    }
+    this.irradianceMeta = {
+      ...this.irradianceMeta,
+      origin: fit.origin,
+      cellSize: fit.cellSize,
+    };
+    this.irradianceGeneration++;
+  }
+
+  private applyLoadedCache(applied: readonly PathTracerCacheType[]) {
+    if (applied.includes('bvh')) {
+      this.clearGeometryBounds();
+      this.markSceneDirty();
+    }
+    if (applied.includes('irradiance')) {
+      const entry = this.pathTracerCache.get('irradiance');
+      if (entry != null) {
+        const decoded = decodeIrradiancePayload(
+            entry.bytes, entry.meta as Partial<IrradianceGridMeta>);
+        this.irradianceGrid = decoded.grid;
+        this.irradianceMeta = decoded.meta;
+        this.irradianceFromFile = true;
+        this.irradianceGeneration++;
+        this.pushIrradiance();
+      }
+    }
+    if (applied.includes('materials')) {
+      this.materialWatch = null;
+      this.materialWatchReady = false;
+    }
+  }
+
+  private captureBuiltCaches() {
+    if (this.scene == null) {
+      return;
+    }
+    if (this.pathTracerCache.flags.enabled.bvh) {
+      const records = captureSceneBvh(this.scene);
+      this.pathTracerCache.set(
+          'bvh', encodeBvhRecords(records), {meshes: records.length});
+    }
+    if (this.pathTracerCache.flags.enabled.materials) {
+      const records = collectMaterialRecords(this.scene);
+      this.pathTracerCache.set(
+          'materials', encodeMaterialRecords(records), {count: records.length});
+    }
+    this.fitIrradianceBounds();
+    this.pushIrradiance();
+  }
+
+  private async captureLiveCaches() {
+    this.captureBuiltCaches();
+    if (!this.pathTracerCache.flags.enabled.irradiance ||
+        this.session == null) {
+      return;
+    }
+    const read = await this.session.readIrradianceGrid();
+    if (read != null) {
+      const grid = createIrradianceGrid(this.irradianceMeta.slots);
+      grid.set(read.subarray(0, grid.length));
+      this.irradianceGrid = grid;
+    }
+    const encoded =
+        encodeIrradiancePayload(this.irradianceGrid, this.irradianceMeta);
+    this.pathTracerCache.set('irradiance', encoded.bytes, {...encoded.meta});
+  }
+
+  private syncMaterialWatch() {
+    if (this.scene == null || this.sceneBuildInFlight) {
+      return;
+    }
+    const next = sampleMaterialWatch(this.scene);
+    if (!this.materialWatchReady || this.materialWatch == null) {
+      this.materialWatch = next;
+      this.materialWatchReady = true;
+      return;
+    }
+    const delta = diffMaterialWatch(this.materialWatch, next);
+    this.materialWatch = next;
+    if (delta != null) {
+      this.invalidatePathTracerCache(delta);
+    }
+  }
+
   private restoreDetached(
       detached: Array<{parent: Object3D; object: Object3D; index: number}>) {
     for (let i = detached.length - 1; i >= 0; i--) {
@@ -1964,3 +2270,23 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
   }
 }
+
+const cacheSourceBytes = async(
+    source: string|Blob|ArrayBuffer|Uint8Array,
+    ): Promise<Uint8Array> => {
+  if (typeof source === 'string') {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(
+          `Path tracer cache ${source} responded with ${response.status}.`);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  if (source instanceof Uint8Array) {
+    return source;
+  }
+  if (source instanceof ArrayBuffer) {
+    return new Uint8Array(source);
+  }
+  return new Uint8Array(await source.arrayBuffer());
+};

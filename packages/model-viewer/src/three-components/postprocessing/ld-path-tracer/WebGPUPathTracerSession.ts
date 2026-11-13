@@ -19,6 +19,8 @@ import {OIDNDenoiser, RANDOM_BLUE_DITHER, RANDOM_PCG, RANDOM_SOBOL, WebGPUPathTr
 import {AVERAGE, CENTER, MeshBVH, SAH} from 'three-mesh-bvh';
 import {WebGPURenderer} from 'three/webgpu';
 
+import {downloadIrradianceKernel, installIrradianceKernel, IrradianceKernelTracer, IrradianceKernelUpload, uninstallIrradianceKernel, uploadIrradianceKernel} from './cache/install-irradiance-kernel.js';
+import {restoreSceneBvh, SerializedBvhMesh} from './cache/path-tracer-bvh-cache.js';
 import {PathTracerBVHWorker} from './PathTracerBVHWorker.js';
 
 const OIDN_AUX_WEIGHTS =
@@ -94,6 +96,19 @@ export class WebGPUPathTracerSession {
       };
   private disposed = false;
   private startPromise: Promise<void>|null = null;
+  private bvhRecords: SerializedBvhMesh[]|null = null;
+  bvhCacheEnabled = false;
+  bvhBuildMs = 0;
+  bvhRestored = 0;
+  bvhBuilt = 0;
+  firstSampleMs: number|null = null;
+  convergedMs: number|null = null;
+  private traceStartedAt = 0;
+  private sawSample = false;
+  private sawSettled = false;
+  private irradianceUpload: IrradianceKernelUpload|null = null;
+  private irradianceGeneration = -1;
+  private irradianceUploadedGeneration = -2;
 
   constructor(private readonly host: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -136,6 +151,28 @@ export class WebGPUPathTracerSession {
 
   setBVHWorker(worker: PathTracerBVHWorker|null) {
     this.worker = worker;
+  }
+
+  setBvhCache(records: SerializedBvhMesh[]|null, enabled: boolean) {
+    this.bvhRecords = records;
+    this.bvhCacheEnabled = enabled;
+  }
+
+  setIrradianceCache(upload: IrradianceKernelUpload|null, generation: number) {
+    this.irradianceUpload = upload;
+    this.irradianceGeneration = generation;
+    if (this.tracedScene != null) {
+      this.syncIrradianceKernel();
+    }
+  }
+
+  async readIrradianceGrid(): Promise<Float32Array|null> {
+    const tracer = this.tracer as IrradianceKernelTracer | null;
+    const kernel = tracer?._ldIrradianceKernel;
+    if (tracer == null || kernel == null) {
+      return null;
+    }
+    return downloadIrradianceKernel(tracer, kernel);
   }
 
   start(): Promise<void> {
@@ -341,15 +378,19 @@ export class WebGPUPathTracerSession {
     return 'denoise waiting';
   }
 
-  setScene(scene: Object3D, camera: Camera) {
+  setScene(scene: Object3D, camera: Camera, boundsReady = false) {
+    if (!boundsReady) {
+      this.prepareBounds(scene, () => this.assignBoundsSync(scene));
+    }
     this.tracedScene = scene as Scene;
-    this.assignBoundsSync(scene);
+    this.beginTraceClock();
     this.tracer?.setScene(scene as Scene, camera);
+    this.syncIrradianceKernel();
   }
 
   async setSceneAsync(scene: Object3D, camera: Camera) {
-    await this.assignBounds(scene);
-    this.setScene(scene, camera);
+    await this.prepareBounds(scene, () => this.assignBounds(scene));
+    this.setScene(scene, camera, true);
   }
 
   setCamera(camera: Camera) {
@@ -383,9 +424,24 @@ export class WebGPUPathTracerSession {
     this.sampleMin = 0;
     this.denoiseTile = 0;
     this.denoiseTileCount = 0;
+    this.beginTraceClock();
     this.tracer?.reset();
     this.show(false);
     this.setOpacity(0);
+  }
+
+  noteTraceProgress() {
+    if (this.traceStartedAt === 0) {
+      this.traceStartedAt = performance.now();
+    }
+    if (!this.sawSample && (this.samples > 0 || this.sampleMin > 0)) {
+      this.sawSample = true;
+      this.firstSampleMs = performance.now() - this.traceStartedAt;
+    }
+    if (!this.sawSettled && this.traceSettled) {
+      this.sawSettled = true;
+      this.convergedMs = performance.now() - this.traceStartedAt;
+    }
   }
 
   renderSample() {
@@ -399,8 +455,10 @@ export class WebGPUPathTracerSession {
       if (!this.disposed) {
         this.samples = counts.avg;
         this.sampleMin = counts.min;
+        this.noteTraceProgress();
       }
     });
+    this.noteTraceProgress();
   }
 
   captureDataURL(fileType: string, encoderOptions?: number): string {
@@ -516,6 +574,68 @@ export class WebGPUPathTracerSession {
       unet.tileExecuteWatched = true;
       return unet;
     };
+  }
+
+  private beginTraceClock() {
+    this.traceStartedAt = performance.now();
+    this.sawSample = false;
+    this.sawSettled = false;
+    this.firstSampleMs = null;
+    this.convergedMs = null;
+  }
+
+  private prepareBounds(scene: Object3D, build: () => void|Promise<void>):
+      void|Promise<void> {
+    this.bvhRestored = 0;
+    if (this.bvhCacheEnabled && this.bvhRecords != null) {
+      this.bvhRestored = restoreSceneBvh(scene, this.bvhRecords).restored;
+    }
+    let pending = 0;
+    scene.traverse((object) => {
+      const mesh = object as Mesh;
+      if (mesh.isMesh && mesh.geometry != null &&
+          mesh.geometry.boundsTree == null &&
+          mesh.userData?.pathTracerShadowCatcher !== true) {
+        pending++;
+      }
+    });
+    this.bvhBuilt = pending;
+    const start = performance.now();
+    const result = build();
+    if (result != null &&
+        typeof (result as Promise<void>).then === 'function') {
+      return (result as Promise<void>).then(() => {
+        this.bvhBuildMs = performance.now() - start;
+      });
+    }
+    this.bvhBuildMs = performance.now() - start;
+    return undefined;
+  }
+
+  private syncIrradianceKernel() {
+    const tracer = this.tracer as IrradianceKernelTracer | null;
+    if (tracer == null || this.state !== 'ready') {
+      return;
+    }
+    if (this.irradianceUpload == null) {
+      uninstallIrradianceKernel(tracer);
+      return;
+    }
+    try {
+      const kernel = installIrradianceKernel(tracer);
+      if (this.irradianceUploadedGeneration !== this.irradianceGeneration) {
+        uploadIrradianceKernel(kernel, this.irradianceUpload);
+        this.irradianceUploadedGeneration = this.irradianceGeneration;
+        return;
+      }
+      kernel.cacheRead = this.irradianceUpload.read ? 1 : 0;
+      kernel.cacheWrite = this.irradianceUpload.write ? 1 : 0;
+    } catch (error) {
+      console.warn(
+          '[model-viewer] Path tracer irradiance cache could not attach. Tracing continues without it.',
+          error);
+      uninstallIrradianceKernel(tracer);
+    }
   }
 
   private assignBoundsSync(scene: Object3D) {
