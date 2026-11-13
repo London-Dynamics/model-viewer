@@ -338,6 +338,9 @@
                         path-tracer-denoise-sigma="5"
                         path-tracer-denoise-threshold="0.1"
                         path-tracer-denoise-k-sigma="1"
+                        path-tracer-cache-bvh
+                        path-tracer-cache-irradiance
+                        path-tracer-cache-materials
                         field-of-view="30deg"
                         shadow-mode="soft-shadow"
                         src="https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/LD_Car1.glb"
@@ -420,6 +423,74 @@
                             Load
                           </button>
                         </div>
+                        <details class="ld-path-tracer-control-box" open>
+                          <summary>Path tracer cache</summary>
+                          <div class="ld-path-tracer-control-grid">
+                            <label class="justify-end">
+                              BVH
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-bvh" type="checkbox" checked />
+                                Enabled
+                              </span>
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-load-bvh" type="checkbox" checked />
+                                Load at start
+                              </span>
+                            </label>
+                            <label class="justify-end">
+                              Irradiance
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-irradiance" type="checkbox" checked />
+                                Enabled
+                              </span>
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-load-irradiance" type="checkbox" checked />
+                                Load at start
+                              </span>
+                            </label>
+                            <label class="justify-end">
+                              Materials
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-materials" type="checkbox" checked />
+                                Enabled
+                              </span>
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-load-materials" type="checkbox" checked />
+                                Load at start
+                              </span>
+                            </label>
+                            <label class="justify-end">
+                              Fingerprint
+                              <span class="inline-flex items-center gap-2">
+                                <input id="path-tracer-cache-verify" type="checkbox" />
+                                Check GLB / HDRI
+                              </span>
+                            </label>
+                            <label>
+                              Cache URL
+                              <input id="path-tracer-cache-url" type="text" placeholder="https://…/cache.ldpt" />
+                            </label>
+                            <label>
+                              Cache file
+                              <input id="path-tracer-cache-file" type="file" accept=".ldpt,application/octet-stream" />
+                            </label>
+                            <label>
+                              Browser storage key
+                              <input id="path-tracer-cache-idb-key" type="text" />
+                            </label>
+                          </div>
+                          <div class="flex flex-wrap gap-2 pt-2">
+                            <button id="path-tracer-cache-load-url" type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">Load URL</button>
+                            <button id="path-tracer-cache-save-file" type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">Save file</button>
+                            <button id="path-tracer-cache-save-idb" type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">Save to browser</button>
+                            <button id="path-tracer-cache-load-idb" type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500">Load from browser</button>
+                            <button id="path-tracer-cache-clear-all" type="button" class="rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">Clear all</button>
+                            <button id="path-tracer-cache-clear-bvh" type="button" class="rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">Clear BVH</button>
+                            <button id="path-tracer-cache-clear-irradiance" type="button" class="rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">Clear irradiance</button>
+                            <button id="path-tracer-cache-clear-materials" type="button" class="rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-900 ring-1 ring-gray-300 hover:bg-gray-50">Clear materials</button>
+                          </div>
+                          <pre id="path-tracer-cache-status" class="mt-2 text-xs whitespace-pre-wrap">Cache idle</pre>
+                        </details>
                         <details class="ld-path-tracer-control-box">
                           <summary>Camera settings</summary>
                           <div class="ld-path-tracer-control-grid">
@@ -1516,6 +1587,16 @@
                         modelViewer.getAttribute('environment-image') ||
                         DEFAULT_TEST_CASE.environmentImage ||
                         '';
+                      const formatMs = (value) =>
+                        value == null ? '—' : `${Math.round(value)} ms`;
+                      const formatBytes = (value) => {
+                        if (!value) return '0 B';
+                        if (value < 1024) return `${value} B`;
+                        if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+                        return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+                      };
+                      const cacheStatus = () =>
+                        modelViewer.getPathTracerCacheStatus();
                       createPerformanceAnalyser({
                         target: modelViewer,
                         mount: performanceAnalyserMount,
@@ -1553,8 +1634,137 @@
                                 )
                               ),
                           },
+                          {
+                            label: 'BVH build',
+                            read: () => formatMs(cacheStatus().timings.bvhBuildMs),
+                          },
+                          {
+                            label: 'First sample',
+                            read: () => formatMs(cacheStatus().timings.firstSampleMs),
+                          },
+                          {
+                            label: 'Converged',
+                            read: () => formatMs(cacheStatus().timings.convergedMs),
+                          },
                         ],
                       });
+                      const cacheDb = () =>
+                        new Promise((resolve, reject) => {
+                          const request = indexedDB.open('ld-path-tracer-cache', 1);
+                          request.onupgradeneeded = () => {
+                            request.result.createObjectStore('files');
+                          };
+                          request.onsuccess = () => resolve(request.result);
+                          request.onerror = () => reject(request.error);
+                        });
+                      const renderCacheStatus = () => {
+                        const status = cacheStatus();
+                        const node = document.querySelector('#path-tracer-cache-status');
+                        if (node == null) return;
+                        const load = status.lastLoad;
+                        node.textContent = [
+                          `BVH build ${formatMs(status.timings.bvhBuildMs)} (restored ${status.timings.bvhRestored}, built ${status.timings.bvhBuilt})`,
+                          `First sample ${formatMs(status.timings.firstSampleMs)}`,
+                          `Converged ${formatMs(status.timings.convergedMs)}`,
+                          `Sizes bvh ${formatBytes(status.sizes.bvh)}, irradiance ${formatBytes(status.sizes.irradiance)}, materials ${formatBytes(status.sizes.materials)}`,
+                          load == null
+                            ? 'No cache file loaded'
+                            : `Last load ${load.accepted ? 'accepted' : 'ignored'} (${load.reason}), applied ${load.applied.join(', ') || 'none'}`,
+                          status.flags.verifyFingerprint
+                            ? 'Fingerprint check on'
+                            : 'Fingerprint check off',
+                        ].join('\n');
+                      };
+                      const bindCacheFlag = (id, property, attribute) => {
+                        const input = document.querySelector(id);
+                        input.checked = Boolean(modelViewer[property]);
+                        input.addEventListener('change', () => {
+                          modelViewer[property] = input.checked;
+                          if (attribute) {
+                            if (input.checked) modelViewer.setAttribute(attribute, '');
+                            else modelViewer.removeAttribute(attribute);
+                          }
+                          renderCacheStatus();
+                        });
+                      };
+                      bindCacheFlag('#path-tracer-cache-bvh', 'pathTracerCacheBvh', 'path-tracer-cache-bvh');
+                      bindCacheFlag('#path-tracer-cache-irradiance', 'pathTracerCacheIrradiance', 'path-tracer-cache-irradiance');
+                      bindCacheFlag('#path-tracer-cache-materials', 'pathTracerCacheMaterials', 'path-tracer-cache-materials');
+                      bindCacheFlag('#path-tracer-cache-load-bvh', 'pathTracerCacheLoadBvh', 'path-tracer-cache-load-bvh');
+                      bindCacheFlag('#path-tracer-cache-load-irradiance', 'pathTracerCacheLoadIrradiance', 'path-tracer-cache-load-irradiance');
+                      bindCacheFlag('#path-tracer-cache-load-materials', 'pathTracerCacheLoadMaterials', 'path-tracer-cache-load-materials');
+                      bindCacheFlag('#path-tracer-cache-verify', 'pathTracerCacheVerify', 'path-tracer-cache-verify');
+                      const cacheUrlInput = document.querySelector('#path-tracer-cache-url');
+                      const cacheKeyInput = document.querySelector('#path-tracer-cache-idb-key');
+                      cacheKeyInput.value = modelViewer.getAttribute('src') || 'path-tracer-cache';
+                      document.querySelector('#path-tracer-cache-load-url').addEventListener('click', async () => {
+                        const url = cacheUrlInput.value.trim();
+                        if (url === '') return;
+                        modelViewer.pathTracerCacheUrl = url;
+                        try {
+                          await modelViewer.loadPathTracerCache(url);
+                          renderCacheStatus();
+                        } catch (error) {
+                          document.querySelector('#path-tracer-cache-status').textContent = String(error);
+                        }
+                      });
+                      document.querySelector('#path-tracer-cache-file').addEventListener('change', async (event) => {
+                        const file = event.target.files && event.target.files[0];
+                        if (file == null) return;
+                        try {
+                          await modelViewer.loadPathTracerCache(file);
+                          renderCacheStatus();
+                        } catch (error) {
+                          document.querySelector('#path-tracer-cache-status').textContent = String(error);
+                        }
+                      });
+                      document.querySelector('#path-tracer-cache-save-file').addEventListener('click', async () => {
+                        const blob = await modelViewer.exportPathTracerCache();
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.download = 'path-tracer-cache.ldpt';
+                        link.click();
+                        URL.revokeObjectURL(link.href);
+                        renderCacheStatus();
+                      });
+                      document.querySelector('#path-tracer-cache-save-idb').addEventListener('click', async () => {
+                        const db = await cacheDb();
+                        const blob = await modelViewer.exportPathTracerCache();
+                        await new Promise((resolve, reject) => {
+                          const tx = db.transaction('files', 'readwrite');
+                          tx.objectStore('files').put(blob, cacheKeyInput.value || 'path-tracer-cache');
+                          tx.oncomplete = resolve;
+                          tx.onerror = () => reject(tx.error);
+                        });
+                        db.close();
+                        renderCacheStatus();
+                      });
+                      document.querySelector('#path-tracer-cache-load-idb').addEventListener('click', async () => {
+                        const db = await cacheDb();
+                        const blob = await new Promise((resolve, reject) => {
+                          const tx = db.transaction('files', 'readonly');
+                          const request = tx.objectStore('files').get(cacheKeyInput.value || 'path-tracer-cache');
+                          request.onsuccess = () => resolve(request.result);
+                          request.onerror = () => reject(request.error);
+                        });
+                        db.close();
+                        if (blob == null) {
+                          document.querySelector('#path-tracer-cache-status').textContent = 'Nothing stored for that key';
+                          return;
+                        }
+                        await modelViewer.loadPathTracerCache(blob);
+                        renderCacheStatus();
+                      });
+                      const clearCache = (types) => {
+                        modelViewer.clearPathTracerCache(types);
+                        renderCacheStatus();
+                      };
+                      document.querySelector('#path-tracer-cache-clear-all').addEventListener('click', () => clearCache());
+                      document.querySelector('#path-tracer-cache-clear-bvh').addEventListener('click', () => clearCache('bvh'));
+                      document.querySelector('#path-tracer-cache-clear-irradiance').addEventListener('click', () => clearCache('irradiance'));
+                      document.querySelector('#path-tracer-cache-clear-materials').addEventListener('click', () => clearCache('materials'));
+                      window.setInterval(renderCacheStatus, 500);
+                      renderCacheStatus();
                       modelViewer.addEventListener(
                         'camera-change',
                         handleServerAICameraChange
