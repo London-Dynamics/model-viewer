@@ -1239,7 +1239,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.markSceneDirty();
     }
 
-    this.pathTracer?.updateMaterials();
+    this.updateTracedMaterials();
     if (materialState !== '' && geometryState === this.shadowCatcherState) {
       this.pathTracer?.reset();
       this.requestRender();
@@ -1898,7 +1898,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const lightsChanged = this.lightVisibilityKey !== '';
     this.lightVisibilityKey = key;
     this.pathTracer.updateLights();
-    this.pathTracer.updateMaterials();
+    this.updateTracedMaterials();
     if (lightsChanged) {
       this.invalidatePathTracerCache('environment');
     }
@@ -1928,6 +1928,20 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
     this.holdTraceUntil = performance.now() + PATH_TRACER_SETTLE_MS;
+  }
+
+  /**
+   * Shader materials have no colour. They are detached while the scene is
+   * built, then restored, and a later material edit walks the live scene.
+   * Packing one of them reads `color.r` and throws before the retrace starts.
+   */
+  private updateTracedMaterials() {
+    const detached = this.detachUntraceable();
+    try {
+      this.pathTracer?.updateMaterials();
+    } finally {
+      this.restoreDetached(detached);
+    }
   }
 
   private detachUntraceable():
@@ -2092,7 +2106,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.session.setBvhCache(null, false);
     }
     if (reason === 'material-swap' || reason === 'material-adjust') {
-      this.pathTracer?.updateMaterials();
+      this.updateTracedMaterials();
     }
     return cleared;
   }
