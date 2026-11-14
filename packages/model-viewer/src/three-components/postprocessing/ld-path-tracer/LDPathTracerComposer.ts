@@ -1559,6 +1559,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.camera.matrixWorld.elements.join(','),
       this.camera.projectionMatrix.elements.join(','),
       this.shadowCatcher?.matrixWorld.elements.join(',') ?? '',
+      this.subjectCoverageSignature(),
     ].join('|');
     if (key === this.coverageKey) {
       return;
@@ -1583,11 +1584,69 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.coverageMeasure = measured;
     this.coverageVisible = measured.crop;
     this.coverageCrop = measured.crop;
-    // An empty read is usually the model not being ready yet. Don't keep that
-    // result, or the crop stays full-frame until the camera moves.
-    if (measured.maskPixels === 0) {
+    // An empty read is usually the model not being ready yet. A read during
+    // the BVH build sees whichever meshes are still attached, and locking
+    // that crop makes a cached load (which finishes the build first) trace
+    // a different rectangle from an uncached load. Both cases remeasure.
+    if (measured.maskPixels === 0 || this.sceneBuildInFlight) {
       this.coverageKey = '';
     }
+  }
+
+  /**
+   * Meshes the subject crop is allowed to see. Shader materials, the
+   * environment model, and the soft-shadow planes paint solid white under
+   * the override material and stretch the crop. They stay out of the mask
+   * and out of this signature, so a cached load and an uncached load measure
+   * the same pixels once the traceable meshes are in the scene.
+   */
+  private isExcludedFromSubjectCoverage(object: Object3D): boolean {
+    if (this.isShadowReceiver(object)) {
+      return true;
+    }
+    if (this.shouldDetachFromTrace(object)) {
+      return true;
+    }
+    const environment = this.scene?.environmentRoot;
+    if (environment != null &&
+        (object === environment || this.containsObject(environment, object))) {
+      return true;
+    }
+    return false;
+  }
+
+  private subjectCoverageSignature(): string {
+    const scene = this.scene;
+    if (scene == null) {
+      return '';
+    }
+    const ids: string[] = [];
+    scene.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh || !object.visible ||
+          this.isExcludedFromSubjectCoverage(object)) {
+        return;
+      }
+      ids.push(mesh.uuid);
+    });
+    ids.sort();
+    return ids.join(',');
+  }
+
+  private hideExcludedCoverage(): () => void {
+    const hidden: Object3D[] = [];
+    this.scene?.traverse((object) => {
+      if (!object.visible || !this.isExcludedFromSubjectCoverage(object)) {
+        return;
+      }
+      object.visible = false;
+      hidden.push(object);
+    });
+    return () => {
+      for (const object of hidden) {
+        object.visible = true;
+      }
+    };
   }
 
   private renderCoverageMask(fullWidth: number, fullHeight: number): Uint8Array
@@ -1634,6 +1693,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     // The soft-shadow plane is not part of the trace. Painted solid, it
     // stretches the crop from the product down to the near edge of the shadow.
     const restoreShadowReceivers = this.hideShadowReceivers();
+    const restoreExcluded = this.hideExcludedCoverage();
     try {
       renderer.render(scene, camera);
       renderer.readRenderTargetPixels(
@@ -1644,6 +1704,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           maskHeight,
           this.coveragePixels);
     } finally {
+      restoreExcluded();
       restoreShadowReceivers();
       camera.layers.mask = layerMask;
       scene.overrideMaterial = previousOverride;

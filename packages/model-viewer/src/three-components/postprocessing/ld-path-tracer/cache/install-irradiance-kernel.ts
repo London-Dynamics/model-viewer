@@ -13,21 +13,12 @@
  * limitations under the License.
  */
 
-import {LDIrradianceCacheMegaKernel} from './LDIrradianceCacheMegaKernel.js';
+import {LDIrradianceCacheMaterialKernel} from './LDIrradianceCacheMaterialKernel.js';
 
 interface CacheKernel {
-  envInfo: unknown;
-  backgroundInfo: unknown;
-  lightsInfo: unknown;
   bvhData: unknown;
   material: unknown;
-  misEnabled: number;
   filterGlossy: number;
-  clampDirect: number;
-  clampIndirect: number;
-  transmissiveBackground: number;
-  textures: unknown;
-  textureSampler: unknown;
   maxBounces: number;
   maxTransparentBounces: number;
   maxSamples: number;
@@ -38,21 +29,21 @@ interface CacheKernel {
   cacheCellSize: number;
   cacheMinSamples: number;
   cacheAttribute: {array: Float32Array; needsUpdate: boolean;};
-  dispose: () => void;
 }
 
-interface MegaKernelBackend {
-  kernel: CacheKernel;
+interface WavefrontBackend {
+  materialKernel?: CacheKernel;
   rebuild: () => void;
 }
 
 export interface IrradianceKernelTracer {
   useMegakernel: (enabled: boolean) => void;
-  _pathTracer: MegaKernelBackend;
+  _pathTracer: WavefrontBackend;
   _renderer?: {
     getArrayBufferAsync?: (attribute: unknown) => Promise<ArrayBuffer>,
   };
   _ldIrradianceKernel?: CacheKernel|null;
+  _ldStockMaterialKernel?: CacheKernel|null;
 }
 
 export interface IrradianceKernelUpload {
@@ -64,46 +55,40 @@ export interface IrradianceKernelUpload {
   write: boolean;
 }
 
-const isCacheKernel = (kernel: CacheKernel|null|undefined): boolean =>
-    kernel != null && kernel.cacheAttribute != null &&
-    typeof kernel.cacheRead === 'number';
-
 /**
- * The stock tracer's wavefront backend has no extension point for a
- * world-space cache. While the irradiance cache is on we switch to the
- * megakernel and replace that one kernel with the patched copy. Turning the
- * cache off restores the wavefront backend.
+ * The stock wavefront material kernel has no world-space cache. While the
+ * irradiance cache is on, that one kernel is swapped for a copy that reads
+ * the grid on diffuse primary hits and ends those paths. The rest of the
+ * wavefront pipeline stays in place. The grid is not updated from here.
  */
 export const installIrradianceKernel =
     (tracer: IrradianceKernelTracer): CacheKernel => {
-      const current = tracer._pathTracer.kernel;
-      if (tracer._ldIrradianceKernel != null &&
-          tracer._pathTracer.kernel === tracer._ldIrradianceKernel) {
-        return tracer._ldIrradianceKernel;
+      const installed = tracer._ldIrradianceKernel;
+      if (installed != null &&
+          tracer._pathTracer.materialKernel === installed) {
+        return installed;
       }
-      if (!isCacheKernel(current)) {
-        tracer.useMegakernel(true);
+      if (tracer._pathTracer.materialKernel == null) {
+        tracer.useMegakernel(false);
       }
-      const stock = tracer._pathTracer.kernel;
-      const next = new LDIrradianceCacheMegaKernel() as CacheKernel;
-      next.envInfo = stock.envInfo;
-      next.backgroundInfo = stock.backgroundInfo;
-      next.lightsInfo = stock.lightsInfo;
+      const stock = tracer._pathTracer.materialKernel;
+      if (stock == null) {
+        throw new Error(
+            'Path tracer irradiance cache needs the wavefront backend.');
+      }
+      const next = new LDIrradianceCacheMaterialKernel() as CacheKernel;
       next.bvhData = stock.bvhData;
       next.material = stock.material;
-      next.misEnabled = stock.misEnabled;
       next.filterGlossy = stock.filterGlossy;
-      next.clampDirect = stock.clampDirect;
-      next.clampIndirect = stock.clampIndirect;
-      next.transmissiveBackground = stock.transmissiveBackground;
-      next.textures = stock.textures;
-      next.textureSampler = stock.textureSampler;
       next.maxBounces = stock.maxBounces;
       next.maxTransparentBounces = stock.maxTransparentBounces;
       next.maxSamples = stock.maxSamples;
       next.seed = stock.seed;
-      stock.dispose();
-      tracer._pathTracer.kernel = next;
+      if (tracer._ldStockMaterialKernel == null ||
+          tracer._ldStockMaterialKernel === installed) {
+        tracer._ldStockMaterialKernel = stock;
+      }
+      tracer._pathTracer.materialKernel = next;
       tracer._pathTracer.rebuild();
       tracer._ldIrradianceKernel = next;
       return next;
@@ -114,8 +99,14 @@ export const uninstallIrradianceKernel =
       if (tracer._ldIrradianceKernel == null) {
         return;
       }
+      const stock = tracer._ldStockMaterialKernel;
       tracer._ldIrradianceKernel = null;
-      tracer.useMegakernel(false);
+      tracer._ldStockMaterialKernel = null;
+      if (stock == null || tracer._pathTracer.materialKernel == null) {
+        return;
+      }
+      tracer._pathTracer.materialKernel = stock;
+      tracer._pathTracer.rebuild();
     };
 
 export const uploadIrradianceKernel = (
