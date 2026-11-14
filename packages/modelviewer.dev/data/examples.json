@@ -346,6 +346,16 @@
     ]
   },
   {
+    "name": "LD Path Tracer Beauty",
+    "htmlName": "ld_path_tracer_beauty",
+    "examples": [
+      {
+        "htmlId": "beauty",
+        "name": "Cache beauty demo"
+      }
+    ]
+  },
+  {
     "name": "LD Path Tracer Upstream",
     "htmlName": "ld_path_tracer_upstream",
     "examples": [
