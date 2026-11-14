@@ -1559,6 +1559,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.camera.matrixWorld.elements.join(','),
       this.camera.projectionMatrix.elements.join(','),
       this.shadowCatcher?.matrixWorld.elements.join(',') ?? '',
+      this.scene.target.matrixWorld.elements
+          .map((value) => Math.round(value * 1e3))
+          .join(','),
       this.subjectCoverageSignature(),
     ].join('|');
     if (key === this.coverageKey) {
@@ -1581,6 +1584,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         buffer.x,
         buffer.y,
         coverageMarginPixels(buffer.x, buffer.y));
+    // The raster mask can lock a strip of the subject: a restored BVH and a
+    // freshly built one do not hit the same pixels. Project the traceable
+    // bounds instead, so a cached load and an uncached load share one crop.
+    const projected = this.projectSubjectCrop(buffer.x, buffer.y);
+    if (projected != null) {
+      measured.crop = projected;
+      measured.tracedPixels = projected.width * projected.height;
+    }
     this.coverageMeasure = measured;
     this.coverageVisible = measured.crop;
     this.coverageCrop = measured.crop;
@@ -1600,6 +1611,86 @@ export class LDPathTracerComposer implements EffectComposerInterface {
    * and out of this signature, so a cached load and an uncached load measure
    * the same pixels once the traceable meshes are in the scene.
    */
+  private projectSubjectCrop(fullWidth: number, fullHeight: number): TraceCrop|
+      null {
+    const camera = this.camera;
+    const scene = this.scene;
+    if (!(camera instanceof PerspectiveCamera) || scene == null ||
+        fullWidth < 1 || fullHeight < 1) {
+      return null;
+    }
+    camera.updateMatrixWorld();
+    scene.updateMatrixWorld(true);
+    const corner = new Vector3();
+    let minX = fullWidth;
+    let minY = fullHeight;
+    let maxX = 0;
+    let maxY = 0;
+    let count = 0;
+    scene.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh || !object.visible || mesh.geometry == null ||
+          this.isExcludedFromSubjectCoverage(object)) {
+        return;
+      }
+      const position = mesh.geometry.getAttribute('position');
+      if (position == null || position.count < 1) {
+        return;
+      }
+      let lx0 = Infinity;
+      let ly0 = Infinity;
+      let lz0 = Infinity;
+      let lx1 = -Infinity;
+      let ly1 = -Infinity;
+      let lz1 = -Infinity;
+      for (let i = 0; i < position.count; i++) {
+        const x = position.getX(i);
+        const y = position.getY(i);
+        const z = position.getZ(i);
+        if (x < lx0) lx0 = x;
+        if (y < ly0) ly0 = y;
+        if (z < lz0) lz0 = z;
+        if (x > lx1) lx1 = x;
+        if (y > ly1) ly1 = y;
+        if (z > lz1) lz1 = z;
+      }
+      const xs = [lx0, lx1];
+      const ys = [ly0, ly1];
+      const zs = [lz0, lz1];
+      for (const x of xs) {
+        for (const y of ys) {
+          for (const z of zs) {
+            corner.set(x, y, z).applyMatrix4(mesh.matrixWorld).project(camera);
+            if (corner.z < -1 || corner.z > 1) {
+              continue;
+            }
+            const px = (corner.x * 0.5 + 0.5) * fullWidth;
+            const py = (1 - (corner.y * 0.5 + 0.5)) * fullHeight;
+            minX = Math.min(minX, px);
+            minY = Math.min(minY, py);
+            maxX = Math.max(maxX, px);
+            maxY = Math.max(maxY, py);
+            count++;
+          }
+        }
+      }
+    });
+    if (count === 0 || maxX <= minX || maxY <= minY) {
+      return null;
+    }
+    const margin = coverageMarginPixels(fullWidth, fullHeight);
+    const left = Math.max(0, Math.floor(minX - margin));
+    const top = Math.max(0, Math.floor(minY - margin));
+    const right = Math.min(fullWidth, Math.ceil(maxX + margin));
+    const bottom = Math.min(fullHeight, Math.ceil(maxY + margin));
+    const crop = {x: left, y: top, width: right - left, height: bottom - top};
+    if (crop.width < 1 || crop.height < 1 ||
+        crop.width * crop.height >= fullWidth * fullHeight * 0.92) {
+      return null;
+    }
+    return crop;
+  }
+
   private isExcludedFromSubjectCoverage(object: Object3D): boolean {
     if (this.isShadowReceiver(object)) {
       return true;
@@ -1631,6 +1722,23 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     });
     ids.sort();
     return ids.join(',');
+  }
+
+  private disableCoverageFrustumCulling(): () => void {
+    const changed: Array<{mesh: Mesh; frustumCulled: boolean}> = [];
+    this.scene?.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh || mesh.frustumCulled === false) {
+        return;
+      }
+      changed.push({mesh, frustumCulled: mesh.frustumCulled});
+      mesh.frustumCulled = false;
+    });
+    return () => {
+      for (const entry of changed) {
+        entry.mesh.frustumCulled = entry.frustumCulled;
+      }
+    };
   }
 
   private hideExcludedCoverage(): () => void {
@@ -1685,6 +1793,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     renderer.getViewport(this.shadowViewport);
 
     renderer.setRenderTarget(this.coverageTarget);
+    // The path tracer presents into the previous crop. Leaving that viewport
+    // in place clips the next mask to the strip, and the crop then locks there.
+    renderer.setViewport(0, 0, maskWidth, maskHeight);
+    renderer.setScissorTest(false);
     renderer.setClearColor(0x000000, 1);
     renderer.autoClear = true;
     scene.background = null;
@@ -1694,6 +1806,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     // stretches the crop from the product down to the near edge of the shadow.
     const restoreShadowReceivers = this.hideShadowReceivers();
     const restoreExcluded = this.hideExcludedCoverage();
+    const restoreCulling = this.disableCoverageFrustumCulling();
     try {
       renderer.render(scene, camera);
       renderer.readRenderTargetPixels(
@@ -1704,6 +1817,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           maskHeight,
           this.coveragePixels);
     } finally {
+      restoreCulling();
       restoreExcluded();
       restoreShadowReceivers();
       camera.layers.mask = layerMask;
