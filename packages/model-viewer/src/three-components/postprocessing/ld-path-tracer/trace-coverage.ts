@@ -44,6 +44,8 @@ export interface TraceCoverageMeasure {
   maskPixels: number;
   tracedPixels: number;
   fullPixels: number;
+  /** Traced pixels as a percentage of the canvas. 100 when the crop is full frame. */
+  areaPercent?: number;
 }
 
 export const coverageMarginPixels =

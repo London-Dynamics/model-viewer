@@ -1,4 +1,5 @@
 // @ts-nocheck
+// clang-format off
 /* @license
  * Copyright 2026 London Dynamics. All Rights Reserved.
  * The body is the three-gpu-pathtracer 0.0.27 wavefront MaterialKernel
@@ -18,11 +19,13 @@ import {ComputeKernel} from 'three-gpu-pathtracer/src/webgpu/compute/ComputeKern
 import {uniform, storage, textureStore, globalId} from 'three/tsl';
 import {proxy, proxyFn, rayStruct, wgslTagFn} from 'three-mesh-bvh/webgpu';
 import {rngInit, rand1, rand2, RNG_INDEX_RAY_JITTER, RNG_INDEX_ALPHA_TEST, RNG_INDEX_RUSSIAN_ROULETTE, RNG_INDEX_DISPERSION_WAVELENGTH} from 'three-gpu-pathtracer/src/webgpu/nodes/random.wgsl.js';
+import {sampleHemisphereFn} from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
+
 import {rayDataStruct, rayQueueAtomicStruct, pixelQueueStruct} from 'three-gpu-pathtracer/src/webgpu/compute/wavefront/structs.js';
 import {SAMPLE_ACTIVE_FLAG, SAMPLE_COUNT_MASK, SAMPLE_DISPATCHED_FLAG} from 'three-gpu-pathtracer/src/webgpu/constants.js';
 import {applyDispersionFunc, dispersionColorWeightFunc, DISPERSION_MIN_WAVELENGTH, DISPERSION_MAX_WAVELENGTH, transmissionAttenuationFunc} from 'three-gpu-pathtracer/src/webgpu/nodes/material.wgsl.js';
 import {isTerminatingScatterFunc, offsetRayOriginFunc} from 'three-gpu-pathtracer/src/webgpu/nodes/utils.wgsl.js';
-import {LIGHT_EPSILON} from 'three-gpu-pathtracer/src/webgpu/nodes/lights.wgsl.js';
+import {ENVIRONMENT_LIGHT_TYPE, LIGHT_EPSILON, LIGHT_FAR_DISTANCE} from 'three-gpu-pathtracer/src/webgpu/nodes/lights.wgsl.js';
 
 import {IRRADIANCE_PATH_RECORDS, IRRADIANCE_PATH_SLOTS, IRRADIANCE_SLOT_COUNT} from './path-tracer-irradiance-cache.js';
 
@@ -203,17 +206,67 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 				} else {
 
 					// evaluate the surface staged by LogicKernel
+
+					// Catcher continuation. Logic asked for the next probe or
+					// for the reflection ray. The floor albedo is never used.
+					if ( input.resultColor.a < -2.5 ) {
+
+						let origin = ${ offsetRayOriginFunc }( input.origin, input.direction, input.normal );
+						let rayIndex = atomicAdd( &rayQueue.length, 1u );
+						rayQueue.elements[ rayIndex ].origin = origin;
+						rayQueue.elements[ rayIndex ].direction = input.direction;
+						rayQueue.elements[ rayIndex ].pixelIndex = input.pixelIndex;
+						rayQueue.elements[ rayIndex ].currentBounce = 1u;
+						rayQueue.elements[ rayIndex ].seed = input.seed;
+						rayQueue.elements[ rayIndex ].alphaDepth = 0u;
+						rayQueue.elements[ rayIndex ].maxDist = 0.0;
+						rayDataStorage[ index ].origin = origin;
+						rayDataStorage[ index ].currentBounce = 1u;
+						rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -1.5 + input.maxDist );
+						rayDataStorage[ index ].throughputColor = input.throughputColor;
+						rayDataStorage[ index ].scatterColor = vec3f( 1.0 );
+						rayDataStorage[ index ].scatterPdf = 1.0;
+						rayDataStorage[ index ].emission = vec3f( 0.0 );
+						rayDataStorage[ index ].lightPdf = 0.0;
+						rayDataStorage[ index ].isFullyTransmissive = 0u;
+						rayDataStorage[ index ].rayIntersectionIndex = i32( rayIndex );
+						rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+						rayDataStorage[ index ].alphaDepth = 0u;
+						return;
+
+					}
+
+					if ( input.resultColor.a < -1.6 && input.resultColor.a > -2.5 ) {
+
+						let origin = ${ offsetRayOriginFunc }( input.origin, input.lightDirection, input.normal );
+						let shadowIndex = atomicAdd( &shadowRayQueue.length, 1u );
+						shadowRayQueue.elements[ shadowIndex ].origin = origin;
+						shadowRayQueue.elements[ shadowIndex ].direction = input.lightDirection;
+						shadowRayQueue.elements[ shadowIndex ].pixelIndex = input.pixelIndex;
+						shadowRayQueue.elements[ shadowIndex ].currentBounce = 0u;
+						shadowRayQueue.elements[ shadowIndex ].seed = input.seed;
+						shadowRayQueue.elements[ shadowIndex ].alphaDepth = input.alphaDepth;
+						shadowRayQueue.elements[ shadowIndex ].maxDist = input.lightDist * ( 1.0 - ${ LIGHT_EPSILON } );
+						rayDataStorage[ index ].shadowRayIntersectionIndex = i32( shadowIndex );
+						rayDataStorage[ index ].rayIntersectionIndex = -1;
+						return;
+
+					}
+
 					let indexUV = vec2u( input.pixelIndex >> 16, input.pixelIndex & 0xFFFF );
 					${ rngInit }( indexUV, input.seed, input.currentBounce + input.alphaDepth );
 
 					let objectInfo = transforms[ u32( input.objectIndex ) ];
 					var materialInfo = ( *materials )[ objectInfo.materialIndex ];
 
-					// A matte primary hit is a shadow catcher. Negative alpha marks it.
-					let isMatte = materialInfo.matte != 0 && input.currentBounce == 0u;
-					if ( isMatte ) {
+					// A later hit on the floor is a holdout, not a shaded card.
+					if ( materialInfo.matte != 0 && input.currentBounce > 0u ) {
 
-						rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -1.0 );
+						rayDataStorage[ index ].throughputColor = vec3f( 0.0 );
+						rayDataStorage[ index ].scatterPdf = 0.0;
+						rayDataStorage[ index ].lightPdf = 0.0;
+						rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+						return;
 
 					}
 
@@ -226,11 +279,83 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					vertexData.tangent = vec4f( ( objectInfo.matrixWorld * vec4f( vertexData.tangent.xyz, 0.0 ) ).xyz, vertexData.tangent.w );
 					vertexData.position = objectInfo.matrixWorld * vertexData.position;
 
+
 					let view = - input.direction;
+
+					// Primary hit on the holdout. Accumulate nothing from the
+					// floor's own colour. The first probe is the light Logic
+					// already chose, unless that light is the environment, in
+					// which case a cosine sample stands in so the HDR is not
+					// counted twice.
+					if ( materialInfo.matte != 0 && input.currentBounce == 0u && input.resultColor.a >= 0.0 ) {
+
+						var nrm = normalize( vertexData.normal.xyz );
+						if ( nrm.y < 0.0 ) {
+
+							nrm = -nrm;
+
+						}
+
+						rayDataStorage[ index ].origin = vertexData.position.xyz;
+						rayDataStorage[ index ].normal = nrm;
+						rayDataStorage[ index ].emission = vec3f( 0.0 );
+						rayDataStorage[ index ].scatterColor = vec3f( 0.0 );
+						rayDataStorage[ index ].alphaDepth = 0u;
+						rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -2.0 );
+						rayDataStorage[ index ].minPdf = 1.0;
+
+						var dir = input.lightDirection;
+						var emission = vec3f( 0.0 );
+						var lightType = -1;
+						var pdf = 1.0;
+						var dist = ${ LIGHT_FAR_DISTANCE };
+						let analytic = input.lightPdf > 0.0 && input.lightType != ${ ENVIRONMENT_LIGHT_TYPE };
+						if ( analytic ) {
+
+							let ndotl = max( dot( nrm, input.lightDirection ), 0.0 );
+							if ( ndotl > 0.0 ) {
+
+								dir = input.lightDirection;
+								emission = input.lightEmission * ndotl / input.lightPdf;
+								lightType = input.lightType;
+								pdf = input.lightPdf;
+								dist = input.lightDist;
+
+							}
+
+						}
+
+						if ( lightType < 0 ) {
+
+							dir = ${ sampleHemisphereFn }( nrm, ${ rand2 }( 13u ) );
+
+						}
+
+						rayDataStorage[ index ].lightDirection = dir;
+						rayDataStorage[ index ].lightEmission = emission;
+						rayDataStorage[ index ].lightType = lightType;
+						rayDataStorage[ index ].lightPdf = pdf;
+						rayDataStorage[ index ].lightDist = dist;
+
+						let origin = ${ offsetRayOriginFunc }( vertexData.position.xyz, dir, nrm );
+						let shadowIndex = atomicAdd( &shadowRayQueue.length, 1u );
+						shadowRayQueue.elements[ shadowIndex ].origin = origin;
+						shadowRayQueue.elements[ shadowIndex ].direction = dir;
+						shadowRayQueue.elements[ shadowIndex ].pixelIndex = input.pixelIndex;
+						shadowRayQueue.elements[ shadowIndex ].currentBounce = 0u;
+						shadowRayQueue.elements[ shadowIndex ].seed = input.seed;
+						shadowRayQueue.elements[ shadowIndex ].alphaDepth = 0u;
+						shadowRayQueue.elements[ shadowIndex ].maxDist = dist * ( 1.0 - ${ LIGHT_EPSILON } );
+						rayDataStorage[ index ].shadowRayIntersectionIndex = i32( shadowIndex );
+						rayDataStorage[ index ].rayIntersectionIndex = -1;
+						return;
+
+					}
+
 
 					// blur glossy surfaces after low-probability bounces to suppress fireflies,
 					// from the Cycles "filter glossy" approach in integrator/surface_shader.h
-					let blurRoughness = sqrt( clamp( 1.0 - filterGlossy * input.minPdf, 0.0, 1.0 ) ) * 0.5;
+					let blurRoughness = sqrt( clamp( 1.0 - filterGlossy * select( input.minPdf, 1.0, input.resultColor.a < 0.0 ), 0.0, 1.0 ) ) * 0.5;
 
 					var surface = ${ getSurfaceRecordFn }( materialInfo, vertexData, input.side, input.normal, view, blurRoughness );
 
@@ -374,7 +499,7 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					// decide termination now so finished paths skip the bounce trace entirely - a
 					// zeroed pdf reads as a terminating scatter in LogicKernel, which still resolves
 					// the surface's emission and NEE before freeing the slot
-					var isTerminated = isMatte || newBounce >= maxBounces || all( scatterRec.color == vec3f( 0.0 ) ) || ${ isTerminatingScatterFunc }( scatterRec );
+					var isTerminated = newBounce >= maxBounces || all( scatterRec.color == vec3f( 0.0 ) ) || ${ isTerminatingScatterFunc }( scatterRec );
 
 					// russian roulette early out:
 					// Matches Cycles path_state_continuation_probability in integrator/path_state.h
@@ -397,7 +522,11 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					// in the logic kernel on the subsequent frame.
 					rayDataStorage[ index ].scatterColor = scatterRec.color;
 					rayDataStorage[ index ].scatterPdf = select( scatterRec.pdf, 0.0, isTerminated );
-					rayDataStorage[ index ].minPdf = min( input.minPdf, scatterRec.pdf );
+					if ( input.resultColor.a >= 0.0 ) {
+
+						rayDataStorage[ index ].minPdf = min( input.minPdf, scatterRec.pdf );
+
+					}
 					rayDataStorage[ index ].isFullyTransmissive = input.isFullyTransmissive & select( 0u, 1u, scatterRec.isTransmissive );
 					rayDataStorage[ index ].emission = surface.emission;
 					rayDataStorage[ index ].currentBounce = newBounce;

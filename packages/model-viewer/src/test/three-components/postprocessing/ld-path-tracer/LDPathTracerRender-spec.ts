@@ -141,7 +141,7 @@ suite('LDPathTracer render integration', function() {
   });
 
   test('applies the floor material from path tracer properties', async () => {
-    element.pathTracerFloor = true;
+    element.pathTracerFloor = 'shadow';
     element.pathTracerFloorColor = '#ff0000';
     element.pathTracerFloorRoughness = 0.35;
     element.pathTracerFloorMetalness = 0.5;
@@ -149,9 +149,13 @@ suite('LDPathTracer render integration', function() {
     await waitFrames(4);
 
     let floor: any = null;
+    let preview: any = null;
     element[$scene].traverse((object) => {
       if (object.name === 'PathTracerShadowCatcher') {
         floor = object;
+      }
+      if (object.name === 'PathTracerFloorPreview') {
+        preview = object;
       }
     });
 
@@ -159,12 +163,16 @@ suite('LDPathTracer render integration', function() {
     expect(floor.visible).to.equal(true);
     expect(floor.layers.test(0)).to.equal(false);
     expect(floor.layers.test(1)).to.equal(true);
+    expect(floor.material.matte).to.equal(true);
     const material = floor!.material;
     expect(material.color.getHexString()).to.equal('ff0000');
     expect(material.roughness).to.be.closeTo(0.35, 1e-4);
     expect(material.metalness).to.be.closeTo(0.5, 1e-4);
-    expect(material.opacity).to.be.closeTo(0.8, 1e-4);
-    expect(material.transparent).to.equal(true);
+    // The holdout stays opaque to rays. floorOpacity scales the effect.
+    expect(material.opacity).to.equal(1);
+    expect(material.transparent).to.equal(false);
+    expect(preview).to.not.equal(null);
+    expect(preview.layers.test(0)).to.equal(true);
   });
 
   test('paints missed rays with the page background color', async () => {

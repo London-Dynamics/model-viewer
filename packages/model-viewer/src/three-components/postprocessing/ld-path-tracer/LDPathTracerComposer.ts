@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Box3, Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
+import {Box3, Camera, CanvasTexture, Color, DirectionalLight, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {PhysicalCamera} from 'three-gpu-pathtracer';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
@@ -29,6 +29,8 @@ import {createIrradianceGrid, decodeIrradiancePayload, encodeIrradiancePayload, 
 import {collectMaterialRecords, diffMaterialWatch, encodeMaterialRecords, MaterialWatchSample, sampleMaterialWatch} from './cache/path-tracer-material-cache.js';
 import {resolvePathTracerRenderScale} from './path-tracer-scale.js';
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
+import {applyShadowStretch, DEFAULT_FLOOR_REFLECTION, effectSupport, effectiveFloorMode, FLOOR_OCCLUSION_SAMPLES, footprintFromBounds, PathTracerFloorMode, rectCorners, screenBoundsOfWorldPoints, traceAreaPercent, unionCrops,} from './floor-matte.js';
+import {PathTracerFloorPreview} from './floor-preview.js';
 import {coverageMarginPixels, expandCropForDenoiseEdge, measureTraceCoverage, TraceCoverageMeasure, TraceCrop,} from './trace-coverage.js';
 import {PATH_TRACER_UNAVAILABLE_EVENT, WebGPUPathTracerSession} from './WebGPUPathTracerSession.js';
 
@@ -243,7 +245,9 @@ export interface PathTracerOptions {
   denoiseSigma: number;
   denoiseThreshold: number;
   denoiseKSigma: number;
-  floor: boolean;
+  floor: PathTracerFloorMode;
+  /** Scales the reflected subject. 0 hides the reflection. */
+  floorReflection: number;
   softShadow: boolean;
   floorColor: string;
   floorRoughness: number;
@@ -282,7 +286,8 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   denoiseSigma: 5,
   denoiseThreshold: 0.1,
   denoiseKSigma: 1,
-  floor: false,
+  floor: 'none',
+  floorReflection: DEFAULT_FLOOR_REFLECTION,
   softShadow: false,
   floorColor: DEFAULT_PATH_TRACER_FLOOR_COLOR,
   floorRoughness: 0.2,
@@ -312,8 +317,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private readonly lastCameraWorldMatrix = new Matrix4();
   private readonly lastCameraProjectionMatrix = new Matrix4();
   private readonly meshWorldMatrices = new Map<string, Matrix4>();
-  private readonly shadowCatcherCenter = new Vector3();
   private shadowCatcher: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
+  private readonly floorPreview = new PathTracerFloorPreview();
+  private floorMode: PathTracerFloorMode = 'none';
   private shadowCatcherState = '';
   private shadowCatcherMaterialState = '';
   private cameraStateInitialized = false;
@@ -549,7 +555,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.prepareRendererOutput();
     this.renderer.autoClear = true;
-    this.renderer.render(this.scene, this.scene.getCamera());
+    const camera = this.scene.getCamera();
+    if (this.floorMode === 'shadow-reflection' &&
+        this.floorPreview.mesh.parent != null) {
+      const floorY = this.scene.boundingBox.min.y;
+      this.floorPreview.renderReflection(
+          this.renderer, this.scene, camera, floorY, this.floorMode);
+    }
+    this.renderer.render(this.scene, camera);
   }
 
   private layoutTrace() {
@@ -735,6 +748,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.reportedTracedHeight = 0;
     this.reportedSupersampled = false;
     this.disposeShadowCatcher();
+    this.floorPreview.dispose();
     this.renderer = null;
     this.scene = null;
     this.camera = null;
@@ -1186,57 +1200,80 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         DEFAULT_PATH_TRACER_OPTIONS.floorMetalness);
     const opacity = clampUnitInterval(
         this.options.floorOpacity, DEFAULT_PATH_TRACER_OPTIONS.floorOpacity);
-    const shouldShow =
-        (this.options.floor || this.scene.shadowMode === 'path-tracer') &&
-        opacity > 0;
-    if (!shouldShow) {
+    const reflection = clampUnitInterval(
+        this.options.floorReflection,
+        DEFAULT_PATH_TRACER_OPTIONS.floorReflection);
+    const mode = effectiveFloorMode(this.options.floor, this.scene.shadowMode);
+    this.floorMode = opacity > 0 ? mode : 'none';
+    if (this.floorMode === 'none') {
       this.removeShadowCatcher();
       return;
     }
 
     const shadowCatcher = this.ensureShadowCatcher();
-    const {boundingBox, size} = this.scene;
-    boundingBox.getCenter(this.shadowCatcherCenter);
-
-    const maxDimension = Math.max(size.x, size.z, 1);
-    const width = Math.max(size.x, maxDimension) * 2;
-    const depth = Math.max(size.z, maxDimension) * 2;
-    const gap = 0.001 * maxDimension;
+    const {boundingBox} = this.scene;
+    const subject = footprintFromBounds(
+        boundingBox.min.x,
+        boundingBox.min.y,
+        boundingBox.min.z,
+        boundingBox.max.x,
+        boundingBox.max.y,
+        boundingBox.max.z);
+    const towardLight = this.dominantLightDirection();
+    const footprint = applyShadowStretch(subject, towardLight);
+    const support = effectSupport(footprint);
+    const gap = 0.001 * Math.max(subject.halfX, subject.halfZ, 0.05);
     const geometryState = [
-      this.scene.shadowMode,
-      width.toFixed(4),
-      depth.toFixed(4),
-      this.shadowCatcherCenter.x.toFixed(4),
-      boundingBox.min.y.toFixed(4),
-      this.shadowCatcherCenter.z.toFixed(4),
+      this.floorMode,
+      support.halfX.toFixed(4),
+      support.halfZ.toFixed(4),
+      support.centerX.toFixed(4),
+      support.centerZ.toFixed(4),
+      subject.floorY.toFixed(4),
+      footprint.radius.toFixed(4),
     ].join('|');
-    const materialState =
-        [color, roughness.toFixed(4), metalness.toFixed(4), opacity.toFixed(4)]
-            .join('|');
+    const materialState = [
+      color,
+      roughness.toFixed(4),
+      metalness.toFixed(4),
+      opacity.toFixed(4),
+      reflection.toFixed(4),
+      this.floorMode,
+    ].join('|');
+    this.floorPreview.sync(
+        footprint, this.floorMode, reflection * opacity);
+    this.pushCatcherUniforms(footprint, roughness, reflection * opacity);
     if (geometryState === this.shadowCatcherState &&
         materialState === this.shadowCatcherMaterialState) {
       return;
     }
 
     if (materialState !== this.shadowCatcherMaterialState) {
+      // The catcher is a holdout. Opacity stays 1 so rays do not skip it;
+      // floorOpacity scales the shadow and the reflection instead.
       shadowCatcher.material.color.set(color);
       shadowCatcher.material.roughness = roughness;
       shadowCatcher.material.metalness = metalness;
-      shadowCatcher.material.opacity = opacity;
-      shadowCatcher.material.transparent = opacity < 1;
+      shadowCatcher.material.opacity = 1;
+      shadowCatcher.material.transparent = false;
       shadowCatcher.material.needsUpdate = true;
       this.shadowCatcherMaterialState = materialState;
     }
 
     if (geometryState !== this.shadowCatcherState) {
-      shadowCatcher.position.set(
-          this.shadowCatcherCenter.x,
-          boundingBox.min.y - gap,
-          this.shadowCatcherCenter.z);
+      const y = subject.floorY - gap;
+      shadowCatcher.position.set(support.centerX, y, support.centerZ);
       shadowCatcher.rotation.set(-Math.PI / 2, 0, 0);
-      shadowCatcher.scale.set(width, depth, 1);
+      shadowCatcher.scale.set(support.halfX * 2, support.halfZ * 2, 1);
+      const preview = this.floorPreview.mesh;
+      preview.position.copy(shadowCatcher.position);
+      preview.rotation.copy(shadowCatcher.rotation);
+      preview.scale.copy(shadowCatcher.scale);
       if (shadowCatcher.parent !== this.scene.target) {
         this.scene.target.add(shadowCatcher);
+      }
+      if (preview.parent !== this.scene.target) {
+        this.scene.target.add(preview);
       }
       this.shadowCatcherState = geometryState;
       this.markSceneDirty();
@@ -1247,6 +1284,51 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.pathTracer?.reset();
       this.requestRender();
     }
+  }
+
+  private dominantLightDirection(): [number, number, number] {
+    const scene = this.scene;
+    const direction = new Vector3(0, 1, 0);
+    if (scene == null) {
+      return [0, 1, 0];
+    }
+    let best = 0;
+    scene.traverse((object) => {
+      const light = object as DirectionalLight;
+      if (!light.isDirectionalLight || !light.visible) {
+        return;
+      }
+      const intensity = light.intensity ?? 0;
+      if (intensity < best) {
+        return;
+      }
+      best = intensity;
+      light.getWorldDirection(direction);
+      direction.negate();
+    });
+    if (direction.lengthSq() < 1e-8) {
+      return [0, 1, 0];
+    }
+    direction.normalize();
+    return [direction.x, direction.y, direction.z];
+  }
+
+  private pushCatcherUniforms(
+      footprint: ReturnType<typeof applyShadowStretch>,
+      roughness: number,
+      reflection: number,
+      ) {
+    this.session?.setFloorCatcher({
+      samples: FLOOR_OCCLUSION_SAMPLES,
+      mode: this.floorMode === 'shadow-reflection' ? 2 : 1,
+      strength: reflection,
+      roughness,
+      centerX: footprint.centerX,
+      centerZ: footprint.centerZ,
+      halfX: footprint.halfX,
+      halfZ: footprint.halfZ,
+      radius: footprint.radius,
+    });
   }
 
   private renderSoftShadowOverlay() {
@@ -1357,6 +1439,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.shadowCatcher.removeFromParent();
       this.markSceneDirty();
     }
+    if (this.floorPreview.mesh.parent != null) {
+      this.floorPreview.mesh.removeFromParent();
+    }
+    this.floorMode = 'none';
     this.shadowCatcherState = '';
     this.shadowCatcherMaterialState = '';
   }
@@ -1557,7 +1643,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const key = [
       buffer.x,
       buffer.y,
-      this.options.floor ? 1 : 0,
+      this.floorMode,
       this.camera.matrixWorld.elements.join(','),
       this.camera.projectionMatrix.elements.join(','),
       this.shadowCatcher?.matrixWorld.elements.join(',') ?? '',
@@ -1590,10 +1676,24 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     // freshly built one do not hit the same pixels. Project the traceable
     // bounds instead, so a cached load and an uncached load share one crop.
     const projected = this.projectSubjectCrop(buffer.x, buffer.y);
-    if (projected != null) {
-      measured.crop = projected;
-      measured.tracedPixels = projected.width * projected.height;
-    }
+    const floorEffect = this.floorMode === 'none' ?
+        null :
+        this.projectFloorEffect(buffer.x, buffer.y);
+    const withFloor = projected != null && floorEffect != null ?
+        unionCrops(projected, floorEffect, buffer.x, buffer.y) :
+        projected;
+    measured.crop = withFloor;
+    measured.tracedPixels = withFloor == null ?
+        measured.fullPixels :
+        withFloor.width * withFloor.height;
+    measured.areaPercent =
+        traceAreaPercent(measured.tracedPixels, measured.fullPixels);
+    const cropLabel = measured.crop == null ?
+        `100% (full ${buffer.x}x${buffer.y})` :
+        `${measured.areaPercent.toFixed(1)}% (${measured.crop.width}x${
+            measured.crop.height} of ${buffer.x}x${buffer.y})`;
+    console.info(
+        `[model-viewer] path tracer crop ${cropLabel} floor=${this.floorMode}`);
     this.coverageMeasure = measured;
     this.coverageVisible = measured.crop;
     this.coverageCrop = measured.crop;
@@ -1693,7 +1793,31 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return crop;
   }
 
+  private projectFloorEffect(fullWidth: number, fullHeight: number): TraceCrop|
+      null {
+    const camera = this.camera;
+    const scene = this.scene;
+    if (!(camera instanceof PerspectiveCamera) || scene == null ||
+        this.floorMode === 'none') {
+      return null;
+    }
+    const box = scene.boundingBox;
+    if (box.isEmpty()) {
+      return null;
+    }
+    const subject = footprintFromBounds(
+        box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
+    const footprint =
+        applyShadowStretch(subject, this.dominantLightDirection());
+    return screenBoundsOfWorldPoints(
+        rectCorners(effectSupport(footprint)), camera, fullWidth, fullHeight);
+  }
+
   private isExcludedFromSubjectCoverage(object: Object3D): boolean {
+    if (object.userData?.pathTracerShadowCatcher === true ||
+        object.userData?.pathTracerFloorPreview === true) {
+      return true;
+    }
     if (this.isShadowReceiver(object)) {
       return true;
     }
@@ -1803,7 +1927,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     renderer.autoClear = true;
     scene.background = null;
     scene.overrideMaterial = this.coverageMaterial;
-    camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
     // The soft-shadow plane is not part of the trace. Painted solid, it
     // stretches the crop from the product down to the near edge of the shadow.
     const restoreShadowReceivers = this.hideShadowReceivers();
@@ -2298,7 +2421,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.options.bounces,
       this.buildOptions.strategy,
       this.buildOptions.maxLeafTris,
-      this.options.floor ? 1 : 0,
+      this.options.floor,
+      this.options.floorReflection,
       this.options.floorColor,
       this.options.floorRoughness,
       this.options.floorMetalness,

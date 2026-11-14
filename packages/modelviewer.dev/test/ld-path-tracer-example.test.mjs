@@ -410,9 +410,26 @@ assert.match(
     'path tracer feature should default to 15 bounces');
 assert.match(
     pathTracerComposer,
-    /floor:\s*false,/,
+    /floor:\s*'none',/,
     'path tracer feature should leave the floor off');
 assert.doesNotMatch(
     serverAIDenoiseFeature,
     /pathTracerDenoiseMode/,
     'path tracer should not switch denoise with a mode');
+
+const beautyHtml = await readFile(resolve(
+    __dirname, '../examples/ld_path_tracer_beauty/index.html'), 'utf8');
+const montanaHdr =
+    'https://images.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/6ae8e541a197e8a86ebb255d/287f1945-86aa-4eb1-af71-745c0f63ebc4.hdr';
+assert.match(beautyHtml, new RegExp(montanaHdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.doesNotMatch(beautyHtml, /Centurion-2\.hdr/);
+assert.match(beautyHtml, /shadow-reflection/);
+assert.match(beautyHtml, /searchParams\.set\('floor'/);
+assert.match(beautyHtml, /path-tracer-floor/);
+
+const catcherLogic = await readFile(resolve(
+    __dirname,
+    '../../model-viewer/src/three-components/postprocessing/ld-path-tracer/cache/LDShadowCatcherLogicKernel.ts'), 'utf8');
+assert.match(catcherLogic, /0\.2126, 0\.7152, 0\.0722/);
+assert.match(catcherLogic, /catcherSamples/);
+assert.doesNotMatch(catcherLogic, /1\.0 - visibility/);

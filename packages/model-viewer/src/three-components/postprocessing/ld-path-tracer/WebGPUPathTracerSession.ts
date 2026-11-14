@@ -43,6 +43,16 @@ const RANDOM_STRATEGY = {
 
 export const PATH_TRACER_UNAVAILABLE_EVENT = 'path-tracer-unavailable';
 
+interface FloorCatcherKernel {
+  catcherSamples?: number;
+  catcherMode?: number;
+  catcherStrength?: number;
+  catcherRoughness?: number;
+  catcherCenter?: {set: (x: number, y: number) => void}|null;
+  catcherHalf?: {set: (x: number, y: number) => void};
+  catcherRadius?: number;
+}
+
 interface OIDNTileInputs {
   progress?:
       ((output: unknown, tileData: unknown, tile: unknown, index?: number,
@@ -526,6 +536,42 @@ export class WebGPUPathTracerSession {
   setBackgroundClearAlpha(alpha: number) {
     this.renderer?.setClearColor(0x000000, alpha);
     this.canvas.style.backgroundColor = 'transparent';
+  }
+
+  /**
+   * The live wavefront logic kernel, or the megakernel when that backend is
+   * on. Both expose the holdout-floor uniforms when the catcher is installed.
+   */
+  setFloorCatcher(values: {
+    samples: number;
+    mode: number;
+    strength: number;
+    roughness: number;
+    centerX: number;
+    centerZ: number;
+    halfX: number;
+    halfZ: number;
+    radius: number;
+  }) {
+    const tracer = this.tracer as {
+      _pathTracer?: {
+        logicKernel?: FloorCatcherKernel;
+      } & FloorCatcherKernel;
+    }|null;
+    const backend = tracer?._pathTracer;
+    const kernels = [backend?.logicKernel, backend];
+    for (const kernel of kernels) {
+      if (kernel == null || kernel.catcherCenter == null) {
+        continue;
+      }
+      kernel.catcherSamples = values.samples;
+      kernel.catcherMode = values.mode;
+      kernel.catcherStrength = values.strength;
+      kernel.catcherRoughness = values.roughness;
+      kernel.catcherCenter.set(values.centerX, values.centerZ);
+      kernel.catcherHalf?.set(values.halfX, values.halfZ);
+      kernel.catcherRadius = values.radius;
+    }
   }
 
   renderSample() {

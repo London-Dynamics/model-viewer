@@ -20,6 +20,7 @@ import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../m
 import ModelViewerElementBase from '../model-viewer-base.js';
 import {PathTracerCacheLoadResult} from '../three-components/postprocessing/ld-path-tracer/cache/path-tracer-cache-store.js';
 import {PathTracerCacheType} from '../three-components/postprocessing/ld-path-tracer/cache/path-tracer-cache-types.js';
+import {normalizePathTracerFloorMode} from '../three-components/postprocessing/ld-path-tracer/floor-matte.js';
 import {DEFAULT_PATH_TRACER_BUILD_OPTIONS, DEFAULT_PATH_TRACER_OPTIONS, LDPathTracerComposer, normalizePathTracerDisplay, normalizePathTracerFloorColor, PathTracerBuildOptions, PathTracerOptions, PathTracerPresentedFrame, resolvePathTracerBuildOptions,} from '../three-components/postprocessing/ld-path-tracer/LDPathTracerComposer.js';
 import {Constructor} from '../utilities.js';
 
@@ -61,7 +62,8 @@ export declare interface LDPathTracerInterface {
   pathTracerDenoiseSigma: number;
   pathTracerDenoiseThreshold: number;
   pathTracerDenoiseKSigma: number;
-  pathTracerFloor: boolean;
+  pathTracerFloor: string;
+  pathTracerFloorReflection: number;
   pathTracerSoftShadow: boolean;
   pathTracerFloorColor: string;
   pathTracerFloorRoughness: number;
@@ -206,8 +208,18 @@ export const LDPathTracerMixin = <
     @property({type: Number, attribute: 'path-tracer-denoise-k-sigma'})
     pathTracerDenoiseKSigma = DEFAULT_PATH_TRACER_OPTIONS.denoiseKSigma;
 
-    @property({type: Boolean, attribute: 'path-tracer-floor'})
+    @property({
+      attribute: 'path-tracer-floor',
+      converter: {
+        fromAttribute: (value: string|null) =>
+            normalizePathTracerFloorMode(value == null ? 'none' : value),
+        toAttribute: (value: string) => normalizePathTracerFloorMode(value),
+      },
+    })
     pathTracerFloor = DEFAULT_PATH_TRACER_OPTIONS.floor;
+
+    @property({type: Number, attribute: 'path-tracer-floor-reflection'})
+    pathTracerFloorReflection = DEFAULT_PATH_TRACER_OPTIONS.floorReflection;
 
     @property({type: Boolean, attribute: 'path-tracer-soft-shadow'})
     pathTracerSoftShadow = DEFAULT_PATH_TRACER_OPTIONS.softShadow;
@@ -433,6 +445,7 @@ export const LDPathTracerMixin = <
         'pathTracerDenoiseThreshold',
         'pathTracerDenoiseKSigma',
         'pathTracerFloor',
+        'pathTracerFloorReflection',
         'pathTracerSoftShadow',
         'pathTracerFloorColor',
         'pathTracerFloorRoughness',
@@ -612,7 +625,10 @@ export const LDPathTracerMixin = <
         denoiseSigma: this.pathTracerDenoiseSigma,
         denoiseThreshold: this.pathTracerDenoiseThreshold,
         denoiseKSigma: this.pathTracerDenoiseKSigma,
-        floor: this.pathTracerFloor,
+        floor: normalizePathTracerFloorMode(this.pathTracerFloor),
+        floorReflection: clampPathTracerUnit(
+            this.pathTracerFloorReflection,
+            DEFAULT_PATH_TRACER_OPTIONS.floorReflection),
         softShadow: this.pathTracerSoftShadow,
         floorColor: normalizePathTracerFloorColor(this.pathTracerFloorColor),
         floorRoughness: clampPathTracerUnit(

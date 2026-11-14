@@ -2668,6 +2668,30 @@
         }
       },
       {
+        "name": "path-tracer-floor",
+        "htmlName": "pathTracerFloor",
+        "description": "Holdout floor under the subject. <code>none</code> (default) draws no floor. <code>shadow</code> is a shadow catcher: coverage is <code>1 - luminance(light with the subject) / luminance(light without it)</code> over the environment and direct lights, written as alpha so the page shows through wherever nothing is occluded. <code>shadow-reflection</code> adds a reflection of the subject only (Fresnel, <span class=\"attribute\">path-tracer-floor-reflection</span>, and a distance fade). Rays that reflect into the environment add nothing, and the floor's own shading never tints the page. A coloured HDR changes the shadow shape and stays neutral on the page. Empty or <code>1</code> means <code>shadow</code>, for the older boolean attribute.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_beauty/\">Beauty demo</a>"
+        ],
+        "default": {
+          "default": "none",
+          "options": "none, shadow, shadow-reflection"
+        }
+      },
+      {
+        "name": "path-tracer-floor-reflection",
+        "htmlName": "pathTracerFloorReflection",
+        "description": "Strength of the subject reflection when <span class=\"attribute\">path-tracer-floor</span> is <code>shadow-reflection</code>. Multiplied by a dielectric Fresnel term and the distance fade. <code>0.45</code> is the product-photo default. <code>0</code> leaves the shadow catcher with no reflection.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_beauty/\">Beauty demo</a>"
+        ],
+        "default": {
+          "default": "0.45",
+          "type": "number"
+        }
+      },
+      {
         "name": "path-tracer-cache-url",
         "htmlName": "pathTracerCacheUrl",
         "description": "URL of a path-tracer cache file for the initial model. Separate from <span class=\"attribute\">src</span>. The file is fetched when path tracing is on. Each cache type is applied only when that type is enabled and its load-at-start flag is on.",

@@ -260,7 +260,10 @@ export class LDIrradianceCacheMegaKernel extends ComputeKernel {
 						let objectInfo = transforms[ hitResult.objectIndex ];
 						var materialInfo = ( *materials )[ objectInfo.materialIndex ];
 
-						// a matte surface hit by the camera ray renders as a fully transparent
+						// The wavefront kernels own the holdout (shadow ratio and
+						// subject reflection). This backend is the bench
+						// megakernel: a primary matte hit stays transparent
+						// rather than shading a floor card.
 						if ( materialInfo.matte != 0 && bounce == 0u ) {
 
 							resultColor = vec4f( 0.0 );

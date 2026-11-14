@@ -149,6 +149,15 @@
           Preset
           <select id="preset"></select>
         </label>
+        <label>
+          Floor
+          <select id="floor"></select>
+        </label>
+        <label>
+          Reflection
+          <input id="reflection" type="range" min="0" max="1" step="0.05" value="0.45" />
+        </label>
+        <p id="crop">Crop —</p>
         <button id="clear" type="button">Clear caches</button>
         <p id="run-label">Starting</p>
         <p id="fps">FPS —</p>
@@ -184,7 +193,7 @@
         montana: {
           label: 'Montana 001112',
           src: 'https://assets.v2.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/puzzledefault/8daea_4e25777e-91ff-80c3-872f-c722d4937c36.glb',
-          hdr: 'https://d1mepjfmhz5ui7.cloudfront.net/centurion/Centurion-2.hdr',
+          hdr: 'https://images.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/6ae8e541a197e8a86ebb255d/287f1945-86aa-4eb1-af71-745c0f63ebc4.hdr',
           bounds: 'tight',
         },
         ri245: {
@@ -213,8 +222,17 @@
         'complete',
       ];
 
+      const FLOORS = {
+        none: 'None',
+        shadow: 'Shadow',
+        'shadow-reflection': 'Shadow and reflection',
+      };
+
       const caseSelect = document.querySelector('#case');
       const presetSelect = document.querySelector('#preset');
+      const floorSelect = document.querySelector('#floor');
+      const reflectionInput = document.querySelector('#reflection');
+      const cropNode = document.querySelector('#crop');
       const stage = document.querySelector('#stage');
       const panel = document.querySelector('#panel');
       const runLabel = document.querySelector('#run-label');
@@ -238,6 +256,12 @@
         option.textContent = item.label;
         presetSelect.append(option);
       }
+      for (const [id, label] of Object.entries(FLOORS)) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = label;
+        floorSelect.append(option);
+      }
       for (const id of STEPS) {
         const item = document.createElement('li');
         item.dataset.step = id;
@@ -249,8 +273,14 @@
       const params = new URLSearchParams(location.search);
       let caseId = CASES[params.get('case')] ? params.get('case') : 'triton';
       let presetId = PRESETS[params.get('preset')] ? params.get('preset') : 'epic';
+      let floorMode = FLOORS[params.get('floor')] ? params.get('floor') : 'shadow';
+      let reflection = Number(params.get('reflection'));
+      if (!Number.isFinite(reflection)) reflection = 0.45;
+      reflection = Math.min(1, Math.max(0, reflection));
       caseSelect.value = caseId;
       presetSelect.value = presetId;
+      floorSelect.value = floorMode;
+      reflectionInput.value = String(reflection);
 
       const format = (ms) => {
         if (ms == null || !Number.isFinite(ms)) return '—';
@@ -330,6 +360,8 @@
         const url = new URL(location.href);
         url.searchParams.set('case', caseId);
         url.searchParams.set('preset', presetId);
+        url.searchParams.set('floor', floorMode);
+        url.searchParams.set('reflection', String(reflection));
         history.replaceState(null, '', url);
       };
 
@@ -384,6 +416,8 @@
         viewer.setAttribute('path-tracer-denoise', '');
         viewer.setAttribute('path-tracer-display', 'after-denoise');
         if (preset.coverage) viewer.setAttribute('path-tracer-coverage', '');
+        viewer.setAttribute('path-tracer-floor', floorMode);
+        viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
         if (test.bounds) viewer.setAttribute('bounds', test.bounds);
         for (const [key, value] of Object.entries(test.camera ?? {})) {
           viewer.setAttribute(key, value);
@@ -453,6 +487,10 @@
           const bvhDetail = restored > 0 && built === 0 ? `loaded ${restored}` :
               built > 0 ? `built ${built}` : '';
           runLabel.textContent = `${runKind} · ${preset.label} · ${test.label}`;
+          const coverage = composer?.getTraceCoverage?.() ?? null;
+          const percent = coverage?.areaPercent;
+          cropNode.textContent = percent == null ? 'Crop —' :
+            `Crop ${Number(percent).toFixed(1)}%`;
           fpsNode.textContent = `FPS ${fps.toFixed(0)}`;
           for (const type of ['bvh', 'irradiance', 'materials']) {
             cacheNodes[type].textContent = cacheState(type, preset, status, session, warm, ready);
@@ -530,6 +568,20 @@
 
       caseSelect.addEventListener('change', selectAndStart);
       presetSelect.addEventListener('change', selectAndStart);
+      floorSelect.addEventListener('change', () => {
+        floorMode = floorSelect.value;
+        writeUrl();
+        if (viewer) {
+          viewer.setAttribute('path-tracer-floor', floorMode);
+        }
+      });
+      reflectionInput.addEventListener('input', () => {
+        reflection = Number(reflectionInput.value);
+        writeUrl();
+        if (viewer) {
+          viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
+        }
+      });
       document.querySelector('#clear').addEventListener('click', async () => {
         await clearCaches();
         start();

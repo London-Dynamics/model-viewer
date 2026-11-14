@@ -1,9 +1,11 @@
 // @ts-nocheck
+// clang-format off
+import {Vector2} from 'three';
 import { StorageBufferAttribute, StorageTexture } from 'three/webgpu';
 import { ComputeKernel } from 'three-gpu-pathtracer/src/webgpu/compute/ComputeKernel.js';
 import { uniform, storage, textureStore, globalId } from 'three/tsl';
 import { proxy, proxyFn, wgslTagFn } from 'three-mesh-bvh/webgpu';
-import { misHeuristicFn, weightedAlphaBlendFn } from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
+import { misHeuristicFn, sampleHemisphereFn, weightedAlphaBlendFn } from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
 import { clampPathContributionFunc, isTerminatingScatterFunc } from 'three-gpu-pathtracer/src/webgpu/nodes/utils.wgsl.js';
 import { TRANSMISSIVE_BACKGROUND_ENVIRONMENT, TRANSMISSIVE_BACKGROUND_OVERLAY, TRANSMISSIVE_BACKGROUND_TRANSPARENT } from 'three-gpu-pathtracer/src/webgpu/constants.js';
 import {
@@ -44,6 +46,14 @@ export class LogicKernel extends ComputeKernel {
 			rayDataStorage: storage( new StorageBufferAttribute( 1, 1 ), rayDataStruct ),
 			rayIntersectionsStorage: storage( new StorageBufferAttribute( 1, 1 ), intersectionResultStruct ),
 			shadowRayIntersectionsStorage: storage( new StorageBufferAttribute( 1, 1 ), intersectionResultStruct ),
+
+			catcherSamples: uniform( 8, 'uint' ),
+			catcherMode: uniform( 1, 'uint' ),
+			catcherStrength: uniform( 0.45 ),
+			catcherRoughness: uniform( 0.2 ),
+			catcherCenter: uniform( new Vector2() ),
+			catcherHalf: uniform( new Vector2( 1, 1 ) ),
+			catcherRadius: uniform( 1 ),
 
 			globalId: globalId,
 		};
@@ -94,11 +104,177 @@ export class LogicKernel extends ComputeKernel {
 
 				// skip slots that have never spawned a ray
 				let input = ( *rayDataStorage )[ index ];
-				if ( input.rayIntersectionIndex < 0 ) {
+
+				if ( input.rayIntersectionIndex < 0 && input.resultColor.a > -1.6 ) {
 
 					return;
 
 				}
+
+				// Holdout floor. Negative alpha marks a catcher path. Eight
+				// probes estimate environment plus direct light with the
+				// subject and without it. The ratio is coverage, so an HDR
+				// cannot tint the page. A reflection ray is spawned only
+				// after those probes, and only in shadow-reflection mode.
+				if ( input.resultColor.a < -1.6 ) {
+
+					let indexUV = vec2u( input.pixelIndex >> 16, input.pixelIndex & 0xFFFF );
+					${ rngInit }( indexUV, input.seed, input.alphaDepth + 40u );
+
+					var withLight = input.emission;
+					var withoutLight = input.scatterColor;
+					var probes = input.alphaDepth;
+
+					if ( input.shadowRayIntersectionIndex >= 0 ) {
+
+						var contribution = input.lightEmission;
+						if ( input.lightType < 0 ) {
+
+							contribution = ${ sampleEnvColor }( input.lightDirection ).rgb;
+
+						}
+
+						let shadowHit = ( *shadowRayIntersectionsStorage )[ u32( input.shadowRayIntersectionIndex ) ];
+						withoutLight += contribution;
+						if ( shadowHit.objectIndex < 0 ) {
+
+							withLight += contribution;
+
+						}
+
+						probes = probes + 1u;
+
+					}
+
+					let sampleTarget = max( ${ params.catcherSamples }, 1u );
+					if ( probes < sampleTarget ) {
+
+						var nextDir = input.lightDirection;
+						var nextEmission = vec3f( 0.0 );
+						var nextType = -1;
+						var nextPdf = 1.0;
+						var nextDist = ${ LIGHT_FAR_DISTANCE };
+						let useLight = ( probes % 2u ) == 0u && ${ lightsCountNode } > 0u;
+						if ( useLight ) {
+
+							let ruv = ${ rand3 }( 12u );
+							var selectionPdf = 0.0;
+							let lightIndex = ${ selectLightFn }( input.origin, 0.0, ruv.x, &selectionPdf );
+							if ( selectionPdf > 0.0 && lightIndex < ${ lightsCountNode } ) {
+
+								var lightRec: ${ lightRecordStruct };
+								lightRec = ${ randomLightSampleFn }( lightIndex, input.origin, ruv.yz );
+								let ndotl = max( dot( normalize( input.normal ), lightRec.direction ), 0.0 );
+								let pdf = lightRec.pdf * selectionPdf;
+								if ( pdf > 1e-6 && ndotl > 0.0 && lightRec.lightType != ${ ENVIRONMENT_LIGHT_TYPE } ) {
+
+									nextDir = lightRec.direction;
+									nextEmission = lightRec.emission * ndotl / pdf;
+									nextType = lightRec.lightType;
+									nextPdf = pdf;
+									nextDist = lightRec.dist;
+
+								}
+
+							}
+
+						}
+
+						if ( nextType < 0 ) {
+
+							let uv = ${ rand2 }( 20u + probes );
+							nextDir = ${ sampleHemisphereFn }( normalize( input.normal ), uv );
+							nextType = -1;
+							nextPdf = 1.0;
+							nextDist = ${ LIGHT_FAR_DISTANCE };
+							nextEmission = vec3f( 0.0 );
+
+						}
+
+						rayDataStorage[ index ].emission = withLight;
+						rayDataStorage[ index ].scatterColor = withoutLight;
+						rayDataStorage[ index ].alphaDepth = probes;
+						rayDataStorage[ index ].lightDirection = nextDir;
+						rayDataStorage[ index ].lightEmission = nextEmission;
+						rayDataStorage[ index ].lightType = nextType;
+						rayDataStorage[ index ].lightPdf = nextPdf;
+						rayDataStorage[ index ].lightDist = nextDist;
+						rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+						rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -2.0 );
+						return;
+
+					}
+
+					let openLum = dot( withoutLight, vec3f( 0.2126, 0.7152, 0.0722 ) );
+					let gotLum = dot( withLight, vec3f( 0.2126, 0.7152, 0.0722 ) );
+					var catcherShadow = 0.0;
+					if ( openLum > 1e-4 ) {
+
+						catcherShadow = saturate( 1.0 - gotLum / openLum );
+
+					}
+
+					let halfExt = max( ${ params.catcherHalf }, vec2f( 1e-4 ) );
+					let outside = max( vec2f( 0.0 ), abs( input.origin.xz - ${ params.catcherCenter } ) - halfExt );
+					let dist = length( outside );
+					let radius = max( ${ params.catcherRadius }, 1e-4 );
+					let falloff = exp( -3.0 * ( dist / radius ) * ( dist / radius ) );
+					catcherShadow = catcherShadow * falloff;
+
+					let wantReflection = ${ params.catcherMode } >= 2u && ${ params.catcherStrength } > 0.0 && falloff > 1e-3;
+					if ( ! wantReflection ) {
+
+						let colorIndex = vec2u( indexUV.x, textureDimensions( ${ params.outputTarget } ).y - 1u - indexUV.y );
+						let storedSamples = textureLoad( ${ params.sampleCountTarget }, indexUV ).r & ${ SAMPLE_COUNT_MASK }u;
+						let sampleCount = storedSamples + 1u;
+						let prevColor = textureLoad( ${ params.prevOutputTarget }, colorIndex );
+						let sampleColor = vec4f( 0.0, 0.0, 0.0, catcherShadow );
+						let blendedColor = ${ weightedAlphaBlendFn }( prevColor, sampleColor, 1.0 / f32( sampleCount ) );
+						textureStore( ${ params.sampleCountTarget }, indexUV, vec4( ${ SAMPLE_DISPATCHED_FLAG }u | sampleCount ) );
+						textureStore( ${ params.outputTarget }, colorIndex, blendedColor );
+						rayDataStorage[ index ].objectIndex = -1;
+						rayDataStorage[ index ].rayIntersectionIndex = -1;
+						rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+						rayDataStorage[ index ].resultColor = vec4f( 0.0 );
+						return;
+
+					}
+
+					let incident = normalize( input.direction );
+					let nrm = normalize( input.normal );
+					var reflected = reflect( incident, nrm );
+					let jitterUv = ${ rand2 }( 14u );
+					let jitter = ( jitterUv - vec2f( 0.5 ) ) * ${ params.catcherRoughness };
+					let helper = select( vec3f( 0.0, 1.0, 0.0 ), vec3f( 1.0, 0.0, 0.0 ), abs( nrm.y ) > 0.9 );
+					let tangent = normalize( cross( helper, nrm ) );
+					let bitangent = cross( nrm, tangent );
+					reflected = normalize( reflected + tangent * jitter.x + bitangent * jitter.y );
+					if ( dot( reflected, nrm ) < 0.02 ) {
+
+						reflected = normalize( reflected + nrm * 0.02 );
+
+					}
+
+					let cosTheta = saturate( dot( nrm, -incident ) );
+					let fresnel = 0.04 + 0.96 * pow( 1.0 - cosTheta, 5.0 );
+					let weight = fresnel * ${ params.catcherStrength } * falloff;
+					rayDataStorage[ index ].maxDist = catcherShadow;
+					rayDataStorage[ index ].minPdf = weight;
+					rayDataStorage[ index ].direction = reflected;
+					rayDataStorage[ index ].throughputColor = vec3f( weight );
+					rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -3.0 );
+					rayDataStorage[ index ].lightPdf = 0.0;
+					rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+					rayDataStorage[ index ].emission = vec3f( 0.0 );
+					rayDataStorage[ index ].scatterColor = vec3f( 1.0 );
+					rayDataStorage[ index ].scatterPdf = 1.0;
+					rayDataStorage[ index ].alphaDepth = 0u;
+					rayDataStorage[ index ].currentBounce = 0u;
+					rayDataStorage[ index ].isFullyTransmissive = 0u;
+					return;
+
+				}
+
 
 				let indexUV = vec2u( input.pixelIndex >> 16, input.pixelIndex & 0xFFFF );
 				${ rngInit }( indexUV, input.seed, input.currentBounce + input.alphaDepth );
@@ -116,6 +292,7 @@ export class LogicKernel extends ComputeKernel {
 
 				var resultColor = input.resultColor;
 				var throughputColor = input.throughputColor;
+				var floorWeight = input.minPdf;
 
 				// added last, since a camera ray miss overwrites the pixel with the background
 				var lightHits = vec3f( 0.0 );
@@ -256,7 +433,12 @@ export class LogicKernel extends ComputeKernel {
 
 						// the segment escaped the scene: gather the environment for opaque paths, or
 						// the background for camera segments and fully transmissive paths
-						if ( input.currentBounce > 0u && input.isFullyTransmissive == 0u ) {
+						if ( resultColor.a > -1.6 && resultColor.a < -0.4 && input.currentBounce == 1u ) {
+
+							floorWeight = 0.0;
+							isTerminated = true;
+
+						} else if ( input.currentBounce > 0u && input.isFullyTransmissive == 0u ) {
 
 							var misWeight = 1.0;
 							if ( isMISWeighted && envActive ) {
@@ -340,7 +522,7 @@ export class LogicKernel extends ComputeKernel {
 
 				// visible lights are opaque against a transparent background
 				resultColor += vec4f( lightHits, 0.0 );
-				if ( cameraHitLight ) {
+				if ( cameraHitLight && resultColor.a >= 0.0 ) {
 
 					resultColor.a = 1.0;
 
@@ -352,24 +534,31 @@ export class LogicKernel extends ComputeKernel {
 
 				if ( isTerminated ) {
 
-					// Shadow catcher: unshadowed light is the page showing through.
-					// Occluded direct light becomes coverage, so the shadow darkens
-					// that page instead of painting a tone-mapped card.
-					if ( resultColor.a < 0.0 ) {
+					var outputColor = resultColor;
+					if ( resultColor.a > -1.6 && resultColor.a < -0.4 ) {
 
-						let received = resultColor.rgb;
-						let open = received + blockedLight;
-						let openLum = max( open.r, max( open.g, open.b ) );
-						let gotLum = max( received.r, max( received.g, received.b ) );
-						let visibility = select( 1.0, saturate( gotLum / openLum ), openLum > 1e-4 );
-						resultColor = vec4f( 0.0, 0.0, 0.0, 1.0 - visibility );
+						let shadow = saturate( resultColor.a + 1.5 );
+						let weight = saturate( floorWeight );
+						let alpha = 1.0 - ( 1.0 - shadow ) * ( 1.0 - weight );
+						var straight = vec3f( 0.0 );
+						if ( alpha > 1e-4 ) {
+
+							straight = resultColor.rgb / alpha;
+
+						}
+
+						outputColor = vec4f( straight, alpha );
+
+					} else if ( resultColor.a < 0.0 ) {
+
+						outputColor = vec4f( 0.0 );
 
 					}
 
 					// blend the finished sample into the output and free the slot for a new camera ray
 					let sampleCount = storedSamples + 1;
 					let prevColor = textureLoad( ${ params.prevOutputTarget }, colorIndex );
-					let blendedColor = ${ weightedAlphaBlendFn }( prevColor, resultColor, 1.0 / f32( sampleCount ) );
+					let blendedColor = ${ weightedAlphaBlendFn }( prevColor, outputColor, 1.0 / f32( sampleCount ) );
 					textureStore( ${ params.sampleCountTarget }, indexUV, vec4( ${ SAMPLE_DISPATCHED_FLAG }u | sampleCount ) );
 					textureStore( ${ params.outputTarget }, colorIndex, blendedColor );
 
@@ -378,7 +567,7 @@ export class LogicKernel extends ComputeKernel {
 				} else {
 
 					// show the path so far, which the first sample overwrites
-					if ( storedSamples == 0u ) {
+					if ( storedSamples == 0u && resultColor.a >= 0.0 ) {
 
 						textureStore( ${ params.outputTarget }, colorIndex, resultColor );
 
