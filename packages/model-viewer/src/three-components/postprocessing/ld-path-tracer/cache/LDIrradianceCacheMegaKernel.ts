@@ -104,20 +104,22 @@ export class LDIrradianceCacheMegaKernel extends ComputeKernel {
 		const selectLightFn = proxyFn( 'lightsInfo.value.selectLight', params );
 		const isLightVisibleToCameraFn = proxyFn( 'lightsInfo.value.isLightVisibleToCamera', params );
 
+		// Inlined into the kernel. A helper `fn` before `fn compute` becomes the
+		// TSL entry point (the parser uses the first function) and the path
+		// tracer never runs. Keep this in sync with irradianceSlot().
+		const irradianceHashSlot = (slot, cell, normal) => `
+				let ${ slot }Cell = ${ cell };
+				let ${ slot }Normal = ${ normal };
+				let ${ slot }Nqx = select( 0u, 1u, ${ slot }Normal.x >= 0.0 );
+				let ${ slot }Nqy = select( 0u, 1u, ${ slot }Normal.y >= 0.0 );
+				let ${ slot }Nqz = select( 0u, 1u, ${ slot }Normal.z >= 0.0 );
+				let ${ slot }H = ( u32( ${ slot }Cell.x ) * 73856093u ) ^ ( u32( ${ slot }Cell.y ) * 19349663u ) ^ ( u32( ${ slot }Cell.z ) * 83492791u );
+				let ${ slot }Nterm = ( ${ slot }Nqx + ${ slot }Nqy * 2u + ${ slot }Nqz * 4u + 1u ) * 16777619u;
+				let ${ slot } = ( ${ slot }H ^ ${ slot }Nterm ) & 65535u;
+		`;
+
 		const shader = wgslTagFn/* wgsl */`
 
-
-			fn ldCacheHash( cell: vec3i, normal: vec3f ) -> u32 {
-
-				// LD_IRRADIANCE_CACHE hash. Keep in sync with irradianceSlot().
-				let nqx = select( 0u, 1u, normal.x >= 0.0 );
-				let nqy = select( 0u, 1u, normal.y >= 0.0 );
-				let nqz = select( 0u, 1u, normal.z >= 0.0 );
-				let h = ( u32( cell.x ) * 73856093u ) ^ ( u32( cell.y ) * 19349663u ) ^ ( u32( cell.z ) * 83492791u );
-				let nterm = ( nqx + nqy * 2u + nqz * 4u + 1u ) * 16777619u;
-				return ( h ^ nterm ) & 65535u;
-
-			}
 
 			fn compute(
 
@@ -312,9 +314,9 @@ export class LDIrradianceCacheMegaKernel extends ComputeKernel {
 
 								let ldAlbedo = max( surface.color, vec3f( 0.04 ) );
 								let ldCell = vec3i( floor( ( vertexData.position.xyz - ${ params.cacheOrigin } ) / ${ params.cacheCellSize } ) );
-								let ldSlot = ldCacheHash( ldCell, vertexData.normal );
+								${ irradianceHashSlot('ldSlot', 'ldCell', 'vertexData.normal.xyz') }
 								ldPrimaryAlbedo = ldAlbedo;
-								ldPrimaryNormal = vertexData.normal;
+								ldPrimaryNormal = vertexData.normal.xyz;
 								ldPrimaryCell = ldCell;
 								ldPrimaryCache = true;
 								if ( ${ params.cacheRead } != 0u ) {
@@ -322,7 +324,7 @@ export class LDIrradianceCacheMegaKernel extends ComputeKernel {
 									let ldBase = ldSlot * 2u;
 									let ldIrr = ${ params.cacheBuffer }[ ldBase ];
 									let ldNrm = ${ params.cacheBuffer }[ ldBase + 1u ];
-									if ( ldIrr.w >= f32( ${ params.cacheMinSamples } ) && dot( normalize( ldNrm.xyz ), vertexData.normal ) > 0.5 ) {
+									if ( ldIrr.w >= f32( ${ params.cacheMinSamples } ) && dot( normalize( ldNrm.xyz ), vertexData.normal.xyz ) > 0.5 ) {
 
 										resultColor = vec4f( ldAlbedo * ldIrr.xyz, surface.opacity );
 										lightHits = vec3f( 0.0 );
@@ -566,8 +568,8 @@ export class LDIrradianceCacheMegaKernel extends ComputeKernel {
 				if ( ${ params.cacheWrite } != 0u && ldPrimaryCache && ! ldPrimaryCacheHit ) {
 
 					let ldIrradiance = resultColor.rgb / ldPrimaryAlbedo;
-					let ldSlot = ldCacheHash( ldPrimaryCell, ldPrimaryNormal );
-					let ldBase = ldSlot * 2u;
+					${ irradianceHashSlot('ldWriteSlot', 'ldPrimaryCell', 'ldPrimaryNormal') }
+					let ldBase = ldWriteSlot * 2u;
 					let ldPrev = ${ params.cacheBuffer }[ ldBase ];
 					let ldWeight = ldPrev.w;
 					let ldNextWeight = ldWeight + 1.0;
