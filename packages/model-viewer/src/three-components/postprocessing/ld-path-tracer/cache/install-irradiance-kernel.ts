@@ -63,6 +63,8 @@ export interface IrradianceKernelTracer {
   _ldIrradianceKernel?: CacheKernel|null;
   _ldStockMaterialKernel?: CacheKernel|null;
   _ldStockLogicKernel?: LogicKernelHandle|null;
+  _ldShadowCatcherMaterialKernel?: CacheKernel|null;
+  _ldShadowCatcherLogicKernel?: LogicKernelHandle|null;
 }
 
 export interface IrradianceKernelUpload {
@@ -146,11 +148,13 @@ export const uninstallIrradianceKernel =
       tracer._ldIrradianceKernel = null;
       tracer._ldStockMaterialKernel = null;
       tracer._ldStockLogicKernel = null;
-      if (stock != null && tracer._pathTracer.materialKernel != null) {
-        tracer._pathTracer.materialKernel = stock;
+      const shadowMaterial = tracer._ldShadowCatcherMaterialKernel ?? stock;
+      const shadowLogic = tracer._ldShadowCatcherLogicKernel ?? stockLogic;
+      if (shadowMaterial != null && tracer._pathTracer.materialKernel != null) {
+        tracer._pathTracer.materialKernel = shadowMaterial;
       }
-      if (stockLogic != null && tracer._pathTracer.logicKernel != null) {
-        tracer._pathTracer.logicKernel = stockLogic;
+      if (shadowLogic != null && tracer._pathTracer.logicKernel != null) {
+        tracer._pathTracer.logicKernel = shadowLogic;
       }
       tracer._pathTracer.rebuild();
     };

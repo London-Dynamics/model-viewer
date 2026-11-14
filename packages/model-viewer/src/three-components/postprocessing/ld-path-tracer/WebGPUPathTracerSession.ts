@@ -20,6 +20,7 @@ import {AVERAGE, CENTER, MeshBVH, SAH} from 'three-mesh-bvh';
 import {WebGPURenderer} from 'three/webgpu';
 
 import {downloadIrradianceKernel, installIrradianceKernel, IrradianceKernelTracer, IrradianceKernelUpload, uninstallIrradianceKernel, uploadIrradianceKernel} from './cache/install-irradiance-kernel.js';
+import {installShadowCatcher} from './cache/install-shadow-catcher.js';
 import {restoreSceneBvh, SerializedBvhMesh} from './cache/path-tracer-bvh-cache.js';
 import {PathTracerBVHWorker} from './PathTracerBVHWorker.js';
 
@@ -275,6 +276,7 @@ export class WebGPUPathTracerSession {
     tracer.dynamicLowRes = true;
     tracer.synchronizeRenderSize = false;
     this.tracer = tracer;
+    installShadowCatcher(tracer as unknown as IrradianceKernelTracer);
     // Bench probe only. Pages leave this unset, so the stock wavefront
     // backend is unchanged. The irradiance cache still swaps in its kernel.
     const benchBackend =
@@ -514,6 +516,16 @@ export class WebGPUPathTracerSession {
     }
     renderer.toneMapping = toneMapping;
     renderer.toneMappingExposure = exposure;
+  }
+
+  /**
+   * A page-coloured backdrop cannot be painted into the trace. Tone mapping
+   * moves that colour, so the crop no longer matches the page. Clear the
+   * background with alpha 0 and the page shows through the misses unchanged.
+   */
+  setBackgroundClearAlpha(alpha: number) {
+    this.renderer?.setClearColor(0x000000, alpha);
+    this.canvas.style.backgroundColor = 'transparent';
   }
 
   renderSample() {

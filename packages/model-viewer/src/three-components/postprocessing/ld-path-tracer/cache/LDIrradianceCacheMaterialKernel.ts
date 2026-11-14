@@ -209,16 +209,11 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					let objectInfo = transforms[ u32( input.objectIndex ) ];
 					var materialInfo = ( *materials )[ objectInfo.materialIndex ];
 
-					// a matte surface hit by the camera ray renders as a fully transparent
+					// A matte primary hit is a shadow catcher. Negative alpha marks it.
 					let isMatte = materialInfo.matte != 0 && input.currentBounce == 0u;
 					if ( isMatte ) {
 
-						rayDataStorage[ index ].resultColor = vec4f( 0.0 );
-						rayDataStorage[ index ].throughputColor = vec3f( 0.0 );
-						rayDataStorage[ index ].emission = vec3f( 0.0 );
-						rayDataStorage[ index ].lightPdf = 0.0;
-						rayDataStorage[ index ].shadowRayIntersectionIndex = - 1;
-						return;
+						rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -1.0 );
 
 					}
 
@@ -379,7 +374,7 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					// decide termination now so finished paths skip the bounce trace entirely - a
 					// zeroed pdf reads as a terminating scatter in LogicKernel, which still resolves
 					// the surface's emission and NEE before freeing the slot
-					var isTerminated = newBounce >= maxBounces || all( scatterRec.color == vec3f( 0.0 ) ) || ${ isTerminatingScatterFunc }( scatterRec );
+					var isTerminated = isMatte || newBounce >= maxBounces || all( scatterRec.color == vec3f( 0.0 ) ) || ${ isTerminatingScatterFunc }( scatterRec );
 
 					// russian roulette early out:
 					// Matches Cycles path_state_continuation_probability in integrator/path_state.h

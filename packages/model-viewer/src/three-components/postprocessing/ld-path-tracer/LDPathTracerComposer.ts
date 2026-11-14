@@ -14,7 +14,7 @@
  */
 
 import {Box3, Camera, CanvasTexture, Color, DoubleSide, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NeutralToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
-import {GradientEquirectTexture, PhysicalCamera} from 'three-gpu-pathtracer';
+import {PhysicalCamera} from 'three-gpu-pathtracer';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
 
 import {EffectComposerInterface} from '../../../model-viewer-base.js';
@@ -361,8 +361,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   };
   private lastBackdropKey = '';
   private lightVisibilityKey = '';
-  private readonly tracedBackdropColor = new Color();
-  private readonly tracedBackdrop = new GradientEquirectTexture(16);
   private tracePresentTexture: CanvasTexture|null = null;
   private tracePresentQuad: FullScreenQuad|null = null;
   private options: PathTracerOptions = {
@@ -900,16 +898,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.lastBackground = background;
     this.lastBackdropKey = backdropKey;
     this.environmentStateReady = true;
-    const sceneBackground = this.scene.background;
-    if (backdropKey !== '') {
-      this.paintTracedBackdrop(backdropKey);
-      this.scene.background = this.tracedBackdrop;
-    }
-    try {
-      this.pathTracer.updateEnvironment();
-    } finally {
-      this.scene.background = sceneBackground;
-    }
+    // No skybox: the page is the background. Leave the scene background empty
+    // and clear the trace with alpha 0 so tone mapping cannot recolour it.
+    // A real skybox or scene background is traced as usual.
+    this.pathTracer.setBackgroundClearAlpha(backdropKey !== '' ? 0 : 1);
+    this.pathTracer.updateEnvironment();
     if (environmentChanged) {
       this.invalidatePathTracerCache('environment');
     }
@@ -1340,6 +1333,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       side: DoubleSide,
       transparent: DEFAULT_PATH_TRACER_OPTIONS.floorOpacity < 1,
     });
+    // Camera hits become a shadow over the page instead of a shaded card.
+    (material as MeshStandardMaterial&{matte?: boolean}).matte = true;
 
     this.shadowCatcher = new Mesh(new PlaneGeometry(1, 1), material);
     this.shadowCatcher.name = 'PathTracerShadowCatcher';
@@ -2026,17 +2021,6 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private animationIsPlaying(): boolean {
     const element = this.scene?.element as {paused?: boolean} | undefined;
     return element != null && element.paused === false;
-  }
-
-  private paintTracedBackdrop(color: string) {
-    this.tracedBackdropColor.set(color);
-    if (this.tracedBackdrop.topColor.equals(this.tracedBackdropColor) &&
-        this.tracedBackdrop.bottomColor.equals(this.tracedBackdropColor)) {
-      return;
-    }
-    this.tracedBackdrop.topColor.copy(this.tracedBackdropColor);
-    this.tracedBackdrop.bottomColor.copy(this.tracedBackdropColor);
-    this.tracedBackdrop.update();
   }
 
   private backdropKey(): string {

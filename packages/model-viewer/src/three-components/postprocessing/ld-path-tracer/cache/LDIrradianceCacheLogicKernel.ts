@@ -123,6 +123,7 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 
 				var resultColor = input.resultColor;
 				var throughputColor = input.throughputColor;
+				var blockedLight = vec3f( 0.0 );
 
 				// added last, since a camera ray miss overwrites the pixel with the background
 				var lightHits = vec3f( 0.0 );
@@ -134,14 +135,16 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 
 					let shadowHit = ( *shadowRayIntersectionsStorage )[ u32( input.shadowRayIntersectionIndex ) ];
 					let occluded = shadowHit.objectIndex >= 0;
-					if ( ! occluded ) {
+					let isMISWeighted = ${ isMISWeightLightFn }( input.lightType ) && shadowHit.forwardBlocked == 0u;
+					let misWeight = select( 1.0, ${ misHeuristicFn }( input.lightPdf, input.lightBsdfPdf ), isMISWeighted );
+					let directLight = throughputColor * input.lightEmission * input.lightBsdf * misWeight / input.lightPdf;
+					let contribution = ${ clampPathContributionFunc }( directLight, input.currentBounce, clampDirect, clampIndirect );
+					if ( occluded ) {
 
-						// env + area lights are also bsdf-sampled, so MIS-weight them; punctual take full weight,
-						// or when a bsdf ray could never reach the light
-						let isMISWeighted = ${ isMISWeightLightFn }( input.lightType ) && shadowHit.forwardBlocked == 0u;
-						let misWeight = select( 1.0, ${ misHeuristicFn }( input.lightPdf, input.lightBsdfPdf ), isMISWeighted );
-						let directLight = throughputColor * input.lightEmission * input.lightBsdf * misWeight / input.lightPdf;
-						let contribution = ${ clampPathContributionFunc }( directLight, input.currentBounce, clampDirect, clampIndirect );
+						blockedLight += contribution;
+
+					} else {
+
 						resultColor += vec4f( contribution, 0.0 );
 
 					}
@@ -355,6 +358,17 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 				let storedSamples = textureLoad( ${ params.sampleCountTarget }, indexUV ).r & ${ SAMPLE_COUNT_MASK }u;
 
 				if ( isTerminated ) {
+
+					if ( resultColor.a < 0.0 ) {
+
+						let received = resultColor.rgb;
+						let open = received + blockedLight;
+						let openLum = max( open.r, max( open.g, open.b ) );
+						let gotLum = max( received.r, max( received.g, received.b ) );
+						let visibility = select( 1.0, saturate( gotLum / openLum ), openLum > 1e-4 );
+						resultColor = vec4f( 0.0, 0.0, 0.0, 1.0 - visibility );
+
+					}
 
 					// blend the finished sample into the output and free the slot for a new camera ray
 					let sampleCount = storedSamples + 1;
