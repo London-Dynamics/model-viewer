@@ -153,7 +153,7 @@
       {
         "name": "modelCacheSize",
         "htmlName": "modelCacheSize",
-        "description": "This static, writable property sets <span class='attribute'>&lt;model-viewer&gt;</span>'s internal glTF model cache size, controlling number of individual models that should be cached. Note that any number of models may be cached at a given time. This number sets the maximum number of models that can be cached even if they are not being used by a <span class='attribute'>&lt;model-viewer&gt;</span> element in the document. Note also that the cache size is measured in number of glTF models, not bytes! This is important to keep in mind, since any two models may have wildly different byte sizes.",
+        "description": "This static, writable property sets <span class='attribute'>&lt;model-viewer&gt;</span>'s internal glTF model cache size, controlling number of individual product <span class='attribute'>src</span> models that should be cached. Note that any number of models may be cached at a given time. This number sets the maximum number of unused product models that can be cached even if they are not being used by a <span class='attribute'>&lt;model-viewer&gt;</span> element in the document. Environment models loaded with <span class='attribute'>environment-model</span> use a separate cache: they do not count toward this limit, and loading a product src does not evict an environment model that is in use. Note also that the cache size is measured in number of glTF models, not bytes! This is important to keep in mind, since any two models may have wildly different byte sizes.",
         "default": {
           "default": "5",
           "options": "any integer >= 0"
@@ -1594,6 +1594,18 @@
     "htmlName": "ld_environment",
     "Attributes": [
       {
+        "name": "clip-to-env",
+        "htmlName": "clipToEnv",
+        "description": "Adjusts the camera <b>far</b> clipping range so a loaded <span class='attribute'>environment-model</span> stays inside the frustum. It does not show or hide the environment. The near plane, zoom, and orbit limits stay the same, and the environment is not included in product framing.<br/><br/>Default is <b>true</b> when the attribute is omitted: the far plane is at least the orbit-derived range (<code>2 * max(scene far radius, max orbit radius)</code>) and large enough for the environment model's transformed world bounds from the current camera. It is recalculated when the environment model is loaded, replaced, removed, or moved, and when the camera or its target changes the required distance.<br/><br/>Set <code>clip-to-env=\"false\"</code> or <code>element.clipToEnv = false</code> to keep only the orbit-derived far plane. The string <code>false</code> is respected; a bare <code>clip-to-env</code> attribute means true. Removing the attribute restores the default.<br/><br/>Scenes with no environment model keep the orbit-derived plane either way. Changing <code>src</code> does not clear, hide, or reload the environment model. The environment model loads in parallel with the product. The first reveal waits until both are ready, so they appear in the same frame. If the environment model fails, the product is revealed and <code>environment-model-error</code> fires. A later <code>src</code> change does not wait. The environment model is replaced or removed only when <code>environment-model</code> changes. Its glTF is cached separately from <code>modelCacheSize</code>.<br/><br/>Usage:<br/><code>&lt;model-viewer src=\"product.glb\" environment-model=\"harbor.glb\" max-camera-orbit=\"auto auto 10m\"&gt;&lt;/model-viewer&gt;</code><br/><code>&lt;model-viewer clip-to-env=\"false\" environment-model=\"harbor.glb\"&gt;&lt;/model-viewer&gt;</code>",
+        "links": [
+          "<a href=\"../examples/ld_environment/#environment-model\">Environment model example</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
         "name": "water-texture",
         "htmlName": "waterTexture",
         "description": "Activate a water texture on the ground plane by providing a normals texture file.",
@@ -1854,6 +1866,48 @@
     ]
   },
   {
+    "Title": "LD Material Swap",
+    "htmlName": "ld_material_swap",
+    "Methods": [
+      {
+        "name": "applyMaterialSwaps(swaps, options?)",
+        "htmlName": "applyMaterialSwaps",
+        "description": "Applies Puzzle material swaps on the loaded model without a server rebuild or a <span class='attribute'>src</span> change. <b>swaps</b> is the full ordered list for the current selection. Each entry is <code>{ url, targets?, targetPatterns?, key? }</code>. <b>targets</b> are exact glTF mesh names (<code>meshes[].name</code>, not three.js object names). <b>targetPatterns</b> use Puzzle's prefix rule: a trailing <code>*</code> matches mesh names that start with the prefix. Every primitive of each matched mesh is pointed at the material file's first material. Later entries win when they name the same mesh. Meshes left out of the list are left as they are; there is no unset. One owned material is kept per <b>key</b> (default <b>url</b>) and reused, and only shader-define changes mark it for recompile. The owned material is registered on <code>model</code> under the material file's name, so <code>getMaterialByName</code> and material adjust keep working. On <b>quality: 'mobile'</b> the loader tries <code>name@mobile.glb</code> and falls back to <b>url</b>. The default quality follows the <code>IS_MOBILE</code> user-agent check; pass <b>quality</b> when Agora's Puzzle quality is different. Resolves with <code>{ applied, missingTargets, warnings, quality }</code>. A load or validation failure rejects with <code>MaterialSwapError</code> and leaves the scene unchanged.",
+        "links": [
+          "<a href=\"../examples/ld_material_swap/#shared-material\">Shared material swap</a>"
+        ]
+      }
+    ],
+    "Static Methods": [
+      {
+        "name": "materialSwapCacheSize",
+        "htmlName": "materialSwapCacheSize",
+        "description": "How many unused decoded material files to keep. Files still held by a viewer are never evicted and do not use this budget. This cache is separate from <span class='attribute'>modelCacheSize</span> and from environment models. The default is 8. Evicted files dispose their material and textures.",
+        "default": {
+          "default": "8",
+          "options": "number"
+        }
+      },
+      {
+        "name": "clearMaterialSwapCache()",
+        "htmlName": "clearMaterialSwapCache",
+        "description": "Drops every decoded material file and disposes its material and textures. Viewers that still show a swap keep their owned clones, which share those textures, so call this only when no swap is on screen."
+      }
+    ],
+    "Events": [
+      {
+        "name": "material-swap",
+        "htmlName": "material-swap",
+        "description": "Fired after a swap call finishes, including a call that applied nothing because the model reloaded mid-flight. <code>event.detail</code> is the same object the promise resolves to: <code>applied</code>, <code>missingTargets</code>, <code>warnings</code> and <code>quality</code>. Missing mesh names are not a failure; Puzzle logs those and continues. Agora can re-apply material adjusts after this event."
+      },
+      {
+        "name": "material-swap-error",
+        "htmlName": "material-swap-error",
+        "description": "Fired when a swap cannot be applied and the scene is left unchanged. <code>event.detail.reason</code> is <code>load</code>, <code>no-model</code>, <code>invalid</code> or <code>aborted</code>. The promise also rejects with <code>MaterialSwapError</code>. Agora can fall back to a Puzzle rebuild on this event. A <span class='attribute'>src</span> change that wins the race is not an error; it arrives as <code>material-swap</code> with a warning, because the new GLB already replaced the scene."
+      }
+    ]
+  },
+  {
     "Title": "LD Measure",
     "htmlName": "ld_measure",
     "Attributes": [
@@ -1976,7 +2030,7 @@
       {
         "name": "addGridShapeLines(paths, options?)",
         "htmlName": "addGridShapeLines",
-        "description": "Adds one or more custom line paths on top of the measurement grid and returns an id that can be used to remove them later. The optional options object supports: id (string, custom identifier), color (CSS color string or number), thickness (number, world-space line thickness), and coordinate ([x, z] offset in the current measurement unit).",
+        "description": "Adds one or more custom line paths on top of the measurement grid and returns an id that can be used to remove them later. The optional options object supports: id (string, custom identifier), color (CSS color string or number), thickness (number, world-space line thickness), and coordinate ([x, z] offset in the current measurement unit). Strokes in one call that share an endpoint (within 1e-6) and the same thickness are joined. Two strokes become one polyline with a mitered corner. A loop of joined strokes is drawn closed. Three or more strokes at one point keep their ends and get a filled joint. A different thickness, another call, or a crossing that is not a shared point stays separate. The Grid shape lines example draws its square as four open sides that join this way.",
         "links": [
           "<a href=\"../examples/ld_measure/#grid-shapes\">Related examples</a>"
         ]
@@ -2161,9 +2215,10 @@
       {
         "name": "src-is-room",
         "htmlName": "srcIsRoom",
-        "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, and matching skirting_N follows wall_N visibility. Wall shell nodes (`walls` group or `wall_*`) and floor shell nodes (`floor` or `floor_*`) are shown only when the separate <span class=\"attribute\">walls</span> and <span class=\"attribute\">floor</span> booleans are true (they default to false — without them the room shell is hidden). Soft shadows (<span class=\"attribute\">shadow-intensity</span>) are projected onto floor shell meshes when <span class=\"attribute\">floor</span> is true and floor meshes exist; otherwise the synthetic ground plane is used. Receivers rebind when <span class=\"attribute\">src</span> is replaced. Placed objects with <code>userData.attachedWallName</code> follow <span class=\"attribute\">walls</span> and camera backface rules; objects with <code>userData.attachedSurfaceType === 'floor'</code> follow <span class=\"attribute\">floor</span>. In WebXR AR, the room base model is omitted from the AR view while placed objects remain; for Scene Viewer / Quick Look supply a room-free <span class=\"attribute\">ar-src</span> / <span class=\"attribute\">ios-src</span>. With <span class=\"attribute\">debug</span> enabled, the element logs effective walls/floor flags after load and when those attributes change.",
+        "description": "Marks the base src model as a room surface source for wall/floor/ceiling snapping workflows. When enabled, room-specific behavior is activated: base model selection is disabled, base model shadows are disabled, and matching skirting_N follows wall_N visibility. Wall shell nodes (`walls` group or `wall_*`) and floor shell nodes (`floor` or `floor_*`) are shown only when the separate <span class=\"attribute\">walls</span> and <span class=\"attribute\">floor</span> booleans are true (they default to false — without them the room shell is hidden). Soft shadows (<span class=\"attribute\">shadow-intensity</span>) are projected onto floor shell meshes when <span class=\"attribute\">floor</span> is true and floor meshes exist; otherwise the synthetic ground plane is used. Receivers rebind when <span class=\"attribute\">src</span> is replaced. Placed objects with <code>userData.attachedWallName</code> follow <span class=\"attribute\">walls</span> and camera backface rules; objects with <code>userData.attachedSurfaceType === 'floor'</code> follow <span class=\"attribute\">floor</span>. Ceiling-only parts (<code>allowedSurfaces: ['ceiling']</code> without <code>'wall'</code>) follow the floor in X and Z and lock their origin to the top of the wall shells, minus the surface-snap <code>offset</code> (default 1 mm). In WebXR AR, the room base model is omitted from the AR view while placed objects remain; for Scene Viewer / Quick Look supply a room-free <span class=\"attribute\">ar-src</span> / <span class=\"attribute\">ios-src</span>. With <span class=\"attribute\">debug</span> enabled, the element logs effective walls/floor flags after load and when those attributes change.",
         "links": [
           "<a href=\"../examples/ld_modular/#room-surface-snap\">Related examples</a>",
+          "<a href=\"../examples/ld_modular/#room-ceiling-snap\">Room ceiling snap</a>",
           "<a href=\"../examples/ld_measure/#room-measure-grid\">Room measure + grid</a>"
         ],
         "default": {
@@ -2195,6 +2250,18 @@
         "default": {
           "default": "false",
           "options": "true, false"
+        }
+      },
+      {
+        "name": "innerWallMode",
+        "htmlName": "inner-wall-mode",
+        "description": "When <span class=\"attribute\">src-is-room</span> is true, sets how internal wall meshes are drawn. Matches <code>innerWall_&lt;n&gt;_left</code>, <code>_right</code>, <code>_top</code>, <code>_cap_start</code>, <code>_cap_end</code>, <code>_reveal</code>, and <code>innerSkirting_</code> / <code>innerPanelling_</code> on a side. <code>solid</code> keeps the authored materials and hides <code>innerWallCutaway_*</code>. <code>transparent</code> draws the full-height meshes translucent from one shared glass material per authored material, independent of the camera, and hides the cutaway. <code>cutaway</code> hides the full-height set and shows the cutaway meshes with their authored materials. <code>hidden</code> hides both. Placed objects snapped to a full-height inner wall are hidden in <code>cutaway</code> and <code>hidden</code>, and shown again in <code>solid</code> and <code>transparent</code>, without being removed. Perimeter <code>wall_*</code> meshes are not affected. Any other value behaves as <code>solid</code>. No effect when src-is-room is false.",
+        "links": [
+          "<a href=\"../examples/ld_modular/#room-surface-snap\">Room surface snap</a>"
+        ],
+        "default": {
+          "default": "solid",
+          "options": "solid, transparent, cutaway, hidden"
         }
       }
     ],

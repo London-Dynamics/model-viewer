@@ -1,4 +1,5 @@
 // @ts-nocheck
+// clang-format off
 import {
 	AddEquation,
 	Color,
@@ -113,6 +114,7 @@ class AOPass extends Pass {
 		} );
 
 		this.blendMaterial = new ShaderMaterial( {
+			defines: Object.assign( {}, AoBlendShader.defines ),
 			uniforms: UniformsUtils.clone( AoBlendShader.uniforms ),
 			vertexShader: AoBlendShader.vertexShader,
 			fragmentShader: AoBlendShader.fragmentShader,
@@ -143,6 +145,8 @@ class AOPass extends Pass {
 		this.fsQuad = new FullScreenQuad( null );
 
 		this.originalClearColor = new Color();
+		this.sceneDepthTexture = null;
+		this.modelDepthTarget = null;
 
 		this.setGBuffer( parameters ? parameters.depthTexture : undefined, parameters ? parameters.normalTexture : undefined );
 
@@ -173,6 +177,12 @@ class AOPass extends Pass {
 		this.copyMaterial.dispose();
 		this.depthRenderMaterial.dispose();
 		this.fsQuad.dispose();
+		if ( this.modelDepthTarget ) {
+
+			this.modelDepthTarget.dispose();
+			this.modelDepthTarget = null;
+
+		}
 
 	}
 
@@ -217,6 +227,7 @@ class AOPass extends Pass {
 		this.aoMaterial.defines.DEPTH_SWIZZLING = depthValueSource;
 		this.aoMaterial.uniforms.tNormal.value = this.normalTexture;
 		this.aoMaterial.uniforms.tDepth.value = this.depthTexture;
+		this.sceneDepthTexture = this.depthTexture;
 
 		this.pdMaterial.defines.NORMAL_VECTOR_TYPE = normalVectorType;
 		this.pdMaterial.defines.DEPTH_SWIZZLING = depthValueSource;
@@ -395,6 +406,13 @@ class AOPass extends Pass {
 	}
 
 	updateBeforeOutput( renderer ) {
+
+		// Beauty-pass depth includes environment-model. AO samples a second
+		// depth with that root hidden, so a large set cannot dominate the
+		// src model. The mask keeps environment pixels undarkened, including
+		// where the set is in front of the model.
+		this.prepareModelDepth( renderer );
+
 		// render normals and depth (honor only meshes, points and lines do not contribute to AO)
 
 		if ( this._renderGBuffer ) {
@@ -573,6 +591,11 @@ class AOPass extends Pass {
 		this.aoaoRenderTarget.setSize( width, height );
 		this.normalRenderTarget.setSize( width, height );
 		this.pdRenderTarget.setSize( width, height );
+		if ( this.modelDepthTarget ) {
+
+			this.modelDepthTarget.setSize( width, height );
+
+		}
 
 		this.aoMaterial.uniforms.resolution.value.set( width, height );
 		this.aoMaterial.uniforms.cameraProjectionMatrix.value.copy( this.camera.projectionMatrix );
@@ -580,6 +603,124 @@ class AOPass extends Pass {
 
 		this.pdMaterial.uniforms.resolution.value.set( width, height );
 		this.pdMaterial.uniforms.cameraProjectionMatrixInverse.value.copy( this.camera.projectionMatrixInverse );
+
+	}
+
+	environmentRootAffectsDepth() {
+
+		const root = this.scene && this.scene.environmentRoot;
+		return !!( root && root.visible && root.children.length > 0 );
+
+	}
+
+	ensureModelDepthTarget() {
+
+		if ( this.modelDepthTarget ) {
+
+			return;
+
+		}
+
+		const depthTexture = new DepthTexture( this.width, this.height );
+		this.modelDepthTarget = new WebGLRenderTarget( this.width, this.height, {
+			depthTexture,
+			samples: 0
+		} );
+		this.modelDepthTarget.texture.name = 'ld-ao-model-depth';
+
+	}
+
+	bindSamplingDepth( depthTexture ) {
+
+		this.depthTexture = depthTexture;
+		this.aoMaterial.uniforms.tDepth.value = depthTexture;
+		this.pdMaterial.uniforms.tDepth.value = depthTexture;
+		this.depthRenderMaterial.uniforms.tDepth.value = depthTexture;
+
+	}
+
+	prepareModelDepth( renderer ) {
+
+		if ( !this.environmentRootAffectsDepth() ) {
+
+			if ( this.sceneDepthTexture ) {
+
+				this.bindSamplingDepth( this.sceneDepthTexture );
+
+			}
+
+			this.syncOcclusionMask( false );
+			return;
+
+		}
+
+		this.ensureModelDepthTarget();
+		const root = this.scene.environmentRoot;
+		const previousVisible = root.visible;
+		const previousTarget = renderer.getRenderTarget();
+		const previousAutoClear = renderer.autoClear;
+		const previousShadowAutoUpdate = renderer.shadowMap.autoUpdate;
+		root.visible = false;
+
+		try {
+
+			renderer.shadowMap.autoUpdate = false;
+			renderer.autoClear = true;
+			renderer.setRenderTarget( this.modelDepthTarget );
+			renderer.clear( true, true, true );
+			renderer.render( this.scene, this.camera );
+
+		} finally {
+
+			root.visible = previousVisible;
+			renderer.shadowMap.autoUpdate = previousShadowAutoUpdate;
+			renderer.autoClear = previousAutoClear;
+			renderer.setRenderTarget( previousTarget );
+
+		}
+
+		this.bindSamplingDepth( this.modelDepthTarget.depthTexture );
+		this.syncOcclusionMask( true );
+
+	}
+
+	syncOcclusionMask( enabled ) {
+
+		const value = enabled ? 1 : 0;
+
+		if ( this.aoMaterial.defines.AO_OCCLUSION_MASK !== value ) {
+
+			this.aoMaterial.defines.AO_OCCLUSION_MASK = value;
+			this.aoMaterial.needsUpdate = true;
+
+		}
+
+		if ( this.blendMaterial.defines.AO_OCCLUSION_MASK !== value ) {
+
+			this.blendMaterial.defines.AO_OCCLUSION_MASK = value;
+			this.blendMaterial.needsUpdate = true;
+
+		}
+
+		const perspective = this.camera.isPerspectiveCamera ? 1 : 0;
+		if ( this.blendMaterial.defines.PERSPECTIVE_CAMERA !== perspective ) {
+
+			this.blendMaterial.defines.PERSPECTIVE_CAMERA = perspective;
+			this.blendMaterial.needsUpdate = true;
+
+		}
+
+		if ( !enabled ) {
+
+			return;
+
+		}
+
+		this.aoMaterial.uniforms.tSceneDepth.value = this.sceneDepthTexture;
+		this.blendMaterial.uniforms.tSceneDepth.value = this.sceneDepthTexture;
+		this.blendMaterial.uniforms.tModelDepth.value = this.depthTexture;
+		this.blendMaterial.uniforms.cameraNear.value = this.camera.near;
+		this.blendMaterial.uniforms.cameraFar.value = this.camera.far;
 
 	}
 

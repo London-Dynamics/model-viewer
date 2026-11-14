@@ -13,13 +13,13 @@
  * limitations under the License.
  */
 
-import {AnimationAction, AnimationActionLoopStyles, AnimationClip, AnimationMixer, AnimationMixerEventMap, Box3, Camera, Euler, Event as ThreeEvent, LoopOnce, LoopPingPong, LoopRepeat, Material, Matrix3, Mesh, NeutralToneMapping, Object3D, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Sphere, Texture, ToneMapping, Triangle, Vector2, Vector3, WebGLRenderer, XRTargetRaySpace,} from 'three';
+import {AnimationAction, AnimationActionLoopStyles, AnimationClip, AnimationMixer, AnimationMixerEventMap, Box3, Camera, Euler, Event as ThreeEvent, LoopOnce, LoopPingPong, LoopRepeat, Material, Matrix3, Matrix4, Mesh, NeutralToneMapping, Object3D, OrthographicCamera, PerspectiveCamera, Raycaster, Scene, Sphere, Texture, ToneMapping, Triangle, Vector2, Vector3, WebGLRenderer, XRTargetRaySpace,} from 'three';
 import {CSS2DRenderer} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {reduceVertices} from 'three/examples/jsm/utils/SceneUtils.js';
 
 import {$currentGLTF, $model, $originalGltfJson,} from '../features/scene-graph.js';
 import {$nodeFromIndex, $nodeFromPoint,} from '../features/scene-graph/model.js';
-import ModelViewerElementBase, {$renderer, $scene, EffectComposerInterface, RendererInterface,} from '../model-viewer-base.js';
+import ModelViewerElementBase, {$renderer, $scene, $updateCameraClipping, EffectComposerInterface, RendererInterface,} from '../model-viewer-base.js';
 import {ModelViewerElement} from '../model-viewer.js';
 import {normalizeUnit} from '../styles/conversions.js';
 import {NumberNode, parseExpressions} from '../styles/parsers.js';
@@ -33,6 +33,13 @@ import {Shadow} from './Shadow.js';
 
 export const GROUNDED_SKYBOX_SIZE = 10;
 const MIN_SHADOW_RATIO = 100;
+
+/** Positive finite room scale. Anything else leaves the room at its authored size. */
+export function uniformRoomScale(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : 1;
+}
 
 export interface ModelLoadEvent extends ThreeEvent {
   url: string;
@@ -182,6 +189,11 @@ export class ModelScene extends Scene {
   private _model: Object3D|null = null;
   private _environmentModel: Object3D|null = null;
   private environmentModelDispose: (() => void)|null = null;
+  /** Environment geometry in environmentRoot local space. */
+  private environmentBoundsLocal: Box3|null = null;
+  private readonly environmentClipBox = new Box3();
+  private readonly environmentClipCorner = new Vector3();
+  private readonly environmentBoundsInverse = new Matrix4();
   private mixer: AnimationMixer;
   private cancelPendingSourceChange: (() => void)|null = null;
   private animationsByName: Map<string, AnimationClip> = new Map();
@@ -425,19 +437,23 @@ export class ModelScene extends Scene {
   }
 
   setEnvironmentModel(model: Object3D|null, dispose?: () => void) {
-    this.clearEnvironmentModel();
+    this.clearEnvironmentModel(false);
 
     if (model == null) {
+      this.environmentBoundsLocal = null;
+      this.requestCameraClippingUpdate();
       return;
     }
 
     this._environmentModel = model;
     this.environmentModelDispose = dispose ?? null;
     this.environmentRoot.add(model);
+    this.captureEnvironmentBounds();
     this.queueRender();
+    this.requestCameraClippingUpdate();
   }
 
-  clearEnvironmentModel() {
+  clearEnvironmentModel(updateClipping = true) {
     if (this._environmentModel != null) {
       this._environmentModel.removeFromParent();
       this._environmentModel = null;
@@ -448,7 +464,85 @@ export class ModelScene extends Scene {
       this.environmentModelDispose = null;
     }
 
+    this.environmentBoundsLocal = null;
     this.queueRender();
+    if (updateClipping) {
+      this.requestCameraClippingUpdate();
+    }
+  }
+
+  /**
+   * True when an environment model's bounds are cached. Does not walk the
+   * scene graph.
+   */
+  hasEnvironmentBounds(): boolean {
+    const bounds = this.environmentBoundsLocal;
+    return bounds != null && !bounds.isEmpty();
+  }
+
+  /**
+   * Max view-space depth of the cached environment bounds from `camera`.
+   * Zero when no environment model is loaded. Uses the box captured at load
+   * time transformed by environmentRoot, so camera and root changes do not
+   * traverse environment geometry.
+   */
+  environmentViewDepth(camera: Camera): number {
+    const local = this.environmentBoundsLocal;
+    if (local == null || local.isEmpty()) {
+      return 0;
+    }
+
+    this.environmentRoot.updateWorldMatrix(true, false);
+    camera.updateWorldMatrix(true, false);
+    const world = this.environmentClipBox.copy(local).applyMatrix4(
+        this.environmentRoot.matrixWorld);
+    const {min, max} = world;
+    const inverse = camera.matrixWorldInverse;
+    const corner = this.environmentClipCorner;
+    let depth = 0;
+    for (const x of [min.x, max.x]) {
+      for (const y of [min.y, max.y]) {
+        for (const z of [min.z, max.z]) {
+          corner.set(x, y, z).applyMatrix4(inverse);
+          if (Number.isFinite(corner.z)) {
+            depth = Math.max(depth, -corner.z);
+          }
+        }
+      }
+    }
+    return Number.isFinite(depth) && depth > 0 ? depth : 0;
+  }
+
+  private captureEnvironmentBounds() {
+    const model = this._environmentModel;
+    if (model == null) {
+      this.environmentBoundsLocal = null;
+      return;
+    }
+
+    model.updateWorldMatrix(true, true);
+    const world = this.environmentClipBox.setFromObject(model);
+    if (world.isEmpty()) {
+      this.environmentBoundsLocal = null;
+      return;
+    }
+
+    this.environmentRoot.updateWorldMatrix(true, false);
+    const inverse =
+        this.environmentBoundsInverse.copy(this.environmentRoot.matrixWorld);
+    if (inverse.determinant() === 0) {
+      this.environmentBoundsLocal = null;
+      return;
+    }
+    inverse.invert();
+    if (this.environmentBoundsLocal == null) {
+      this.environmentBoundsLocal = new Box3();
+    }
+    this.environmentBoundsLocal.copy(world).applyMatrix4(inverse);
+  }
+
+  private requestCameraClippingUpdate() {
+    this.element[$updateCameraClipping]();
   }
 
   setEnvironmentModelVisible(visible: boolean) {
@@ -639,7 +733,12 @@ export class ModelScene extends Scene {
       NumberNode,
     ];
 
-    model.scale.set(scale[0].number, scale[1].number, scale[2].number);
+    const roomScale = uniformRoomScale(this.element.roomScale);
+    model.scale.set(
+      scale[0].number * roomScale,
+      scale[1].number * roomScale,
+      scale[2].number * roomScale
+    );
   }
 
   updateBoundingBox() {

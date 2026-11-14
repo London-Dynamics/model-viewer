@@ -1511,13 +1511,16 @@
                   surface placement. With
                   <span class="attribute">src-is-room</span> and
                   <span class="attribute">shadow-intensity</span>, soft shadows
-                  from placed objects project onto the room floor shells.
+                  from placed objects project onto the room floor shells. The room
+                  has a thin inner wall and a thick inner wall with two doors and a
+                  window. Solid, Transparent, Cutaway, and Hidden change those
+                  inner walls only.
                 </p>
               </div>
               <example-snippet stamp-to="room-surface-snap" highlight-as="html">
                 <template>
                   <model-viewer
-                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    src="../../shared-assets/models/rooms/inner-wall-cutaway.glb"
                     id="room-surface-snap-demo"
                     camera-controls
                     touch-action="pan-y"
@@ -1538,6 +1541,7 @@
                     src-is-room
                     walls
                     floor
+                    inner-wall-mode="solid"
                     viewport-gizmo
                   >
                     <div slot="floating-object-anchor">
@@ -1625,6 +1629,36 @@
                                 >
                               </div>
                             </div>
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="solid"
+                              >
+                                Solid
+                              </button>
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="transparent"
+                              >
+                                Transparent
+                              </button>
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="cutaway"
+                              >
+                                Cutaway
+                              </button>
+                              <button
+                                type="button"
+                                class="inner-wall-mode ld-button-sm"
+                                data-mode="hidden"
+                              >
+                                Hidden
+                              </button>
+                            </div>
                             <p class="ld-helper-text m-0">
                               Release over a wall to commit placement.
                             </p>
@@ -1658,6 +1692,17 @@
 
                       bindBoolAttrToggle('room-surface-toggle-walls', 'walls');
                       bindBoolAttrToggle('room-surface-toggle-floor', 'floor');
+
+                      modelViewer
+                        .querySelectorAll('.inner-wall-mode')
+                        .forEach((button) => {
+                          button.addEventListener('click', () => {
+                            modelViewer.setAttribute(
+                              'inner-wall-mode',
+                              button.dataset.mode
+                            );
+                          });
+                        });
 
                       const snapPointsByPart = {
                         window: [
@@ -1831,6 +1876,177 @@
                             e.stopPropagation();
                           }
                         );
+                      }
+                    })();
+                  </script>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
+          <div id="room-ceiling-snap" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Room Ceiling Snap (Lamps)</h2>
+                <h4>
+                  Constrain a part to the ceiling with
+                  <span class="attribute">surfaceSnap</span> and
+                  <span class="attribute">allowedSurfaces: ['ceiling']</span>.
+                </h4>
+                <p>
+                  Drag a ceiling lamp around the room. It follows the floor in
+                  X and Z like any other part, and its mount locks to the top of
+                  the walls, 1 mm below the wall top. Builder rooms have no
+                  ceiling mesh, so the height comes from the wall shells.
+                </p>
+              </div>
+              <example-snippet stamp-to="room-ceiling-snap" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="http://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/room_test.glb"
+                    id="room-ceiling-snap-demo"
+                    camera-controls
+                    touch-action="pan-y"
+                    interaction-prompt="none"
+                    floating-controls
+                    min-camera-orbit="auto auto 0.5m"
+                    max-camera-orbit="auto auto auto"
+                    autoplay
+                    shadow-intensity="1"
+                    shadow-softness="1"
+                    snapping-enabled
+                    edit
+                    selection-scope="part"
+                    highlight-selected
+                    selection-highlight-color="#165dfc"
+                    selection-highlight-thickness="1.5"
+                    src-is-room
+                    walls
+                    floor
+                    viewport-gizmo
+                  >
+                    <div slot="floating-object-anchor">
+                      <div
+                        id="room-ceiling-floating-control-strip"
+                        class="flex items-center bg-white justify-between rounded-full p-0.5 shadow-sm text-sm font-semibold"
+                        data-no-raycast
+                      >
+                        <button
+                          type="button"
+                          id="room-ceiling-delete-selected"
+                          class="cursor-pointer flex items-center justify-center rounded-full hover:bg-blue-600 size-7 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          title="Delete selected objects"
+                        >
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="ld-panel">
+                      <div class="ld-card">
+                        <div class="ld-card-body">
+                          <h3 class="ld-panel-title">Room Ceiling Snap</h3>
+                          <div class="ld-sections-loose">
+                            <div class="flex gap-4">
+                              <button
+                                type="button"
+                                class="place-ceiling-part ld-button-sm"
+                                data-src="../../shared-assets/models/ceiling-lamp.glb"
+                                data-name="ceiling-lamp"
+                              >
+                                Place Ceiling Lamp
+                              </button>
+                            </div>
+                            <p class="ld-helper-text m-0">
+                              Lamps hang from the wall top. Release over the
+                              room to commit placement.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </model-viewer>
+                  <script type="module">
+                    (() => {
+                      const modelViewer = document.querySelector(
+                        '#room-ceiling-snap-demo'
+                      );
+
+                      // Ceiling-only part: no wall hits. Mount at the origin so the
+                      // lamp hangs down from the wall top by the default 1 mm clearance.
+                      const lampSnapPoints = [
+                        {
+                          id: 'ceiling-mount-lamp',
+                          transform: {
+                            position: [0, 0, 0],
+                            rotation: [0, 0, 0],
+                          },
+                          allowedSurfaces: ['ceiling'],
+                          surfaceSnap: {
+                            offset: 0.001,
+                            align: 'keep-upright',
+                          },
+                        },
+                      ];
+                      // Base at y = 0 (top), bulb bottom at y = -0.42.
+                      const lampBounds = {
+                        min: [-0.1, -0.42, -0.1],
+                        max: [0.1, 0, 0.1],
+                      };
+
+                      document
+                        .querySelectorAll('.place-ceiling-part')
+                        .forEach((button) => {
+                          button.addEventListener('mousedown', (event) => {
+                            const { src, name } = event.currentTarget.dataset;
+                            if (!src) return;
+
+                            modelViewer.beginPlacement(
+                              src,
+                              src,
+                              {
+                                name,
+                                part: {
+                                  type: 'scene',
+                                  editable: true,
+                                  snapPoints: lampSnapPoints,
+                                  bounds: lampBounds,
+                                },
+                                getHighResUrl: async () => src,
+                              },
+                              {
+                                clientX: event.clientX,
+                                clientY: event.clientY,
+                              }
+                            );
+                          });
+                        });
+
+                      const controlStrip = document.getElementById(
+                        'room-ceiling-floating-control-strip'
+                      );
+                      if (controlStrip) {
+                        ['click', 'mousedown', 'mouseup'].forEach((type) => {
+                          controlStrip.addEventListener(type, (e) => {
+                            e.stopPropagation();
+                          });
+                        });
+                      }
+
+                      const deleteSelectedButton = document.getElementById(
+                        'room-ceiling-delete-selected'
+                      );
+                      if (deleteSelectedButton) {
+                        deleteSelectedButton.addEventListener('click', (e) => {
+                          e.stopPropagation();
+                          const name = controlStrip?.parentNode?.dataset
+                            ?.objectName;
+                          if (name) {
+                            modelViewer.removeObject(name, { animate: true });
+                          }
+                        });
                       }
                     })();
                   </script>

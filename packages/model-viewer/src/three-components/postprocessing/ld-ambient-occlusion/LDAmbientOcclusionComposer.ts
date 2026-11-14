@@ -1,4 +1,5 @@
 // @ts-nocheck
+// clang-format off
 import {
   Camera,
   DepthTexture,
@@ -29,6 +30,7 @@ import {
   setSelectionOutlineObjects,
 } from '../ld-selection/selection-outline-pass.js';
 
+import {scaleAmbientOcclusionRadius, srcModelBoundingRadius} from './ao-radius.js';
 import {AOPass} from './AOPass.js';
 import {AOShader} from './AOShader.js';
 
@@ -170,7 +172,7 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
       this.renderPass.scene = this.scene;
     }
 
-    const sceneRadius = this.scene.boundingSphere?.radius ?? 1.0;
+    const sceneRadius = srcModelBoundingRadius(this.scene);
     if (this.aoPass && Math.abs(sceneRadius - this.lastSceneRadius) > 1e-4) {
       this.lastSceneRadius = sceneRadius;
       this.updateOptions(this.options);
@@ -263,22 +265,14 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
       return;
     }
 
-    // Scale radius based on scene bounding sphere to account for model-viewer's
-    // auto-framing. Model-viewer auto-frames scenes which makes the same radius
-    // value appear much larger relative to the model. We scale down proportionally
-    // to the bounding sphere radius to normalize the effect.
-    // A typical car model might have a bounding sphere radius of ~1-2 units in
-    // the original example, but model-viewer's auto-framing changes this.
-    const sceneRadius = this.scene?.boundingSphere?.radius ?? 1.0;
-    // Scale factor: divide by scene radius to normalize. Use a reference of 1.0
-    // so that radius=4 produces similar results as in the original example.
-    // Clamp to prevent division by very small values.
-    const radiusScale = 1.0 / Math.max(sceneRadius, 0.5);
-    // Apply additional fine-tuning factor (0.1) since auto-framing tends to make
-    // scenes appear smaller in view space, requiring more aggressive scaling.
-    const fineTuneFactor = 0.1;
-    const scaledRadius = this.options.radius * radiusScale * fineTuneFactor;
-    const scaledThickness = this.options.thickness * radiusScale * fineTuneFactor;
+    // Scale from the src model's framing sphere only. environment-model is
+    // not part of that sphere; including it shrinks AO until it disappears.
+    const scaled = scaleAmbientOcclusionRadius(
+        this.options.radius,
+        this.options.thickness,
+        srcModelBoundingRadius(this.scene));
+    const scaledRadius = scaled.radius;
+    const scaledThickness = scaled.thickness;
 
     this.aoPass.intensity = this.options.intensity;
     this.aoPass.output = this.options.output;
@@ -433,7 +427,7 @@ export class LDAmbientOcclusionComposer implements EffectComposerInterface,
     this.aoPass = aoPass;
     this.outlinePass = outlinePass;
     this.outputPass = outputPass;
-    this.lastSceneRadius = this.scene.boundingSphere?.radius ?? 1.0;
+    this.lastSceneRadius = srcModelBoundingRadius(this.scene);
 
     this.updateOptions(this.options);
     this.syncOutlinePass();

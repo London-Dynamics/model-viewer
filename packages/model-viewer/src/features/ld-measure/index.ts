@@ -23,12 +23,14 @@ import {
   removeGridShapeLines as removeGridShapeLinesImpl,
   setGridShapesVisible as setGridShapesVisibleImpl,
   syncGridShapesVisibility as syncGridShapesVisibilityImpl,
+  type GridShapePaths,
 } from './grid-shapes.js';
 import {
   clearMeasurements as clearMeasurementsImpl,
   getViewOctantLabelInSpace,
   measureObject as measureObjectImpl,
   measureObjects as measureObjectsImpl,
+  measurementLineAnchors,
   syncMeasurementTransform as syncMeasurementTransformImpl,
 } from './measurement-lines.js';
 import {
@@ -51,7 +53,7 @@ export declare interface LDMeasureInterface {
   measure: boolean;
   gridShapes: boolean;
   addGridShapeLines(
-    paths: Array<Array<[number, number]>> | Array<[number, number]>,
+    paths: GridShapePaths,
     options?: {
       id?: string;
       color?: string | number;
@@ -62,8 +64,10 @@ export declare interface LDMeasureInterface {
   removeGridShapeLines(id: string): boolean;
 }
 
+type MeasurementLine = Object3D & {geometry: BufferGeometry};
+
 type LineGroup = {
-  lines: Line[];
+  lines: MeasurementLine[];
 };
 
 const $measureContainer = Symbol('measureContainer');
@@ -200,81 +204,20 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
         });
       });
 
-      const queueForVisibility = [];
+      const anchors = measurementLineAnchors(this._lastCameraAngle);
+      if (anchors) {
+        this._widthElementAnchorIndex = anchors.width;
+        this._heightElementAnchorIndex = anchors.height;
+        this._depthElementAnchorIndex = anchors.depth;
 
-      const [
-        NORTH, // 0
-        EAST, // 1
-        SOUTH, // 2
-        WEST, // 3
-        NORTH_A, // 4
-        NORTH_B, // 5
-
-        EAST_A, // 6
-        EAST_B, // 7
-        SOUTH_A, // 8
-        SOUTH_B, // 9
-        WEST_A, // 10
-        WEST_B, // 11
-      ] = this._lineGroups;
-
-      switch (this._lastCameraAngle) {
-        case 'front':
-          queueForVisibility.push(SOUTH, WEST_A, EAST);
-          this._widthElementAnchorIndex = 2;
-          this._heightElementAnchorIndex = 10;
-          this._depthElementAnchorIndex = 1;
-          break;
-        case 'front-right':
-          queueForVisibility.push(SOUTH, NORTH_B, EAST);
-          this._widthElementAnchorIndex = 2;
-          this._heightElementAnchorIndex = 5;
-          this._depthElementAnchorIndex = 1;
-          break;
-        case 'right':
-          queueForVisibility.push(NORTH, SOUTH_A, EAST);
-          this._widthElementAnchorIndex = 0;
-          this._heightElementAnchorIndex = 8;
-          this._depthElementAnchorIndex = 1;
-          break;
-        case 'back-right':
-          queueForVisibility.push(NORTH, WEST_B, EAST);
-          this._widthElementAnchorIndex = 0;
-          this._heightElementAnchorIndex = 11;
-          this._depthElementAnchorIndex = 1;
-          break;
-        case 'back':
-          queueForVisibility.push(NORTH, EAST_A, WEST);
-          this._widthElementAnchorIndex = 0;
-          this._heightElementAnchorIndex = 6;
-          this._depthElementAnchorIndex = 3;
-          break;
-        case 'back-left':
-          queueForVisibility.push(NORTH, SOUTH_B, WEST);
-          this._widthElementAnchorIndex = 0;
-          this._heightElementAnchorIndex = 9;
-          this._depthElementAnchorIndex = 3;
-          break;
-        case 'left':
-          queueForVisibility.push(SOUTH, NORTH_A, WEST);
-          this._widthElementAnchorIndex = 2;
-          this._heightElementAnchorIndex = 4;
-          this._depthElementAnchorIndex = 3;
-          break;
-        case 'front-left':
-          queueForVisibility.push(SOUTH, EAST_B, WEST);
-          this._widthElementAnchorIndex = 2;
-          this._heightElementAnchorIndex = 7;
-          this._depthElementAnchorIndex = 3;
-          break;
-      }
-
-      if (!this.disableMeasurementLines) {
-        queueForVisibility.forEach((group) => {
-          group.lines.forEach((line) => {
-            line.visible = true;
-          });
-        });
+        if (!this.disableMeasurementLines) {
+          for (const index of [anchors.width, anchors.height, anchors.depth]) {
+            const group = this._lineGroups[index];
+            group?.lines.forEach((line) => {
+              line.visible = true;
+            });
+          }
+        }
       }
 
       this._updateMarkerPosition();
@@ -509,7 +452,7 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     addGridShapeLines(
-      paths: Array<Array<[number, number]>> | Array<[number, number]>,
+      paths: GridShapePaths,
       options: {
         id?: string;
         color?: string | number;
@@ -1210,6 +1153,10 @@ export const LDMeasureMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         if (changedProperties.has('gridShapes')) {
           this._setGridShapesVisible(this.gridShapes);
+        }
+
+        if (changedProperties.has('roomScale') && !!this['measure']) {
+          this.handleNewAttributes();
         }
       }
     }

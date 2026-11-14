@@ -536,6 +536,16 @@
     ]
   },
   {
+    "name": "LD Material Swap",
+    "htmlName": "ld_material_swap",
+    "examples": [
+      {
+        "htmlId": "shared-material",
+        "name": "Shared material swap"
+      }
+    ]
+  },
+  {
     "name": "LD Measure",
     "htmlName": "ld_measure",
     "examples": [
@@ -572,6 +582,10 @@
       {
         "htmlId": "room-surface-snap",
         "name": "Room surface snap (walls)"
+      },
+      {
+        "htmlId": "room-ceiling-snap",
+        "name": "Room ceiling snap (lamps)"
       },
       {
         "htmlId": "load-scanned-room",

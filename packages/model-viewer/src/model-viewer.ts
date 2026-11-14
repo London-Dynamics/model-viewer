@@ -13,102 +13,58 @@
  * limitations under the License.
  */
 
-import { AnimationMixin } from './features/animation.js';
-import { AnnotationMixin } from './features/annotation.js';
-import { ARMixin } from './features/ar.js';
-import { EnvironmentMixin } from './features/environment.js';
-import { LoadingMixin } from './features/loading.js';
-import { SceneGraphMixin } from './features/scene-graph.js';
-import { StagingMixin } from './features/staging.js';
-
-import { LDAmbientOcclusionMixin } from './features/ld-ambient-occlusion.js';
-import { LDAnimationMixin } from './features/ld-animation.js';
-import { LDARMixin } from './features/ld-ar.js';
-import { LDBloomMixin } from './features/ld-bloom.js';
-import { LDControlsMixin } from './features/ld-controls/index.js';
-import { LDDebugMixin } from './features/ld-debug.js';
-import { LDEnvironmentMixin } from './features/ld-environment/index.js';
-import { LDCameraMixin } from './features/ld-camera.js';
-import { LDImageCaptureMixin } from './features/ld-image-capture.js';
-import { LDFloatingObjectAnchorMixin } from './features/ld-floating-object-anchor.js';
-import { LDLightsMixin } from './features/ld-lights.js';
-import { LDMaterialManagerMixin } from './features/ld-material-manager.js';
-import { LDMeasureMixin } from './features/ld-measure/index.js';
-import { LDModularMixin } from './features/ld-modular/index.js';
-import { LDPathTracerMixin } from './features/ld-path-tracer.js';
-import { LDRenderPipelineMixin } from './features/ld-render-pipeline.js';
-import { LDSelectionMixin } from './features/ld-selection/index.js';
-import { LDServerAIDenoiseMixin } from './features/ld-server-ai-denoise.js';
-import { LDSkyboxRotationMixin } from './features/ld-skybox-rotation.js';
-
+import {AnimationMixin} from './features/animation.js';
+import {AnnotationMixin} from './features/annotation.js';
+import {ARMixin} from './features/ar.js';
+import {EnvironmentMixin} from './features/environment.js';
+import {LDAmbientOcclusionMixin} from './features/ld-ambient-occlusion.js';
+import {LDAnimationMixin} from './features/ld-animation.js';
+import {LDARMixin} from './features/ld-ar.js';
+import {LDBloomMixin} from './features/ld-bloom.js';
+import {LDCameraMixin} from './features/ld-camera.js';
+import {LDControlsMixin} from './features/ld-controls/index.js';
+import {LDDebugMixin} from './features/ld-debug.js';
+import {LDEnvironmentMixin} from './features/ld-environment/index.js';
+import {LDFloatingObjectAnchorMixin} from './features/ld-floating-object-anchor.js';
+import {LDImageCaptureMixin} from './features/ld-image-capture.js';
+import {LDLightsMixin} from './features/ld-lights.js';
+import {LDMaterialManagerMixin} from './features/ld-material-manager.js';
+import {LDMaterialSwapMixin} from './features/ld-material-swap.js';
+import {LDMeasureMixin} from './features/ld-measure/index.js';
+import {LDModularMixin} from './features/ld-modular/index.js';
+import {LDPathTracerMixin} from './features/ld-path-tracer.js';
+import {LDRenderPipelineMixin} from './features/ld-render-pipeline.js';
+import {LDSelectionMixin} from './features/ld-selection/index.js';
+import {LDServerAIDenoiseMixin} from './features/ld-server-ai-denoise.js';
+import {LDSkyboxRotationMixin} from './features/ld-skybox-rotation.js';
+import {LoadingMixin} from './features/loading.js';
+import {SceneGraphMixin} from './features/scene-graph.js';
+import {StagingMixin} from './features/staging.js';
 import ModelViewerElementBase from './model-viewer-base.js';
 
 // Export these to allow lazy-loaded LottieLoader.js to find what it needs.
 // Requires an import map - "three": "path/to/model-viewer.min.js".
-export { CanvasTexture, FileLoader, Loader, NearestFilter } from 'three';
+export {CanvasTexture, FileLoader, Loader, NearestFilter} from 'three';
 
-const ModelViewerElementImpl = LDMaterialManagerMixin(
-  LDFloatingObjectAnchorMixin(
-    LDMeasureMixin(
-      LDRenderPipelineMixin(
-        LDBloomMixin(
-          LDServerAIDenoiseMixin(
-            LDPathTracerMixin(
-              LDAmbientOcclusionMixin(
-                LDModularMixin(
-                  LDSelectionMixin(
-                    LDLightsMixin(
-                      LDImageCaptureMixin(
-                        LDCameraMixin(
-                          LDSkyboxRotationMixin(
-                            LDEnvironmentMixin(
-                              LDAnimationMixin(
-                                LDDebugMixin(
-                                  AnnotationMixin(
-                                    SceneGraphMixin(
-                                      StagingMixin(
-                                        EnvironmentMixin(
-                                          LDControlsMixin(
-                                            LDARMixin(
-                                              ARMixin(
-                                                LoadingMixin(
-                                                  AnimationMixin(ModelViewerElementBase)
-                                                )
-                                              )
-                                            )
-                                          )
-                                        )
-                                      )
-                                    )
-                                  )
-                                )
-                              )
-                            )
-                          )
-                        )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-        )
-      )
-    )
-  )
-);
+const ModelViewerElementImpl = LDMaterialSwapMixin(LDMaterialManagerMixin(
+    LDFloatingObjectAnchorMixin(LDMeasureMixin(LDRenderPipelineMixin(LDBloomMixin(
+        LDServerAIDenoiseMixin(LDPathTracerMixin(LDAmbientOcclusionMixin(
+            LDModularMixin(LDSelectionMixin(LDLightsMixin(LDImageCaptureMixin(
+                LDCameraMixin(LDSkyboxRotationMixin(LDEnvironmentMixin(
+                    LDAnimationMixin(LDDebugMixin(AnnotationMixin(SceneGraphMixin(
+                        StagingMixin(EnvironmentMixin(LDControlsMixin(
+                            LDARMixin(ARMixin(LoadingMixin(AnimationMixin(
+                                ModelViewerElementBase)))))))))))))))))))))))))));
 
 export const ModelViewerElement = ModelViewerElementImpl;
 export type ModelViewerElement = InstanceType<typeof ModelViewerElementImpl>;
 
-export type { RGB, RGBA } from './three-components/gltf-instance/gltf-2.0';
-export { ModelLoadError } from './three-components/load-issues.js';
-export type {
-  ModelLoadIssue,
-  ModelLoadIssueCode,
-  ModelLoadIssueSeverity
-} from './three-components/load-issues.js';
+export {MATERIAL_SWAP_ERROR_EVENT, MATERIAL_SWAP_EVENT, MaterialSwapError,} from './features/ld-material-swap.js';
+export type{MaterialSwapApplied, MaterialSwapErrorDetail, MaterialSwapOptions, MaterialSwapRequest, MaterialSwapResult,} from './features/ld-material-swap.js';
+
+export type{RGB, RGBA} from './three-components/gltf-instance/gltf-2.0';
+export {ModelLoadError} from './three-components/load-issues.js';
+export type{ModelLoadIssue, ModelLoadIssueCode, ModelLoadIssueSeverity} from './three-components/load-issues.js';
 
 customElements.define('model-viewer', ModelViewerElement);
 

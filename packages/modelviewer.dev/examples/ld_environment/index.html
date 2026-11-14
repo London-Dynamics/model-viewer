@@ -141,9 +141,23 @@
                   <span class="attribute">environment-model</span>
                 </h2>
                 <h4>
-                  The road GLB is visible scene dressing loaded after the main
-                  car model. The HDR is used for lighting and as a visible
-                  skybox.
+                  The road GLB is visible scene dressing. It loads alongside the
+                  product, and the first view waits until both are ready so
+                  they appear together. It then stays in place when
+                  <span class="attribute">src</span> changes. It is replaced
+                  only when <span class="attribute">environment-model</span>
+                  changes, and removed when that attribute is cleared. Product
+                  framing still uses the product model only. Environment GLBs
+                  are cached separately and do not count toward
+                  <span class="attribute">modelCacheSize</span>. The HDR is used
+                  for lighting and as a visible skybox.
+                  <span class="attribute">clip-to-env</span> defaults to
+                  true and extends the camera far plane to the environment
+                  model's transformed bounds. It does not change orbit limits.
+                  Set
+                  <span class="attribute">clip-to-env="false"</span>
+                  to keep the previous far plane, derived from the maximum
+                  orbit radius.
                 </h4>
               </div>
               <example-snippet stamp-to="environment-model" highlight-as="html">
@@ -200,6 +214,14 @@
                               id="environment-model-scale"
                               type="text"
                               value="1 1 1"
+                            />
+                          </label>
+                          <label>
+                            Clip far to environment
+                            <input
+                              id="clip-to-env"
+                              type="checkbox"
+                              checked
                             />
                           </label>
                         </fieldset>
@@ -284,6 +306,13 @@
                         'environment-model-scale',
                         'environment-model-scale'
                       );
+                      const clipToEnv = document.getElementById('clip-to-env');
+                      clipToEnv.addEventListener('change', () => {
+                        modelViewer.setAttribute(
+                          'clip-to-env',
+                          clipToEnv.checked ? 'true' : 'false'
+                        );
+                      });
                       bindTransformInput('skybox-rotation', 'skybox-rotation');
                       bindTransformInput(
                         'skybox-rotation-axis',

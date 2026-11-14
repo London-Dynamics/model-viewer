@@ -1,4 +1,5 @@
 // @ts-nocheck
+// clang-format off
 import {
 	DataTexture,
 	Matrix4,
@@ -67,11 +68,13 @@ const AOShader = {
 		SCREEN_SPACE_RADIUS: 0,
 		SCREEN_SPACE_RADIUS_SCALE: 100.0,
 		SCENE_CLIP_BOX: 0,
+		AO_OCCLUSION_MASK: 0,
 	},
 
 	uniforms: {
 		tNormal: { value: null },
 		tDepth: { value: null },
+		tSceneDepth: { value: null },
 		tNoise: { value: null },
 		resolution: { value: new Vector2() },
 		cameraNear: { value: null },
@@ -103,6 +106,7 @@ const AOShader = {
 		varying vec2 vUv;
 		uniform highp sampler2D tNormal;
 		uniform highp sampler2D tDepth;
+		uniform highp sampler2D tSceneDepth;
 		uniform sampler2D tNoise;
 		uniform vec2 resolution;
 		uniform float cameraNear;
@@ -210,6 +214,17 @@ const AOShader = {
 				discard;
 				return;
 			}
+			#if AO_OCCLUSION_MASK == 1
+				float sceneDepth = textureLod(tSceneDepth, vUv.xy, 0.0).DEPTH_SWIZZLING;
+				float modelViewZ = getViewZ(depth);
+				float sceneViewZ = getViewZ(sceneDepth);
+				// View Z is negative; a larger value is closer to the camera.
+				float occlusionTolerance = max(0.001, abs(modelViewZ) * 0.002);
+				if (sceneViewZ > modelViewZ + occlusionTolerance) {
+					discard;
+					return;
+				}
+			#endif
 			vec3 viewPos = getViewPosition(vUv, depth);
 			vec3 viewNormal = getViewNormal(vUv);
 
@@ -513,9 +528,18 @@ const AoBlendShader = {
 
 	name: 'AoBlendShader',
 
+	defines: {
+		AO_OCCLUSION_MASK: 0,
+		PERSPECTIVE_CAMERA: 1,
+	},
+
 	uniforms: {
 		tDiffuse: { value: null },
-		intensity: { value: 1.0 }
+		intensity: { value: 1.0 },
+		tModelDepth: { value: null },
+		tSceneDepth: { value: null },
+		cameraNear: { value: 0.1 },
+		cameraFar: { value: 1000.0 },
 	},
 
 	vertexShader: /* glsl */`
@@ -529,11 +553,41 @@ const AoBlendShader = {
 	fragmentShader: /* glsl */`
 		uniform float intensity;
 		uniform sampler2D tDiffuse;
+		uniform sampler2D tModelDepth;
+		uniform sampler2D tSceneDepth;
+		uniform float cameraNear;
+		uniform float cameraFar;
 		varying vec2 vUv;
+
+		#include <packing>
+
+		float aoMaskViewZ( const in float depth ) {
+			#if PERSPECTIVE_CAMERA == 1
+				return perspectiveDepthToViewZ( depth, cameraNear, cameraFar );
+			#else
+				return orthographicDepthToViewZ( depth, cameraNear, cameraFar );
+			#endif
+		}
 
 		void main() {
 			vec4 texel = texture2D( tDiffuse, vUv );
+			float mask = 1.0;
+			#if AO_OCCLUSION_MASK == 1
+				float modelDepth = texture2D( tModelDepth, vUv ).x;
+				float sceneDepth = texture2D( tSceneDepth, vUv ).x;
+				if ( modelDepth >= 0.9999 ) {
+					mask = 0.0;
+				} else {
+					float modelViewZ = aoMaskViewZ( modelDepth );
+					float sceneViewZ = aoMaskViewZ( sceneDepth );
+					float occlusionTolerance = max( 0.001, abs( modelViewZ ) * 0.002 );
+					if ( sceneViewZ > modelViewZ + occlusionTolerance ) {
+						mask = 0.0;
+					}
+				}
+			#endif
 			vec3 factor = pow( max( texel.rgb, vec3( 1e-4 ) ), vec3( 2.0 ) );
+			factor = mix( vec3( 1.0 ), factor, mask );
 			gl_FragColor = vec4( mix( vec3( 1.0 ), factor, intensity ), texel.a );
 		}`
 

@@ -270,6 +270,8 @@ function getWallCursorPointFromObject(
   object: Object3D,
   surfaceHit: SurfaceSnapHit
 ): Vector3 | null {
+  // Ceiling parts snap at the mount point, not the wall-face projection.
+  if (surfaceHit.surfaceType === 'ceiling') return null;
   const bbox = new Box3().setFromObject(object);
   if (
     !Number.isFinite(bbox.min.x) ||

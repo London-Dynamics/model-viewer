@@ -16,6 +16,323 @@ type GridShapeDeps = {
 };
 
 const GRID_SHAPES_CONTAINER_NAME = 'ld-grid-shapes';
+const DEFAULT_GRID_SHAPE_THICKNESS = 0.025;
+
+/**
+ * One floor-grid stroke. Plan [x, y] is world [x, z].
+ * Matches `@london-dynamics/types` `GridShapeLine` without importing that package.
+ */
+export type GridShapeLine = {
+  points: Array<[number, number]>;
+  /** Width in meters. Omitted strokes use the call's thickness. */
+  thickness?: number;
+  /**
+   * Join the last point to the first.
+   * Omitted keeps the legacy rule: close when there are more than two points.
+   */
+  closed?: boolean;
+};
+
+export type GridShapePaths =
+  | GridShapeLine[]
+  | Array<Array<[number, number]>>
+  | Array<[number, number]>;
+
+export type ResolvedGridShapeStroke = {
+  points: Array<[number, number]>;
+  thickness: number;
+  closed: boolean;
+};
+
+function isCoordinate(value: unknown): value is [number, number] {
+  return (
+    Array.isArray(value) &&
+    typeof value[0] === 'number' &&
+    typeof value[1] === 'number'
+  );
+}
+
+function isGridShapeLine(value: unknown): value is GridShapeLine {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  return Array.isArray((value as GridShapeLine).points);
+}
+
+/** A path with more than two points is drawn as a closed ring. */
+export function gridShapePathIsClosed(path: Array<[number, number]>): boolean {
+  return path.length > 2;
+}
+
+/**
+ * Normalises a legacy path list or a stroke list into strokes that share one
+ * bounding-box centre. An empty list throws, matching `addGridShapeLines`.
+ */
+export function resolveGridShapeStrokes(
+  paths: GridShapePaths,
+  fallbackThickness = DEFAULT_GRID_SHAPE_THICKNESS
+): {strokes: ResolvedGridShapeStroke[]; center: [number, number]} {
+  if (!paths.length) {
+    throw new Error('addGridShapeLines requires at least one path');
+  }
+
+  let strokes: ResolvedGridShapeStroke[];
+  if (isGridShapeLine(paths[0])) {
+    strokes = (paths as GridShapeLine[]).map((stroke) => ({
+      points: stroke.points,
+      thickness: stroke.thickness ?? fallbackThickness,
+      closed: stroke.closed ?? gridShapePathIsClosed(stroke.points),
+    }));
+  } else if (isCoordinate(paths[0])) {
+    const path = paths as Array<[number, number]>;
+    strokes = [
+      {
+        points: path,
+        thickness: fallbackThickness,
+        closed: gridShapePathIsClosed(path),
+      },
+    ];
+  } else {
+    strokes = (paths as Array<Array<[number, number]>>).map((path) => ({
+      points: path,
+      thickness: fallbackThickness,
+      closed: gridShapePathIsClosed(path),
+    }));
+  }
+
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const stroke of strokes) {
+    for (const [x, z] of stroke.points) {
+      minX = Math.min(minX, x);
+      minZ = Math.min(minZ, z);
+      maxX = Math.max(maxX, x);
+      maxZ = Math.max(maxZ, z);
+    }
+  }
+  const centerX =
+    Number.isFinite(minX) && Number.isFinite(maxX) ? (minX + maxX) / 2 : 0;
+  const centerZ =
+    Number.isFinite(minZ) && Number.isFinite(maxZ) ? (minZ + maxZ) / 2 : 0;
+
+  return {strokes, center: [centerX, centerZ]};
+}
+
+const ENDPOINT_EPSILON = 1e-6;
+
+export type GridShapeJoint = {
+  center: [number, number];
+  thickness: number;
+};
+
+type StrokeEnd = {
+  strokeIndex: number;
+  /** 0 is the first point, 1 is the last. */
+  end: 0 | 1;
+  point: [number, number];
+};
+
+type ChainItem = {
+  index: number;
+  reversed: boolean;
+};
+
+function pointsMatch(a: [number, number], b: [number, number]): boolean {
+  const dx = a[0] - b[0];
+  const dz = a[1] - b[1];
+  return dx * dx + dz * dz <= ENDPOINT_EPSILON * ENDPOINT_EPSILON;
+}
+
+function sameThickness(a: number, b: number): boolean {
+  return Math.abs(a - b) <= ENDPOINT_EPSILON;
+}
+
+function endKey(end: StrokeEnd): string {
+  return `${end.strokeIndex}:${end.end}`;
+}
+
+function orientedPoints(
+  points: Array<[number, number]>,
+  reversed: boolean
+): Array<[number, number]> {
+  const copy = points.map((point) => [point[0], point[1]] as [number, number]);
+  if (reversed) {
+    copy.reverse();
+  }
+  return copy;
+}
+
+/** Distinct corners, dropping a closing point that repeats the start. */
+function polylineVertexCount(points: Array<[number, number]>): number {
+  const vertices: Array<[number, number]> = [];
+  for (const point of points) {
+    const previous = vertices[vertices.length - 1];
+    if (!previous || !pointsMatch(previous, point)) {
+      vertices.push(point);
+    }
+  }
+  if (
+    vertices.length > 1 &&
+    pointsMatch(vertices[0], vertices[vertices.length - 1])
+  ) {
+    vertices.pop();
+  }
+  return vertices.length;
+}
+
+function chainStartEnd(item: ChainItem): 0 | 1 {
+  return item.reversed ? 1 : 0;
+}
+
+function chainFinishEnd(item: ChainItem): 0 | 1 {
+  return item.reversed ? 0 : 1;
+}
+
+/**
+ * Joins open strokes in one shape that share an endpoint and thickness.
+ * Two ends become one polyline so the existing miter can draw the corner.
+ * A loop of three or more corners is closed. Three or more ends stay
+ * separate and record a joint disc. A stroke is not closed only because
+ * its own ends meet.
+ */
+export function joinCoincidentGridStrokes(
+  strokes: ResolvedGridShapeStroke[]
+): {strokes: ResolvedGridShapeStroke[]; joints: GridShapeJoint[]} {
+  const endpoints: StrokeEnd[] = [];
+  for (let i = 0; i < strokes.length; i++) {
+    const stroke = strokes[i];
+    if (stroke.closed || stroke.points.length < 2) {
+      continue;
+    }
+    endpoints.push({strokeIndex: i, end: 0, point: stroke.points[0]});
+    endpoints.push({
+      strokeIndex: i,
+      end: 1,
+      point: stroke.points[stroke.points.length - 1],
+    });
+  }
+
+  const links = new Map<string, StrokeEnd>();
+  const joints: GridShapeJoint[] = [];
+  const consumed: boolean[] = new Array(endpoints.length).fill(false);
+
+  for (let i = 0; i < endpoints.length; i++) {
+    if (consumed[i]) {
+      continue;
+    }
+    const cluster: StrokeEnd[] = [endpoints[i]];
+    consumed[i] = true;
+    for (let j = i + 1; j < endpoints.length; j++) {
+      if (consumed[j]) {
+        continue;
+      }
+      const seed = endpoints[i];
+      const other = endpoints[j];
+      if (
+        !sameThickness(
+          strokes[seed.strokeIndex].thickness,
+          strokes[other.strokeIndex].thickness
+        ) ||
+        !pointsMatch(seed.point, other.point)
+      ) {
+        continue;
+      }
+      cluster.push(other);
+      consumed[j] = true;
+    }
+
+    if (
+      cluster.length === 2 &&
+      cluster[0].strokeIndex !== cluster[1].strokeIndex
+    ) {
+      links.set(endKey(cluster[0]), cluster[1]);
+      links.set(endKey(cluster[1]), cluster[0]);
+    } else if (cluster.length >= 3) {
+      joints.push({
+        center: [cluster[0].point[0], cluster[0].point[1]],
+        thickness: strokes[cluster[0].strokeIndex].thickness,
+      });
+    }
+  }
+
+  const result: ResolvedGridShapeStroke[] = [];
+  const visited = new Set<number>();
+
+  for (let i = 0; i < strokes.length; i++) {
+    const stroke = strokes[i];
+    if (stroke.closed || stroke.points.length < 2) {
+      result.push(stroke);
+      visited.add(i);
+      continue;
+    }
+    if (visited.has(i)) {
+      continue;
+    }
+
+    const chain: ChainItem[] = [{index: i, reversed: false}];
+    const inChain = new Set<number>([i]);
+    visited.add(i);
+    let looped = false;
+
+    for (let step = 0; step < strokes.length; step++) {
+      const head = chain[0];
+      const link = links.get(`${head.index}:${chainStartEnd(head)}`);
+      if (!link || inChain.has(link.strokeIndex)) {
+        looped = link != null && inChain.has(link.strokeIndex);
+        break;
+      }
+      inChain.add(link.strokeIndex);
+      visited.add(link.strokeIndex);
+      chain.unshift({index: link.strokeIndex, reversed: link.end === 0});
+    }
+
+    if (!looped) {
+      for (let step = 0; step < strokes.length; step++) {
+        const tail = chain[chain.length - 1];
+        const link = links.get(`${tail.index}:${chainFinishEnd(tail)}`);
+        if (!link || inChain.has(link.strokeIndex)) {
+          looped = link != null && inChain.has(link.strokeIndex);
+          break;
+        }
+        inChain.add(link.strokeIndex);
+        visited.add(link.strokeIndex);
+        chain.push({index: link.strokeIndex, reversed: link.end === 1});
+      }
+    }
+
+    if (chain.length === 1) {
+      result.push(stroke);
+      continue;
+    }
+
+    const points: Array<[number, number]> = [];
+    for (const item of chain) {
+      const part = orientedPoints(strokes[item.index].points, item.reversed);
+      if (points.length === 0) {
+        points.push(...part);
+      } else {
+        points.push(...part.slice(1));
+      }
+    }
+
+    if (looped && polylineVertexCount(points) < 3) {
+      for (const item of chain) {
+        result.push(strokes[item.index]);
+      }
+      continue;
+    }
+
+    result.push({
+      points,
+      thickness: stroke.thickness,
+      closed: looped,
+    });
+  }
+
+  return {strokes: result, joints};
+}
 
 function getOrCreateGridRootContainer(
   host: any,
@@ -206,10 +523,46 @@ export function createPlanarStrokeGeometry(
   return geometry;
 }
 
+/** Filled disc that covers butts where three or more strokes meet. */
+export function createPlanarJointGeometry(
+  center: [number, number],
+  thickness: number,
+  y: number,
+  offsetX: number,
+  offsetZ: number
+): BufferGeometry {
+  const epsilon = 1e-6;
+  const radius = Math.max(thickness, epsilon) / 2;
+  const segments = 16;
+  const cx = center[0] + offsetX;
+  const cz = center[1] + offsetZ;
+  const positions: number[] = [cx, y, cz];
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    positions.push(
+      cx + Math.cos(angle) * radius,
+      y,
+      cz + Math.sin(angle) * radius
+    );
+  }
+
+  const indices: number[] = [];
+  for (let i = 1; i <= segments; i++) {
+    // Winding faces +Y, matching the stroke quads viewed from above.
+    indices.push(0, i + 1, i);
+  }
+
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 export function addGridShapeLines(
   host: any,
   deps: GridShapeDeps,
-  paths: Array<Array<[number, number]>> | Array<[number, number]>,
+  paths: GridShapePaths,
   options: {
     id?: string;
     color?: string | number;
@@ -217,34 +570,15 @@ export function addGridShapeLines(
     coordinate?: [number, number];
   } = {}
 ): string {
-  const pathGroups =
-    paths.length > 0 && typeof paths[0][0] === 'number'
-      ? [paths as Array<[number, number]>]
-      : (paths as Array<Array<[number, number]>>);
-
-  if (!pathGroups.length) {
-    throw new Error('addGridShapeLines requires at least one path');
-  }
-
+  const resolved = resolveGridShapeStrokes(
+    paths,
+    options.thickness ?? DEFAULT_GRID_SHAPE_THICKNESS
+  );
+  const {strokes, joints} = joinCoincidentGridStrokes(resolved.strokes);
+  const center = resolved.center;
   const id = options.id ?? `ld-grid-shape-${Date.now()}-${Math.random()}`;
   const color = options.color ?? 'rgb(120, 113, 108)';
-  const lineWidth = options.thickness ?? 0.025;
-  let minX = Infinity;
-  let minZ = Infinity;
-  let maxX = -Infinity;
-  let maxZ = -Infinity;
-  pathGroups.forEach((path) => {
-    path.forEach(([x, z]) => {
-      minX = Math.min(minX, x);
-      minZ = Math.min(minZ, z);
-      maxX = Math.max(maxX, x);
-      maxZ = Math.max(maxZ, z);
-    });
-  });
-  const sourceCenterX =
-    Number.isFinite(minX) && Number.isFinite(maxX) ? (minX + maxX) / 2 : 0;
-  const sourceCenterZ =
-    Number.isFinite(minZ) && Number.isFinite(maxZ) ? (minZ + maxZ) / 2 : 0;
+  const [sourceCenterX, sourceCenterZ] = center;
 
   const [targetCenterX, targetCenterZ] = options.coordinate ?? [0, 0];
   const offsetX = targetCenterX - sourceCenterX;
@@ -258,23 +592,18 @@ export function addGridShapeLines(
   const shapeGroup = new Object3D();
   shapeGroup.name = `ld-grid-shape:${id}`;
 
-  pathGroups.forEach((path) => {
-    if (path.length < 2) {
+  strokes.forEach((stroke) => {
+    if (stroke.points.length < 2) {
       return;
     }
 
-    const isClosed =
-      path.length > 2 &&
-      path[0][0] === path[path.length - 1][0] &&
-      path[0][1] === path[path.length - 1][1];
-    const shouldClosePath = path.length > 2 || isClosed;
     const geometry = createPlanarStrokeGeometry(
-      path,
-      lineWidth,
+      stroke.points,
+      stroke.thickness,
       gridY,
       offsetX,
       offsetZ,
-      shouldClosePath
+      stroke.closed
     );
     if (!geometry) {
       return;
@@ -292,6 +621,27 @@ export function addGridShapeLines(
     mesh.receiveShadow = false;
     shapeGroup.add(mesh);
   });
+
+  for (const joint of joints) {
+    const geometry = createPlanarJointGeometry(
+      joint.center,
+      joint.thickness,
+      gridY,
+      offsetX,
+      offsetZ
+    );
+    const material = new MeshBasicMaterial({
+      color,
+      depthTest: true,
+      depthWrite: false,
+    });
+    const mesh = new Mesh(geometry, material);
+    mesh.userData.noHit = true;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    shapeGroup.add(mesh);
+  }
 
   const shapesContainer = getOrCreateGridShapesContainer(host, deps);
   shapesContainer.add(shapeGroup);

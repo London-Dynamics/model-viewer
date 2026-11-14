@@ -26,6 +26,15 @@ const $recentlyUsed = Symbol('recentlyUsed');
 const $evict = Symbol('evict');
 const $evictionThreshold = Symbol('evictionThreshold');
 const $cache = Symbol('cache');
+const $unusedOnly = Symbol('unusedOnly');
+
+export interface CacheEvictionOptions {
+  /**
+   * When set, evictionThreshold is the maximum number of unretained items to
+   * keep. Retained items are never evicted and do not consume that budget.
+   */
+  unusedOnly?: boolean;
+}
 
 /**
  * The CacheEvictionPolicy manages the lifecycle for items in a cache,
@@ -40,10 +49,14 @@ export class CacheEvictionPolicy<T = string> {
   private[$recentlyUsed]: Array<T> = [];
   private[$evictionThreshold]: number;
   private[$cache]: MutableCache<T>;
+  private[$unusedOnly]: boolean;
 
-  constructor(cache: MutableCache<T>, evictionThreshold: number = 5) {
+  constructor(
+      cache: MutableCache<T>, evictionThreshold: number = 5,
+      options?: CacheEvictionOptions) {
     this[$cache] = cache;
     this[$evictionThreshold] = evictionThreshold;
+    this[$unusedOnly] = options?.unusedOnly === true;
   }
 
   /**
@@ -121,6 +134,25 @@ export class CacheEvictionPolicy<T = string> {
   }
 
   [$evict]() {
+    if (this[$unusedOnly]) {
+      let unusedKept = 0;
+      for (let i = 0; i < this[$recentlyUsed].length;) {
+        const key = this[$recentlyUsed][i];
+        if ((this[$retainerCount].get(key) ?? 0) !== 0) {
+          ++i;
+          continue;
+        }
+        if (unusedKept < this[$evictionThreshold]) {
+          ++unusedKept;
+          ++i;
+          continue;
+        }
+        this[$cache].delete(key);
+        this[$recentlyUsed].splice(i, 1);
+      }
+      return;
+    }
+
     if (this[$recentlyUsed].length < this[$evictionThreshold]) {
       return;
     }

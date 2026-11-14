@@ -34,6 +34,7 @@ import {
   requiresSurfaceSnap,
 } from '../../utilities/snapping-points.js';
 import {
+  applyCeilingHeightSnapTransform,
   applySurfaceSnapTransform,
   clientToNdc,
   countRoomShellNodes,
@@ -45,12 +46,22 @@ import {
   getBaseModelObject,
   getRoomFloorY,
   invalidateRoomSurfaceIndexCache,
+  isCeilingHeightObject,
+  isCeilingHeightSnapPoint,
+  isInnerWallCutaway,
+  isInnerWallPart,
   isRoomFloorShellNode,
   isRoomWallNode,
   isRoomWallShellNode,
   tryResnapToNearestWall,
   type SurfaceSnapHit,
 } from '../../utilities/surface-snapping.js';
+import {
+  InnerWallModeState,
+  isAttachedToInnerWall,
+  normalizeInnerWallMode,
+} from '../../utilities/inner-wall-mode.js';
+import {readRoomSource, type RoomSource} from '../../utilities/ld-builder.js';
 import type { ModelLoadIssue } from '../../three-components/load-issues.js';
 import {PlacementCursor} from './placement-cursor.js';
 import {
@@ -403,8 +414,18 @@ export declare interface LDModularInterface {
   clear: ClearSceneFunction;
   disableBaseModelShadows: boolean;
   srcIsRoom: boolean;
+  /** Uniform scale of the loaded room model. Placed objects are not affected. */
+  roomScale: number;
   walls: boolean;
   floor: boolean;
+  /** `solid`, `transparent`, `cutaway`, or `hidden`. Any other value behaves as `solid`. */
+  innerWallMode: string;
+  /**
+   * Where the loaded room's feature data came from. `ldBuilder` is the
+   * validated extras object. `detected` is reserved for a later calculation.
+   * Null when the model has neither.
+   */
+  readonly roomSource: RoomSource | null;
   rotationControls: boolean;
   disableXRotationControls: boolean;
   disableYRotationControls: boolean;
@@ -595,11 +616,29 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     @property({ type: Boolean, attribute: 'src-is-room' })
     srcIsRoom: boolean = false;
 
+    /** Uniform scale of the loaded src model. Does not scale objects from placeGlb. */
+    @property({ type: Number, attribute: 'room-scale' })
+    roomScale: number = 1;
+
     @property({ type: Boolean, attribute: 'walls' })
     walls: boolean = false;
 
     @property({ type: Boolean, attribute: 'floor' })
     floor: boolean = false;
+
+    @property({ type: String, attribute: 'inner-wall-mode' })
+    innerWallMode: string = 'solid';
+
+    /**
+     * Where the loaded room's feature data came from. `ldBuilder` is the
+     * validated extras object. `detected` is reserved for a later calculation.
+     * Null when the model has neither. Snapping and the wall attributes still
+     * follow mesh names.
+     */
+    get roomSource(): RoomSource | null {
+      const scene = this[$scene];
+      return readRoomSource(scene ? getBaseModelObject(scene) : null);
+    }
 
     @property({ type: Boolean, attribute: 'rotation-controls' })
     rotationControls: boolean = false;
@@ -640,6 +679,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     private _removeSelectedMergedOptions: { animate?: boolean } | undefined =
       undefined;
     private _roomWallVisibilityCacheDirty: boolean = true;
+    private _innerWallModeState = new InnerWallModeState();
     private _roomWallEntries: Map<
       string,
       {
@@ -714,6 +754,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
         this._markRoomWallVisibilityCacheDirty();
         this._applyRoomTaggedSurfaceVisibility();
+        this._applyInnerWallMode();
         try {
           ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
         } catch (_) {}
@@ -731,6 +772,21 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     updated(changedProperties: Map<string | number | symbol, unknown>) {
       super.updated(changedProperties);
+
+      if (changedProperties.has('roomScale') && this[$scene].model != null) {
+        const scene = this[$scene];
+        scene.applyTransform();
+        scene.updateBoundingBox();
+        scene.updateShadow();
+        // Controls.updateFraming recomputes the framing sphere and then
+        // re-evaluates camera-orbit plus min/max orbits. scene.updateFraming
+        // only updates the sphere, so the camera stays on the old radius.
+        // Do not await: that method waits on updateComplete from inside updated().
+        void (this as unknown as {updateFraming(): Promise<void>}).updateFraming();
+        this[$renderer].arRenderer.onUpdateScene();
+        this[$needsRender]();
+      }
+
       if (
         changedProperties.has('srcIsRoom') ||
         changedProperties.has('disableBaseModelShadows') ||
@@ -741,6 +797,15 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
         this._syncRoomSourceMode();
         this._markRoomWallVisibilityCacheDirty();
+      }
+
+      if (
+        changedProperties.has('innerWallMode') ||
+        changedProperties.has('walls') ||
+        changedProperties.has('srcIsRoom') ||
+        changedProperties.has('src')
+      ) {
+        this._applyInnerWallMode();
       }
 
       if (
@@ -785,6 +850,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!this.srcIsRoom) {
         this._resetRoomTaggedSurfaceVisibilityOverrides();
         this._resetRoomAttachedVisibility();
+        this._restoreInnerWallMode();
         try {
           ((this as any)[$scene] as any)?.syncRoomShadowReceivers?.();
         } catch (_) {}
@@ -827,6 +893,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       this.cancelRequestedShadowUpdate();
       this._resetRoomTaggedSurfaceVisibilityOverrides();
       this._resetRoomAttachedVisibility();
+      this._restoreInnerWallMode();
 
       // Clean up event listener
       if (this._boundSelectionChangeHandler) {
@@ -1209,7 +1276,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       invalidateRoomSurfaceIndexCache(this._findRoomSurfaceObject());
     }
 
-    /** Wall shell: `wall_*` meshes or a `walls` group (e.g. Babylon exports). */
+    /** Wall shell: perimeter `wall_*` / `walls` and interior `innerWall_*` / `innerWalls`. */
     private _isRoomWallShellNode(name: string | undefined): boolean {
       return isRoomWallShellNode(name);
     }
@@ -1242,7 +1309,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           code: 'no-room-surfaces',
           severity: 'warning',
           message:
-            `No tagged ${missing} found (expected \`wall_*\` / \`floor_*\` names); ` +
+            `No tagged ${missing} found (expected \`wall_*\`, \`innerWall_*\`, or \`floor_*\` names); ` +
             'snapping will rely on surface orientation.',
           details: { walls, floors },
         },
@@ -1259,6 +1326,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const baseModel = getBaseModelObject(scene);
       if (!baseModel) return;
       baseModel.traverse((child) => {
+        if (isInnerWallCutaway(child.name)) return;
         if (
           this._isRoomWallShellNode(child.name) ||
           this._isRoomFloorShellNode(child.name)
@@ -1270,8 +1338,57 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     /**
-     * Applies `walls` / `floor` to wall shell nodes (`wall_*`, optional `walls`
-     * group) and floor shell nodes (`floor_*`, or a node named `floor`) when
+     * Applies `inner-wall-mode` to inner-wall meshes when `src-is-room` is set.
+     * Outside room mode the meshes go back to their authored materials.
+     */
+    private _applyInnerWallMode() {
+      const room = this._findRoomSurfaceObject();
+      if (!room || !this.srcIsRoom) {
+        this._restoreInnerWallMode();
+        return;
+      }
+      // The walls toggle hides every inner-wall representation. Mode chooses
+      // among them only while walls are on.
+      if (!this.walls) {
+        this._innerWallModeState.apply(room, 'hidden');
+        this._syncInnerWallAttachmentVisibility(false);
+        (this as any)[$needsRender]();
+        return;
+      }
+      const mode = normalizeInnerWallMode(this.innerWallMode);
+      this._innerWallModeState.apply(room, mode);
+      this._syncInnerWallAttachmentVisibility(
+        mode === 'solid' || mode === 'transparent'
+      );
+      (this as any)[$needsRender]();
+    }
+
+    private _restoreInnerWallMode() {
+      const room = this._findRoomSurfaceObject();
+      if (room) this._innerWallModeState.apply(room, 'solid');
+      else this._innerWallModeState.reset();
+      this._syncInnerWallAttachmentVisibility(true);
+      (this as any)[$needsRender]();
+    }
+
+    /**
+     * Hides placed objects snapped to a full-height inner wall while that wall
+     * is not shown. They stay in the scene with their attachment data.
+     */
+    private _syncInnerWallAttachmentVisibility(show: boolean) {
+      const target = this.findTargetObject();
+      if (!target) return;
+      target.traverse((child) => {
+        if (child.userData?.isPlacedObject !== true) return;
+        if (!isAttachedToInnerWall(child.userData)) return;
+        this._resolvePlacedObjectVisible(child, show);
+      });
+    }
+
+    /**
+     * Applies `walls` / `floor` to wall shell nodes (`wall_*`, `innerWall_*`,
+     * optional `walls` / `innerWalls` groups) and floor shell nodes (`floor_*`,
+     * or a node named `floor`) when
      * `src-is-room` is set; no-op otherwise (and clears overrides when room mode
      * is off).
      */
@@ -1286,7 +1403,13 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (!baseModel) return;
       baseModel.traverse((child) => {
         if (this._isRoomWallShellNode(child.name)) {
-          child.visible = !!this.walls;
+          const modeOwnsMesh =
+            isInnerWallPart(child.name) || isInnerWallCutaway(child.name);
+          // Inner-wall mode chooses solid, glass, or cutaway meshes. Forcing
+          // them visible here would show both representations.
+          if (!modeOwnsMesh || !this.walls) {
+            child.visible = !!this.walls;
+          }
         } else if (this._isRoomFloorShellNode(child.name)) {
           child.visible = !!this.floor;
         }
@@ -1308,7 +1431,7 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
               ? ' (untagged surfaces snap by face orientation)'
               : '') +
             '. ' +
-            'Wall shell: `walls` or `wall_*`; floor shell: `floor` or `floor_*`. ' +
+            'Wall shell: `walls`, `wall_*`, `innerWalls`, or `innerWall_*`; floor shell: `floor` or `floor_*`. ' +
             'Wall attachments follow `walls` and camera backface; floor-surface attachments follow `floor`.'
         );
       }
@@ -4858,12 +4981,43 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       return false;
     }
 
+    /**
+     * Ceiling-height parts: XZ is set by the caller (floor drag or placement
+     * cursor); this only locks Y to the room's wall top.
+     */
+    private _applyCeilingHeightSnap(object: Object3D): SurfaceSnapHit | null {
+      const snapPoint = getPrimarySurfaceSnapPoint(object);
+      const roomObject = this._findRoomSurfaceObject();
+      if (!snapPoint || !roomObject) return null;
+
+      const mountWorld = applyCeilingHeightSnapTransform(
+        object,
+        snapPoint,
+        roomObject
+      );
+      if (!mountWorld) return null;
+
+      if (object.userData?.isPlacedObject === true) {
+        this._markRoomWallVisibilityCacheDirty();
+      }
+      this._setPendingSnapConnection(null);
+      return {
+        point: mountWorld,
+        normal: new Vector3(0, -1, 0),
+        surfaceType: 'ceiling',
+        object: roomObject,
+      };
+    }
+
     private _applySurfaceSnapForNdc(
       object: Object3D,
       ndc: Vector2
     ): SurfaceSnapHit | null {
       const snapPoint = getPrimarySurfaceSnapPoint(object);
       if (!snapPoint) return null;
+      if (isCeilingHeightSnapPoint(snapPoint)) {
+        return this._applyCeilingHeightSnap(object);
+      }
 
       const scene = (this as any)[$scene];
       const camera = scene?.getCamera ? scene.getCamera() : scene?.camera;
@@ -4896,7 +5050,12 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
       const rect = this.getBoundingClientRect();
       const ndc = clientToNdc(clientX, clientY, rect);
       if (!ndc) return null;
-      return this._applySurfaceSnapForNdc(object, ndc);
+      const hit = this._applySurfaceSnapForNdc(object, ndc);
+      if (hit?.surfaceType === 'ceiling') {
+        // No wall under the cursor for ceiling parts: show the disc at the mount.
+        this._placementCursorMesh?.showOnSurface(hit.point, hit.normal);
+      }
+      return hit;
     }
 
     private _applySurfaceSnapForCurrentMouse(object: Object3D): boolean {
@@ -6137,7 +6296,10 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       for (const object of this._dragTargets) {
         const isSurfaceSnapObject = requiresSurfaceSnap(object);
-        if (isSurfaceSnapObject) {
+        // Ceiling-height parts move like floor parts in XZ, then lock Y to the wall top.
+        const isCeilingHeight =
+          isSurfaceSnapObject && isCeilingHeightObject(object);
+        if (isSurfaceSnapObject && !isCeilingHeight) {
           const valid = this._applySurfaceSnapForCurrentMouse(object);
           if (!valid) {
             allSurfaceSnapValid = false;
@@ -6185,11 +6347,18 @@ export const LDModularMixin = <T extends Constructor<ModelViewerElementBase>>(
           desiredY,
           this._tmpDragDesiredLocal.z
         );
-        this._restObjectOnRoomLevel(object, cursorLevelY);
+        if (isCeilingHeight) {
+          if (!this._applyCeilingHeightSnap(object)) {
+            allSurfaceSnapValid = false;
+            continue;
+          }
+        } else {
+          this._restObjectOnRoomLevel(object, cursorLevelY);
 
-        this._setPendingSnapConnection(null);
-        if (this.snappingEnabled) {
-          this.checkAndApplySnapping(object, intersectionPoint);
+          this._setPendingSnapConnection(null);
+          if (this.snappingEnabled) {
+            this.checkAndApplySnapping(object, intersectionPoint);
+          }
         }
 
         if (this._dragTargets.length === 1) {
@@ -8463,6 +8632,8 @@ class PlacementSession extends EventTarget {
     surfaceHit: SurfaceSnapHit
   ): Vector3 | null {
     if (!this.placeholder) return null;
+    // Ceiling parts snap at the mount point, not the wall-face projection.
+    if (surfaceHit.surfaceType === 'ceiling') return null;
     const bbox = new Box3().setFromObject(this.placeholder);
     if (
       !Number.isFinite(bbox.min.x) ||

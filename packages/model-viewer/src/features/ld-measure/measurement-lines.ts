@@ -1,14 +1,15 @@
 import {
   Box3,
   BufferGeometry,
-  Line,
-  LineBasicMaterial,
+  Material,
   Matrix4,
   Mesh,
-  NormalBlending,
   Object3D,
   Vector3,
 } from 'three';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 import {
   SELECTION_TRANSFORM_PIVOT_UUID,
@@ -25,6 +26,145 @@ import {
 export const MEASUREMENT_FRAME_NAME = 'ld-measurement-frame';
 export const HETEROGENEOUS_ROTATION_THRESHOLD_DEG = 45;
 
+/** Screen-space stroke behind the coloured core, in CSS pixels. */
+export const MEASUREMENT_LINE_HALO_COLOR = 0xf5f4f2;
+export const MEASUREMENT_LINE_HALO_WIDTH = 3;
+export const MEASUREMENT_LINE_HALO_RENDER_ORDER = 9998;
+
+/** Screen-space stroke drawn over the halo, in CSS pixels. */
+export const MEASUREMENT_LINE_CORE_COLOR = 0x2f6bff;
+export const MEASUREMENT_LINE_CORE_WIDTH = 1;
+export const MEASUREMENT_LINE_CORE_RENDER_ORDER = 9999;
+
+type MeasurementViewSize = {
+  width: number;
+  height: number;
+};
+
+export type MeasurementLineMaterials = {
+  halo: LineMaterial;
+  core: LineMaterial;
+};
+
+function createMeasurementLineMaterial(
+  color: number,
+  linewidth: number
+): LineMaterial {
+  return new LineMaterial({
+    color,
+    linewidth,
+    worldUnits: false,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 1,
+    toneMapped: false,
+  });
+}
+
+export function createMeasurementLineMaterials(): MeasurementLineMaterials {
+  return {
+    halo: createMeasurementLineMaterial(
+      MEASUREMENT_LINE_HALO_COLOR,
+      MEASUREMENT_LINE_HALO_WIDTH
+    ),
+    core: createMeasurementLineMaterial(
+      MEASUREMENT_LINE_CORE_COLOR,
+      MEASUREMENT_LINE_CORE_WIDTH
+    ),
+  };
+}
+
+function syncMeasurementLineResolution(
+  materials: LineMaterial[],
+  view: MeasurementViewSize
+): void {
+  const { width, height } = view;
+  if (!(width > 0) || !(height > 0)) {
+    return;
+  }
+  for (const material of materials) {
+    if (material.resolution.x !== width || material.resolution.y !== height) {
+      material.resolution.set(width, height);
+    }
+  }
+}
+
+function bindMeasurementLine(
+  line: Line2,
+  materials: LineMaterial[],
+  view: MeasurementViewSize,
+  renderOrder: number
+): void {
+  line.userData.noHit = true;
+  line.userData.skipShadow = true;
+  line.castShadow = false;
+  line.renderOrder = renderOrder;
+  line.visible = false;
+  line.frustumCulled = false;
+  // Line2's own callback copies the GL viewport, which is device pixels here.
+  // CSS size keeps linewidth constant on screen across DPR and GPU scale.
+  line.onBeforeRender = () => {
+    syncMeasurementLineResolution(materials, view);
+  };
+}
+
+/** Halo then core, sharing one geometry. Halo is first so label anchors stay on the segment. */
+export function createMeasurementLinePair(
+  points: Vector3[],
+  materials: MeasurementLineMaterials,
+  view: MeasurementViewSize
+): [Line2, Line2] {
+  const geometry = new LineGeometry();
+  const positions: number[] = [];
+  for (const point of points) {
+    positions.push(point.x, point.y, point.z);
+  }
+  geometry.setPositions(positions);
+
+  const materialList = [materials.halo, materials.core];
+  const halo = new Line2(geometry, materials.halo);
+  const core = new Line2(geometry, materials.core);
+  bindMeasurementLine(
+    halo,
+    materialList,
+    view,
+    MEASUREMENT_LINE_HALO_RENDER_ORDER
+  );
+  bindMeasurementLine(
+    core,
+    materialList,
+    view,
+    MEASUREMENT_LINE_CORE_RENDER_ORDER
+  );
+  syncMeasurementLineResolution(materialList, view);
+  return [halo, core];
+}
+
+function disposeMeasurementObject(root: Object3D): void {
+  const geometries = new Set<BufferGeometry>();
+  const materials = new Set<Material>();
+  root.traverse((node) => {
+    const mesh = node as Mesh;
+    if (!mesh.isMesh) {
+      return;
+    }
+    if (mesh.geometry) {
+      geometries.add(mesh.geometry);
+    }
+    const meshMaterials = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+    for (const material of meshMaterials) {
+      if (material) {
+        materials.add(material);
+      }
+    }
+  });
+  geometries.forEach((geometry) => geometry.dispose());
+  materials.forEach((material) => material.dispose());
+}
+
 type MeasurementDeps = {
   sceneSymbol: symbol;
 };
@@ -32,7 +172,7 @@ type MeasurementDeps = {
 const tmpBox = new Box3();
 const tmpMatrix = new Matrix4();
 const tmpViewLocal = new Vector3();
-const cornerScratch = Array.from({length: 8}, () => new Vector3());
+const cornerScratch = Array.from({ length: 8 }, () => new Vector3());
 
 function boxCorners(min: Vector3, max: Vector3, target: Vector3[]): void {
   target[0].set(min.x, min.y, min.z);
@@ -167,7 +307,7 @@ export function setupMeasurementFrame(
   roots: Object3D[],
   sceneTarget: Object3D,
   floorY: number
-): {useWorldAabbFallback: boolean} {
+): { useWorldAabbFallback: boolean } {
   const spreadDeg = rotationYSpreadDeg(roots);
   const useWorldAabbFallback = spreadDeg > HETEROGENEOUS_ROTATION_THRESHOLD_DEG;
   const pivot = computePivotOnFloor(roots, floorY);
@@ -181,7 +321,7 @@ export function setupMeasurementFrame(
   }
   frame.updateMatrixWorld(true);
 
-  return {useWorldAabbFallback};
+  return { useWorldAabbFallback };
 }
 
 export function syncMeasurementFrameFromRoots(
@@ -235,6 +375,54 @@ export function getViewOctantLabelInSpace(
   return AZIMUTHAL_OCTANT_LABELS[azimuthalOctant];
 }
 
+export type MeasurementLineAnchors = {
+  width: number;
+  height: number;
+  depth: number;
+};
+
+const NORTH = 0;
+const EAST = 1;
+const SOUTH = 2;
+const WEST = 3;
+const NORTH_A = 4;
+const NORTH_B = 5;
+const EAST_A = 6;
+const EAST_B = 7;
+const SOUTH_A = 8;
+const SOUTH_B = 9;
+const WEST_A = 10;
+const WEST_B = 11;
+
+/**
+ * Floor width, vertical height, and floor depth line-group indices.
+ * Height is the far vertical edge of the side already chosen for this octant.
+ */
+export function measurementLineAnchors(
+  octant: string
+): MeasurementLineAnchors | null {
+  switch (octant) {
+    case 'front':
+      return { width: SOUTH, height: WEST_B, depth: EAST };
+    case 'front-right':
+      return { width: SOUTH, height: NORTH_A, depth: EAST };
+    case 'right':
+      return { width: NORTH, height: SOUTH_B, depth: EAST };
+    case 'back-right':
+      return { width: NORTH, height: WEST_A, depth: EAST };
+    case 'back':
+      return { width: NORTH, height: EAST_B, depth: WEST };
+    case 'back-left':
+      return { width: NORTH, height: SOUTH_A, depth: WEST };
+    case 'left':
+      return { width: SOUTH, height: NORTH_B, depth: WEST };
+    case 'front-left':
+      return { width: SOUTH, height: EAST_A, depth: WEST };
+    default:
+      return null;
+  }
+}
+
 function findSceneTarget(scene: Object3D): Object3D | null {
   let target: Object3D | null = null;
   scene.traverse((child) => {
@@ -273,6 +461,7 @@ export function clearMeasurements(
   try {
     scene.traverse((child: Object3D) => {
       if (child.name === 'ld-measurements') {
+        disposeMeasurementObject(child);
         child.parent?.remove(child);
         throw new Error('Line parent found and removed');
       }
@@ -284,9 +473,12 @@ export function clearMeasurements(
   }
 
   host._lineGroups = [];
-  if (host._measureWidthElement) host._measureWidthElement.style.display = 'none';
-  if (host._measureHeightElement) host._measureHeightElement.style.display = 'none';
-  if (host._measureDepthElement) host._measureDepthElement.style.display = 'none';
+  if (host._measureWidthElement)
+    host._measureWidthElement.style.display = 'none';
+  if (host._measureHeightElement)
+    host._measureHeightElement.style.display = 'none';
+  if (host._measureDepthElement)
+    host._measureDepthElement.style.display = 'none';
   host.requestUpdate?.();
 }
 
@@ -307,11 +499,19 @@ export function getEdgeGroups(
       ],
       [
         new Vector3(corners[0].x, corners[0].y, corners[0].z - gap),
-        new Vector3(corners[0].x, corners[0].y, corners[0].z - length - margin - overshoot),
+        new Vector3(
+          corners[0].x,
+          corners[0].y,
+          corners[0].z - length - margin - overshoot
+        ),
       ],
       [
         new Vector3(corners[1].x, corners[1].y, corners[1].z - gap),
-        new Vector3(corners[1].x, corners[1].y, corners[1].z - length - margin - overshoot),
+        new Vector3(
+          corners[1].x,
+          corners[1].y,
+          corners[1].z - length - margin - overshoot
+        ),
       ],
     ],
     [
@@ -321,11 +521,19 @@ export function getEdgeGroups(
       ],
       [
         new Vector3(corners[1].x + gap, corners[1].y, corners[1].z),
-        new Vector3(corners[1].x + length + margin + overshoot, corners[1].y, corners[1].z),
+        new Vector3(
+          corners[1].x + length + margin + overshoot,
+          corners[1].y,
+          corners[1].z
+        ),
       ],
       [
         new Vector3(corners[5].x + gap, corners[5].y, corners[5].z),
-        new Vector3(corners[5].x + length + margin + overshoot, corners[5].y, corners[5].z),
+        new Vector3(
+          corners[5].x + length + margin + overshoot,
+          corners[5].y,
+          corners[5].z
+        ),
       ],
     ],
   ];
@@ -336,7 +544,8 @@ function buildMeasurementLines(
   boundingBox: Box3,
   linesParentObject: Object3D | null,
   needsCoordinateTransform: boolean,
-  edgeGroupObject: Object3D
+  edgeGroupObject: Object3D,
+  view: MeasurementViewSize
 ) {
   if (
     boundingBox.min.equals(new Vector3(Infinity, Infinity, Infinity)) ||
@@ -359,11 +568,7 @@ function buildMeasurementLines(
     new Vector3(min.x, max.y, max.z),
   ];
 
-  const lineMaterial = new LineBasicMaterial({color: 0x000000});
-  lineMaterial.transparent = true;
-  lineMaterial.opacity = 1;
-  lineMaterial.depthTest = false;
-  lineMaterial.blending = NormalBlending;
+  const lineMaterials = createMeasurementLineMaterials();
 
   const objectSize = boundingBox.getSize(new Vector3());
   const minDimension = Math.min(objectSize.x, objectSize.y, objectSize.z);
@@ -395,19 +600,16 @@ function buildMeasurementLines(
       : point.clone();
 
   edgeGroups.forEach((group: Array<Array<Vector3>>) => {
-    const lines: Line[] = [];
+    const lines: Line2[] = [];
     group.forEach((edge) => {
       const localEdge = edge.map((point) => toLocalSpace(point));
-      const geometry = new BufferGeometry().setFromPoints(localEdge);
-      const line = new Line(geometry, lineMaterial);
-      line.userData.noHit = true;
-      line.renderOrder = 9999;
-      line.visible = false;
-      line.frustumCulled = false;
-      lineParent.add(line);
-      lines.push(line);
+      const pair = createMeasurementLinePair(localEdge, lineMaterials, view);
+      for (const line of pair) {
+        lineParent.add(line);
+        lines.push(line);
+      }
     });
-    host._lineGroups.push({lines});
+    host._lineGroups.push({ lines });
   });
 
   host._refreshMeasurementVisibility();
@@ -469,7 +671,7 @@ export function measureObjects(
       host._measurementFrame.name = MEASUREMENT_FRAME_NAME;
     }
     const floorY = host._getMeasureFloorY(roots[0]);
-    const {useWorldAabbFallback} = setupMeasurementFrame(
+    const { useWorldAabbFallback } = setupMeasurementFrame(
       host._measurementFrame,
       roots,
       sceneTarget,
@@ -493,7 +695,8 @@ export function measureObjects(
     boundingBox,
     linesParentObject,
     needsCoordinateTransform,
-    edgeGroupObject
+    edgeGroupObject,
+    scene
   );
 }
 

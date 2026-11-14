@@ -71,6 +71,8 @@ export const $getLoaded = Symbol('getLoaded');
 export const $getModelIsVisible = Symbol('getModelIsVisible');
 export const $shouldAttemptPreload = Symbol('shouldAttemptPreload');
 export const $updateLDEnvironment = Symbol('updateLDEnvironment');
+export const $awaitInitialEnvironment = Symbol('awaitInitialEnvironment');
+export const $updateCameraClipping = Symbol('updateCameraClipping');
 export const $collectLoadWarnings = Symbol('collectLoadWarnings');
 
 export interface Vector3D {
@@ -546,6 +548,15 @@ export default class ModelViewerElementBase extends ReactiveElement {
     this[$scene].effectRenderer?.beforeRender(time, delta);
   }
 
+  /**
+   * Recomputes the camera far plane from the current orbit limit and, when
+   * an environment model is loaded, its cached world bounds. LD controls
+   * override this. The default is a no-op so scenes without that mixin keep
+   * their existing camera planes.
+   */
+  [$updateCameraClipping]() {
+  }
+
   [$markLoaded]() {
     if (this[$loaded]) {
       return;
@@ -553,6 +564,14 @@ export default class ModelViewerElementBase extends ReactiveElement {
 
     this[$loaded] = true;
     this[$loadedTime] = performance.now();
+  }
+
+  /**
+   * First reveal waits for an environment model when one is set. The default
+   * resolves immediately. Later src changes do not use this gate.
+   */
+  [$awaitInitialEnvironment](): Promise<void> {
+    return Promise.resolve();
   }
 
   [$needsRender]() {
@@ -623,6 +642,9 @@ export default class ModelViewerElementBase extends ReactiveElement {
       const envUpdated = (this as any)[$updateEnvironment]();
 
       await Promise.all([srcUpdated, envUpdated]);
+      // When an environment model is set before the first reveal, wait until
+      // it has loaded or failed so the product and environment appear together.
+      await this[$awaitInitialEnvironment]();
 
       this[$markLoaded]();
       this[$onModelLoad]();
@@ -646,15 +668,11 @@ export default class ModelViewerElementBase extends ReactiveElement {
           });
         });
       });
-
-      const updateLDEnvironment = (this as any)[$updateLDEnvironment];
-      if (typeof updateLDEnvironment === 'function') {
-        updateLDEnvironment.call(this);
-      }
     } catch (error) {
       const issues = classifyLoadError(error);
       this.dispatchEvent(new CustomEvent(
-          'error', {detail: {type: 'loadfailure', sourceError: error, issues}}));
+          'error',
+          {detail: {type: 'loadfailure', sourceError: error, issues}}));
     } finally {
       updateSourceProgress(1.0);
     }

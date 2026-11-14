@@ -394,4 +394,24 @@ export class Model implements ModelInterface {
 
     this[$variantData].delete(variantName);
   }
+
+  /**
+   * Appends a material that did not come from the loaded glTF, such as a
+   * client-side material swap. The index stays stable for PrimitiveNode
+   * maps. `name` is what `getMaterialByName` and bloom match.
+   */
+  registerExternalMaterial(name: string, threeMaterial: MeshPhysicalMaterial):
+      Material {
+    threeMaterial.name = name;
+    const correlated = new Set<MeshPhysicalMaterial>([threeMaterial]);
+    const material = new Material(
+        this[$modelOnUpdate],
+        this[$materials].length,
+        true,
+        this[$variantData],
+        correlated,
+        name);
+    this[$materials].push(material);
+    return material;
+  }
 }
