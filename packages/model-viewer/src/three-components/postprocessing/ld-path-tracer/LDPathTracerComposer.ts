@@ -39,7 +39,10 @@ const PATH_TRACER_DISPLAYS = [
   'before-denoise',
   'after-denoise',
 ] as const;
-const PATH_TRACER_SETTLE_MS = 300;
+// Camera damping is already instant (LD_SMOOTH_TIME is 0). This hold used
+// to wait out a damped orbit after the pointer released, and it delayed
+// every retrace by 300 ms after the camera had already stopped.
+const PATH_TRACER_SETTLE_MS = 0;
 // Realtime cameras draw layer 0. The floor stays visible so path-trace rays
 // hit it, and is placed on this layer so the raster view does not draw it.
 const PATH_TRACER_FLOOR_LAYER = 1;
