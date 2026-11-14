@@ -502,6 +502,20 @@ export class WebGPUPathTracerSession {
     }
   }
 
+  /**
+   * The blit that puts the trace on screen uses this WebGPU renderer. The
+   * viewer's tone mapping lives on the WebGL renderer, so copy it across or
+   * the linear HDR image is only sRGB-encoded and the shadows wash out.
+   */
+  applyPresentation(toneMapping: number, exposure: number) {
+    const renderer = this.renderer as {toneMapping: number, toneMappingExposure: number}|null;
+    if (renderer == null) {
+      return;
+    }
+    renderer.toneMapping = toneMapping;
+    renderer.toneMappingExposure = exposure;
+  }
+
   renderSample() {
     const tracer = this.tracer;
     if (tracer == null) {

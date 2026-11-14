@@ -529,6 +529,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.scene.lockRenderScale = this.realtimeFrozen;
     this.pathTracer.show(true);
+    this.pathTracer.applyPresentation(
+        this.scene.toneMapping, this.presentationExposure());
     this.pathTracer.renderSample();
     this.pathTracer.noteTraceProgress();
     this.presentTrace();
@@ -795,7 +797,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
     this.renderer.toneMapping = this.scene.toneMapping;
     this.renderer.outputColorSpace = SRGBColorSpace;
+    this.renderer.toneMappingExposure = this.presentationExposure();
+  }
 
+  private presentationExposure(): number {
+    if (this.scene == null) {
+      return 1;
+    }
     const {element, exposure} = this.scene;
     const exposureIsNumber =
         typeof exposure === 'number' && !Number.isNaN(exposure);
@@ -803,8 +811,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const sky = element.skyboxImage;
     const compensateExposure = this.scene.toneMapping === NeutralToneMapping &&
         (env === 'neutral' || env === 'legacy' || (!env && !sky));
-    this.renderer.toneMappingExposure =
-        (exposureIsNumber ? exposure : 1.0) * (compensateExposure ? 1.3 : 1.0);
+    return (exposureIsNumber ? exposure : 1) * (compensateExposure ? 1.3 : 1);
   }
 
   private applyRenderScale() {
