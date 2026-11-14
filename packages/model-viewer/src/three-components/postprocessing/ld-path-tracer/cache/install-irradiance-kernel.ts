@@ -64,8 +64,9 @@ export interface IrradianceKernelUpload {
   write: boolean;
 }
 
-const isCacheKernel = (kernel: CacheKernel): boolean =>
-    kernel.cacheAttribute != null && typeof kernel.cacheRead === 'number';
+const isCacheKernel = (kernel: CacheKernel|null|undefined): boolean =>
+    kernel != null && kernel.cacheAttribute != null &&
+    typeof kernel.cacheRead === 'number';
 
 /**
  * The stock tracer's wavefront backend has no extension point for a
