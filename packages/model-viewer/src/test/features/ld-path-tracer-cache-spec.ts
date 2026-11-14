@@ -247,7 +247,7 @@ suite('path tracer cache invalidation', () => {
         .to.equal('material-adjust');
     expect(classifyMaterialProperties({
       roughnessFactor: 0.2
-    })).to.equal('material-swap');
+    })).to.equal('material-adjust');
     expect(classifyMaterialProperties({
       baseColorFactor: [1, 0, 0, 1],
       metallicFactor: 1,
@@ -265,6 +265,10 @@ suite('path tracer cache invalidation', () => {
         scene.add(mesh);
         const before = sampleMaterialWatch(scene);
         mesh.material.color.set(0x00ff00);
+        expect(diffMaterialWatch(before, sampleMaterialWatch(scene)))
+            .to.equal('material-adjust');
+        mesh.material.color.set(0xff0000);
+        mesh.material.roughness = 0.9;
         expect(diffMaterialWatch(before, sampleMaterialWatch(scene)))
             .to.equal('material-adjust');
         mesh.material =

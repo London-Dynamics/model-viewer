@@ -3,9 +3,10 @@
  * Copyright 2026 London Dynamics. All Rights Reserved.
  * The body is the three-gpu-pathtracer 0.0.27 wavefront MaterialKernel
  * (src/webgpu/compute/wavefront/MaterialKernel.js) with one LD block: a
- * diffuse primary hit reads the irradiance grid and ends the path. The
- * grid is not written from this kernel. The npm package stays the source
- * of the rest of the wavefront pipeline.
+ * secondary hit can read the irradiance grid and end the path. A miss
+ * marks the path so the logic kernel writes albedo-divided irradiance
+ * when the path finishes. Primary hits stay exact, and so does the next
+ * vertex after a sharp, metal, or transmissive primary scatter.
  *
  * Licensed under the Apache License, Version 2.0 for the London Dynamics
  * additions. The upstream kernel is MIT, Copyright Garrett Johnson.
@@ -23,7 +24,7 @@ import {applyDispersionFunc, dispersionColorWeightFunc, DISPERSION_MIN_WAVELENGT
 import {isTerminatingScatterFunc, offsetRayOriginFunc} from 'three-gpu-pathtracer/src/webgpu/nodes/utils.wgsl.js';
 import {LIGHT_EPSILON} from 'three-gpu-pathtracer/src/webgpu/nodes/lights.wgsl.js';
 
-import {IRRADIANCE_SLOT_COUNT} from './path-tracer-irradiance-cache.js';
+import {IRRADIANCE_PATH_RECORDS, IRRADIANCE_PATH_SLOTS, IRRADIANCE_SLOT_COUNT} from './path-tracer-irradiance-cache.js';
 
 // Inlined into fn compute. A helper fn before it becomes the TSL entry point.
 const irradianceHashSlot = (slot, cell, normal) => `
@@ -37,14 +38,12 @@ const irradianceHashSlot = (slot, cell, normal) => `
 				let ${slot} = ( ${slot}H ^ ${slot}Nterm ) & 65535u;
 `;
 
-// Diffuse primary hits reuse world-space irradiance. Everything else is the
+// Secondary hits reuse world-space irradiance. Everything else is the
 // stock material kernel: terminated slots pull a recycled pixel and emit a
 // camera ray; live slots sample the bsdf and enqueue the next bounce.
 export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 
-	constructor( ) {
-
-		const cacheAttribute = new StorageBufferAttribute( IRRADIANCE_SLOT_COUNT * 2, 4 );
+	constructor(cacheAttribute = new StorageBufferAttribute(IRRADIANCE_SLOT_COUNT * 2, 4), pathRecords = new StorageBufferAttribute(IRRADIANCE_PATH_SLOTS * IRRADIANCE_PATH_RECORDS, 4)) {
 		const params = {
 			bvhData: { value: null },
 			material: { value: null },
@@ -71,6 +70,7 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 			cacheOrigin: uniform( new Vector3() ),
 			cacheCellSize: uniform( 1 ),
 			cacheMinSamples: uniform( 4, 'uint' ),
+			pathRecords: storage( pathRecords, 'vec4', IRRADIANCE_PATH_SLOTS * IRRADIANCE_PATH_RECORDS ),
 
 			globalId: globalId,
 		};
@@ -191,6 +191,11 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					rayDataStorage[ index ].rayIntersectionIndex = i32( rayIndex );
 					rayDataStorage[ index ].shadowRayIntersectionIndex = - 1;
 					rayDataStorage[ index ].dispersionWavelength = - mix( ${ DISPERSION_MIN_WAVELENGTH }.0, ${ DISPERSION_MAX_WAVELENGTH }.0, ${ rand1 }( ${ RNG_INDEX_DISPERSION_WAVELENGTH } ) );
+					if ( index < ${ IRRADIANCE_PATH_SLOTS }u ) {
+
+						${ params.pathRecords }[ index * ${ IRRADIANCE_PATH_RECORDS }u ] = vec4f( 0.0 );
+
+					}
 
 					// write the active params & dispatched flag
 					textureStore( ${ params.sampleCountTarget }, indexUV, vec4( ${ SAMPLE_ACTIVE_FLAG }u | ${ SAMPLE_DISPATCHED_FLAG }u | samples ) );
@@ -303,29 +308,63 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 
 					}
 
-					// LD irradiance cache read. A warm diffuse primary hit shades
-					// albedo * irradiance and ends the path. The grid is not
-					// updated here; a wavefront run only consumes it.
-					if ( input.currentBounce == 0u && ${ params.cacheRead } != 0u ) {
+					// Secondary-hit radiance cache. Primary hits stay exact. A sharp,
+					// metal, or glass primary scatter also keeps the next vertex
+					// exact. A later rough hit, or a long path, reuses the grid
+					// or marks this vertex so the finished path can fill it.
+					// Tuning: rough at roughness >= 0.35 with metalness <= 0.5
+					// and transmission <= 0.2. Spread is bounce >= 3 or a
+					// segment longer than 8 cells, and still not a mirror.
+					// Irradiance is clamped to 64 when it is written.
+					if ( index < ${ IRRADIANCE_PATH_SLOTS }u && ( ${ params.cacheRead } != 0u || ${ params.cacheWrite } != 0u ) ) {
 
-						let ldDiffuse = surface.roughness >= 0.35 && surface.metalness <= 0.25 && surface.transmission <= 0.05 && dot( surface.emission, vec3f( 1.0 ) ) <= 0.001;
-						if ( ldDiffuse ) {
+						let ldRec = index * ${ IRRADIANCE_PATH_RECORDS }u;
+						let ldState = ${ params.pathRecords }[ ldRec ].w;
+						let ldSpecular = surface.roughness < 0.25 || surface.metalness > 0.6 || surface.transmission > 0.2;
+						if ( input.currentBounce == 0u ) {
 
-							let ldAlbedo = max( surface.color, vec3f( 0.04 ) );
-							let ldCell = vec3i( floor( ( vertexData.position.xyz - ${ params.cacheOrigin } ) / ${ params.cacheCellSize } ) );
-							${ irradianceHashSlot( 'ldSlot', 'ldCell', 'vertexData.normal.xyz' ) }
-							let ldBase = ldSlot * 2u;
-							let ldIrr = ${ params.cacheBuffer }[ ldBase ];
-							let ldNrm = ${ params.cacheBuffer }[ ldBase + 1u ];
-							if ( ldIrr.w >= f32( ${ params.cacheMinSamples } ) && dot( normalize( ldNrm.xyz ), vertexData.normal.xyz ) > 0.5 ) {
+							${ params.pathRecords }[ ldRec ] = vec4f( 0.0, 0.0, 0.0, select( 0.0, 1.0, ldSpecular ) );
 
-								rayDataStorage[ index ].resultColor = vec4f( ldAlbedo * ldIrr.xyz, surface.opacity );
-								rayDataStorage[ index ].throughputColor = vec3f( 0.0 );
-								rayDataStorage[ index ].emission = vec3f( 0.0 );
-								rayDataStorage[ index ].scatterPdf = 0.0;
-								rayDataStorage[ index ].lightPdf = 0.0;
-								rayDataStorage[ index ].shadowRayIntersectionIndex = - 1;
-								return;
+						} else if ( ldState > 0.5 && ldState < 1.5 ) {
+
+							${ params.pathRecords }[ ldRec ] = vec4f( 0.0 );
+
+						} else if ( ldState < 1.5 ) {
+
+							let ldRough = surface.roughness >= 0.35 && surface.metalness <= 0.5 && surface.transmission <= 0.2;
+							let ldSpread = input.currentBounce >= 3u || input.dist > ${ params.cacheCellSize } * 8.0;
+							let ldCanEnd = ldRough || ( ldSpread && surface.roughness >= 0.2 && surface.metalness <= 0.6 && surface.transmission <= 0.2 );
+							if ( ldCanEnd ) {
+
+								let ldAlbedo = max( surface.color, vec3f( 0.04 ) );
+								let ldNormal = vertexData.normal.xyz;
+								let ldCell = vec3i( floor( ( vertexData.position.xyz - ${ params.cacheOrigin } ) / ${ params.cacheCellSize } ) );
+								${ irradianceHashSlot( 'ldSlot', 'ldCell', 'ldNormal' ) }
+								let ldBase = ldSlot * 2u;
+								let ldIrr = ${ params.cacheBuffer }[ ldBase ];
+								let ldNrm = ${ params.cacheBuffer }[ ldBase + 1u ];
+								let ldWarm = ldIrr.w >= f32( ${ params.cacheMinSamples } ) && dot( normalize( ldNrm.xyz ), ldNormal ) > 0.5;
+								if ( ldWarm && ${ params.cacheRead } != 0u ) {
+
+									let ldRad = ldAlbedo * clamp( ldIrr.xyz, vec3f( 0.0 ), vec3f( 64.0 ) );
+									rayDataStorage[ index ].resultColor = vec4f( input.resultColor.rgb + throughputColor * ldRad, input.resultColor.a );
+									rayDataStorage[ index ].throughputColor = vec3f( 0.0 );
+									rayDataStorage[ index ].emission = vec3f( 0.0 );
+									rayDataStorage[ index ].scatterPdf = 0.0;
+									rayDataStorage[ index ].lightPdf = 0.0;
+									rayDataStorage[ index ].shadowRayIntersectionIndex = - 1;
+									return;
+
+								}
+
+								if ( ${ params.cacheWrite } != 0u ) {
+
+									${ params.pathRecords }[ ldRec ] = vec4f( ldAlbedo, 2.0 );
+									${ params.pathRecords }[ ldRec + 1u ] = vec4f( throughputColor, f32( ldSlot ) );
+									${ params.pathRecords }[ ldRec + 2u ] = vec4f( input.resultColor.rgb, 0.0 );
+									${ params.pathRecords }[ ldRec + 3u ] = vec4f( ldNormal, 0.0 );
+
+								}
 
 							}
 

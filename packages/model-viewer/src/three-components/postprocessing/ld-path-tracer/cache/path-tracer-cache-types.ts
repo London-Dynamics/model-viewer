@@ -38,8 +38,8 @@ export interface PathTracerCacheDependency {
 /**
  * bvh: acceleration structure. Geometry only.
  * irradiance: world-space lighting with albedo divided out. Geometry,
- * non-albedo material replacement, and lights/HDRI. A pure colour adjust
- * keeps it. Camera motion keeps it.
+ * a material identity or metalness/transmission change, and lights/HDRI.
+ * A colour or roughness adjust keeps it. Camera motion keeps it.
  * materials: packed PBR factors for the scene material table. Material
  * identity and colour/factor edits. Not environment, not camera. A geometry
  * swap does not clear it by itself; entries are matched by mesh name, and a
@@ -93,15 +93,17 @@ export const isPathTracerCacheType =
         (PATH_TRACER_CACHE_TYPES as readonly string[]).includes(value);
 
 /**
- * Colour and emissive colour are albedo. Roughness, metalness, transmission,
- * maps, and a replaced material identity change the reflectance, so they
- * count as a material swap for the lighting cache.
+ * Colour and roughness retint or re-rough a surface the cache already
+ * lit. Metalness, transmission, maps, and a replaced material identity
+ * change which paths stay specular, so they drop the lighting cache.
  */
 export const MATERIAL_ADJUST_PROPERTY_KEYS = [
   'baseColorFactor',
   'color',
   'emissiveFactor',
   'emissive',
+  'roughnessFactor',
+  'roughness',
 ] as const;
 
 export const classifyMaterialProperties =

@@ -13,8 +13,12 @@
  * limitations under the License.
  */
 
-/** Power-of-two hash slots. The megakernel masks with 65535. */
+/** Power-of-two hash slots. The kernels mask with 65535. */
 export const IRRADIANCE_SLOT_COUNT = 65536;
+/** Path slots that can carry one secondary-hit cache mark. */
+export const IRRADIANCE_PATH_SLOTS = 1 << 20;
+/** vec4 records per path slot: albedo/state, throughput/slot, result, normal. */
+export const IRRADIANCE_PATH_RECORDS = 4;
 export const IRRADIANCE_FLOATS_PER_SLOT = 8;
 export const IRRADIANCE_MIN_SAMPLES = 4;
 

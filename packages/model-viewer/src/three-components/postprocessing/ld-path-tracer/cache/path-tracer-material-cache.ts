@@ -32,7 +32,9 @@ export interface MaterialWatchSample {
   materialUuid: string;
   color: string;
   emissive: string;
+  /** Metalness, transmission, opacity, and map ids. Roughness is separate. */
   shading: string;
+  roughness: string;
 }
 
 const colorTuple =
@@ -116,7 +118,6 @@ export const sampleMaterialWatch = (root: Object3D): MaterialWatchSample[] => {
             `${round(standard.emissive.r)},${round(standard.emissive.g)},${
                 round(standard.emissive.b)}`,
         shading: [
-          round(standard?.roughness),
           round(standard?.metalness),
           round((standard as {transmission?: number} | null)?.transmission),
           round(material.opacity),
@@ -125,6 +126,7 @@ export const sampleMaterialWatch = (root: Object3D): MaterialWatchSample[] => {
           standard?.roughnessMap?.uuid ?? '',
           standard?.metalnessMap?.uuid ?? '',
         ].join('|'),
+        roughness: String(round(standard?.roughness)),
       });
     }
   });
@@ -132,9 +134,9 @@ export const sampleMaterialWatch = (root: Object3D): MaterialWatchSample[] => {
 };
 
 /**
- * A new material identity, or a roughness / metalness / transmission / map
- * edit, is a swap. Colour and emissive colour alone are an adjust, which
- * leaves the albedo-free irradiance cache in place.
+ * A new material identity, metalness, transmission, or a map edit is a
+ * swap. Colour and roughness leave the albedo-free irradiance cache in
+ * place. The primary hit is shaded again with the new colour or roughness.
  */
 export const diffMaterialWatch = (
     previous: readonly MaterialWatchSample[],
@@ -152,7 +154,8 @@ export const diffMaterialWatch = (
         before.shading !== after.shading) {
       return 'material-swap';
     }
-    if (before.color !== after.color || before.emissive !== after.emissive) {
+    if (before.color !== after.color || before.emissive !== after.emissive ||
+        before.roughness !== after.roughness) {
       adjust = true;
     }
   }

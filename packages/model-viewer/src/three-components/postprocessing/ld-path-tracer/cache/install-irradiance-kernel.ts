@@ -13,7 +13,11 @@
  * limitations under the License.
  */
 
+import {StorageBufferAttribute} from 'three/webgpu';
+
+import {LDIrradianceCacheLogicKernel} from './LDIrradianceCacheLogicKernel.js';
 import {LDIrradianceCacheMaterialKernel} from './LDIrradianceCacheMaterialKernel.js';
+import {IRRADIANCE_PATH_RECORDS, IRRADIANCE_PATH_SLOTS, IRRADIANCE_SLOT_COUNT} from './path-tracer-irradiance-cache.js';
 
 interface CacheKernel {
   bvhData: unknown;
@@ -29,10 +33,24 @@ interface CacheKernel {
   cacheCellSize: number;
   cacheMinSamples: number;
   cacheAttribute: {array: Float32Array; needsUpdate: boolean;};
+  peer?: {cacheWrite: number};
+}
+
+interface LogicKernelHandle {
+  envInfo: unknown;
+  backgroundInfo: unknown;
+  lightsInfo: unknown;
+  misEnabled: number;
+  maxBounces: number;
+  clampDirect: number;
+  clampIndirect: number;
+  transmissiveBackground: number;
+  cacheWrite: number;
 }
 
 interface WavefrontBackend {
   materialKernel?: CacheKernel;
+  logicKernel?: LogicKernelHandle;
   rebuild: () => void;
 }
 
@@ -44,6 +62,7 @@ export interface IrradianceKernelTracer {
   };
   _ldIrradianceKernel?: CacheKernel|null;
   _ldStockMaterialKernel?: CacheKernel|null;
+  _ldStockLogicKernel?: LogicKernelHandle|null;
 }
 
 export interface IrradianceKernelUpload {
@@ -76,7 +95,12 @@ export const installIrradianceKernel =
         throw new Error(
             'Path tracer irradiance cache needs the wavefront backend.');
       }
-      const next = new LDIrradianceCacheMaterialKernel() as CacheKernel;
+      const cacheAttribute =
+          new StorageBufferAttribute(IRRADIANCE_SLOT_COUNT * 2, 4);
+      const pathRecords = new StorageBufferAttribute(
+          IRRADIANCE_PATH_SLOTS * IRRADIANCE_PATH_RECORDS, 4);
+      const next = new LDIrradianceCacheMaterialKernel(
+                       cacheAttribute, pathRecords) as CacheKernel;
       next.bvhData = stock.bvhData;
       next.material = stock.material;
       next.filterGlossy = stock.filterGlossy;
@@ -84,6 +108,24 @@ export const installIrradianceKernel =
       next.maxTransparentBounces = stock.maxTransparentBounces;
       next.maxSamples = stock.maxSamples;
       next.seed = stock.seed;
+      const stockLogic = tracer._pathTracer.logicKernel;
+      if (stockLogic != null) {
+        const logic = new LDIrradianceCacheLogicKernel(
+            cacheAttribute, pathRecords) as LogicKernelHandle;
+        logic.envInfo = stockLogic.envInfo;
+        logic.backgroundInfo = stockLogic.backgroundInfo;
+        logic.lightsInfo = stockLogic.lightsInfo;
+        logic.misEnabled = stockLogic.misEnabled;
+        logic.maxBounces = stockLogic.maxBounces;
+        logic.clampDirect = stockLogic.clampDirect;
+        logic.clampIndirect = stockLogic.clampIndirect;
+        logic.transmissiveBackground = stockLogic.transmissiveBackground;
+        next.peer = logic;
+        if (tracer._ldStockLogicKernel == null) {
+          tracer._ldStockLogicKernel = stockLogic;
+        }
+        tracer._pathTracer.logicKernel = logic;
+      }
       if (tracer._ldStockMaterialKernel == null ||
           tracer._ldStockMaterialKernel === installed) {
         tracer._ldStockMaterialKernel = stock;
@@ -100,12 +142,16 @@ export const uninstallIrradianceKernel =
         return;
       }
       const stock = tracer._ldStockMaterialKernel;
+      const stockLogic = tracer._ldStockLogicKernel;
       tracer._ldIrradianceKernel = null;
       tracer._ldStockMaterialKernel = null;
-      if (stock == null || tracer._pathTracer.materialKernel == null) {
-        return;
+      tracer._ldStockLogicKernel = null;
+      if (stock != null && tracer._pathTracer.materialKernel != null) {
+        tracer._pathTracer.materialKernel = stock;
       }
-      tracer._pathTracer.materialKernel = stock;
+      if (stockLogic != null && tracer._pathTracer.logicKernel != null) {
+        tracer._pathTracer.logicKernel = stockLogic;
+      }
       tracer._pathTracer.rebuild();
     };
 
@@ -123,6 +169,9 @@ export const uploadIrradianceKernel = (
   kernel.cacheMinSamples = upload.minSamples;
   kernel.cacheRead = upload.read ? 1 : 0;
   kernel.cacheWrite = upload.write ? 1 : 0;
+  if (kernel.peer != null) {
+    kernel.peer.cacheWrite = kernel.cacheWrite;
+  }
 };
 
 export const downloadIrradianceKernel = async(

@@ -103,6 +103,14 @@ export class WebGPUPathTracerSession {
   bvhBuilt = 0;
   firstSampleMs: number|null = null;
   convergedMs: number|null = null;
+  benchBackend: 'default'|'megakernel' = 'default';
+  samplesReadyAt: number|null = null;
+  denoiseInvokeAt: number|null = null;
+  denoisePassAt: number|null = null;
+  denoiseFinishedAt: number|null = null;
+  denoiseTileAt: number[] = [];
+  denoiseFocus = '';
+  denoiseVisibility = '';
   private traceStartedAt = 0;
   private sawSample = false;
   private sawSettled = false;
@@ -227,10 +235,18 @@ export class WebGPUPathTracerSession {
 
     let renderer: WebGPURenderer;
     try {
+      const storageLimit =
+          (adapter.limits as {maxStorageBuffersPerShaderStage?: number}|
+           undefined)
+              ?.maxStorageBuffersPerShaderStage ??
+          8;
       renderer = new WebGPURenderer({
         canvas: this.canvas,
         antialias: true,
         alpha: true,
+        requiredLimits: storageLimit >= 10 ?
+            {maxStorageBuffersPerShaderStage: 10} :
+            {},
       });
       await renderer.init();
     } catch (error) {
@@ -254,6 +270,11 @@ export class WebGPUPathTracerSession {
     tracer.dynamicLowRes = true;
     tracer.synchronizeRenderSize = false;
     this.tracer = tracer;
+    // Bench probe only. Pages leave this unset, so the stock wavefront
+    // backend is unchanged. The irradiance cache still swaps in its kernel.
+    const benchBackend =
+        (globalThis as {__ldBenchBackend?: string}).__ldBenchBackend;
+    this.benchBackend = benchBackend === 'megakernel' ? 'megakernel' : 'default';
     this.applyTracerFields(false);
     this.state = 'ready';
     if (this.denoiseWanted) {
@@ -385,7 +406,25 @@ export class WebGPUPathTracerSession {
     this.tracedScene = scene as Scene;
     this.beginTraceClock();
     this.tracer?.setScene(scene as Scene, camera);
+    this.applyBenchBackend();
     this.syncIrradianceKernel();
+  }
+
+  private applyBenchBackend() {
+    if (this.benchBackend !== 'megakernel') {
+      return;
+    }
+    const tracer = this.tracer as WebGPUPathTracer & {
+      useMegakernel?: (enabled: boolean) => void;
+      _pathTracer?: {constructor?: {name?: string}};
+    };
+    if (tracer == null || typeof tracer.useMegakernel !== 'function') {
+      return;
+    }
+    if (tracer._pathTracer?.constructor?.name === 'MegaKernelPathTracer') {
+      return;
+    }
+    tracer.useMegakernel(true);
   }
 
   async setSceneAsync(scene: Object3D, camera: Camera) {
@@ -437,6 +476,15 @@ export class WebGPUPathTracerSession {
     if (!this.sawSample && (this.samples > 0 || this.sampleMin > 0)) {
       this.sawSample = true;
       this.firstSampleMs = performance.now() - this.traceStartedAt;
+    }
+    if (this.samplesReadyAt == null && this.maxSamples > 0 &&
+        this.sampleMin >= this.maxSamples) {
+      this.samplesReadyAt = performance.now();
+    }
+    if (this.denoiseFinishedAt == null && this.denoiser?.complete === true) {
+      this.denoiseFinishedAt = performance.now();
+      this.denoiseFocus = document.hasFocus() ? 'focus' : 'blur';
+      this.denoiseVisibility = document.visibilityState;
     }
     if (!this.sawSettled && this.traceSettled) {
       this.sawSettled = true;
@@ -532,6 +580,7 @@ export class WebGPUPathTracerSession {
         dynamicTile: false,
       });
       this.watchDenoiseTiles(denoiser);
+      this.watchDenoiseClock(denoiser);
       this.denoiser = denoiser;
       this.tracer.setDenoiser(denoiser);
     } catch (error) {
@@ -564,6 +613,7 @@ export class WebGPUPathTracerSession {
           if (typeof index === 'number' && typeof count === 'number') {
             this.denoiseTile = index + 1;
             this.denoiseTileCount = count;
+            this.denoiseTileAt.push(performance.now());
           }
           if (report != null) {
             await report(output, tileData, tile, index, count);
@@ -576,12 +626,43 @@ export class WebGPUPathTracerSession {
     };
   }
 
+  private watchDenoiseClock(denoiser: OIDNDenoiser) {
+    const host = denoiser as unknown as {
+      update: (target: unknown) => unknown;
+      denoise: (...args: unknown[]) => Promise<unknown>;
+    };
+    const update = host.update.bind(host);
+    host.update = (target: unknown) => {
+      if (this.denoiseInvokeAt == null && denoiser.complete !== true &&
+          denoiser.running !== true) {
+        this.denoiseInvokeAt = performance.now();
+        this.denoiseFocus = document.hasFocus() ? 'focus' : 'blur';
+        this.denoiseVisibility = document.visibilityState;
+      }
+      return update(target);
+    };
+    const denoise = host.denoise.bind(host);
+    host.denoise = async (...args: unknown[]) => {
+      if (this.denoisePassAt == null) {
+        this.denoisePassAt = performance.now();
+      }
+      return denoise(...args);
+    };
+  }
+
   private beginTraceClock() {
     this.traceStartedAt = performance.now();
     this.sawSample = false;
     this.sawSettled = false;
     this.firstSampleMs = null;
     this.convergedMs = null;
+    this.samplesReadyAt = null;
+    this.denoiseInvokeAt = null;
+    this.denoisePassAt = null;
+    this.denoiseFinishedAt = null;
+    this.denoiseTileAt = [];
+    this.denoiseFocus = '';
+    this.denoiseVisibility = '';
   }
 
   private prepareBounds(scene: Object3D, build: () => void|Promise<void>):
@@ -630,6 +711,9 @@ export class WebGPUPathTracerSession {
       }
       kernel.cacheRead = this.irradianceUpload.read ? 1 : 0;
       kernel.cacheWrite = this.irradianceUpload.write ? 1 : 0;
+      if (kernel.peer != null) {
+        kernel.peer.cacheWrite = kernel.cacheWrite;
+      }
     } catch (error) {
       console.warn(
           '[model-viewer] Path tracer irradiance cache could not attach. Tracing continues without it.',
