@@ -99,6 +99,11 @@ export class WebGPUPathTracerSession {
   private bvhRecords: SerializedBvhMesh[]|null = null;
   bvhCacheEnabled = false;
   bvhBuildMs = 0;
+  bvhStartedAt: number|null = null;
+  bvhFinishedAt: number|null = null;
+  prepStartedAt: number|null = null;
+  prepFinishedAt: number|null = null;
+  traceLoopStartedAt: number|null = null;
   bvhRestored = 0;
   bvhBuilt = 0;
   firstSampleMs: number|null = null;
@@ -365,6 +370,11 @@ export class WebGPUPathTracerSession {
    * True once the kernel has stopped at maxSamples and, when denoise is on,
    * the OIDN pass has finished. A failed denoiser settles on the raw trace.
    */
+  /** performance.now() when the current trace clock started. */
+  get traceOriginAt(): number {
+    return this.traceStartedAt;
+  }
+
   get traceSettled(): boolean {
     if (this.maxSamples <= 0 || this.sampleMin < this.maxSamples) {
       return false;
@@ -496,6 +506,9 @@ export class WebGPUPathTracerSession {
     const tracer = this.tracer;
     if (tracer == null) {
       return;
+    }
+    if (this.traceLoopStartedAt == null) {
+      this.traceLoopStartedAt = performance.now();
     }
     this.applyTracerFields(false);
     tracer.renderSample();
@@ -652,6 +665,7 @@ export class WebGPUPathTracerSession {
 
   private beginTraceClock() {
     this.traceStartedAt = performance.now();
+    this.traceLoopStartedAt = null;
     this.sawSample = false;
     this.sawSettled = false;
     this.firstSampleMs = null;
@@ -682,14 +696,17 @@ export class WebGPUPathTracerSession {
     });
     this.bvhBuilt = pending;
     const start = performance.now();
+    this.bvhStartedAt = start;
+    const finish = () => {
+      this.bvhFinishedAt = performance.now();
+      this.bvhBuildMs = this.bvhFinishedAt - start;
+    };
     const result = build();
     if (result != null &&
         typeof (result as Promise<void>).then === 'function') {
-      return (result as Promise<void>).then(() => {
-        this.bvhBuildMs = performance.now() - start;
-      });
+      return (result as Promise<void>).then(finish);
     }
-    this.bvhBuildMs = performance.now() - start;
+    finish();
     return undefined;
   }
 
@@ -702,6 +719,7 @@ export class WebGPUPathTracerSession {
       uninstallIrradianceKernel(tracer);
       return;
     }
+    const started = performance.now();
     try {
       const kernel = installIrradianceKernel(tracer);
       if (this.irradianceUploadedGeneration !== this.irradianceGeneration) {
@@ -719,6 +737,10 @@ export class WebGPUPathTracerSession {
           '[model-viewer] Path tracer irradiance cache could not attach. Tracing continues without it.',
           error);
       uninstallIrradianceKernel(tracer);
+    } finally {
+      if (this.prepStartedAt == null) {
+        this.prepStartedAt = started;
+      }
     }
   }
 

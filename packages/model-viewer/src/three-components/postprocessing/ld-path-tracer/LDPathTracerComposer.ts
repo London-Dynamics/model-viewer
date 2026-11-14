@@ -2400,7 +2400,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
   }
 
-  private captureBuiltCaches() {
+  private captureBuiltCaches(stamp = true) {
+    const started = performance.now();
     if (this.scene == null) {
       return;
     }
@@ -2416,10 +2417,17 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.fitIrradianceBounds();
     this.pushIrradiance();
+    if (!stamp || this.session == null) {
+      return;
+    }
+    if (this.session.prepStartedAt == null) {
+      this.session.prepStartedAt = started;
+    }
+    this.session.prepFinishedAt = performance.now();
   }
 
   private async captureLiveCaches() {
-    this.captureBuiltCaches();
+    this.captureBuiltCaches(false);
     if (!this.pathTracerCache.flags.enabled.irradiance ||
         this.session == null) {
       return;

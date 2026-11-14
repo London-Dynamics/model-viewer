@@ -25,122 +25,121 @@
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
     <style>
       html,
       body {
-        background: #111;
+        background: #fff;
         height: 100%;
         margin: 0;
-      }
-
-      body {
-        color: #111827;
-        font-family: inherit;
+        overflow: hidden;
       }
 
       .shell {
+        background: #fff;
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 22rem;
+        grid-template-columns: minmax(0, 1fr) 240px;
         height: 100vh;
         width: 100%;
       }
 
       .stage {
+        background: #fff;
         min-width: 0;
         position: relative;
       }
 
       .stage model-viewer {
+        background: #fff;
         display: block;
         height: 100%;
         width: 100%;
       }
 
-      .overlay {
-        background: rgba(17, 24, 39, 0.88);
-        border-radius: 0.375rem;
-        color: white;
-        font-size: 0.8125rem;
-        font-variant-numeric: tabular-nums;
-        left: 0.75rem;
-        line-height: 1.35;
-        max-width: min(28rem, calc(100% - 1.5rem));
-        padding: 0.6rem 0.75rem;
-        position: absolute;
-        top: 0.75rem;
-      }
-
-      .overlay strong {
-        font-size: 1rem;
-      }
-
-      .bar {
-        border-left: 1px solid #e5e7eb;
+      .panel {
+        background: #fff;
+        border-left: 1px solid #bdbdbd;
+        box-sizing: border-box;
+        color: rgba(0, 0, 0, 0.87);
         display: flex;
         flex-direction: column;
-        gap: 0.75rem;
+        gap: 0.5rem;
         overflow: auto;
-        padding: 1rem;
+        padding: 0.75rem;
       }
 
-      .bar h1 {
-        font-size: 1.05rem;
-        line-height: 1.3;
-        margin: 0;
-      }
-
-      .bar p {
-        font-size: 0.8125rem;
+      .panel p,
+      .panel label,
+      .panel li {
+        font-size: 0.75rem;
         line-height: 1.35;
         margin: 0;
       }
 
-      label {
+      .panel label {
         display: flex;
         flex-direction: column;
-        font-size: 0.75rem;
-        gap: 0.25rem;
+        gap: 0.2rem;
       }
 
-      select,
-      button {
-        font-size: 0.875rem;
-        min-height: 2rem;
+      .panel select,
+      .panel button {
+        box-sizing: border-box;
+        width: 100%;
       }
 
-      button {
-        background: #111827;
-        border: 0;
-        border-radius: 0.25rem;
-        color: white;
-        cursor: pointer;
-        padding: 0.35rem 0.6rem;
-      }
-
-      a {
+      .panel .links a {
         color: #1d4ed8;
+      }
+
+      .timeline {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .timeline li {
+        border-top: 1px solid rgba(0, 0, 0, 0.12);
+        display: grid;
+        gap: 0 0.5rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding: 0.35rem 0;
+      }
+
+      .timeline .name {
+        font-weight: 500;
+      }
+
+      .timeline .at,
+      .timeline .detail {
+        color: rgba(0, 0, 0, 0.54);
+        grid-column: 1 / -1;
+      }
+
+      .timeline li.complete .name,
+      .timeline li.complete .dur {
+        font-weight: 500;
       }
     </style>
   </head>
   <body>
     <div class="shell" id="beauty">
-      <div class="stage" id="stage">
-        <div class="overlay" id="overlay" data-ready="0">
-          <div id="run-label">Starting</div>
-          <strong id="total">Total —</strong>
-          <div id="phases">GLB — · BVH — · Sampling — · Denoise —</div>
-          <div id="caches">BVH off · Irradiance off · Materials off</div>
-        </div>
-      </div>
-      <aside class="bar">
-        <h1>Path tracer cache beauty demo</h1>
+      <div class="stage" id="stage"></div>
+      <aside class="panel" id="panel" data-ready="0" data-saved="0">
+        <p class="font-medium">Path tracer cache</p>
         <p>
-          Epic is the default: subject only, no floor, BVH + materials +
-          irradiance, 16 samples. The first Epic visit builds the cache and
-          is marked cold. The next reload of the same case is warm.
-          <a href="../ld_path_tracer/">Examples</a>
-          ·
-          <a href="../ld_path_tracer_settings/">Settings</a>
+          16 samples, 15 bounces, OIDN. The picture stays hidden until denoise
+          finishes.
+          <span class="links">
+            <a href="../ld_path_tracer/">Examples</a>
+            ·
+            <a href="../ld_path_tracer_settings/">Settings</a>
+          </span>
         </p>
         <label>
           Test case
@@ -151,6 +150,14 @@
           <select id="preset"></select>
         </label>
         <button id="clear" type="button">Clear caches</button>
+        <p id="run-label">Starting</p>
+        <p id="fps">FPS —</p>
+        <ul class="timeline" id="caches">
+          <li><span class="name">BVH</span><span id="cache-bvh">—</span></li>
+          <li><span class="name">Irradiance</span><span id="cache-irradiance">—</span></li>
+          <li><span class="name">Materials</span><span id="cache-materials">—</span></li>
+        </ul>
+        <ol class="timeline" id="timeline"></ol>
       </aside>
     </div>
 
@@ -189,34 +196,35 @@
       };
 
       const PRESETS = {
-        epic: {
-          label: 'Epic',
-          coverage: true,
-          cache: true,
-        },
-        nocache: {
-          label: 'No cache',
-          coverage: true,
-          cache: false,
-        },
-        fullframe: {
-          label: 'No cache, full frame',
-          coverage: false,
-          cache: false,
-        },
+        epic: {label: 'Epic', coverage: true, cache: true},
+        nocache: {label: 'No cache', coverage: true, cache: false},
+        fullframe: {label: 'No cache, full frame', coverage: false, cache: false},
       };
 
       const DB_NAME = 'ld-path-tracer-beauty';
       const DB_STORE = 'files';
+      const STEPS = [
+        'load',
+        'bvh',
+        'prep',
+        'trace-start',
+        'trace',
+        'denoise',
+        'complete',
+      ];
 
       const caseSelect = document.querySelector('#case');
       const presetSelect = document.querySelector('#preset');
       const stage = document.querySelector('#stage');
-      const overlay = document.querySelector('#overlay');
+      const panel = document.querySelector('#panel');
       const runLabel = document.querySelector('#run-label');
-      const totalNode = document.querySelector('#total');
-      const phasesNode = document.querySelector('#phases');
-      const cachesNode = document.querySelector('#caches');
+      const fpsNode = document.querySelector('#fps');
+      const timeline = document.querySelector('#timeline');
+      const cacheNodes = {
+        bvh: document.querySelector('#cache-bvh'),
+        irradiance: document.querySelector('#cache-irradiance'),
+        materials: document.querySelector('#cache-materials'),
+      };
 
       for (const [id, item] of Object.entries(CASES)) {
         const option = document.createElement('option');
@@ -230,6 +238,13 @@
         option.textContent = item.label;
         presetSelect.append(option);
       }
+      for (const id of STEPS) {
+        const item = document.createElement('li');
+        item.dataset.step = id;
+        if (id === 'complete') item.className = 'complete';
+        item.innerHTML = '<span class="name"></span><span class="dur"></span><span class="at"></span><span class="detail"></span>';
+        timeline.append(item);
+      }
 
       const params = new URLSearchParams(location.search);
       let caseId = CASES[params.get('case')] ? params.get('case') : 'triton';
@@ -242,6 +257,8 @@
         if (ms > 0 && ms < 10) return '<0.01 s';
         return `${(ms / 1000).toFixed(2)} s`;
       };
+
+      const since = (t0, at) => at == null ? null : at - t0;
 
       const openDb = () => new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, 1);
@@ -316,46 +333,34 @@
         history.replaceState(null, '', url);
       };
 
-      const paint = (text) => {
-        runLabel.textContent = text.label;
-        totalNode.textContent = text.total;
-        phasesNode.textContent = text.phases;
-        cachesNode.textContent = text.caches;
-        overlay.dataset.ready = text.ready ? '1' : '0';
-        overlay.dataset.totalMs = text.totalMs ?? '';
-        overlay.dataset.run = text.runKind ?? '';
+      const cacheState = (type, preset, status, session, warm, ready) => {
+        if (!preset.cache) return 'off';
+        const applied = status?.lastLoad?.applied;
+        if (warm && applied == null) return 'loaded';
+        if (warm) return applied.includes(type) ? 'loaded' : 'off';
+        if (type === 'bvh' && session?.bvhFinishedAt != null) return 'built';
+        if (type !== 'bvh' && session?.prepFinishedAt != null) return 'built';
+        if (ready) return 'built';
+        return '…';
       };
 
-      const cacheLine = (preset, status) => {
-        const names = [
-          ['bvh', 'BVH'],
-          ['irradiance', 'Irradiance'],
-          ['materials', 'Materials'],
-        ];
-        const applied = status?.lastLoad?.applied ?? [];
-        return names.map(([type, label]) => {
-          if (!preset.cache) return `${label} off`;
-          if (applied.includes(type)) return `${label} loaded`;
-          if (status?.lastLoad != null) return `${label} off`;
-          return `${label} built`;
-        }).join(' · ');
-      };
-
-      const bvhLine = (status) => {
-        const timings = status?.timings ?? {};
-        const ms = format(timings.bvhBuildMs);
-        const restored = timings.bvhRestored ?? 0;
-        const built = timings.bvhBuilt ?? 0;
-        if (restored > 0 && built === 0) return `BVH ${ms} · loaded ${restored}`;
-        if (restored > 0) return `BVH ${ms} · loaded ${restored} · built ${built}`;
-        if (built > 0) return `BVH ${ms} · built ${built}`;
-        return `BVH ${ms}`;
+      const paintStep = (id, row) => {
+        const item = timeline.querySelector(`[data-step="${id}"]`);
+        item.querySelector('.name').textContent = row.name;
+        item.querySelector('.dur').textContent = format(row.duration);
+        item.querySelector('.at').textContent = row.at == null ? 'since start —' : `since start ${format(row.at)}`;
+        const detail = item.querySelector('.detail');
+        detail.textContent = row.detail ?? '';
+        detail.hidden = !row.detail;
       };
 
       const start = async () => {
         cancelAnimationFrame(poll);
         saved = false;
-        overlay.dataset.saved = '0';
+        panel.dataset.saved = '0';
+        panel.dataset.ready = '0';
+        panel.dataset.totalMs = '';
+        delete panel.dataset.opacityAtReady;
         if (blobUrl) {
           URL.revokeObjectURL(blobUrl);
           blobUrl = null;
@@ -391,14 +396,12 @@
           viewer.setAttribute('path-tracer-cache-load-irradiance', '');
           viewer.setAttribute('path-tracer-cache-load-materials', '');
         }
-        stage.insertBefore(viewer, overlay);
-        let loadedTypes = [];
+        stage.append(viewer);
         if (warm) {
           try {
             await viewer.updateComplete;
             const result = await viewer.loadPathTracerCache(stored);
-            loadedTypes = result?.applied ?? [];
-            warm = loadedTypes.includes('bvh');
+            warm = (result?.applied ?? []).includes('bvh');
           } catch (error) {
             warm = false;
             console.warn('Cache load failed', error);
@@ -407,55 +410,113 @@
         }
         const t0 = performance.now();
         let glbAt = null;
+        let firstFrameAt = null;
         viewer.addEventListener('load', () => {
           glbAt = performance.now();
+          requestAnimationFrame(() => {
+            if (firstFrameAt == null) firstFrameAt = performance.now();
+          });
         }, {once: true});
-        paint({
-          label: `${runKind} · ${preset.label} · ${test.label}`,
-          total: 'Total —',
-          phases: `GLB — · ${bvhLine(null)} · Sampling — · Denoise —`,
-          caches: cacheLine(preset, loadedTypes.length ? {lastLoad: {applied: loadedTypes}} : null),
-          ready: false,
-          runKind,
-        });
+        panel.dataset.run = runKind;
         viewer.src = test.src;
 
-        const tick = () => {
+        let frames = 0;
+        let fpsWindow = performance.now();
+        let fps = 0;
+        const tick = (now) => {
+          frames++;
+          if (now - fpsWindow >= 400) {
+            fps = frames * 1000 / (now - fpsWindow);
+            frames = 0;
+            fpsWindow = now;
+          }
           const composer = viewer.getPathTracerComposer?.();
           const session = composer?.pathTracer ?? null;
           const status = viewer.getPathTracerCacheStatus?.() ?? null;
-          const glbMs = glbAt == null ? null : glbAt - t0;
-          const sampleAt = session?.samplesReadyAt ?? null;
-          const denoiseAt = session?.denoiseFinishedAt ?? null;
-          const denoiseStart = session?.denoiseInvokeAt ?? sampleAt;
-          const bvhMs = status?.timings?.bvhBuildMs ?? null;
-          let samplingMs = sampleAt == null || glbAt == null ? null : sampleAt - glbAt;
-          if (samplingMs != null && bvhMs != null) {
-            samplingMs = Math.max(0, samplingMs - bvhMs);
+          const readyAt = session?.denoiseFinishedAt ?? null;
+          const ready = readyAt != null;
+          const totalMs = ready ? readyAt - t0 : null;
+          const bvhStart = session?.bvhStartedAt ?? null;
+          const bvhEnd = session?.bvhFinishedAt ?? null;
+          const prepStart = session?.prepStartedAt ?? null;
+          const prepEnd = session?.prepFinishedAt ?? null;
+          const loopStart = session?.traceLoopStartedAt ?? null;
+          const origin = session?.traceOriginAt ?? 0;
+          const firstSampleMs = session?.firstSampleMs ?? null;
+          const firstSampleAt = firstSampleMs == null || origin === 0 ? null : origin + firstSampleMs;
+          const samplesAt = session?.samplesReadyAt ?? null;
+          const denoiseStart = session?.denoiseInvokeAt ?? samplesAt;
+          const loadEnd = firstFrameAt ?? glbAt;
+          const restored = status?.timings?.bvhRestored ?? 0;
+          const built = status?.timings?.bvhBuilt ?? 0;
+          const bvhName = restored > 0 && built === 0 ? 'BVH restore' : 'BVH build';
+          const bvhDetail = restored > 0 && built === 0 ? `loaded ${restored}` :
+              built > 0 ? `built ${built}` : '';
+          runLabel.textContent = `${runKind} · ${preset.label} · ${test.label}`;
+          fpsNode.textContent = `FPS ${fps.toFixed(0)}`;
+          for (const type of ['bvh', 'irradiance', 'materials']) {
+            cacheNodes[type].textContent = cacheState(type, preset, status, session, warm, ready);
           }
-          const denoiseMs = denoiseAt == null || denoiseStart == null ? null : denoiseAt - denoiseStart;
-          const ready = denoiseAt != null;
-          const totalMs = ready ? denoiseAt - t0 : null;
-          paint({
-            label: `${runKind} · ${preset.label} · ${test.label}`,
-            total: ready ? `Total ${format(totalMs)}` : 'Total …',
-            phases: `GLB ${format(glbMs)} · ${bvhLine(status)} · Sampling ${format(samplingMs)} · Denoise ${format(denoiseMs)}`,
-            caches: cacheLine(preset, status),
-            ready,
-            totalMs,
-            runKind,
+          paintStep('load', {
+            name: 'First load',
+            duration: loadEnd == null ? null : loadEnd - t0,
+            at: since(t0, loadEnd),
+            detail: glbAt == null ? '' : `GLB ${format(glbAt - t0)} · realtime frame ${format(firstFrameAt == null ? null : firstFrameAt - glbAt)}`,
           });
+          paintStep('bvh', {
+            name: bvhName,
+            duration: bvhStart == null || bvhEnd == null ? null : bvhEnd - bvhStart,
+            at: since(t0, bvhEnd),
+            detail: bvhDetail,
+          });
+          paintStep('prep', {
+            name: 'Material / irradiance',
+            duration: prepStart == null || prepEnd == null ? null : prepEnd - prepStart,
+            at: since(t0, prepEnd),
+            detail: '',
+          });
+          paintStep('trace-start', {
+            name: 'Path trace start',
+            duration: loopStart == null || firstSampleAt == null ? null : firstSampleAt - loopStart,
+            at: since(t0, firstSampleAt),
+            detail: '',
+          });
+          paintStep('trace', {
+            name: 'Full trace',
+            duration: firstSampleAt == null || samplesAt == null ? null : samplesAt - firstSampleAt,
+            at: since(t0, samplesAt),
+            detail: '16 samples on the GPU',
+          });
+          paintStep('denoise', {
+            name: 'Denoise',
+            duration: readyAt == null || denoiseStart == null ? null : readyAt - denoiseStart,
+            at: since(t0, readyAt),
+            detail: '',
+          });
+          paintStep('complete', {
+            name: 'Complete',
+            duration: totalMs,
+            at: totalMs,
+            detail: 'denoised, fade excluded',
+          });
+          panel.dataset.ready = ready ? '1' : '0';
+          panel.dataset.totalMs = totalMs ?? '';
+          panel.dataset.run = runKind;
+          if (ready && panel.dataset.opacityAtReady == null) {
+            const canvas = viewer.shadowRoot?.querySelector('.path-tracer-webgpu');
+            panel.dataset.opacityAtReady = canvas == null ? '' : getComputedStyle(canvas).opacity;
+          }
           if (ready && preset.cache && !warm && !saved) {
             saved = true;
             viewer.exportPathTracerCache().then((blob) => writeCache(caseId, blob)).then(() => {
-              overlay.dataset.saved = '1';
+              panel.dataset.saved = '1';
             }).catch((error) => {
-              overlay.dataset.saved = 'error';
+              panel.dataset.saved = 'error';
               console.warn('Cache save failed', error);
             });
           }
-          if (ready && (warm || !preset.cache)) overlay.dataset.saved = '1';
-          if (!ready) poll = requestAnimationFrame(tick);
+          if (ready && (warm || !preset.cache)) panel.dataset.saved = '1';
+          poll = requestAnimationFrame(tick);
         };
         poll = requestAnimationFrame(tick);
       };
