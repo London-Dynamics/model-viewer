@@ -477,6 +477,7 @@ export class WebGPUPathTracerSession {
 
   updateEnvironment() {
     this.tracer?.updateEnvironment();
+    this.beginTraceClock();
   }
 
   updateMaterials() {
@@ -485,6 +486,48 @@ export class WebGPUPathTracerSession {
 
   updateLights() {
     this.tracer?.updateLights();
+  }
+
+  private savedTransparentBounces: number|null = null;
+
+  /**
+   * Shadow pass. Primary rays skip the subject. The floor stays visible.
+   * Transparent-bounce budget rises so a camera ray can walk through the
+   * whole model and still reach the floor.
+   */
+  setHideSubjectFromCamera(hide: boolean) {
+    const tracer = this.tracer;
+    if (tracer != null) {
+      // The setter resets the tracer. Only write it when the value changes.
+      if (hide) {
+        if (this.savedTransparentBounces == null) {
+          this.savedTransparentBounces = tracer.maxTransparentBounces;
+        }
+        const next = Math.max(64, this.savedTransparentBounces);
+        if (tracer.maxTransparentBounces !== next) {
+          tracer.maxTransparentBounces = next;
+        }
+      } else if (this.savedTransparentBounces != null &&
+                 tracer.maxTransparentBounces !== this.savedTransparentBounces) {
+        tracer.maxTransparentBounces = this.savedTransparentBounces;
+      }
+    }
+    const value = hide ? 1 : 0;
+    const host = this.tracer as {
+      _pathTracer?: {materialKernel?: {hideSubjectFromCamera?: number}};
+      _ldShadowCatcherMaterialKernel?: {hideSubjectFromCamera?: number};
+      _ldIrradianceKernel?: {hideSubjectFromCamera?: number};
+    }|null;
+    const kernels = [
+      host?._pathTracer?.materialKernel,
+      host?._ldShadowCatcherMaterialKernel,
+      host?._ldIrradianceKernel,
+    ];
+    for (const kernel of kernels) {
+      if (kernel != null && kernel.hideSubjectFromCamera !== undefined) {
+        kernel.hideSubjectFromCamera = value;
+      }
+    }
   }
 
   reset() {
@@ -881,6 +924,11 @@ export class WebGPUPathTracerSession {
   }
 
   private beginTraceClock() {
+    this.sampleEpoch++;
+    this.samples = 0;
+    this.sampleMin = 0;
+    this.denoiseTile = 0;
+    this.denoiseTileCount = 0;
     this.traceStartedAt = performance.now();
     this.traceLoopStartedAt = null;
     this.sawSample = false;

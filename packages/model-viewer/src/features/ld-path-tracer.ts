@@ -16,7 +16,7 @@
 import {property} from 'lit/decorators.js';
 import {Vector2} from 'three';
 
-import {$needsRender, $onModelLoad, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
+import {$needsRender, $onModelLoad, $renderer, $scene, EffectComposerInterface,} from '../model-viewer-base.js';
 import ModelViewerElementBase from '../model-viewer-base.js';
 import {PathTracerCacheLoadResult} from '../three-components/postprocessing/ld-path-tracer/cache/path-tracer-cache-store.js';
 import {PathTracerCacheType} from '../three-components/postprocessing/ld-path-tracer/cache/path-tracer-cache-types.js';
@@ -69,6 +69,7 @@ export declare interface LDPathTracerInterface {
   pathTracerFloorRoughness: number;
   pathTracerFloorMetalness: number;
   pathTracerFloorOpacity: number;
+  shadowEnvironmentImage: string|null;
   pathTracerPaused: boolean;
   pathTracerFrameBudget: number;
   pathTracerMultipleImportanceSampling: boolean;
@@ -238,6 +239,12 @@ export const LDPathTracerMixin = <
 
     @property({type: Number, attribute: 'path-tracer-floor-extent'})
     pathTracerFloorExtent = DEFAULT_PATH_TRACER_OPTIONS.floorExtent;
+
+    /** Second HDR for the path-tracer shadow pass. Empty leaves one pass. */
+    @property({type: String, attribute: 'shadow-environment-image'})
+    shadowEnvironmentImage: string|null = '';
+
+    private shadowEnvironmentGeneration = 0;
 
     @property({type: Boolean, attribute: 'path-tracer-paused'})
     pathTracerPaused = DEFAULT_PATH_TRACER_OPTIONS.paused;
@@ -454,6 +461,7 @@ export const LDPathTracerMixin = <
         'pathTracerFloorRoughness',
         'pathTracerFloorMetalness',
         'pathTracerFloorOpacity',
+        'shadowEnvironmentImage',
         'pathTracerPaused',
         'pathTracerFrameBudget',
         'pathTracerMultipleImportanceSampling',
@@ -503,6 +511,10 @@ export const LDPathTracerMixin = <
           this[$pathTracerComposer].updateOptions(options);
           (this as any)[$needsRender]();
         }
+      }
+      if (changedProperties.has('shadowEnvironmentImage') ||
+          changedProperties.has('environmentImage')) {
+        void this.loadShadowEnvironment();
       }
     }
 
@@ -576,7 +588,44 @@ export const LDPathTracerMixin = <
         this.registerEffectComposer(this[$pathTracerComposer]!);
       }
       this.dispatchEvent(new CustomEvent(PATH_TRACER_BACKEND_CHANGE_EVENT));
+      void this.loadShadowEnvironment();
       (this as any)[$needsRender]();
+    }
+
+    private async loadShadowEnvironment() {
+      const composer = this.getPathTracerComposer();
+      if (!(composer instanceof LDPathTracerComposer)) {
+        return;
+      }
+      const url = (this.shadowEnvironmentImage ?? '').trim();
+      const main =
+          ((this as unknown as {environmentImage?: string|null})
+               .environmentImage ??
+           '')
+              .trim();
+      if (url === '' || url === main) {
+        composer.setShadowEnvironmentMap(null);
+        return;
+      }
+      const textureUtils = this[$renderer].textureUtils;
+      if (textureUtils == null) {
+        return;
+      }
+      const generation = ++this.shadowEnvironmentGeneration;
+      try {
+        const {environmentMap} =
+            await textureUtils.generateEnvironmentMapAndSkybox(
+                null, url, () => {}, this.withCredentials);
+        if (generation !== this.shadowEnvironmentGeneration ||
+            (this.shadowEnvironmentImage ?? '').trim() !== url) {
+          environmentMap.dispose();
+          return;
+        }
+        this.getPathTracerComposer()?.setShadowEnvironmentMap(environmentMap);
+      } catch (error) {
+        console.warn(
+            '[model-viewer] Shadow environment could not be loaded.', error);
+      }
     }
 
     private teardownPathTracer() {
@@ -648,6 +697,7 @@ export const LDPathTracerMixin = <
             Number.isFinite(this.pathTracerFloorExtent) ?
                 this.pathTracerFloorExtent :
                 DEFAULT_PATH_TRACER_OPTIONS.floorExtent),
+        shadowEnvironmentImage: (this.shadowEnvironmentImage ?? '').trim(),
         paused: this.pathTracerPaused,
         frameBudget: Math.max(1, Math.floor(this.pathTracerFrameBudget)),
         multipleImportanceSampling: this.pathTracerMultipleImportanceSampling,

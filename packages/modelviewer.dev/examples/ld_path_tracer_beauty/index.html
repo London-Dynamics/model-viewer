@@ -375,7 +375,7 @@
         url.searchParams.set('preset', presetId);
         url.searchParams.set('floor', floorMode);
         url.searchParams.set('reflection', String(reflection));
-        for (const key of ['w', 'h', 'fov', 'orbit', 'target']) {
+        for (const key of ['w', 'h', 'fov', 'orbit', 'target', 'shadowHdr', 'coverage', 'src', 'hdr']) {
           const value = params.get(key);
           if (value) url.searchParams.set(key, value);
         }
@@ -415,7 +415,9 @@
           blobUrl = null;
         }
         viewer?.remove();
-        const test = CASES[caseId];
+        const test = {...CASES[caseId]};
+        if (params.get('src')) test.src = params.get('src');
+        if (params.get('hdr')) test.hdr = params.get('hdr');
         const preset = PRESETS[presetId];
         const stored = preset.cache ? await readCache(caseId) : null;
         let warm = stored instanceof Blob;
@@ -427,10 +429,18 @@
         viewer.setAttribute('shadow-intensity', '0');
         viewer.setAttribute('shadow-softness', '0');
         viewer.setAttribute('environment-image', test.hdr);
+        const shadowHdr = params.get('shadowHdr');
+        if (shadowHdr) {
+          viewer.setAttribute('shadow-environment-image', shadowHdr);
+        }
         viewer.setAttribute('path-tracer', '');
         viewer.setAttribute('path-tracer-samples', '16');
         viewer.setAttribute('path-tracer-bounces', '15');
-        viewer.setAttribute('path-tracer-denoise', '');
+        if (params.get('denoise') === '0') {
+          viewer.pathTracerDenoise = false;
+        } else {
+          viewer.setAttribute('path-tracer-denoise', '');
+        }
         viewer.setAttribute('path-tracer-display', 'after-denoise');
         const coverageParam = params.get('coverage');
         const useCoverage = coverageParam === '1' ? true :
@@ -587,6 +597,14 @@
           });
           panel.dataset.ready = ready ? '1' : '0';
           panel.dataset.catcher = composer?.floorCatcherPhase ?? '';
+          panel.dataset.shadowPhase = composer?.shadowPassPhase ?? 'off';
+          const shadowTimes = composer?.shadowPassTimings;
+          if (shadowTimes?.model?.totalMs != null) {
+            panel.dataset.modelPassMs = String(Math.round(shadowTimes.model.totalMs));
+          }
+          if (shadowTimes?.shadow?.totalMs != null) {
+            panel.dataset.shadowPassMs = String(Math.round(shadowTimes.shadow.totalMs));
+          }
           panel.dataset.totalMs = totalMs ?? '';
           panel.dataset.run = runKind;
           if (ready && panel.dataset.opacityAtReady == null) {

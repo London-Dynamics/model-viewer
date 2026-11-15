@@ -63,6 +63,7 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 			catcherCenter: uniform( new Vector2() ).setGroup( frameGroup ),
 			catcherHalf: uniform( new Vector2( 1, 1 ) ).setGroup( frameGroup ),
 			catcherExtent: uniform( 0.5 ).setGroup( frameGroup ),
+			hideSubjectFromCamera: uniform( 0, 'uint' ).setGroup( frameGroup ),
 
 			sampleCountTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadWrite(),
 
@@ -267,6 +268,44 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 
 					let objectInfo = transforms[ u32( input.objectIndex ) ];
 					var materialInfo = ( *materials )[ objectInfo.materialIndex ];
+
+					// Shadow pass: the floor is matte for this pass only. Primary
+					// rays pass through the subject. Later bounces and shadow
+					// rays still hit it.
+					if ( ${ params.hideSubjectFromCamera } != 0u && input.currentBounce == 0u && materialInfo.matte == 0 ) {
+
+						var hideData = ${ sampleTrianglePointFn }( input.barycoord, input.indices );
+						hideData.position = objectInfo.matrixWorld * hideData.position;
+						let hideOrigin = ${ offsetRayOriginFunc }( hideData.position.xyz, input.direction, input.normal );
+						if ( input.alphaDepth >= maxTransparentBounces ) {
+
+							rayDataStorage[ index ].throughputColor = vec3f( 0.0 );
+							rayDataStorage[ index ].emission = vec3f( 0.0 );
+							rayDataStorage[ index ].lightPdf = 0.0;
+							rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+							return;
+
+						}
+
+						let hideIndex = atomicAdd( &rayQueue.length, 1u );
+						rayQueue.elements[ hideIndex ].origin = hideOrigin;
+						rayQueue.elements[ hideIndex ].direction = input.direction;
+						rayQueue.elements[ hideIndex ].pixelIndex = input.pixelIndex;
+						rayQueue.elements[ hideIndex ].currentBounce = input.currentBounce;
+						rayQueue.elements[ hideIndex ].seed = input.seed;
+						rayQueue.elements[ hideIndex ].alphaDepth = input.alphaDepth + 1u;
+						rayQueue.elements[ hideIndex ].maxDist = max( input.maxDist - input.dist, 0.0 );
+						rayDataStorage[ index ].alphaDepth = input.alphaDepth + 1u;
+						rayDataStorage[ index ].emission = vec3f( 0.0 );
+						rayDataStorage[ index ].scatterColor = vec3f( input.scatterPdf );
+						rayDataStorage[ index ].lightPdf = 0.0;
+						rayDataStorage[ index ].origin = hideOrigin;
+						rayDataStorage[ index ].direction = input.direction;
+						rayDataStorage[ index ].rayIntersectionIndex = i32( hideIndex );
+						rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+						return;
+
+					}
 
 					if ( catcherIgnoreSubject != 0u && ${ params.catcherSkipBounce } != 0u && input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 && materialInfo.matte == 0 ) {
 
@@ -536,7 +575,7 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 
 					}
 
-					if ( materialInfo.matte != 0 && input.currentBounce == 0u ) {
+					if ( materialInfo.matte != 0 && input.currentBounce == 0u && ${ params.hideSubjectFromCamera } == 0u ) {
 
 						// Elliptical mask around the footprint. r = 1 on the
 						// footprint ellipse. The outer 60% of the extent margin

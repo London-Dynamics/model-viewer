@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, FloatType, HalfFloatType, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, NoColorSpace, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, RepeatWrapping, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
+import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, FloatType, HalfFloatType, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, NoColorSpace, NoToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, RepeatWrapping, SRGBColorSpace, Texture, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {MeshBasicNodeMaterial, RenderTarget, StorageTexture} from 'three/webgpu';
 import {dot, float, max, min, mix, select, smoothstep, sRGBTransferEOTF, sRGBTransferOETF, texture, uniform, vec3, vec4, viewportUV, wgslFn} from 'three/tsl';
 import {toneMapping} from 'three/tsl';
@@ -51,6 +51,12 @@ const PATH_TRACER_SETTLE_MS = 0;
 // Realtime cameras draw layer 0. The floor stays visible so path-trace rays
 // hit it, and is placed on this layer so the raster view does not draw it.
 const PATH_TRACER_FLOOR_LAYER = 1;
+
+export interface ShadowPassTiming {
+  totalMs: number;
+  traceMs: number|null;
+  denoiseMs: number|null;
+}
 const DEFAULT_PATH_TRACER_FLOOR_COLOR = '#ffffff';
 
 export type PathTracerDisplay = typeof PATH_TRACER_DISPLAYS[number];
@@ -258,6 +264,12 @@ export interface PathTracerOptions {
   floorOpacity: number;
   /** How far the floor mask extends past the footprint. 0.5 is 50% larger. */
   floorExtent: number;
+  /**
+   * Optional second HDR. When set with a regular floor, the tracer renders
+   * the model (no floor, main environment) and the floor (subject hidden
+   * from the camera, this environment) and composites the floor underneath.
+   */
+  shadowEnvironmentImage: string;
   paused: boolean;
   frameBudget: number;
   multipleImportanceSampling: boolean;
@@ -299,6 +311,7 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   floorMetalness: 0,
   floorOpacity: 1,
   floorExtent: DEFAULT_FLOOR_EXTENT,
+  shadowEnvironmentImage: '',
   paused: false,
   // 0.0.27 cannot grow the dispatch on its own. This is the budget the
   // vendor demo settles on for a full-resolution frame.
@@ -331,6 +344,16 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private readonly floorTraceCamera = new PerspectiveCamera();
   private readonly floorPreview = new PathTracerFloorPreview();
   private floorMode: PathTracerFloorMode = 'none';
+  private shadowPhase: 'off'|'model'|'shadow'|'ready' = 'off';
+  private shadowCapturePending: 'model'|'shadow'|null = null;
+  private shadowEnvironmentLocked = false;
+  private shadowEnvironmentMap: Texture|null = null;
+  private modelPassCanvas: HTMLCanvasElement|null = null;
+  private shadowComposite: HTMLCanvasElement|null = null;
+  private shadowCompositeQuad: FullScreenQuad|null = null;
+  private shadowCompositeTexture: CanvasTexture|null = null;
+  private modelPassTiming: ShadowPassTiming|null = null;
+  private shadowPassTiming: ShadowPassTiming|null = null;
   private catcherPhase: 'idle'|'with'|'without'|'ready' = 'idle';
   private catcherWith: RenderTarget|null = null;
   private catcherWithout: RenderTarget|null = null;
@@ -513,6 +536,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.cameraSettled = false;
       if (hadCamera) {
         this.holdTraceAfterMotion();
+        if (this.shadowSplitActive() &&
+            (this.shadowPhase !== 'model' || this.shadowCapturePending != null ||
+             this.modelPassCanvas != null)) {
+          this.restartShadowSplit();
+        }
       }
     }
     this.ambientOcclusionPreviewComposer?.beforeRender(_time, _delta);
@@ -533,6 +561,16 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       // Keep the last rectangle on screen. The next trace measures a new one
       // on its first frame.
       this.coverageKey = '';
+      if (this.shadowCapturePending != null || this.shadowPhase === 'shadow' ||
+          this.shadowPhase === 'ready') {
+        this.shadowCapturePending = null;
+        this.modelPassCanvas = null;
+        this.shadowComposite = null;
+        this.shadowEnvironmentLocked = false;
+        this.environmentStateReady = false;
+        this.shadowPhase = this.shadowSplitActive() ? 'model' : 'off';
+        this.pathTracer.setHideSubjectFromCamera(false);
+      }
       this.pathTracer.setShowRegion(this.options.showRegion);
       this.realtimeFrozen = false;
       this.scene.lockRenderScale = false;
@@ -560,6 +598,33 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.pathTracer.setCatcherIgnoreSubject(false);
       this.pathTracer.setCatcherSkipBounce(false);
     }
+    if (this.shadowCapturePending != null) {
+      // Copy before any tracer update. A later uniform write can clear the
+      // WebGPU canvas and drop the floor's alpha.
+      this.completeShadowCapture();
+      this.pathTracer.pause = this.shadowPhase !== 'shadow';
+      this.pathTracer.show(true);
+      if (this.shadowPhase !== 'ready') {
+        this.queueNextProgressiveRender();
+      }
+      this.maybeMarkReady();
+      return;
+    }
+    this.pathTracer.setHideSubjectFromCamera(this.shadowPhase === 'shadow');
+    if (this.shadowPhase === 'ready') {
+      this.pathTracer.pause = true;
+      this.pathTracer.show(true);
+      this.maybeMarkReady();
+      return;
+    }
+    if (this.shadowPhase === 'shadow' && !this.shadowEnvironmentLocked) {
+      if (!this.applyShadowEnvironment()) {
+        this.pathTracer.pause = true;
+        this.queueNextProgressiveRender();
+        this.renderRealtime();
+        return;
+      }
+    }
     this.pathTracer.pause = this.options.paused;
     this.layoutTrace();
     if (!this.realtimeFrozen || !this.shouldFreezeRealtime()) {
@@ -575,6 +640,22 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.pathTracer.noteTraceProgress();
     if (this.catcherActive()) {
       this.advanceFloorCatcher();
+    }
+    if (this.shadowSplitActive() && this.pathTracer.traceSettled &&
+        this.shadowCapturePending == null &&
+        (this.shadowPhase === 'model' || this.shadowPhase === 'shadow')) {
+      // The WebGPU canvas still has this blit. The next frame's swapchain
+      // no longer has the floor's alpha.
+      this.shadowCapturePending = this.shadowPhase;
+      this.completeShadowCapture();
+      const phase = `${this.shadowPhase}`;
+      this.pathTracer.pause = phase !== 'shadow';
+      this.pathTracer.show(true);
+      if (phase !== 'ready') {
+        this.queueNextProgressiveRender();
+      }
+      this.maybeMarkReady();
+      return;
     }
     this.presentTrace();
     if (this.shouldRenderAmbientOcclusionPreview()) {
@@ -670,7 +751,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           current !== next;
     });
 
+    const shadowChanged = nextOptions.shadowEnvironmentImage !==
+            this.options.shadowEnvironmentImage ||
+        nextOptions.floor !== this.options.floor;
     this.options = nextOptions;
+    if (shadowChanged) {
+      this.restartShadowSplit();
+    }
     this.syncAmbientOcclusionPreview();
     this.applyOptions(shouldReset);
     this.requestRender();
@@ -678,6 +765,36 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   getSamples() {
     return this.pathTracer?.samples ?? 0;
+  }
+
+  /** off when no shadow HDR is set. ready after the composite is on screen. */
+  get shadowPassPhase(): 'off'|'model'|'shadow'|'ready' {
+    return this.shadowPhase;
+  }
+
+  get shadowPassTimings():
+      {model: ShadowPassTiming|null; shadow: ShadowPassTiming|null} {
+    return {model: this.modelPassTiming, shadow: this.shadowPassTiming};
+  }
+
+  /** The composited shadow-pass frame, or null until that pass has finished. */
+  get shadowCompositeCanvas(): HTMLCanvasElement|null {
+    return this.shadowComposite;
+  }
+
+  /**
+   * Environment for the shadow pass. Null uses the scene environment when
+   * the shadow URL matches `environment-image`.
+   */
+  setShadowEnvironmentMap(map: Texture|null) {
+    if (this.shadowEnvironmentMap != null &&
+        this.shadowEnvironmentMap !== map) {
+      this.shadowEnvironmentMap.dispose();
+    }
+    this.shadowEnvironmentMap = map;
+    if (this.shadowPhase === 'shadow' && !this.shadowEnvironmentLocked) {
+      this.requestRender();
+    }
   }
 
   resetSamples() {
@@ -788,6 +905,14 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.reportedSupersampled = false;
     this.disposeShadowCatcher();
     this.disposeRegularFloor();
+    this.shadowCompositeQuad?.dispose();
+    this.shadowCompositeQuad = null;
+    this.shadowCompositeTexture?.dispose();
+    this.shadowCompositeTexture = null;
+    if (this.shadowEnvironmentMap != null) {
+      this.shadowEnvironmentMap.dispose();
+      this.shadowEnvironmentMap = null;
+    }
     this.floorPreview.dispose();
     this.renderer = null;
     this.scene = null;
@@ -927,6 +1052,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private syncEnvironment() {
     if (this.pathTracer == null || this.scene == null ||
         this.sceneBuildInFlight || this.disposed) {
+      return;
+    }
+    if (this.shadowEnvironmentLocked) {
       return;
     }
 
@@ -1106,6 +1234,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         return;
       }
       this.rememberEnvironmentState();
+      if (this.shadowPhase === 'shadow') {
+        this.pathTracer?.setHideSubjectFromCamera(true);
+        this.applyShadowEnvironment();
+      }
       this.captureBuiltCaches();
       this.requestRender();
     };
@@ -1225,7 +1357,210 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.bvhWorker = null;
   }
 
+  private shadowSplitActive(): boolean {
+    return this.options.shadowEnvironmentImage.trim() !== '' &&
+        this.options.floor === 'regular';
+  }
+
+  private omittingFloorForModelPass(): boolean {
+    return this.shadowSplitActive() && this.shadowPhase === 'model';
+  }
+
+  private restartShadowSplit() {
+    this.shadowCapturePending = null;
+    this.modelPassCanvas = null;
+    this.shadowComposite = null;
+    this.modelPassTiming = null;
+    this.shadowPassTiming = null;
+    this.shadowEnvironmentLocked = false;
+    this.environmentStateReady = false;
+    this.pathTracer?.setHideSubjectFromCamera(false);
+    this.shadowPhase = this.shadowSplitActive() ? 'model' : 'off';
+    this.markSceneDirty();
+  }
+
+  private shadowEnvironmentTexture(): Texture|null {
+    const url = this.options.shadowEnvironmentImage.trim();
+    const scene = this.scene;
+    if (url === '' || scene == null) {
+      return null;
+    }
+    const main = (scene.element as {environmentImage?: string|null})
+                     .environmentImage ??
+        '';
+    if (url === main.trim() && scene.environment != null) {
+      return scene.environment;
+    }
+    return this.shadowEnvironmentMap;
+  }
+
+  /** Points the tracer at the shadow HDR without leaving it on the realtime scene. */
+  private applyShadowEnvironment(): boolean {
+    const scene = this.scene;
+    const pathTracer = this.pathTracer;
+    const texture = this.shadowEnvironmentTexture();
+    if (scene == null || pathTracer == null || texture == null) {
+      return false;
+    }
+    const previous = scene.environment;
+    scene.environment = texture;
+    pathTracer.updateEnvironment();
+    scene.environment = previous;
+    this.shadowEnvironmentLocked = true;
+    return true;
+  }
+
+  private beginShadowPass() {
+    this.shadowPhase = 'shadow';
+    this.shadowEnvironmentLocked = false;
+    this.environmentStateReady = false;
+    this.pathTracer?.setHideSubjectFromCamera(true);
+    this.needsSceneUpdate = true;
+    this.requestRender();
+  }
+
+  private readPassTiming(): ShadowPassTiming|null {
+    const session = this.pathTracer;
+    if (session == null || session.denoiseFinishedAt == null ||
+        session.traceOriginAt === 0) {
+      return null;
+    }
+    const origin = session.traceOriginAt;
+    const first = session.firstSampleMs == null ? null :
+                                                 origin + session.firstSampleMs;
+    const denoiseStart = session.denoiseInvokeAt ?? session.samplesReadyAt;
+    return {
+      totalMs: session.denoiseFinishedAt - origin,
+      traceMs: first == null || session.samplesReadyAt == null ?
+          null :
+          session.samplesReadyAt - first,
+      denoiseMs: denoiseStart == null ?
+          null :
+          session.denoiseFinishedAt - denoiseStart,
+    };
+  }
+
+  private copyTraceCanvas(): HTMLCanvasElement|null {
+    const source = this.pathTracer?.canvas;
+    if (source == null || source.width < 1 || source.height < 1) {
+      return null;
+    }
+    const copy = document.createElement('canvas');
+    copy.width = source.width;
+    copy.height = source.height;
+    // willReadFrequently drops the WebGPU canvas's low alpha, which is the
+    // floor. A normal 2D context keeps it.
+    const context = copy.getContext('2d');
+    if (context == null) {
+      return null;
+    }
+    try {
+      context.drawImage(source, 0, 0);
+    } catch (error) {
+      console.warn('[model-viewer] Shadow pass could not copy the trace.', error);
+      return null;
+    }
+    return copy;
+  }
+
+  private compositePasses(
+      model: HTMLCanvasElement,
+      shadow: HTMLCanvasElement,
+      ): HTMLCanvasElement|null {
+    if (model.width !== shadow.width || model.height !== shadow.height ||
+        model.width < 1 || model.height < 1) {
+      return null;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = model.width;
+    canvas.height = model.height;
+    const context = canvas.getContext('2d');
+    if (context == null) {
+      return null;
+    }
+    // Browser compositing keeps the WebGPU canvas alpha. Reading it back
+    // with getImageData drops the floor.
+    context.drawImage(shadow, 0, 0);
+    context.drawImage(model, 0, 0);
+    return canvas;
+  }
+
+  private presentShadowComposite(source: HTMLCanvasElement) {
+    const renderer = this.pathTracer?.webgpuRenderer as {
+      toneMapping: number;
+      outputColorSpace: string;
+      autoClear: boolean;
+      setClearColor: (color: number, alpha: number) => void;
+      setRenderTarget: (target: unknown) => void;
+    }|null|undefined;
+    if (renderer == null) {
+      return;
+    }
+    this.shadowCompositeTexture?.dispose();
+    const map = new CanvasTexture(source);
+    map.colorSpace = SRGBColorSpace;
+    map.needsUpdate = true;
+    this.shadowCompositeTexture = map;
+    this.shadowCompositeQuad?.dispose();
+    const sampled = texture(map, viewportUV) as {r: unknown; g: unknown; b: unknown; a: unknown};
+    const material = new MeshBasicNodeMaterial();
+    material.transparent = true;
+    material.depthTest = false;
+    material.depthWrite = false;
+    material.toneMapped = false;
+    material.colorNode = vec4(sampled.r as never, sampled.g as never, sampled.b as never, sampled.a as never);
+    this.shadowCompositeQuad = new FullScreenQuad(material);
+    const previousMapping = renderer.toneMapping;
+    const previousSpace = renderer.outputColorSpace;
+    const previousClear = renderer.autoClear;
+    renderer.toneMapping = NoToneMapping;
+    renderer.outputColorSpace = SRGBColorSpace;
+    renderer.autoClear = true;
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(null);
+    this.shadowCompositeQuad.render(renderer as never);
+    renderer.toneMapping = previousMapping;
+    renderer.outputColorSpace = previousSpace;
+    renderer.autoClear = previousClear;
+  }
+
+  private completeShadowCapture() {
+    const which = this.shadowCapturePending;
+    if (which == null) {
+      return;
+    }
+    const copy = this.copyTraceCanvas();
+    if (copy == null) {
+      return;
+    }
+    this.shadowCapturePending = null;
+    if (which === 'model') {
+      this.modelPassTiming = this.readPassTiming();
+      this.modelPassCanvas = copy;
+      this.beginShadowPass();
+      return;
+    }
+    this.shadowPassTiming = this.readPassTiming();
+    if (this.modelPassCanvas == null) {
+      this.shadowPhase = 'ready';
+      return;
+    }
+    const composite = this.compositePasses(this.modelPassCanvas, copy);
+    if (composite != null) {
+      this.shadowComposite = composite;
+      this.presentShadowComposite(composite);
+    }
+    this.shadowPhase = 'ready';
+    const session = this.pathTracer;
+    if (session != null) {
+      session.pause = true;
+    }
+  }
+
   private syncShadowCatcher() {
+    if (this.shadowPhase === 'ready') {
+      return;
+    }
     if (this.scene == null) {
       this.removeShadowCatcher();
       return;
@@ -1246,6 +1581,18 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         DEFAULT_PATH_TRACER_OPTIONS.floorReflection);
     const mode = effectiveFloorMode(this.options.floor, this.scene.shadowMode);
     this.floorMode = opacity > 0 ? mode : 'none';
+    if (this.omittingFloorForModelPass()) {
+      this.removeRegularFloor();
+      if (this.shadowCatcher?.parent != null) {
+        this.shadowCatcher.removeFromParent();
+        this.markSceneDirty();
+      }
+      if (this.floorPreview.mesh.parent != null) {
+        this.floorPreview.mesh.removeFromParent();
+      }
+      this.floorMode = 'none';
+      return;
+    }
     if (this.floorMode === 'regular') {
       this.syncRegularFloor();
       return;
@@ -1445,6 +1792,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.floorPreview.mesh.removeFromParent();
     }
     const floor = this.ensureRegularFloor();
+    // Matte marks the floor for the shadow pass. The catcher alpha encode
+    // stays off while the subject is hidden, so the floor keeps its colour.
+    (floor.material as MeshStandardMaterial&{matte?: boolean}).matte =
+        this.shadowPhase === 'shadow';
     const {boundingBox} = this.scene;
     if (boundingBox.isEmpty()) {
       return;
@@ -1458,6 +1809,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const centerX = (boundingBox.min.x + boundingBox.max.x) / 2;
     const centerZ = (boundingBox.min.z + boundingBox.max.z) / 2;
     const state = [
+      this.shadowPhase === 'shadow' ? 'shadow' : 'show',
       size.toFixed(4),
       y.toFixed(4),
       centerX.toFixed(4),
