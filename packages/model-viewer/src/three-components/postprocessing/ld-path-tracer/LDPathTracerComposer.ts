@@ -1676,12 +1676,17 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     // freshly built one do not hit the same pixels. Project the traceable
     // bounds instead, so a cached load and an uncached load share one crop.
     const projected = this.projectSubjectCrop(buffer.x, buffer.y);
+    // Null from the floor projection means the fade crosses the camera, so
+    // the trace is the whole frame. Keeping the subject crop would slice the
+    // shadow into a hard edge.
     const floorEffect = this.floorMode === 'none' ?
         null :
         this.projectFloorEffect(buffer.x, buffer.y);
-    const withFloor = projected != null && floorEffect != null ?
-        unionCrops(projected, floorEffect, buffer.x, buffer.y) :
-        projected;
+    const withFloor = this.floorMode === 'none' ?
+        projected :
+        floorEffect == null || projected == null ?
+        null :
+        unionCrops(projected, floorEffect, buffer.x, buffer.y);
     measured.crop = withFloor;
     measured.tracedPixels = withFloor == null ?
         measured.fullPixels :

@@ -50,7 +50,7 @@ suite('path tracer floor matte', () => {
     const footprint = footprintFromBounds(-1, 0, -0.5, 1, 2, 0.5);
     expect(footprint.centerX).to.equal(0);
     expect(footprint.halfX).to.equal(1);
-    expect(footprint.radius).to.be.greaterThan(1);
+    expect(footprint.radius).to.be.closeTo(2 * 0.4, 1e-6);
     expect(footprintDistance(0, 0, footprint)).to.equal(0);
     expect(floorDistanceFalloff(0, footprint.radius)).to.equal(1);
     const edge = footprintDistance(footprint.halfX + footprint.radius, 0, footprint);
@@ -130,6 +130,30 @@ suite('path tracer floor matte', () => {
     expect(tight!.width).to.be.lessThan(400);
     expect(traceAreaPercent(tight!.width * tight!.height, 400 * 400))
         .to.be.lessThan(92);
+  });
+
+  test('a ground rect that passes the camera is the whole frame', () => {
+    const camera = new PerspectiveCamera(40, 1, 0.1, 100);
+    camera.position.set(0, 1.2, 0.2);
+    camera.lookAt(0, 0.4, -4);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    const support = effectSupport(footprintFromBounds(-2, 0, -2, 2, 1, 2));
+    expect(screenBoundsOfWorldPoints(rectCorners(support), camera, 400, 400))
+        .to.equal(null);
+  });
+
+  test('a rect that leaves the bottom of the screen extends the crop there', () => {
+    const camera = new PerspectiveCamera(40, 1, 0.1, 100);
+    camera.position.set(0, 3, 8);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+    const wide = footprintFromBounds(-8, 0, -1, 8, 1, 1);
+    const bounds = screenBoundsOfWorldPoints(rectCorners(wide), camera, 400, 400);
+    expect(bounds).to.not.equal(null);
+    expect(bounds!.x).to.equal(0);
+    expect(bounds!.width).to.equal(400);
   });
 
   test('a missing side of the union means the whole frame', () => {

@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Camera, PerspectiveCamera, Vector3} from 'three';
+import {Camera, Matrix4, PerspectiveCamera, Vector4} from 'three';
 
 import {TraceCrop} from './trace-coverage.js';
 
@@ -42,8 +42,12 @@ export type PathTracerFloorMode = typeof PATH_TRACER_FLOOR_MODES[number];
 export const FLOOR_OCCLUSION_SAMPLES = 8;
 export const DEFAULT_FLOOR_REFLECTION = 0.45;
 export const FLOOR_REFLECTION_F0 = 0.04;
-/** Fade length as a fraction of the subject's longer horizontal side. */
-export const FLOOR_FALLOFF_FACTOR = 0.75;
+/**
+ * Fade length as a fraction of the subject's longer horizontal side.
+ * 0.4 keeps a contact shadow and still reaches the white page inside a
+ * product frame. 0.75 left the foreground of the beauty cameras grey.
+ */
+export const FLOOR_FALLOFF_FACTOR = 0.4;
 /** Gaussian coefficient. exp(-3) is ~5% at one radius. */
 export const FLOOR_FALLOFF_SHARPNESS = 3;
 /** Pixels dimmer than this are not worth tracing. */
@@ -205,6 +209,13 @@ export const effectReach = (radius: number): number => {
       Math.sqrt(-Math.log(FLOOR_EFFECT_LIMIT) / FLOOR_FALLOFF_SHARPNESS);
 };
 
+/**
+ * Extra distance past the visible fade. OIDN spreads a dark contact shadow
+ * outward, so the traced rect has to end on pixels that are already white or
+ * the crop boundary reads as a hard edge.
+ */
+export const FLOOR_DENOISE_PAD = 0.75;
+
 export const footprintFromBounds = (
     minX: number,
     minY: number,
@@ -259,7 +270,8 @@ export const applyShadowStretch = (
 
 /** Rect that still contains a non-negligible shadow or reflection. */
 export const effectSupport = (footprint: FloorFootprint): FloorFootprint => {
-  const reach = effectReach(footprint.radius);
+  const reach = effectReach(footprint.radius) +
+      footprint.radius * FLOOR_DENOISE_PAD;
   return {
     ...footprint,
     halfX: footprint.halfX + reach,
@@ -278,12 +290,14 @@ export const rectCorners =
       ];
     };
 
-const point = new Vector3();
+const clipPoint = new Vector4();
+const viewProjection = new Matrix4();
 
 /**
- * Top-left crop of the world points that land on the screen. Points behind
- * the camera are skipped. Null means the points cover the frame, or none of
- * them are in front of the camera.
+ * Top-left crop of the world points that land on the screen. A point behind
+ * the camera means the rect crosses the view, so the crop is the whole frame
+ * (null). A point in front but off the screen extends the crop to that edge,
+ * so a fade that leaves the picture is not cut into a hard line.
  */
 export const screenBoundsOfWorldPoints = (
     points: Array<[number, number, number]>,
@@ -298,18 +312,34 @@ export const screenBoundsOfWorldPoints = (
   if (camera instanceof PerspectiveCamera) {
     camera.updateProjectionMatrix();
   }
+  viewProjection.multiplyMatrices(
+      camera.projectionMatrix, camera.matrixWorldInverse);
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   let count = 0;
+  let offLeft = false;
+  let offRight = false;
+  let offTop = false;
+  let offBottom = false;
   for (const entry of points) {
-    point.set(entry[0], entry[1], entry[2]).project(camera);
-    if (point.z < -1 || point.z > 1) {
-      continue;
+    clipPoint.set(entry[0], entry[1], entry[2], 1).applyMatrix4(viewProjection);
+    if (clipPoint.w <= 1e-4) {
+      return null;
     }
-    const px = (point.x * 0.5 + 0.5) * fullWidth;
-    const py = (1 - (point.y * 0.5 + 0.5)) * fullHeight;
+    const ndcX = clipPoint.x / clipPoint.w;
+    const ndcY = clipPoint.y / clipPoint.w;
+    const ndcZ = clipPoint.z / clipPoint.w;
+    if (ndcZ < -1 || ndcZ > 1) {
+      return null;
+    }
+    if (ndcX < -1) offLeft = true;
+    if (ndcX > 1) offRight = true;
+    if (ndcY > 1) offTop = true;
+    if (ndcY < -1) offBottom = true;
+    const px = (ndcX * 0.5 + 0.5) * fullWidth;
+    const py = (1 - (ndcY * 0.5 + 0.5)) * fullHeight;
     minX = Math.min(minX, px);
     minY = Math.min(minY, py);
     maxX = Math.max(maxX, px);
@@ -319,6 +349,10 @@ export const screenBoundsOfWorldPoints = (
   if (count === 0) {
     return null;
   }
+  if (offLeft) minX = 0;
+  if (offRight) maxX = fullWidth;
+  if (offTop) minY = 0;
+  if (offBottom) maxY = fullHeight;
   const x = Math.max(0, Math.floor(minX));
   const y = Math.max(0, Math.floor(minY));
   const right = Math.min(fullWidth, Math.ceil(maxX));
