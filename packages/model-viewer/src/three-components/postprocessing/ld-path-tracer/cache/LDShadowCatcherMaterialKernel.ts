@@ -33,6 +33,7 @@ export class MaterialKernel extends ComputeKernel {
 			maxTransparentBounces: uniform( 5, 'uint' ),
 			maxBounces: uniform( 5, 'uint' ),
 			catcherIgnoreSubject: uniform( 0, 'uint' ),
+			catcherSkipBounce: uniform( 0, 'uint' ),
 			catcherCenter: uniform( new Vector2() ),
 			catcherHalf: uniform( new Vector2( 1, 1 ) ),
 			catcherExtent: uniform( 0.5 ),
@@ -226,7 +227,7 @@ export class MaterialKernel extends ComputeKernel {
 
 					// Unoccluded pass: rays that already left the floor ignore the
 					// subject and continue, so this point is lit without it.
-					if ( catcherIgnoreSubject != 0u && input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 && materialInfo.matte == 0 ) {
+					if ( catcherIgnoreSubject != 0u && ${ params.catcherSkipBounce } != 0u && input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 && materialInfo.matte == 0 ) {
 
 						var skipData = ${ sampleTrianglePointFn }( input.barycoord, input.indices );
 						skipData.position = objectInfo.matrixWorld * skipData.position;

@@ -601,13 +601,7 @@ export class WebGPUPathTracerSession {
   }
 
   setCatcherIgnoreSubject(ignore: boolean) {
-    const tracer = this.tracer as {
-      _pathTracer?: {
-        materialKernel?: {catcherIgnoreSubject?: number};
-        logicKernel?: {catcherIgnoreSubject?: number};
-      };
-    }|null;
-    const backend = tracer?._pathTracer;
+    const backend = this.catcherKernels();
     const value = ignore ? 1 : 0;
     if (backend?.materialKernel) {
       backend.materialKernel.catcherIgnoreSubject = value;
@@ -615,6 +609,31 @@ export class WebGPUPathTracerSession {
     if (backend?.logicKernel) {
       backend.logicKernel.catcherIgnoreSubject = value;
     }
+  }
+
+  /**
+   * Reflection mode lets floor bounces miss the subject so the reflection
+   * appears. Shadow mode keeps those bounces, so the indirect light is the
+   * same in both passes and only the direct shadow remains.
+   */
+  setCatcherSkipBounce(skip: boolean) {
+    const backend = this.catcherKernels();
+    if (backend?.materialKernel) {
+      backend.materialKernel.catcherSkipBounce = skip ? 1 : 0;
+    }
+  }
+
+  private catcherKernels(): {
+    materialKernel?: {catcherIgnoreSubject?: number; catcherSkipBounce?: number;};
+    logicKernel?: {catcherIgnoreSubject?: number;};
+  }|null {
+    const tracer = this.tracer as {
+      _pathTracer?: {
+        materialKernel?: {catcherIgnoreSubject?: number; catcherSkipBounce?: number;};
+        logicKernel?: {catcherIgnoreSubject?: number;};
+      };
+    }|null;
+    return tracer?._pathTracer ?? null;
   }
 
   catcherSourceTexture(): unknown {

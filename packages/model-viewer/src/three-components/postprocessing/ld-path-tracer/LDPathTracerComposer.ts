@@ -15,7 +15,7 @@
 
 import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, FloatType, HalfFloatType, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {MeshBasicNodeMaterial, RenderTarget, StorageTexture} from 'three/webgpu';
-import {dot, float, max, min, mix, select, smoothstep, texture, uniform, vec3, vec4, viewportUV, wgslFn} from 'three/tsl';
+import {dot, float, max, min, mix, select, smoothstep, sRGBTransferEOTF, sRGBTransferOETF, texture, uniform, vec3, vec4, viewportUV, wgslFn} from 'three/tsl';
 import {toneMapping} from 'three/tsl';
 import {PhysicalCamera} from 'three-gpu-pathtracer';
 import {FullScreenQuad} from 'three/examples/jsm/postprocessing/Pass.js';
@@ -547,6 +547,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
+    this.syncCatcherPass();
     this.pathTracer.pause = this.options.paused;
     this.layoutTrace();
     if (!this.realtimeFrozen || !this.shouldFreezeRealtime()) {
@@ -1995,6 +1996,21 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     return this.catcherActive() ? this.catcherPhase : 'off';
   }
 
+  /**
+   * The flags have to be written every frame. A kernel installed after the
+   * first sync starts from its default and the unoccluded pass never happens.
+   */
+  private syncCatcherPass() {
+    const pathTracer = this.pathTracer;
+    if (pathTracer == null) {
+      return;
+    }
+    const unoccluded = this.floorMode === 'open' || this.catcherPhase === 'without';
+    pathTracer.setCatcherIgnoreSubject(unoccluded);
+    pathTracer.setCatcherSkipBounce(
+        unoccluded && this.floorMode === 'shadow-reflection');
+  }
+
   private advanceFloorCatcher() {
     const pathTracer = this.pathTracer;
     if (pathTracer == null || !this.catcherActive()) {
@@ -2002,7 +2018,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
     if (this.catcherPhase === 'idle') {
-      pathTracer.setCatcherIgnoreSubject(this.floorMode === 'open');
+      this.syncCatcherPass();
       this.catcherPhase = 'with';
     }
     if (this.catcherPhase === 'ready') {
@@ -2074,13 +2090,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.catcherCopyQuad?.render(renderer as never);
       return target;
     };
-    const previousMapping = renderer.toneMapping;
     const previousSpace = renderer.outputColorSpace;
+    const previousMapping = renderer.toneMapping;
+    // Store linear radiance. The present shader applies the Neutral curve once.
     renderer.toneMapping = 0;
     renderer.outputColorSpace = ColorManagement.workingColorSpace;
     renderer.autoClear = true;
-    // Denoised linear radiance, same pass the visible floor shows. Alpha stays
-    // on the raw buffer because the denoiser drops the floor mask.
     const radiance = draw(sources.beauty, sources.alpha, which);
     const beauty = which === 'with' ?
         draw(sources.beauty, sources.alpha, 'beauty') : null;
@@ -2159,32 +2174,38 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.catcherExposure = exposure;
     const reflect = uniform(0);
     this.catcherReflectNode = reflect;
-    // Both passes are linear HDR at the same sample count. The page is
-    // display white, so the darkening is the ratio after the same Neutral
-    // curve the subject uses. A raw linear ratio painted on white turns a
-    // mild shadow into a grey slab.
+    // Snapshots are linear radiance. Tone-map, then encode to the same sRGB
+    // values the visible floor displays, and darken the page by that ratio.
     const lum = vec3(0.2126, 0.7152, 0.0722);
-    const mappedWith = toneMapping(NeutralToneMapping, exposure, withNode.rgb).rgb;
-    const mappedWithout = toneMapping(NeutralToneMapping, exposure, withoutNode.rgb).rgb;
-    const withLum = max(dot(mappedWith, lum), float(0));
-    const withoutLum = max(dot(mappedWithout, lum), float(1e-4));
+    const toneWith = min(
+        toneMapping(NeutralToneMapping, exposure, withNode.rgb).rgb, vec3(1));
+    const toneWithout = min(
+        toneMapping(NeutralToneMapping, exposure, withoutNode.rgb).rgb, vec3(1));
+    const displayWith = sRGBTransferOETF(toneWith) as any;
+    const displayWithout = sRGBTransferOETF(toneWithout) as any;
+    const withLum = max(dot(displayWith, lum), float(0));
+    const withoutLum = max(dot(displayWithout, lum), float(1e-4));
     const ratio = min(withLum.div(withoutLum), float(1));
-    const isFloorSample = smoothstep(float(0.5), float(0.99), withNode.a).mul(
+    const isFloorSample = smoothstep(float(0.5), float(0.55), withNode.a).mul(
         float(1).sub(smoothstep(float(0.99), float(1), withNode.a)));
     const storedMask = withNode.a.sub(0.5).div(0.49).clamp(0, 1);
     const mask = mix(float(0), storedMask, isFloorSample);
-    const shadowAlpha = float(1).sub(ratio).mul(mask);
     // Environment light is in both passes and cancels. What remains is the
     // subject, faded by the same mask.
-    const residual = max(mappedWith.sub(mappedWithout.mul(ratio)), vec3(0));
-    const mappedSubject = toneMapping(NeutralToneMapping, exposure, beautyNode.rgb);
-    void mappedSubject;
-    const shownSubject = mappedWith;
+    const residual = max(displayWith.sub(displayWithout.mul(ratio)), vec3(0));
     const reflection = residual.mul(mask).mul(reflect);
+    const darkened = mix(vec3(1), vec3(ratio), mask);
+    const desired = min(darkened.add(reflection), vec3(1));
+    // The canvas encodes sRGB, so write the linear value that displays as
+    // `desired`. Opaque, so the fade lives in the colour and the page is not
+    // composited a second time.
+    const floorLinear = sRGBTransferEOTF(desired) as any;
+    const shownSubject = toneWith;
     const isSubject = withNode.a.greaterThan(0.995);
     const isFloor = withNode.a.greaterThan(0.45).and(withNode.a.lessThan(0.995));
     const subject = vec4(shownSubject.x, shownSubject.y, shownSubject.z, float(1));
-    const floor = vec4(reflection.x, reflection.y, reflection.z, shadowAlpha);
+    const floor = vec4(floorLinear.x, floorLinear.y, floorLinear.z, isFloorSample);
+    void beautyNode;
     const background = vec4(0, 0, 0, 0);
     const material = new MeshBasicNodeMaterial();
     material.transparent = true;
