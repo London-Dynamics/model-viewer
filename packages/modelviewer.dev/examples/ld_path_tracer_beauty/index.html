@@ -375,6 +375,10 @@
         url.searchParams.set('preset', presetId);
         url.searchParams.set('floor', floorMode);
         url.searchParams.set('reflection', String(reflection));
+        for (const key of ['w', 'h', 'fov', 'orbit', 'target']) {
+          const value = params.get(key);
+          if (value) url.searchParams.set(key, value);
+        }
         history.replaceState(null, '', url);
       };
 
@@ -438,6 +442,22 @@
         for (const [key, value] of Object.entries(test.camera ?? {})) {
           viewer.setAttribute(key, value);
         }
+        const fovParam = params.get('fov');
+        if (fovParam) {
+          viewer.setAttribute(
+              'field-of-view',
+              /deg$|rad$/i.test(fovParam) ? fovParam : `${fovParam}deg`);
+        }
+        const orbitParam = params.get('orbit');
+        if (orbitParam) viewer.setAttribute('camera-orbit', orbitParam);
+        const targetParam = params.get('target');
+        if (targetParam) viewer.setAttribute('camera-target', targetParam);
+        const frameW = Number(params.get('w'));
+        const frameH = Number(params.get('h'));
+        if (frameW >= 16 && frameH >= 16) {
+          viewer.style.width = `${frameW}px`;
+          viewer.style.height = `${frameH}px`;
+        }
         if (preset.cache) {
           viewer.setAttribute('path-tracer-cache-bvh', '');
           viewer.setAttribute('path-tracer-cache-irradiance', '');
@@ -463,6 +483,9 @@
         let firstFrameAt = null;
         viewer.addEventListener('load', () => {
           glbAt = performance.now();
+          if (params.get('fov') || params.get('orbit') || params.get('target')) {
+            viewer.jumpCameraToGoal();
+          }
           requestAnimationFrame(() => {
             if (firstFrameAt == null) firstFrameAt = performance.now();
           });
