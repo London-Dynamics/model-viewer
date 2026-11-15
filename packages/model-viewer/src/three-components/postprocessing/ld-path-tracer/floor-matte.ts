@@ -37,6 +37,7 @@ export const PATH_TRACER_FLOOR_MODES = [
   'shadow-reflection',
   'solid',
   'open',
+  'plain',
 ] as const;
 
 export type PathTracerFloorMode = typeof PATH_TRACER_FLOOR_MODES[number];
@@ -104,6 +105,9 @@ export const normalizePathTracerFloorMode =
       }
       if (text === 'open' || text === 'unoccluded') {
         return 'open';
+      }
+      if (text === 'plain') {
+        return 'plain';
       }
       return 'none';
     };

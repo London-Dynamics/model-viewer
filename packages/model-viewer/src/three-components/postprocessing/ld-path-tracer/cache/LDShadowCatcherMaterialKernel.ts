@@ -3,7 +3,7 @@
 import { Vector2 } from 'three';
 import { StorageBufferAttribute, StorageTexture } from 'three/webgpu';
 import { ComputeKernel } from 'three-gpu-pathtracer/src/webgpu/compute/ComputeKernel.js';
-import { uniform, storage, textureStore, globalId } from 'three/tsl';
+import { uniform, storage, textureStore, globalId, frameGroup } from 'three/tsl';
 import { proxy, proxyFn, rayStruct, wgslTagFn } from 'three-mesh-bvh/webgpu';
 import { rngInit, rand1, rand2, RNG_INDEX_RAY_JITTER, RNG_INDEX_ALPHA_TEST, RNG_INDEX_RUSSIAN_ROULETTE, RNG_INDEX_DISPERSION_WAVELENGTH } from 'three-gpu-pathtracer/src/webgpu/nodes/random.wgsl.js';
 import {sampleHemisphereFn} from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
@@ -32,11 +32,11 @@ export class MaterialKernel extends ComputeKernel {
 			filterGlossy: uniform( 1 ),
 			maxTransparentBounces: uniform( 5, 'uint' ),
 			maxBounces: uniform( 5, 'uint' ),
-			catcherIgnoreSubject: uniform( 0, 'uint' ),
-			catcherSkipBounce: uniform( 0, 'uint' ),
-			catcherCenter: uniform( new Vector2() ),
-			catcherHalf: uniform( new Vector2( 1, 1 ) ),
-			catcherExtent: uniform( 0.5 ),
+			catcherIgnoreSubject: uniform( 0, 'uint' ).setGroup( frameGroup ),
+			catcherSkipBounce: uniform( 0, 'uint' ).setGroup( frameGroup ),
+			catcherCenter: uniform( new Vector2() ).setGroup( frameGroup ),
+			catcherHalf: uniform( new Vector2( 1, 1 ) ).setGroup( frameGroup ),
+			catcherExtent: uniform( 0.5 ).setGroup( frameGroup ),
 
 			sampleCountTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadWrite(),
 

@@ -324,12 +324,16 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private readonly lastCameraProjectionMatrix = new Matrix4();
   private readonly meshWorldMatrices = new Map<string, Matrix4>();
   private shadowCatcher: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
+  private plainFloor: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
+  private plainFloorState = '';
   private readonly floorPreview = new PathTracerFloorPreview();
   private floorMode: PathTracerFloorMode = 'none';
   private catcherPhase: 'idle'|'with'|'without'|'ready' = 'idle';
   private catcherWith: RenderTarget|null = null;
   private catcherWithout: RenderTarget|null = null;
   private catcherBeauty: RenderTarget|null = null;
+  private catcherSubjectReflect: RenderTarget|null = null;
+  private catcherSubjectReflectNode: {value: unknown}|null = null;
   private catcherWithNode: {value: unknown}|null = null;
   private catcherWithoutNode: {value: unknown}|null = null;
   private catcherBeautyNode: {value: unknown}|null = null;
@@ -547,7 +551,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
 
-    this.syncCatcherPass();
+    if (this.catcherActive()) {
+      this.syncCatcherPass();
+    } else if (this.pathTracer != null) {
+      this.pathTracer.setCatcherIgnoreSubject(false);
+      this.pathTracer.setCatcherSkipBounce(false);
+    }
     this.pathTracer.pause = this.options.paused;
     this.layoutTrace();
     if (!this.realtimeFrozen || !this.shouldFreezeRealtime()) {
@@ -561,7 +570,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.scene.toneMapping, this.presentationExposure());
     this.pathTracer.renderSample();
     this.pathTracer.noteTraceProgress();
-    this.advanceFloorCatcher();
+    if (this.catcherActive()) {
+      this.advanceFloorCatcher();
+    }
     this.presentTrace();
     if (this.shouldRenderAmbientOcclusionPreview()) {
       this.ambientOcclusionPreviewComposer?.render(_deltaTime);
@@ -1231,6 +1242,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         DEFAULT_PATH_TRACER_OPTIONS.floorReflection);
     const mode = effectiveFloorMode(this.options.floor, this.scene.shadowMode);
     this.floorMode = opacity > 0 ? mode : 'none';
+    if (this.floorMode === 'plain') {
+      this.syncPlainFloor();
+      return;
+    }
+    this.removePlainFloor();
     if (this.floorMode === 'none') {
       this.removeShadowCatcher();
       return;
@@ -1269,7 +1285,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.floorPreview.sync(
         footprint, this.floorMode, reflection * opacity);
     this.pushCatcherUniforms(footprint, roughness, reflection * opacity);
-    this.pathTracer?.setCatcherIgnoreSubject(this.floorMode === 'open');
+    // beforeRender runs before the frame uniform upload. Writing the flag
+    // here, not forcing it off, is what the unoccluded pass actually traces.
+    this.syncCatcherPass();
     if (geometryState === this.shadowCatcherState &&
         materialState === this.shadowCatcherMaterialState) {
       return;
@@ -1402,6 +1420,70 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     this.ambientOcclusionPreviewComposer.updateOptions(options);
+  }
+
+  /**
+   * A normal traced ground. Not a catcher: no matte flag, no mask, no ratio.
+   * It sits on the path-tracer layer so the raster view does not draw it.
+   */
+  private syncPlainFloor() {
+    if (this.scene == null) {
+      return;
+    }
+    if (this.shadowCatcher?.parent != null) {
+      this.shadowCatcher.removeFromParent();
+    }
+    const floor = this.ensurePlainFloor();
+    const {boundingBox} = this.scene;
+    const span = Math.max(
+        boundingBox.max.x - boundingBox.min.x,
+        boundingBox.max.z - boundingBox.min.z,
+        1);
+    const size = span * 30;
+    const state = [
+      size.toFixed(3),
+      boundingBox.min.y.toFixed(4),
+      ((boundingBox.min.x + boundingBox.max.x) / 2).toFixed(4),
+      ((boundingBox.min.z + boundingBox.max.z) / 2).toFixed(4),
+    ].join('|');
+    if (state === this.plainFloorState && floor.parent === this.scene.target) {
+      return;
+    }
+    floor.position.set(
+        (boundingBox.min.x + boundingBox.max.x) / 2,
+        boundingBox.min.y,
+        (boundingBox.min.z + boundingBox.max.z) / 2);
+    floor.rotation.set(-Math.PI / 2, 0, 0);
+    floor.scale.set(size, size, 1);
+    if (floor.parent !== this.scene.target) {
+      this.scene.target.add(floor);
+    }
+    this.plainFloorState = state;
+    this.markSceneDirty();
+  }
+
+  private ensurePlainFloor(): Mesh {
+    if (this.plainFloor != null) {
+      return this.plainFloor;
+    }
+    const material = new MeshStandardMaterial({
+      color: 0xe6e6e6,
+      metalness: 0,
+      roughness: 0.5,
+      side: DoubleSide,
+    });
+    this.plainFloor = new Mesh(new PlaneGeometry(1, 1), material);
+    this.plainFloor.name = 'PlainFloor';
+    this.plainFloor.layers.set(PATH_TRACER_FLOOR_LAYER);
+    return this.plainFloor;
+  }
+
+  private removePlainFloor() {
+    if (this.plainFloor?.parent != null) {
+      this.plainFloor.removeFromParent();
+      this.plainFloorState = '';
+      this.markSceneDirty();
+    }
   }
 
   private ensureShadowCatcher() {
@@ -2029,22 +2111,17 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return;
     }
     if (this.catcherPhase === 'with') {
+      // L_with and L_without were accumulated from the same samples.
       this.copyCatcher('with');
-      pathTracer.beginUnoccludedPass();
-      this.catcherPhase = 'without';
-      return;
-    }
-    if (this.catcherPhase === 'without') {
-      this.copyCatcher('without');
-      pathTracer.setCatcherIgnoreSubject(false);
       this.catcherPhase = 'ready';
       this.presentCatcher();
     }
   }
 
-  private ensureCatcherTarget(which: 'with'|'without'|'beauty'): RenderTarget {
+  private ensureCatcherTarget(which: 'with'|'without'|'beauty'|'reflect'): RenderTarget {
     const existing = which === 'with' ? this.catcherWith :
-        which === 'without' ? this.catcherWithout : this.catcherBeauty;
+        which === 'without' ? this.catcherWithout :
+        which === 'reflect' ? this.catcherSubjectReflect : this.catcherBeauty;
     if (existing != null) {
       return existing;
     }
@@ -2058,13 +2135,15 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.catcherWith = target;
     } else if (which === 'without') {
       this.catcherWithout = target;
+    } else if (which === 'reflect') {
+      this.catcherSubjectReflect = target;
     } else {
       this.catcherBeauty = target;
     }
     return target;
   }
 
-  private copyCatcher(which: 'with'|'without') {
+  private copyCatcher(_which: 'with'|'without') {
     const renderer = this.pathTracer?.webgpuRenderer as {
       toneMapping: number;
       outputColorSpace: string;
@@ -2077,7 +2156,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.ensureCatcherCopy() == null) {
       return;
     }
-    const draw = (color: unknown, alpha: unknown, targetName: 'with'|'without'|'beauty') => {
+    const draw = (color: unknown, alpha: unknown, targetName: 'with'|'without'|'beauty'|'reflect') => {
       if (this.catcherCopyColorNode) {
         this.catcherCopyColorNode.value = color;
       }
@@ -2096,20 +2175,25 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     renderer.toneMapping = 0;
     renderer.outputColorSpace = ColorManagement.workingColorSpace;
     renderer.autoClear = true;
-    const radiance = draw(sources.beauty, sources.alpha, which);
-    const beauty = which === 'with' ?
-        draw(sources.beauty, sources.alpha, 'beauty') : null;
+    const pair = sources as {radiance: unknown; open: unknown; reflect: unknown; alpha: unknown; beauty: unknown};
+    const radiance = draw(pair.radiance, pair.alpha, 'with');
+    const unoccluded = draw(pair.open, pair.alpha, 'without');
+    const reflection = draw(pair.reflect, pair.alpha, 'reflect');
+    const beauty = draw(pair.beauty, pair.alpha, 'beauty');
     renderer.setRenderTarget(null);
     renderer.toneMapping = previousMapping;
     renderer.outputColorSpace = previousSpace;
     this.ensureCatcherMaterial();
-    if (which === 'with' && this.catcherWithNode) {
+    if (this.catcherWithNode) {
       this.catcherWithNode.value = radiance.texture;
     }
-    if (which === 'without' && this.catcherWithoutNode) {
-      this.catcherWithoutNode.value = radiance.texture;
+    if (this.catcherWithoutNode) {
+      this.catcherWithoutNode.value = unoccluded.texture;
     }
-    if (beauty != null && this.catcherBeautyNode) {
+    if (this.catcherSubjectReflectNode) {
+      this.catcherSubjectReflectNode.value = reflection.texture;
+    }
+    if (this.catcherBeautyNode) {
       this.catcherBeautyNode.value = beauty.texture;
     }
   }
@@ -2164,12 +2248,15 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const withStorage = texture(this.catcherPlaceholder, viewportUV);
     const withoutStorage = texture(this.catcherPlaceholder, viewportUV);
     const beautyStorage = texture(this.catcherPlaceholder, viewportUV);
+    const reflectStorage = texture(this.catcherPlaceholder, viewportUV);
     const withNode = sampleSnapshot(withStorage, viewportUV) as any;
     const withoutNode = sampleSnapshot(withoutStorage, viewportUV) as any;
     const beautyNode = sampleSnapshot(beautyStorage, viewportUV) as any;
+    const reflectSample = sampleSnapshot(reflectStorage, viewportUV) as any;
     this.catcherWithNode = withStorage as {value: unknown};
     this.catcherWithoutNode = withoutStorage as {value: unknown};
     this.catcherBeautyNode = beautyStorage as {value: unknown};
+    this.catcherSubjectReflectNode = reflectStorage as {value: unknown};
     const exposure = uniform(1);
     this.catcherExposure = exposure;
     const reflect = uniform(0);
@@ -2185,27 +2272,31 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     const displayWithout = sRGBTransferOETF(toneWithout) as any;
     const withLum = max(dot(displayWith, lum), float(0));
     const withoutLum = max(dot(displayWithout, lum), float(1e-4));
-    const ratio = min(withLum.div(withoutLum), float(1));
+    const ratio = select(
+        withoutLum.greaterThan(1e-4),
+        min(withLum.div(withoutLum), float(1)),
+        float(1));
     const isFloorSample = smoothstep(float(0.5), float(0.55), withNode.a).mul(
         float(1).sub(smoothstep(float(0.99), float(1), withNode.a)));
     const storedMask = withNode.a.sub(0.5).div(0.49).clamp(0, 1);
     const mask = mix(float(0), storedMask, isFloorSample);
     // Environment light is in both passes and cancels. What remains is the
     // subject, faded by the same mask.
-    const residual = max(displayWith.sub(displayWithout.mul(ratio)), vec3(0));
-    const reflection = residual.mul(mask).mul(reflect);
+    const toneReflect = min(
+        toneMapping(NeutralToneMapping, exposure, reflectSample.rgb).rgb, vec3(1));
+    const reflection = toneReflect.mul(mask).mul(reflect);
     const darkened = mix(vec3(1), vec3(ratio), mask);
     const desired = min(darkened.add(reflection), vec3(1));
     // The canvas encodes sRGB, so write the linear value that displays as
     // `desired`. Opaque, so the fade lives in the colour and the page is not
     // composited a second time.
     const floorLinear = sRGBTransferEOTF(desired) as any;
-    const shownSubject = toneWith;
+    const shownSubject = min(
+        toneMapping(NeutralToneMapping, exposure, beautyNode.rgb).rgb, vec3(1));
     const isSubject = withNode.a.greaterThan(0.995);
     const isFloor = withNode.a.greaterThan(0.45).and(withNode.a.lessThan(0.995));
     const subject = vec4(shownSubject.x, shownSubject.y, shownSubject.z, float(1));
     const floor = vec4(floorLinear.x, floorLinear.y, floorLinear.z, isFloorSample);
-    void beautyNode;
     const background = vec4(0, 0, 0, 0);
     const material = new MeshBasicNodeMaterial();
     material.transparent = true;

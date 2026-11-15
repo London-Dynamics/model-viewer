@@ -16,7 +16,7 @@
 import {Vector2, Vector3} from 'three';
 import {StorageBufferAttribute, StorageTexture} from 'three/webgpu';
 import {ComputeKernel} from 'three-gpu-pathtracer/src/webgpu/compute/ComputeKernel.js';
-import {uniform, storage, textureStore, globalId} from 'three/tsl';
+import {uniform, storage, textureStore, globalId, frameGroup} from 'three/tsl';
 import {proxy, proxyFn, rayStruct, wgslTagFn} from 'three-mesh-bvh/webgpu';
 import {rngInit, rand1, rand2, RNG_INDEX_RAY_JITTER, RNG_INDEX_ALPHA_TEST, RNG_INDEX_RUSSIAN_ROULETTE, RNG_INDEX_DISPERSION_WAVELENGTH} from 'three-gpu-pathtracer/src/webgpu/nodes/random.wgsl.js';
 import {sampleHemisphereFn} from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
@@ -58,11 +58,11 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 			filterGlossy: uniform( 1 ),
 			maxTransparentBounces: uniform( 5, 'uint' ),
 			maxBounces: uniform( 5, 'uint' ),
-			catcherIgnoreSubject: uniform( 0, 'uint' ),
-			catcherSkipBounce: uniform( 0, 'uint' ),
-			catcherCenter: uniform( new Vector2() ),
-			catcherHalf: uniform( new Vector2( 1, 1 ) ),
-			catcherExtent: uniform( 0.5 ),
+			catcherIgnoreSubject: uniform( 0, 'uint' ).setGroup( frameGroup ),
+			catcherSkipBounce: uniform( 0, 'uint' ).setGroup( frameGroup ),
+			catcherCenter: uniform( new Vector2() ).setGroup( frameGroup ),
+			catcherHalf: uniform( new Vector2( 1, 1 ) ).setGroup( frameGroup ),
+			catcherExtent: uniform( 0.5 ).setGroup( frameGroup ),
 
 			sampleCountTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadWrite(),
 
@@ -74,6 +74,7 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 			// Two vec4 slots per hash: irradiance.rgb + weight, then normal.xyz.
 			cacheBuffer: storage( cacheAttribute, 'vec4', IRRADIANCE_SLOT_COUNT * 2 ),
 			cacheRead: uniform( 0, 'uint' ),
+			catcherPathState: storage( new StorageBufferAttribute( 4, 4 ), 'vec4' ),
 			cacheWrite: uniform( 0, 'uint' ),
 			cacheOrigin: uniform( new Vector3() ),
 			cacheCellSize: uniform( 1 ),
@@ -189,6 +190,8 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 					rayDataStorage[ index ].currentBounce = 0u;
 					rayDataStorage[ index ].throughputColor = vec3f( 1.0 );
 					rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, 1.0 );
+					${ params.catcherPathState }[ index * 2u ] = vec4f( 0.0 );
+					${ params.catcherPathState }[ index * 2u + 1u ] = vec4f( 0.0 );
 					rayDataStorage[ index ].scatterColor = vec3f( 1.0 );
 					rayDataStorage[ index ].scatterPdf = 1.0;
 					rayDataStorage[ index ].minPdf = 1.0;
@@ -410,7 +413,8 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 								let ldIrr = ${ params.cacheBuffer }[ ldBase ];
 								let ldNrm = ${ params.cacheBuffer }[ ldBase + 1u ];
 								let ldWarm = ldIrr.w >= f32( ${ params.cacheMinSamples } ) && dot( normalize( ldNrm.xyz ), ldNormal ) > 0.5;
-								if ( ldWarm && ${ params.cacheRead } != 0u ) {
+								let ldFloorPath = input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0;
+								if ( ldWarm && ${ params.cacheRead } != 0u && ! ldFloorPath ) {
 
 									let ldRad = ldAlbedo * clamp( ldIrr.xyz, vec3f( 0.0 ), vec3f( 64.0 ) );
 									rayDataStorage[ index ].resultColor = vec4f( input.resultColor.rgb + throughputColor * ldRad, input.resultColor.a );

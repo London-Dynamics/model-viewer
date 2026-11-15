@@ -11,7 +11,7 @@ import {Vector2} from 'three';
 
 import {StorageBufferAttribute, StorageTexture} from 'three/webgpu';
 import {ComputeKernel} from 'three-gpu-pathtracer/src/webgpu/compute/ComputeKernel.js';
-import {uniform, storage, textureStore, globalId} from 'three/tsl';
+import {uniform, storage, textureStore, globalId, frameGroup} from 'three/tsl';
 import {proxy, proxyFn, wgslTagFn} from 'three-mesh-bvh/webgpu';
 import {misHeuristicFn, sampleHemisphereFn, weightedAlphaBlendFn} from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
 import {clampPathContributionFunc, isTerminatingScatterFunc} from 'three-gpu-pathtracer/src/webgpu/nodes/utils.wgsl.js';
@@ -37,6 +37,9 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 			prevOutputTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadOnly(),
 			outputTarget: textureStore( new StorageTexture( 1, 1 ) ).toWriteOnly(),
 			sampleCountTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadWrite(),
+			catcherPathState: storage( new StorageBufferAttribute( 4, 4 ), 'vec4' ),
+			catcherOpenTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadWrite(),
+			catcherReflectPixels: storage( new StorageBufferAttribute( 4, 4 ), 'vec4' ),
 
 			// settings
 			misEnabled: uniform( 1, 'uint' ),
@@ -58,10 +61,10 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 			catcherMode: uniform( 1, 'uint' ),
 			catcherStrength: uniform( 0.45 ),
 			catcherRoughness: uniform( 0.2 ),
-			catcherCenter: uniform( new Vector2() ),
-			catcherHalf: uniform( new Vector2( 1, 1 ) ),
+			catcherCenter: uniform( new Vector2() ).setGroup( frameGroup ),
+			catcherHalf: uniform( new Vector2( 1, 1 ) ).setGroup( frameGroup ),
 			catcherRadius: uniform( 1 ),
-			catcherIgnoreSubject: uniform( 0, 'uint' ),
+			catcherIgnoreSubject: uniform( 0, 'uint' ).setGroup( frameGroup ),
 			bvhData: { value: null },
 
 			globalId: globalId,
@@ -305,6 +308,15 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 				var throughputColor = input.throughputColor;
 				var floorWeight = input.minPdf;
 				var blockedLight = vec3f( 0.0 );
+				let catcherSlot = index * 2u;
+				let catcherState0 = ${ params.catcherPathState }[ catcherSlot ];
+				let catcherState1 = ${ params.catcherPathState }[ catcherSlot + 1u ];
+				var catcherOpen = catcherState0.xyz;
+				var catcherReflect = catcherState1.xyz;
+				var catcherSplit = u32( catcherState0.w );
+				let floorPath = input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0;
+				let splitAtStart = catcherSplit;
+				let rgbBefore = resultColor.rgb;
 
 				// added last, since a camera ray miss overwrites the pixel with the background
 				var lightHits = vec3f( 0.0 );
@@ -316,13 +328,16 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 
 					let shadowHit = ( *shadowRayIntersectionsStorage )[ u32( input.shadowRayIntersectionIndex ) ];
 					var occluded = shadowHit.objectIndex >= 0;
-					if ( occluded && ${ params.catcherIgnoreSubject } != 0u && input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 ) {
+					// Same shadow sample for both estimates. A subject hit blocks
+					// L_with only; L_without (catcherOpen) still receives it.
+					var subjectOnly = false;
+					if ( occluded && floorPath ) {
 
 						let hitObject = ( *transforms )[ u32( shadowHit.objectIndex ) ];
 						let hitMaterial = ( *materials )[ hitObject.materialIndex ];
 						if ( hitMaterial.matte == 0 ) {
 
-							occluded = false;
+							subjectOnly = true;
 
 						}
 
@@ -331,7 +346,11 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 					let misWeight = select( 1.0, ${ misHeuristicFn }( input.lightPdf, input.lightBsdfPdf ), isMISWeighted );
 					let directLight = throughputColor * input.lightEmission * input.lightBsdf * misWeight / input.lightPdf;
 					let contribution = ${ clampPathContributionFunc }( directLight, input.currentBounce, clampDirect, clampIndirect );
-					if ( occluded ) {
+					if ( subjectOnly ) {
+
+						catcherOpen += contribution;
+
+					} else if ( occluded ) {
 
 						blockedLight += contribution;
 
@@ -451,6 +470,30 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 
 						rayDataStorage[ index ].lightPdf = lightPdf;
 
+						// Continuation hit the subject. L_without takes the env
+						// in this same direction; later shading is reflection only.
+						if ( floorPath && catcherSplit == 0u && input.currentBounce >= 1u ) {
+
+							let hitObject = ( *transforms )[ u32( hitResult.objectIndex ) ];
+							let hitMaterial = ( *materials )[ hitObject.materialIndex ];
+							if ( hitMaterial.matte == 0 ) {
+
+								var openMis = 1.0;
+								if ( isMISWeighted && envActive && lightTotalWeight > 0.0 ) {
+
+									let envPdf = ${ getEnvDirPdf }( input.direction ) * envWeight / lightTotalWeight;
+									openMis = ${ misHeuristicFn }( input.scatterPdf, envPdf );
+
+								}
+
+								let uncovered = ${ clampPathContributionFunc }( ${ sampleEnvColor }( input.direction ).rgb * throughputColor * openMis, input.currentBounce, clampDirect, clampIndirect );
+								catcherOpen += uncovered;
+								catcherSplit = 1u;
+
+							}
+
+						}
+
 					} else {
 
 						// the segment escaped the scene: gather the environment for opaque paths, or
@@ -544,6 +587,24 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 
 				// visible lights are opaque against a transparent background
 				resultColor += vec4f( lightHits, 0.0 );
+				// Floor paths mirror every addition into L_without until the
+				// continuation hits the subject. After that, additions are the
+				// subject's own radiance and stay out of L_with.
+				if ( floorPath ) {
+
+					let delta = resultColor.rgb - rgbBefore;
+					if ( splitAtStart == 0u ) {
+
+						catcherOpen += delta;
+
+					} else {
+
+						catcherReflect += delta;
+						resultColor = vec4f( rgbBefore, resultColor.a );
+
+					}
+
+				}
 				if ( cameraHitLight && resultColor.a >= 0.0 ) {
 
 					resultColor.a = 1.0;
@@ -587,6 +648,12 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 					let blendedColor = ${ weightedAlphaBlendFn }( prevColor, outputColor, 1.0 / f32( sampleCount ) );
 					textureStore( ${ params.sampleCountTarget }, indexUV, vec4( ${ SAMPLE_DISPATCHED_FLAG }u | sampleCount ) );
 					textureStore( ${ params.outputTarget }, colorIndex, blendedColor );
+					let openWeight = 1.0 / f32( sampleCount );
+					let prevOpen = textureLoad( ${ params.catcherOpenTarget }, colorIndex );
+					textureStore( ${ params.catcherOpenTarget }, colorIndex, ${ weightedAlphaBlendFn }( prevOpen, vec4f( catcherOpen, outputColor.a ), openWeight ) );
+					let pixelSlot = colorIndex.y * u32( textureDimensions( ${ params.outputTarget } ).x ) + colorIndex.x;
+					let prevReflect = ${ params.catcherReflectPixels }[ pixelSlot ];
+					${ params.catcherReflectPixels }[ pixelSlot ] = ${ weightedAlphaBlendFn }( prevReflect, vec4f( catcherReflect, outputColor.a ), openWeight );
 
 					// A miss at a secondary hit recorded the vertex. The light
 					// gathered after that vertex, divided by albedo, is the
@@ -632,6 +699,8 @@ export class LDIrradianceCacheLogicKernel extends ComputeKernel {
 
 					rayDataStorage[ index ].resultColor = resultColor;
 					rayDataStorage[ index ].throughputColor = throughputColor;
+					${ params.catcherPathState }[ catcherSlot ] = vec4f( catcherOpen, f32( catcherSplit ) );
+					${ params.catcherPathState }[ catcherSlot + 1u ] = vec4f( catcherReflect, 0.0 );
 
 				}
 

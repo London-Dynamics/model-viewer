@@ -17,7 +17,7 @@ import {initUNetFromURL} from 'oidn-web';
 import {Camera, Mesh, Object3D, Scene, Vector2} from 'three';
 import {OIDNDenoiser, RANDOM_BLUE_DITHER, RANDOM_PCG, RANDOM_SOBOL, WebGPUPathTracer} from 'three-gpu-pathtracer/webgpu';
 import {AVERAGE, CENTER, MeshBVH, SAH} from 'three-mesh-bvh';
-import {WebGPURenderer} from 'three/webgpu';
+import {StorageBufferAttribute, StorageTexture, WebGPURenderer} from 'three/webgpu';
 
 import {downloadIrradianceKernel, installIrradianceKernel, IrradianceKernelTracer, IrradianceKernelUpload, uninstallIrradianceKernel, uploadIrradianceKernel} from './cache/install-irradiance-kernel.js';
 import {installShadowCatcher} from './cache/install-shadow-catcher.js';
@@ -651,14 +651,69 @@ export class WebGPUPathTracerSession {
    * passes divide the same HDR samples. Beauty is the denoised with-pass,
    * used only for the subject, and is null until that pass has denoised.
    */
-  catcherSourceTextures():
-      {radiance: unknown; alpha: unknown; beauty: unknown;}|null {
+  catcherSourceTextures(): {
+    radiance: unknown; alpha: unknown; beauty: unknown;
+    open: unknown; reflect: unknown;
+  }|null {
     const raw = this.catcherSourceTexture();
     if (raw == null) {
       return null;
     }
     const denoised = this.denoiser?.complete === true ? this.denoiser.texture : null;
-    return {radiance: raw, alpha: raw, beauty: denoised ?? raw};
+    return {
+      radiance: raw,
+      alpha: raw,
+      beauty: denoised ?? raw,
+      open: this.catcherOpenTarget ?? raw,
+      reflect: this.catcherOpenTarget ?? raw,
+    };
+  }
+
+  private catcherOpenTarget: StorageTexture|null = null;
+  private catcherPathState: StorageBufferAttribute|null = null;
+  private catcherReflectPixels: StorageBufferAttribute|null = null;
+
+  /**
+   * L_without lives in one extra storage texture (the per-stage limit is 4).
+   * The in-flight pair and the reflection live in storage buffers.
+   */
+  private syncCatcherAccumTargets() {
+    const tracer = this.tracer as {
+      outputTarget?: StorageTexture;
+      rayCount?: number;
+    }|null;
+    const output = tracer?.outputTarget;
+    const kernels = this.catcherKernels();
+    const logic = kernels?.logicKernel as {
+      catcherOpenTarget?: unknown;
+      catcherPathState?: unknown;
+      catcherReflectPixels?: unknown;
+    }|undefined;
+    const material = kernels?.materialKernel as {catcherPathState?: unknown}|undefined;
+    if (output == null || logic == null) {
+      return;
+    }
+    const width = output.width;
+    const height = output.height;
+    const pixels = Math.max(1, width * height);
+    const slots = Math.max(2, (tracer?.rayCount ?? 1) * 2);
+    if (this.catcherOpenTarget == null ||
+        this.catcherOpenTarget.width !== width ||
+        this.catcherOpenTarget.height !== height) {
+      this.catcherOpenTarget?.dispose();
+      this.catcherOpenTarget = output.clone();
+      this.catcherOpenTarget.setSize(width, height, 1);
+      this.catcherReflectPixels = new StorageBufferAttribute(pixels, 4);
+    }
+    if (this.catcherPathState == null || this.catcherPathState.count < slots) {
+      this.catcherPathState = new StorageBufferAttribute(slots, 4);
+    }
+    logic.catcherOpenTarget = this.catcherOpenTarget;
+    logic.catcherPathState = this.catcherPathState;
+    logic.catcherReflectPixels = this.catcherReflectPixels;
+    if (material) {
+      material.catcherPathState = this.catcherPathState;
+    }
   }
 
   renderSample() {
@@ -670,6 +725,7 @@ export class WebGPUPathTracerSession {
       this.traceLoopStartedAt = performance.now();
     }
     this.applyTracerFields(false);
+    this.syncCatcherAccumTargets();
     tracer.renderSample();
     const epoch = this.sampleEpoch;
     void tracer.getSampleCountsAsync().then((counts) => {

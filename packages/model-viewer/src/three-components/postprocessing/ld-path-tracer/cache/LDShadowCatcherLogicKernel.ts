@@ -3,7 +3,7 @@
 import {Vector2} from 'three';
 import { StorageBufferAttribute, StorageTexture } from 'three/webgpu';
 import { ComputeKernel } from 'three-gpu-pathtracer/src/webgpu/compute/ComputeKernel.js';
-import { uniform, storage, textureStore, globalId } from 'three/tsl';
+import { uniform, storage, textureStore, globalId, frameGroup } from 'three/tsl';
 import { proxy, proxyFn, wgslTagFn } from 'three-mesh-bvh/webgpu';
 import { misHeuristicFn, sampleHemisphereFn, weightedAlphaBlendFn } from 'three-gpu-pathtracer/src/webgpu/nodes/sampling.wgsl.js';
 import { clampPathContributionFunc, isTerminatingScatterFunc } from 'three-gpu-pathtracer/src/webgpu/nodes/utils.wgsl.js';
@@ -51,10 +51,10 @@ export class LogicKernel extends ComputeKernel {
 			catcherMode: uniform( 1, 'uint' ),
 			catcherStrength: uniform( 0.45 ),
 			catcherRoughness: uniform( 0.2 ),
-			catcherCenter: uniform( new Vector2() ),
-			catcherHalf: uniform( new Vector2( 1, 1 ) ),
+			catcherCenter: uniform( new Vector2() ).setGroup( frameGroup ),
+			catcherHalf: uniform( new Vector2( 1, 1 ) ).setGroup( frameGroup ),
 			catcherRadius: uniform( 1 ),
-			catcherIgnoreSubject: uniform( 0, 'uint' ),
+			catcherIgnoreSubject: uniform( 0, 'uint' ).setGroup( frameGroup ),
 			bvhData: { value: null },
 
 			globalId: globalId,

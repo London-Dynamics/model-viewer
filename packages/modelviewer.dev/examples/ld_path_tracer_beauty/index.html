@@ -282,7 +282,9 @@
       let caseId = CASES[params.get('case')] ? params.get('case') : 'triton';
       let presetId = PRESETS[params.get('preset')] ? params.get('preset') : 'epic';
       const requestedFloor = params.get('floor');
-      let floorMode = FLOORS[requestedFloor] ? requestedFloor :
+      const plainFloor = requestedFloor === 'plain';
+      let floorMode = plainFloor ? 'none' :
+          FLOORS[requestedFloor] ? requestedFloor :
           (requestedFloor === 'solid' || requestedFloor === 'open' ?
               requestedFloor : 'shadow');
       let reflection = Number(params.get('reflection'));
@@ -411,7 +413,7 @@
         viewer?.remove();
         const test = CASES[caseId];
         const preset = PRESETS[presetId];
-        const stored = preset.cache ? await readCache(caseId) : null;
+        const stored = preset.cache && !plainFloor ? await readCache(caseId) : null;
         let warm = stored instanceof Blob;
         let runKind = preset.cache ? (warm ? 'warm' : 'cold') : 'uncached';
         viewer = document.createElement('model-viewer');
@@ -426,14 +428,19 @@
         viewer.setAttribute('path-tracer-bounces', '15');
         viewer.setAttribute('path-tracer-denoise', '');
         viewer.setAttribute('path-tracer-display', 'after-denoise');
-        if (preset.coverage) viewer.setAttribute('path-tracer-coverage', '');
-        viewer.setAttribute('path-tracer-floor', floorMode);
+        const coverageParam = params.get('coverage');
+        const useCoverage = coverageParam === '1' ? true :
+            coverageParam === '0' ? false : preset.coverage && !plainFloor;
+        if (useCoverage) viewer.setAttribute('path-tracer-coverage', '');
+        viewer.setAttribute('path-tracer-floor', plainFloor ? 'plain' : floorMode);
         viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
         if (test.bounds) viewer.setAttribute('bounds', test.bounds);
         for (const [key, value] of Object.entries(test.camera ?? {})) {
           viewer.setAttribute(key, value);
         }
-        if (preset.cache) {
+        // A cache recorded without the plane remaps materials and bleaches
+        // the model, and restores a cropped trace. Plain floor builds fresh.
+        if (preset.cache && !plainFloor) {
           viewer.setAttribute('path-tracer-cache-bvh', '');
           viewer.setAttribute('path-tracer-cache-irradiance', '');
           viewer.setAttribute('path-tracer-cache-materials', '');
