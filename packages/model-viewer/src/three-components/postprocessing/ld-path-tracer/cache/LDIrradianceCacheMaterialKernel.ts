@@ -533,12 +533,17 @@ export class LDIrradianceCacheMaterialKernel extends ComputeKernel {
 
 					if ( materialInfo.matte != 0 && input.currentBounce == 0u ) {
 
+						// Elliptical mask around the footprint. r = 1 on the
+						// footprint ellipse. The outer 60% of the extent margin
+						// smoothsteps to exactly 0 so the rect has no edge.
 						let half = max( ${ params.catcherHalf }, vec2f( 1e-4 ) );
-						let pad = max( half * max( ${ params.catcherExtent }, 0.0 ), vec2f( 1e-4 ) );
-						let outside = max( abs( vertexData.position.xz - ${ params.catcherCenter } ) - half, vec2f( 0.0 ) );
-						let t = saturate( 1.0 - length( outside / pad ) );
-						let falloff = t * t * ( 3.0 - 2.0 * t );
-						let encoded = 0.5 + 0.49 * falloff;
+						let q = ( vertexData.position.xz - ${ params.catcherCenter } ) / half;
+						let r = length( q );
+						let margin = max( ${ params.catcherExtent }, 0.0 );
+						let fadeStart = 1.0 + margin * 0.4;
+						let fadeEnd = max( 1.0 + margin, fadeStart + 1e-4 );
+						let mask = 1.0 - smoothstep( fadeStart, fadeEnd, r );
+						let encoded = 0.5 + 0.49 * mask;
 						rayDataStorage[ index ].dispersionWavelength = -encoded;
 						rayDataStorage[ index ].resultColor = vec4f( rayDataStorage[ index ].resultColor.rgb, encoded );
 

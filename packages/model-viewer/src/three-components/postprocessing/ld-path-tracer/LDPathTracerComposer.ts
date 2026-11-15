@@ -329,8 +329,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private catcherPhase: 'idle'|'with'|'without'|'ready' = 'idle';
   private catcherWith: RenderTarget|null = null;
   private catcherWithout: RenderTarget|null = null;
+  private catcherBeauty: RenderTarget|null = null;
   private catcherWithNode: {value: unknown}|null = null;
   private catcherWithoutNode: {value: unknown}|null = null;
+  private catcherBeautyNode: {value: unknown}|null = null;
   private catcherExposure: {value: number}|null = null;
   private catcherQuad: FullScreenQuad|null = null;
   private catcherCopyQuad: FullScreenQuad|null = null;
@@ -1244,7 +1246,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         boundingBox.max.z);
     const footprint = subject;
     const support = catcherPlane(subject, extent);
-    const gap = 0.001 * Math.max(subject.halfX, subject.halfZ, 0.05);
+    // The plane sits on the lowest geometry. A size-scaled gap lifts a long
+    // hull and the shadow lands beside it.
     const geometryState = [
       this.floorMode,
       support.halfX.toFixed(4),
@@ -1285,7 +1288,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
 
     if (geometryState !== this.shadowCatcherState) {
-      const y = subject.floorY - gap;
+      const y = subject.floorY;
       shadowCatcher.position.set(support.centerX, y, support.centerZ);
       shadowCatcher.rotation.set(-Math.PI / 2, 0, 0);
       shadowCatcher.scale.set(support.halfX * 2, support.halfZ * 2, 1);
@@ -2023,8 +2026,9 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
   }
 
-  private ensureCatcherTarget(which: 'with'|'without'): RenderTarget {
-    const existing = which === 'with' ? this.catcherWith : this.catcherWithout;
+  private ensureCatcherTarget(which: 'with'|'without'|'beauty'): RenderTarget {
+    const existing = which === 'with' ? this.catcherWith :
+        which === 'without' ? this.catcherWithout : this.catcherBeauty;
     if (existing != null) {
       return existing;
     }
@@ -2036,8 +2040,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     });
     if (which === 'with') {
       this.catcherWith = target;
-    } else {
+    } else if (which === 'without') {
       this.catcherWithout = target;
+    } else {
+      this.catcherBeauty = target;
     }
     return target;
   }
@@ -2055,30 +2061,41 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         this.ensureCatcherCopy() == null) {
       return;
     }
-    if (this.catcherCopyColorNode) {
-      this.catcherCopyColorNode.value = sources.color;
-    }
-    if (this.catcherCopyAlphaNode) {
-      this.catcherCopyAlphaNode.value = sources.alpha;
-    }
-    const target = this.ensureCatcherTarget(which);
-    target.setSize(Math.max(1, canvas.width), Math.max(1, canvas.height));
+    const draw = (color: unknown, alpha: unknown, targetName: 'with'|'without'|'beauty') => {
+      if (this.catcherCopyColorNode) {
+        this.catcherCopyColorNode.value = color;
+      }
+      if (this.catcherCopyAlphaNode) {
+        this.catcherCopyAlphaNode.value = alpha;
+      }
+      const target = this.ensureCatcherTarget(targetName);
+      target.setSize(Math.max(1, canvas.width), Math.max(1, canvas.height));
+      renderer.setRenderTarget(target);
+      this.catcherCopyQuad?.render(renderer as never);
+      return target;
+    };
     const previousMapping = renderer.toneMapping;
     const previousSpace = renderer.outputColorSpace;
     renderer.toneMapping = 0;
     renderer.outputColorSpace = ColorManagement.workingColorSpace;
     renderer.autoClear = true;
-    renderer.setRenderTarget(target);
-    this.catcherCopyQuad?.render(renderer as never);
+    // Denoised linear radiance, same pass the visible floor shows. Alpha stays
+    // on the raw buffer because the denoiser drops the floor mask.
+    const radiance = draw(sources.beauty, sources.alpha, which);
+    const beauty = which === 'with' ?
+        draw(sources.beauty, sources.alpha, 'beauty') : null;
     renderer.setRenderTarget(null);
     renderer.toneMapping = previousMapping;
     renderer.outputColorSpace = previousSpace;
     this.ensureCatcherMaterial();
     if (which === 'with' && this.catcherWithNode) {
-      this.catcherWithNode.value = target.texture;
+      this.catcherWithNode.value = radiance.texture;
     }
     if (which === 'without' && this.catcherWithoutNode) {
-      this.catcherWithoutNode.value = target.texture;
+      this.catcherWithoutNode.value = radiance.texture;
+    }
+    if (beauty != null && this.catcherBeautyNode) {
+      this.catcherBeautyNode.value = beauty.texture;
     }
   }
 
@@ -2131,33 +2148,43 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     `);
     const withStorage = texture(this.catcherPlaceholder, viewportUV);
     const withoutStorage = texture(this.catcherPlaceholder, viewportUV);
+    const beautyStorage = texture(this.catcherPlaceholder, viewportUV);
     const withNode = sampleSnapshot(withStorage, viewportUV) as any;
     const withoutNode = sampleSnapshot(withoutStorage, viewportUV) as any;
+    const beautyNode = sampleSnapshot(beautyStorage, viewportUV) as any;
     this.catcherWithNode = withStorage as {value: unknown};
     this.catcherWithoutNode = withoutStorage as {value: unknown};
+    this.catcherBeautyNode = beautyStorage as {value: unknown};
     const exposure = uniform(1);
     this.catcherExposure = exposure;
-    const mappedWith = toneMapping(NeutralToneMapping, exposure, withNode.rgb);
-    const mappedWithout = toneMapping(NeutralToneMapping, exposure, withoutNode.rgb);
-    const tw = min(mappedWith.rgb, vec3(1));
-    const tn = min(mappedWithout.rgb, vec3(1));
     const reflect = uniform(0);
     this.catcherReflectNode = reflect;
+    // Both passes are linear HDR at the same sample count. The page is
+    // display white, so the darkening is the ratio after the same Neutral
+    // curve the subject uses. A raw linear ratio painted on white turns a
+    // mild shadow into a grey slab.
     const lum = vec3(0.2126, 0.7152, 0.0722);
-    const safe = max(tn, vec3(1e-4));
-    const channel = tw.div(safe);
-    const lumRatio = min(dot(tw, lum).div(max(dot(tn, lum), float(1e-4))), float(1));
-    const mask = smoothstep(float(0.5), float(0.99), withNode.a).mul(
+    const mappedWith = toneMapping(NeutralToneMapping, exposure, withNode.rgb).rgb;
+    const mappedWithout = toneMapping(NeutralToneMapping, exposure, withoutNode.rgb).rgb;
+    const withLum = max(dot(mappedWith, lum), float(0));
+    const withoutLum = max(dot(mappedWithout, lum), float(1e-4));
+    const ratio = min(withLum.div(withoutLum), float(1));
+    const isFloorSample = smoothstep(float(0.5), float(0.99), withNode.a).mul(
         float(1).sub(smoothstep(float(0.99), float(1), withNode.a)));
     const storedMask = withNode.a.sub(0.5).div(0.49).clamp(0, 1);
-    const coverage = mix(float(1), storedMask, mask);
-    const shadow = mix(float(1), lumRatio, coverage);
-    const excess = max(channel.sub(lumRatio), vec3(0)).mul(coverage).mul(reflect);
+    const mask = mix(float(0), storedMask, isFloorSample);
+    const shadowAlpha = float(1).sub(ratio).mul(mask);
+    // Environment light is in both passes and cancels. What remains is the
+    // subject, faded by the same mask.
+    const residual = max(mappedWith.sub(mappedWithout.mul(ratio)), vec3(0));
+    const mappedSubject = toneMapping(NeutralToneMapping, exposure, beautyNode.rgb);
+    void mappedSubject;
+    const shownSubject = mappedWith;
+    const reflection = residual.mul(mask).mul(reflect);
     const isSubject = withNode.a.greaterThan(0.995);
     const isFloor = withNode.a.greaterThan(0.45).and(withNode.a.lessThan(0.995));
-    const subject = vec4(tw.x, tw.y, tw.z, float(1));
-    const darkness = float(1).sub(shadow);
-    const floor = vec4(excess.x, excess.y, excess.z, darkness);
+    const subject = vec4(shownSubject.x, shownSubject.y, shownSubject.z, float(1));
+    const floor = vec4(reflection.x, reflection.y, reflection.z, shadowAlpha);
     const background = vec4(0, 0, 0, 0);
     const material = new MeshBasicNodeMaterial();
     material.transparent = true;

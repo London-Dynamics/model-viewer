@@ -129,6 +129,8 @@ export class WebGPUPathTracerSession {
   denoiseFocus = '';
   denoiseVisibility = '';
   private traceStartedAt = 0;
+  /** Bumps when a catcher pass resets, so a late sample-count read is dropped. */
+  private sampleEpoch = 0;
   private sawSample = false;
   private sawSettled = false;
   private irradianceUpload: IrradianceKernelUpload|null = null;
@@ -587,6 +589,7 @@ export class WebGPUPathTracerSession {
    * samples record the unoccluded floor. The trace clock is left running.
    */
   beginUnoccludedPass() {
+    this.sampleEpoch++;
     this.setCatcherIgnoreSubject(true);
     this.samples = 0;
     this.sampleMin = 0;
@@ -625,17 +628,18 @@ export class WebGPUPathTracerSession {
   }
 
   /**
-   * Colour from the denoised frame when that pass finished, otherwise the
-   * raw accumulation. Alpha always comes from the raw buffer, which is the
-   * only one that still carries the floor mask.
+   * Radiance and alpha stay on the raw linear accumulation so both catcher
+   * passes divide the same HDR samples. Beauty is the denoised with-pass,
+   * used only for the subject, and is null until that pass has denoised.
    */
-  catcherSourceTextures(): {color: unknown; alpha: unknown}|null {
-    const alpha = this.catcherSourceTexture();
-    if (alpha == null) {
+  catcherSourceTextures():
+      {radiance: unknown; alpha: unknown; beauty: unknown;}|null {
+    const raw = this.catcherSourceTexture();
+    if (raw == null) {
       return null;
     }
     const denoised = this.denoiser?.complete === true ? this.denoiser.texture : null;
-    return {color: denoised ?? alpha, alpha};
+    return {radiance: raw, alpha: raw, beauty: denoised ?? raw};
   }
 
   renderSample() {
@@ -648,12 +652,14 @@ export class WebGPUPathTracerSession {
     }
     this.applyTracerFields(false);
     tracer.renderSample();
+    const epoch = this.sampleEpoch;
     void tracer.getSampleCountsAsync().then((counts) => {
-      if (!this.disposed) {
-        this.samples = counts.avg;
-        this.sampleMin = counts.min;
-        this.noteTraceProgress();
+      if (this.disposed || epoch !== this.sampleEpoch) {
+        return;
       }
+      this.samples = counts.avg;
+      this.sampleMin = counts.min;
+      this.noteTraceProgress();
     });
     this.noteTraceProgress();
   }
