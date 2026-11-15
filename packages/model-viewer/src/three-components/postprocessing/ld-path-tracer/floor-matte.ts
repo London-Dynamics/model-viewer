@@ -35,12 +35,14 @@ export const PATH_TRACER_FLOOR_MODES = [
   'none',
   'shadow',
   'shadow-reflection',
+  'solid',
+  'open',
 ] as const;
 
 export type PathTracerFloorMode = typeof PATH_TRACER_FLOOR_MODES[number];
 
 export const FLOOR_OCCLUSION_SAMPLES = 8;
-export const DEFAULT_FLOOR_REFLECTION = 0.45;
+export const DEFAULT_FLOOR_REFLECTION = 0.2;
 export const FLOOR_REFLECTION_F0 = 0.04;
 /**
  * Fade length as a fraction of the subject's longer horizontal side.
@@ -96,6 +98,12 @@ export const normalizePathTracerFloorMode =
       if (text === 'shadow-reflection' || text === 'shadow_reflection' ||
           text === 'reflection') {
         return 'shadow-reflection';
+      }
+      if (text === 'solid') {
+        return 'solid';
+      }
+      if (text === 'open' || text === 'unoccluded') {
+        return 'open';
       }
       return 'none';
     };
@@ -268,6 +276,25 @@ export const applyShadowStretch = (
   };
 };
 
+/**
+ * The catcher plane is the subject footprint plus a short margin. The shadow
+ * itself comes from the path trace, not from stretching this rect.
+ */
+export const DEFAULT_FLOOR_EXTENT = 0.5;
+
+/** Footprint grown by `extent` (0.5 = 50% larger) so the mask can fade to 0. */
+export const catcherPlane = (
+    footprint: FloorFootprint,
+    extent = DEFAULT_FLOOR_EXTENT,
+    ): FloorFootprint => {
+  const scale = 1 + Math.max(0, extent);
+  return {
+    ...footprint,
+    halfX: Math.max(footprint.halfX, 0.05) * scale,
+    halfZ: Math.max(footprint.halfZ, 0.05) * scale,
+  };
+};
+
 /** Rect that still contains a non-negligible shadow or reflection. */
 export const effectSupport = (footprint: FloorFootprint): FloorFootprint => {
   const reach = effectReach(footprint.radius) +
@@ -326,13 +353,13 @@ export const screenBoundsOfWorldPoints = (
   for (const entry of points) {
     clipPoint.set(entry[0], entry[1], entry[2], 1).applyMatrix4(viewProjection);
     if (clipPoint.w <= 1e-4) {
-      return null;
+      continue;
     }
     const ndcX = clipPoint.x / clipPoint.w;
     const ndcY = clipPoint.y / clipPoint.w;
     const ndcZ = clipPoint.z / clipPoint.w;
     if (ndcZ < -1 || ndcZ > 1) {
-      return null;
+      continue;
     }
     if (ndcX < -1) offLeft = true;
     if (ndcX > 1) offRight = true;

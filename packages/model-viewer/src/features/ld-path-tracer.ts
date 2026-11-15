@@ -236,6 +236,9 @@ export const LDPathTracerMixin = <
     @property({type: Number, attribute: 'path-tracer-floor-opacity'})
     pathTracerFloorOpacity = DEFAULT_PATH_TRACER_OPTIONS.floorOpacity;
 
+    @property({type: Number, attribute: 'path-tracer-floor-extent'})
+    pathTracerFloorExtent = DEFAULT_PATH_TRACER_OPTIONS.floorExtent;
+
     @property({type: Boolean, attribute: 'path-tracer-paused'})
     pathTracerPaused = DEFAULT_PATH_TRACER_OPTIONS.paused;
 
@@ -640,6 +643,11 @@ export const LDPathTracerMixin = <
         floorOpacity: clampPathTracerUnit(
             this.pathTracerFloorOpacity,
             DEFAULT_PATH_TRACER_OPTIONS.floorOpacity),
+        floorExtent: Math.max(
+            0,
+            Number.isFinite(this.pathTracerFloorExtent) ?
+                this.pathTracerFloorExtent :
+                DEFAULT_PATH_TRACER_OPTIONS.floorExtent),
         paused: this.pathTracerPaused,
         frameBudget: Math.max(1, Math.floor(this.pathTracerFrameBudget)),
         multipleImportanceSampling: this.pathTracerMultipleImportanceSampling,

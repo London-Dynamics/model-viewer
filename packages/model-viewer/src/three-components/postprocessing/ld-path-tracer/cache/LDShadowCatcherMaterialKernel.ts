@@ -32,6 +32,10 @@ export class MaterialKernel extends ComputeKernel {
 			filterGlossy: uniform( 1 ),
 			maxTransparentBounces: uniform( 5, 'uint' ),
 			maxBounces: uniform( 5, 'uint' ),
+			catcherIgnoreSubject: uniform( 0, 'uint' ),
+			catcherCenter: uniform( new Vector2() ),
+			catcherHalf: uniform( new Vector2( 1, 1 ) ),
+			catcherExtent: uniform( 0.5 ),
 
 			sampleCountTarget: textureStore( new StorageTexture( 1, 1 ) ).toReadWrite(),
 
@@ -59,6 +63,7 @@ export class MaterialKernel extends ComputeKernel {
 				filterGlossy: f32,
 				maxTransparentBounces: u32,
 				maxBounces: u32,
+				catcherIgnoreSubject: u32,
 
 				globalId: vec3u
 			) -> void {
@@ -219,13 +224,26 @@ export class MaterialKernel extends ComputeKernel {
 					let objectInfo = transforms[ u32( input.objectIndex ) ];
 					var materialInfo = ( *materials )[ objectInfo.materialIndex ];
 
-					// A later hit on the floor is a holdout, not a shaded card.
-					if ( materialInfo.matte != 0 && input.currentBounce > 0u ) {
+					// Unoccluded pass: rays that already left the floor ignore the
+					// subject and continue, so this point is lit without it.
+					if ( catcherIgnoreSubject != 0u && input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 && materialInfo.matte == 0 ) {
 
-						rayDataStorage[ index ].throughputColor = vec3f( 0.0 );
-						rayDataStorage[ index ].scatterPdf = 0.0;
-						rayDataStorage[ index ].lightPdf = 0.0;
+						var skipData = ${ sampleTrianglePointFn }( input.barycoord, input.indices );
+						skipData.position = objectInfo.matrixWorld * skipData.position;
+						let skipOrigin = ${ offsetRayOriginFunc }( skipData.position.xyz, input.direction, input.normal );
+						let skipIndex = atomicAdd( &rayQueue.length, 1u );
+						rayQueue.elements[ skipIndex ].origin = skipOrigin;
+						rayQueue.elements[ skipIndex ].direction = input.direction;
+						rayQueue.elements[ skipIndex ].pixelIndex = input.pixelIndex;
+						rayQueue.elements[ skipIndex ].currentBounce = input.currentBounce;
+						rayQueue.elements[ skipIndex ].seed = input.seed;
+						rayQueue.elements[ skipIndex ].alphaDepth = input.alphaDepth;
+						rayQueue.elements[ skipIndex ].maxDist = 0.0;
+						rayDataStorage[ index ].origin = skipOrigin;
+						rayDataStorage[ index ].direction = input.direction;
+						rayDataStorage[ index ].rayIntersectionIndex = i32( skipIndex );
 						rayDataStorage[ index ].shadowRayIntersectionIndex = -1;
+						rayDataStorage[ index ].lightPdf = 0.0;
 						return;
 
 					}
@@ -241,77 +259,6 @@ export class MaterialKernel extends ComputeKernel {
 
 
 					let view = - input.direction;
-
-					// Primary hit on the holdout. Accumulate nothing from the
-					// floor's own colour. The first probe is the light Logic
-					// already chose, unless that light is the environment, in
-					// which case a cosine sample stands in so the HDR is not
-					// counted twice.
-					if ( materialInfo.matte != 0 && input.currentBounce == 0u && input.resultColor.a >= 0.0 ) {
-
-						var nrm = normalize( vertexData.normal.xyz );
-						if ( nrm.y < 0.0 ) {
-
-							nrm = -nrm;
-
-						}
-
-						rayDataStorage[ index ].origin = vertexData.position.xyz;
-						rayDataStorage[ index ].normal = nrm;
-						rayDataStorage[ index ].emission = vec3f( 0.0 );
-						rayDataStorage[ index ].scatterColor = vec3f( 0.0 );
-						rayDataStorage[ index ].alphaDepth = 0u;
-						rayDataStorage[ index ].resultColor = vec4f( 0.0, 0.0, 0.0, -2.0 );
-						rayDataStorage[ index ].minPdf = 1.0;
-
-						var dir = input.lightDirection;
-						var emission = vec3f( 0.0 );
-						var lightType = -1;
-						var pdf = 1.0;
-						var dist = ${ LIGHT_FAR_DISTANCE };
-						let analytic = input.lightPdf > 0.0 && input.lightType != ${ ENVIRONMENT_LIGHT_TYPE };
-						if ( analytic ) {
-
-							let ndotl = max( dot( nrm, input.lightDirection ), 0.0 );
-							if ( ndotl > 0.0 ) {
-
-								dir = input.lightDirection;
-								emission = input.lightEmission * ndotl / input.lightPdf;
-								lightType = input.lightType;
-								pdf = input.lightPdf;
-								dist = input.lightDist;
-
-							}
-
-						}
-
-						if ( lightType < 0 ) {
-
-							dir = ${ sampleHemisphereFn }( nrm, ${ rand2 }( 13u ) );
-
-						}
-
-						rayDataStorage[ index ].lightDirection = dir;
-						rayDataStorage[ index ].lightEmission = emission;
-						rayDataStorage[ index ].lightType = lightType;
-						rayDataStorage[ index ].lightPdf = pdf;
-						rayDataStorage[ index ].lightDist = dist;
-
-						let origin = ${ offsetRayOriginFunc }( vertexData.position.xyz, dir, nrm );
-						let shadowIndex = atomicAdd( &shadowRayQueue.length, 1u );
-						shadowRayQueue.elements[ shadowIndex ].origin = origin;
-						shadowRayQueue.elements[ shadowIndex ].direction = dir;
-						shadowRayQueue.elements[ shadowIndex ].pixelIndex = input.pixelIndex;
-						shadowRayQueue.elements[ shadowIndex ].currentBounce = 0u;
-						shadowRayQueue.elements[ shadowIndex ].seed = input.seed;
-						shadowRayQueue.elements[ shadowIndex ].alphaDepth = 0u;
-						shadowRayQueue.elements[ shadowIndex ].maxDist = dist * ( 1.0 - ${ LIGHT_EPSILON } );
-						rayDataStorage[ index ].shadowRayIntersectionIndex = i32( shadowIndex );
-						rayDataStorage[ index ].rayIntersectionIndex = -1;
-						return;
-
-					}
-
 
 					// blur glossy surfaces after low-probability bounces to suppress fireflies,
 					// from the Cycles "filter glossy" approach in integrator/surface_shader.h
@@ -369,7 +316,7 @@ export class MaterialKernel extends ComputeKernel {
 
 						let wavelength = abs( input.dispersionWavelength );
 						${ applyDispersionFunc }( &surface, materialInfo.dispersion, wavelength );
-						if ( input.dispersionWavelength < 0.0 ) {
+						if ( input.dispersionWavelength < -1.0 ) {
 
 							rayDataStorage[ index ].dispersionWavelength = wavelength;
 							throughputColor *= ${ dispersionColorWeightFunc }( wavelength );
@@ -479,6 +426,21 @@ export class MaterialKernel extends ComputeKernel {
 
 						rayDataStorage[ index ].lightPdf = 0.0;
 						rayDataStorage[ index ].shadowRayIntersectionIndex = - 1;
+
+					}
+
+					// Mark every ray that leaves the floor so the unoccluded
+					// pass can skip the subject, and so the pixel stays a floor pixel.
+					if ( materialInfo.matte != 0 && input.currentBounce == 0u ) {
+
+						let half = max( ${ params.catcherHalf }, vec2f( 1e-4 ) );
+						let pad = max( half * max( ${ params.catcherExtent }, 0.0 ), vec2f( 1e-4 ) );
+						let outside = max( abs( vertexData.position.xz - ${ params.catcherCenter } ) - half, vec2f( 0.0 ) );
+						let t = saturate( 1.0 - length( outside / pad ) );
+						let falloff = t * t * ( 3.0 - 2.0 * t );
+						let encoded = 0.5 + 0.49 * falloff;
+						rayDataStorage[ index ].dispersionWavelength = -encoded;
+						rayDataStorage[ index ].resultColor = vec4f( rayDataStorage[ index ].resultColor.rgb, encoded );
 
 					}
 

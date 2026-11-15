@@ -155,7 +155,7 @@
         </label>
         <label>
           Reflection
-          <input id="reflection" type="range" min="0" max="1" step="0.05" value="0.45" />
+          <input id="reflection" type="range" min="0" max="1" step="0.05" value="0.2" />
         </label>
         <p id="crop">Crop —</p>
         <button id="clear" type="button">Clear caches</button>
@@ -181,8 +181,8 @@
           src: 'https://assets.v2.londondynamics.com/547e0656-5fe2-4a43-aae0-6b39d3a4ee3a/puzzle/638be48e-26fd-1c99-a9c6-981ae0e920f4.glb',
           hdr: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
           camera: {
-            'camera-orbit': '18.47034641956074rad 1.5654198050001467rad 14m',
-            'camera-target': '-0.2468m 0.9902m -0.1196m',
+            'camera-orbit': '308.273deg 75deg 145%',
+            'camera-target': 'auto auto auto',
             'field-of-view': '28deg',
             'min-field-of-view': '12deg',
             'max-field-of-view': '40deg',
@@ -196,7 +196,7 @@
           hdr: 'https://images.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/6ae8e541a197e8a86ebb255d/287f1945-86aa-4eb1-af71-745c0f63ebc4.hdr',
           bounds: 'tight',
           camera: {
-            'camera-orbit': '30deg 75deg 170%',
+            'camera-orbit': '30deg 75deg 145%',
             'field-of-view': '28deg',
           },
         },
@@ -206,7 +206,7 @@
           hdr: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/aircraft_workshop_4_Soft_BW.hdr',
           bounds: 'tight',
           camera: {
-            'camera-orbit': '30deg 75deg 170%',
+            'camera-orbit': '30deg 75deg 145%',
             'field-of-view': '28deg',
           },
         },
@@ -281,9 +281,12 @@
       const params = new URLSearchParams(location.search);
       let caseId = CASES[params.get('case')] ? params.get('case') : 'triton';
       let presetId = PRESETS[params.get('preset')] ? params.get('preset') : 'epic';
-      let floorMode = FLOORS[params.get('floor')] ? params.get('floor') : 'shadow';
+      const requestedFloor = params.get('floor');
+      let floorMode = FLOORS[requestedFloor] ? requestedFloor :
+          (requestedFloor === 'solid' || requestedFloor === 'open' ?
+              requestedFloor : 'shadow');
       let reflection = Number(params.get('reflection'));
-      if (!Number.isFinite(reflection)) reflection = 0.45;
+      if (!Number.isFinite(reflection)) reflection = 0.2;
       reflection = Math.min(1, Math.max(0, reflection));
       caseSelect.value = caseId;
       presetSelect.value = presetId;
@@ -546,6 +549,7 @@
             detail: 'denoised, fade excluded',
           });
           panel.dataset.ready = ready ? '1' : '0';
+          panel.dataset.catcher = composer?.floorCatcherPhase ?? '';
           panel.dataset.totalMs = totalMs ?? '';
           panel.dataset.run = runKind;
           if (ready && panel.dataset.opacityAtReady == null) {

@@ -37,6 +37,7 @@ interface CacheKernel {
 }
 
 interface LogicKernelHandle {
+  bvhData: unknown;
   envInfo: unknown;
   backgroundInfo: unknown;
   lightsInfo: unknown;
@@ -114,6 +115,7 @@ export const installIrradianceKernel =
       if (stockLogic != null) {
         const logic = new LDIrradianceCacheLogicKernel(
             cacheAttribute, pathRecords) as LogicKernelHandle;
+        logic.bvhData = stock.bvhData;
         logic.envInfo = stockLogic.envInfo;
         logic.backgroundInfo = stockLogic.backgroundInfo;
         logic.lightsInfo = stockLogic.lightsInfo;

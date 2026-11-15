@@ -51,6 +51,7 @@ interface FloorCatcherKernel {
   catcherCenter?: {set: (x: number, y: number) => void}|null;
   catcherHalf?: {set: (x: number, y: number) => void};
   catcherRadius?: number;
+  catcherExtent?: number;
 }
 
 interface OIDNTileInputs {
@@ -369,6 +370,10 @@ export class WebGPUPathTracerSession {
     this.region.style.display = this.showRegion ? 'block' : 'none';
   }
 
+  get webgpuRenderer() {
+    return this.renderer;
+  }
+
   show(visible: boolean) {
     this.canvas.style.visibility = visible ? 'visible' : 'hidden';
   }
@@ -552,14 +557,16 @@ export class WebGPUPathTracerSession {
     halfX: number;
     halfZ: number;
     radius: number;
+    extent: number;
   }) {
     const tracer = this.tracer as {
       _pathTracer?: {
         logicKernel?: FloorCatcherKernel;
+        materialKernel?: FloorCatcherKernel;
       } & FloorCatcherKernel;
     }|null;
     const backend = tracer?._pathTracer;
-    const kernels = [backend?.logicKernel, backend];
+    const kernels = [backend?.logicKernel, backend?.materialKernel, backend];
     for (const kernel of kernels) {
       if (kernel == null || kernel.catcherCenter == null) {
         continue;
@@ -571,7 +578,64 @@ export class WebGPUPathTracerSession {
       kernel.catcherCenter.set(values.centerX, values.centerZ);
       kernel.catcherHalf?.set(values.halfX, values.halfZ);
       kernel.catcherRadius = values.radius;
+      kernel.catcherExtent = values.extent;
     }
+  }
+
+  /**
+   * Second catcher pass. Floor-shading rays skip the subject so the same
+   * samples record the unoccluded floor. The trace clock is left running.
+   */
+  beginUnoccludedPass() {
+    this.setCatcherIgnoreSubject(true);
+    this.samples = 0;
+    this.sampleMin = 0;
+    this.samplesReadyAt = null;
+    this.denoiseFinishedAt = null;
+    this.denoiseTile = 0;
+    this.denoiseTileCount = 0;
+    this.tracer?.reset();
+  }
+
+  setCatcherIgnoreSubject(ignore: boolean) {
+    const tracer = this.tracer as {
+      _pathTracer?: {
+        materialKernel?: {catcherIgnoreSubject?: number};
+        logicKernel?: {catcherIgnoreSubject?: number};
+      };
+    }|null;
+    const backend = tracer?._pathTracer;
+    const value = ignore ? 1 : 0;
+    if (backend?.materialKernel) {
+      backend.materialKernel.catcherIgnoreSubject = value;
+    }
+    if (backend?.logicKernel) {
+      backend.logicKernel.catcherIgnoreSubject = value;
+    }
+  }
+
+  catcherSourceTexture(): unknown {
+    // The raw accumulation keeps the floor-mask alpha. The denoised texture
+    // does not, so the catcher reads this buffer.
+    const tracer = this.tracer as {
+      outputTarget?: unknown;
+      _pathTracer?: {outputTarget?: unknown};
+    }|null;
+    return tracer?.outputTarget ?? tracer?._pathTracer?.outputTarget ?? null;
+  }
+
+  /**
+   * Colour from the denoised frame when that pass finished, otherwise the
+   * raw accumulation. Alpha always comes from the raw buffer, which is the
+   * only one that still carries the floor mask.
+   */
+  catcherSourceTextures(): {color: unknown; alpha: unknown}|null {
+    const alpha = this.catcherSourceTexture();
+    if (alpha == null) {
+      return null;
+    }
+    const denoised = this.denoiser?.complete === true ? this.denoiser.texture : null;
+    return {color: denoised ?? alpha, alpha};
   }
 
   renderSample() {

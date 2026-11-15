@@ -54,6 +54,8 @@ export class LogicKernel extends ComputeKernel {
 			catcherCenter: uniform( new Vector2() ),
 			catcherHalf: uniform( new Vector2( 1, 1 ) ),
 			catcherRadius: uniform( 1 ),
+			catcherIgnoreSubject: uniform( 0, 'uint' ),
+			bvhData: { value: null },
 
 			globalId: globalId,
 		};
@@ -93,6 +95,8 @@ export class LogicKernel extends ComputeKernel {
 				let rayDataStorage = &${ params.rayDataStorage };
 				let rayIntersectionsStorage = &${ params.rayIntersectionsStorage };
 				let shadowRayIntersectionsStorage = &${ params.shadowRayIntersectionsStorage };
+				let materials = &${ proxy( 'bvhData.value.storage.materials', params ) };
+				let transforms = &${ proxy( 'bvhData.value.storage.transforms', params ) };
 
 				// bound by "rayCount" rather than the pool length. See MaterialKernel
 				let index = globalId.x;
@@ -304,7 +308,18 @@ export class LogicKernel extends ComputeKernel {
 				if ( input.shadowRayIntersectionIndex >= 0 && input.lightPdf > 0.0 ) {
 
 					let shadowHit = ( *shadowRayIntersectionsStorage )[ u32( input.shadowRayIntersectionIndex ) ];
-					let occluded = shadowHit.objectIndex >= 0;
+					var occluded = shadowHit.objectIndex >= 0;
+					if ( occluded && ${ params.catcherIgnoreSubject } != 0u && input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 ) {
+
+						let hitObject = ( *transforms )[ u32( shadowHit.objectIndex ) ];
+						let hitMaterial = ( *materials )[ hitObject.materialIndex ];
+						if ( hitMaterial.matte == 0 ) {
+
+							occluded = false;
+
+						}
+
+					}
 					let isMISWeighted = ${ isMISWeightLightFn }( input.lightType ) && shadowHit.forwardBlocked == 0u;
 					let misWeight = select( 1.0, ${ misHeuristicFn }( input.lightPdf, input.lightBsdfPdf ), isMISWeighted );
 					let directLight = throughputColor * input.lightEmission * input.lightBsdf * misWeight / input.lightPdf;
@@ -535,7 +550,11 @@ export class LogicKernel extends ComputeKernel {
 				if ( isTerminated ) {
 
 					var outputColor = resultColor;
-					if ( resultColor.a > -1.6 && resultColor.a < -0.4 ) {
+					if ( input.dispersionWavelength > -1.0 && input.dispersionWavelength < 0.0 && resultColor.a >= 0.0 ) {
+
+						outputColor = vec4f( resultColor.rgb, -input.dispersionWavelength );
+
+					} else if ( resultColor.a > -1.6 && resultColor.a < -0.4 ) {
 
 						let shadow = saturate( resultColor.a + 1.5 );
 						let weight = saturate( floorWeight );
