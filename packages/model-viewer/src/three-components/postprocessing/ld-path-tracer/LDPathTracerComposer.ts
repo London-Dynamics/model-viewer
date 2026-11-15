@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, FloatType, HalfFloatType, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, SRGBColorSpace, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
+import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, FloatType, HalfFloatType, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, NoColorSpace, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, RepeatWrapping, SRGBColorSpace, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {MeshBasicNodeMaterial, RenderTarget, StorageTexture} from 'three/webgpu';
 import {dot, float, max, min, mix, select, smoothstep, sRGBTransferEOTF, sRGBTransferOETF, texture, uniform, vec3, vec4, viewportUV, wgslFn} from 'three/tsl';
 import {toneMapping} from 'three/tsl';
@@ -324,8 +324,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private readonly lastCameraProjectionMatrix = new Matrix4();
   private readonly meshWorldMatrices = new Map<string, Matrix4>();
   private shadowCatcher: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
-  private plainFloor: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
-  private plainFloorState = '';
+  private regularFloor: Mesh<PlaneGeometry, MeshStandardMaterial>|null = null;
+  private regularFloorState = '';
+  private regularFloorTexture: DataTexture|null = null;
+  /** Scene camera plus the floor layer. The raster camera stays on layer 0. */
+  private readonly floorTraceCamera = new PerspectiveCamera();
   private readonly floorPreview = new PathTracerFloorPreview();
   private floorMode: PathTracerFloorMode = 'none';
   private catcherPhase: 'idle'|'with'|'without'|'ready' = 'idle';
@@ -784,6 +787,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.reportedTracedHeight = 0;
     this.reportedSupersampled = false;
     this.disposeShadowCatcher();
+    this.disposeRegularFloor();
     this.floorPreview.dispose();
     this.renderer = null;
     this.scene = null;
@@ -1242,11 +1246,11 @@ export class LDPathTracerComposer implements EffectComposerInterface {
         DEFAULT_PATH_TRACER_OPTIONS.floorReflection);
     const mode = effectiveFloorMode(this.options.floor, this.scene.shadowMode);
     this.floorMode = opacity > 0 ? mode : 'none';
-    if (this.floorMode === 'plain') {
-      this.syncPlainFloor();
+    if (this.floorMode === 'regular') {
+      this.syncRegularFloor();
       return;
     }
-    this.removePlainFloor();
+    this.removeRegularFloor();
     if (this.floorMode === 'none') {
       this.removeShadowCatcher();
       return;
@@ -1423,67 +1427,130 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   }
 
   /**
-   * A normal traced ground. Not a catcher: no matte flag, no mask, no ratio.
-   * It sits on the path-tracer layer so the raster view does not draw it.
+   * The vendor demo's floor: one standard plane, not a catcher. Width is
+   * five bounding-sphere radii, color #d2d2d2, roughness 0.1, with the
+   * radial alpha the demo uses so the edge fades instead of cutting a card.
+   * Layer 1 hides it from the raster view. The trace camera enables that
+   * layer, because the denoiser rasterizes with the trace camera and a
+   * missing floor guide smears the plane's light into the model.
    */
-  private syncPlainFloor() {
+  private syncRegularFloor() {
     if (this.scene == null) {
       return;
     }
     if (this.shadowCatcher?.parent != null) {
       this.shadowCatcher.removeFromParent();
     }
-    const floor = this.ensurePlainFloor();
+    if (this.floorPreview.mesh.parent != null) {
+      this.floorPreview.mesh.removeFromParent();
+    }
+    const floor = this.ensureRegularFloor();
     const {boundingBox} = this.scene;
-    const span = Math.max(
-        boundingBox.max.x - boundingBox.min.x,
-        boundingBox.max.z - boundingBox.min.z,
-        1);
-    const size = span * 30;
-    const state = [
-      size.toFixed(3),
-      boundingBox.min.y.toFixed(4),
-      ((boundingBox.min.x + boundingBox.max.x) / 2).toFixed(4),
-      ((boundingBox.min.z + boundingBox.max.z) / 2).toFixed(4),
-    ].join('|');
-    if (state === this.plainFloorState && floor.parent === this.scene.target) {
+    if (boundingBox.isEmpty()) {
       return;
     }
-    floor.position.set(
-        (boundingBox.min.x + boundingBox.max.x) / 2,
-        boundingBox.min.y,
-        (boundingBox.min.z + boundingBox.max.z) / 2);
+    const radius = 0.5 * Math.hypot(
+        boundingBox.max.x - boundingBox.min.x,
+        boundingBox.max.y - boundingBox.min.y,
+        boundingBox.max.z - boundingBox.min.z);
+    const size = Math.max(radius, 1e-3) * 5;
+    const y = boundingBox.min.y - 1e-3;
+    const centerX = (boundingBox.min.x + boundingBox.max.x) / 2;
+    const centerZ = (boundingBox.min.z + boundingBox.max.z) / 2;
+    const state = [
+      size.toFixed(4),
+      y.toFixed(4),
+      centerX.toFixed(4),
+      centerZ.toFixed(4),
+    ].join('|');
+    if (state === this.regularFloorState && floor.parent === this.scene.target) {
+      return;
+    }
+    floor.position.set(centerX, y, centerZ);
     floor.rotation.set(-Math.PI / 2, 0, 0);
     floor.scale.set(size, size, 1);
     if (floor.parent !== this.scene.target) {
       this.scene.target.add(floor);
     }
-    this.plainFloorState = state;
+    this.regularFloorState = state;
+    this.cameraStateInitialized = false;
     this.markSceneDirty();
   }
 
-  private ensurePlainFloor(): Mesh {
-    if (this.plainFloor != null) {
-      return this.plainFloor;
+  private ensureRegularFloor(): Mesh {
+    if (this.regularFloor != null) {
+      return this.regularFloor;
     }
     const material = new MeshStandardMaterial({
-      color: 0xe6e6e6,
+      color: 0xd2d2d2,
+      map: this.radialFloorMap(),
       metalness: 0,
-      roughness: 0.5,
+      roughness: 0.1,
       side: DoubleSide,
+      transparent: true,
     });
-    this.plainFloor = new Mesh(new PlaneGeometry(1, 1), material);
-    this.plainFloor.name = 'PlainFloor';
-    this.plainFloor.layers.set(PATH_TRACER_FLOOR_LAYER);
-    return this.plainFloor;
+    this.regularFloor = new Mesh(new PlaneGeometry(1, 1), material);
+    this.regularFloor.name = 'RegularFloor';
+    this.regularFloor.layers.set(PATH_TRACER_FLOOR_LAYER);
+    this.regularFloor.userData.pathTracerFloor = true;
+    return this.regularFloor;
   }
 
-  private removePlainFloor() {
-    if (this.plainFloor?.parent != null) {
-      this.plainFloor.removeFromParent();
-      this.plainFloorState = '';
+  /** Same falloff as three-gpu-pathtracer's generateRadialFloorTexture. */
+  private radialFloorMap(): DataTexture {
+    if (this.regularFloorTexture != null) {
+      return this.regularFloorTexture;
+    }
+    const dim = 1024;
+    const data = new Uint8Array(dim * dim * 4);
+    for (let y = 0; y < dim; y++) {
+      for (let x = 0; x < dim; x++) {
+        const xCent = 2 * (x / (dim - 1) - 0.5);
+        const yCent = 2 * (y / (dim - 1) - 0.5);
+        let alpha = 1 - Math.hypot(xCent, yCent);
+        alpha = Math.min(1, Math.max(0, alpha));
+        alpha = Math.min(1, alpha * alpha * 1.5);
+        const index = (y * dim + x) * 4;
+        data[index] = 255;
+        data[index + 1] = 255;
+        data[index + 2] = 255;
+        data[index + 3] = Math.round(alpha * 255);
+      }
+    }
+    const texture = new DataTexture(data, dim, dim);
+    texture.format = RGBAFormat;
+    texture.type = UnsignedByteType;
+    texture.colorSpace = NoColorSpace;
+    texture.minFilter = LinearFilter;
+    texture.magFilter = LinearFilter;
+    texture.wrapS = RepeatWrapping;
+    texture.wrapT = RepeatWrapping;
+    texture.needsUpdate = true;
+    this.regularFloorTexture = texture;
+    return texture;
+  }
+
+  private removeRegularFloor() {
+    if (this.regularFloor?.parent != null) {
+      this.regularFloor.removeFromParent();
+      this.regularFloorState = '';
+      this.cameraStateInitialized = false;
       this.markSceneDirty();
     }
+  }
+
+  private disposeRegularFloor() {
+    this.removeRegularFloor();
+    if (this.regularFloor == null) {
+      this.regularFloorTexture?.dispose();
+      this.regularFloorTexture = null;
+      return;
+    }
+    this.regularFloor.geometry.dispose();
+    this.regularFloor.material.map?.dispose();
+    this.regularFloor.material.dispose();
+    this.regularFloor = null;
+    this.regularFloorTexture = null;
   }
 
   private ensureShadowCatcher() {
@@ -1635,12 +1702,12 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   private getPathTracerCamera(): Camera {
     if (!(this.camera instanceof PerspectiveCamera)) {
-      return this.camera!;
+      return this.cameraForTrace(this.camera!);
     }
     if (!this.options.depthOfField) {
-      return this.coverageCrop == null ?
+      return this.cameraForTrace(this.coverageCrop == null ?
           this.camera :
-          this.prepareCoverageCamera(this.camera);
+          this.prepareCoverageCamera(this.camera));
     }
 
     this.physicalCamera.copy(this.camera);
@@ -1657,7 +1724,38 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.physicalCamera.updateMatrixWorld();
     this.applyCoverageOffset(this.physicalCamera);
 
-    return this.physicalCamera;
+    return this.cameraForTrace(this.physicalCamera);
+  }
+
+  /**
+   * The raster camera stays on layer 0 so the page does not draw the floor.
+   * The denoiser paints its guides with the trace camera, so that camera has
+   * to include the floor layer or the plane is absent from the albedo and
+   * the filter spreads its light across the model.
+   */
+  private cameraForTrace(camera: Camera): Camera {
+    if (this.regularFloor?.parent == null) {
+      return camera;
+    }
+    if (!(camera instanceof PerspectiveCamera)) {
+      camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
+      return camera;
+    }
+    if (camera === this.camera) {
+      const trace = this.floorTraceCamera;
+      // The view camera is parented to the orbit rig. Copy the world matrix
+      // and keep it: updating from the local matrix would drop that parent.
+      trace.copy(camera);
+      trace.coordinateSystem = camera.coordinateSystem;
+      trace.matrixAutoUpdate = false;
+      trace.matrixWorldAutoUpdate = false;
+      trace.matrixWorldNeedsUpdate = false;
+      trace.layers.mask = camera.layers.mask;
+      trace.layers.enable(PATH_TRACER_FLOOR_LAYER);
+      return trace;
+    }
+    camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
+    return camera;
   }
 
   private prepareCoverageCamera(source: PerspectiveCamera): PerspectiveCamera {
@@ -1763,10 +1861,16 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     // Null from the floor projection means the fade crosses the camera, so
     // the trace is the whole frame. Keeping the subject crop would slice the
     // shadow into a hard edge.
-    const floorEffect = this.floorMode === 'none' ?
-        null :
-        this.projectFloorEffect(buffer.x, buffer.y);
-    const withFloor = this.floorMode === 'none' ?
+    // Shadow modes extend the crop across the catcher fade. A regular floor
+    // keeps the no-floor crop. The catcher rect would slice the frame down
+    // to the subject, which is the cropped picture this mode must not make.
+    const catcherCrop = this.floorMode === 'shadow' ||
+        this.floorMode === 'shadow-reflection' ||
+        this.floorMode === 'solid' || this.floorMode === 'open';
+    const floorEffect = catcherCrop ?
+        this.projectFloorEffect(buffer.x, buffer.y) :
+        null;
+    const withFloor = !catcherCrop ?
         projected :
         floorEffect == null || projected == null ?
         null :
@@ -1906,7 +2010,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
 
   private isExcludedFromSubjectCoverage(object: Object3D): boolean {
     if (object.userData?.pathTracerShadowCatcher === true ||
-        object.userData?.pathTracerFloorPreview === true) {
+        object.userData?.pathTracerFloorPreview === true ||
+        object.userData?.pathTracerFloor === true) {
       return true;
     }
     if (this.isShadowReceiver(object)) {

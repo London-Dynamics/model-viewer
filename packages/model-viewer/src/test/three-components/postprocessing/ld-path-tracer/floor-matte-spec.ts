@@ -24,6 +24,8 @@ suite('path tracer floor matte', () => {
     expect(normalizePathTracerFloorMode('shadow')).to.equal('shadow');
     expect(normalizePathTracerFloorMode('shadow-reflection'))
         .to.equal('shadow-reflection');
+    expect(normalizePathTracerFloorMode('regular')).to.equal('regular');
+    expect(normalizePathTracerFloorMode('plain')).to.equal('regular');
     expect(normalizePathTracerFloorMode('')).to.equal('shadow');
     expect(normalizePathTracerFloorMode('1')).to.equal('shadow');
     expect(normalizePathTracerFloorMode(true)).to.equal('shadow');
