@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, FloatType, HalfFloatType, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, NoColorSpace, NoToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, RepeatWrapping, SRGBColorSpace, Texture, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
+import {Box3, Camera, CanvasTexture, Color, ColorManagement, DataTexture, DoubleSide, Euler, FloatType, HalfFloatType, LinearFilter, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, NearestFilter, NeutralToneMapping, NoBlending, NoColorSpace, NoToneMapping, Object3D, PerspectiveCamera, PlaneGeometry, RGBAFormat, RepeatWrapping, SRGBColorSpace, Texture, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer, WebGLRenderTarget, WebGPUCoordinateSystem,} from 'three';
 import {MeshBasicNodeMaterial, RenderTarget, StorageTexture} from 'three/webgpu';
 import {dot, float, max, min, mix, select, smoothstep, sRGBTransferEOTF, sRGBTransferOETF, texture, uniform, vec3, vec4, viewportUV, wgslFn} from 'three/tsl';
 import {toneMapping} from 'three/tsl';
@@ -33,6 +33,7 @@ import {collectMaterialRecords, diffMaterialWatch, encodeMaterialRecords, Materi
 import {resolvePathTracerRenderScale} from './path-tracer-scale.js';
 import {isCrossOriginScript, PathTracerBVHWorker, pathTracerBvhWorkerScriptUrl} from './PathTracerBVHWorker.js';
 import {catcherPlane, DEFAULT_FLOOR_EXTENT, DEFAULT_FLOOR_REFLECTION, effectiveFloorMode, FLOOR_OCCLUSION_SAMPLES, FloorFootprint, footprintFromBounds, PathTracerFloorMode, rectCorners, screenBoundsOfWorldPoints, traceAreaPercent, unionCrops,} from './floor-matte.js';
+import {parseShadowEnvironmentRotation, traceClipPlanes} from './trace-clip.js';
 import {PathTracerFloorPreview} from './floor-preview.js';
 import {coverageMarginPixels, expandCropForDenoiseEdge, measureTraceCoverage, TraceCoverageMeasure, TraceCrop,} from './trace-coverage.js';
 import {PATH_TRACER_UNAVAILABLE_EVENT, WebGPUPathTracerSession} from './WebGPUPathTracerSession.js';
@@ -270,6 +271,8 @@ export interface PathTracerOptions {
    * from the camera, this environment) and composites the floor underneath.
    */
   shadowEnvironmentImage: string;
+  /** Euler degrees, independent of the main environment rotation. */
+  shadowEnvironmentRotation: string;
   paused: boolean;
   frameBudget: number;
   multipleImportanceSampling: boolean;
@@ -312,6 +315,7 @@ export const DEFAULT_PATH_TRACER_OPTIONS: PathTracerOptions = {
   floorOpacity: 1,
   floorExtent: DEFAULT_FLOOR_EXTENT,
   shadowEnvironmentImage: '',
+  shadowEnvironmentRotation: '0 0 0',
   paused: false,
   // 0.0.27 cannot grow the dispatch on its own. This is the budget the
   // vendor demo settles on for a full-resolution frame.
@@ -342,6 +346,10 @@ export class LDPathTracerComposer implements EffectComposerInterface {
   private regularFloorTexture: DataTexture|null = null;
   /** Scene camera plus the floor layer. The raster camera stays on layer 0. */
   private readonly floorTraceCamera = new PerspectiveCamera();
+  private readonly traceClipBox = new Box3();
+  private readonly traceObjectBox = new Box3();
+  private readonly traceClipCorner = new Vector3();
+  private readonly savedEnvironmentRotation = new Euler();
   private readonly floorPreview = new PathTracerFloorPreview();
   private floorMode: PathTracerFloorMode = 'none';
   private shadowPhase: 'off'|'model'|'shadow'|'ready' = 'off';
@@ -614,6 +622,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     if (this.shadowPhase === 'ready') {
       this.pathTracer.pause = true;
       this.pathTracer.show(true);
+      this.revealFinishedShadow();
       this.maybeMarkReady();
       return;
     }
@@ -751,9 +760,13 @@ export class LDPathTracerComposer implements EffectComposerInterface {
           current !== next;
     });
 
+    const nextSplits = nextOptions.shadowEnvironmentImage.trim() !== '' &&
+        nextOptions.floor === 'regular';
     const shadowChanged = nextOptions.shadowEnvironmentImage !==
             this.options.shadowEnvironmentImage ||
-        nextOptions.floor !== this.options.floor;
+        nextOptions.floor !== this.options.floor ||
+        (nextSplits && nextOptions.shadowEnvironmentRotation !==
+             this.options.shadowEnvironmentRotation);
     this.options = nextOptions;
     if (shadowChanged) {
       this.restartShadowSplit();
@@ -1403,11 +1416,27 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       return false;
     }
     const previous = scene.environment;
+    this.savedEnvironmentRotation.copy(scene.environmentRotation);
+    const rotation = parseShadowEnvironmentRotation(
+        this.options.shadowEnvironmentRotation);
     scene.environment = texture;
+    scene.environmentRotation.set(
+        rotation.x * Math.PI / 180,
+        rotation.y * Math.PI / 180,
+        rotation.z * Math.PI / 180,
+        'XYZ');
     pathTracer.updateEnvironment();
     scene.environment = previous;
+    scene.environmentRotation.copy(this.savedEnvironmentRotation);
     this.shadowEnvironmentLocked = true;
     return true;
+  }
+
+  /** The settle frame returns before the fade, so the composite would stay invisible. */
+  private revealFinishedShadow() {
+    this.traceOpacity = 1;
+    this.pathTracer?.show(true);
+    this.pathTracer?.setOpacity(1);
   }
 
   private beginShadowPass() {
@@ -1498,6 +1527,8 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     }
     this.shadowCompositeTexture?.dispose();
     const map = new CanvasTexture(source);
+    // WebGPU applies flipY. The default leaves the composite upside down.
+    map.flipY = false;
     map.colorSpace = SRGBColorSpace;
     map.needsUpdate = true;
     this.shadowCompositeTexture = map;
@@ -1543,6 +1574,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
     this.shadowPassTiming = this.readPassTiming();
     if (this.modelPassCanvas == null) {
       this.shadowPhase = 'ready';
+      this.revealFinishedShadow();
       return;
     }
     const composite = this.compositePasses(this.modelPassCanvas, copy);
@@ -1551,6 +1583,7 @@ export class LDPathTracerComposer implements EffectComposerInterface {
       this.presentShadowComposite(composite);
     }
     this.shadowPhase = 'ready';
+    this.revealFinishedShadow();
     const session = this.pathTracer;
     if (session != null) {
       session.pause = true;
@@ -2084,30 +2117,102 @@ export class LDPathTracerComposer implements EffectComposerInterface {
    * The denoiser paints its guides with the trace camera, so that camera has
    * to include the floor layer or the plane is absent from the albedo and
    * the filter spreads its light across the model.
+   *
+   * Rays also die at this camera's far plane. The viewer's plane follows the
+   * auto orbit, which shrinks when the field of view widens, so a pinned
+   * zoomed-out camera can clip the cabinet. The trace camera gets its own
+   * near and far around the model and the floor.
    */
   private cameraForTrace(camera: Camera): Camera {
-    if (this.regularFloor?.parent == null) {
-      return camera;
-    }
     if (!(camera instanceof PerspectiveCamera)) {
-      camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
+      if (this.regularFloor?.parent != null) {
+        camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
+      }
       return camera;
     }
-    if (camera === this.camera) {
-      const trace = this.floorTraceCamera;
-      // The view camera is parented to the orbit rig. Copy the world matrix
-      // and keep it: updating from the local matrix would drop that parent.
-      trace.copy(camera);
-      trace.coordinateSystem = camera.coordinateSystem;
-      trace.matrixAutoUpdate = false;
-      trace.matrixWorldAutoUpdate = false;
-      trace.matrixWorldNeedsUpdate = false;
-      trace.layers.mask = camera.layers.mask;
+    const trace = camera === this.camera ? this.detachTraceCamera(camera) :
+                                           camera;
+    trace.coordinateSystem = WebGPUCoordinateSystem;
+    if (this.regularFloor?.parent != null) {
       trace.layers.enable(PATH_TRACER_FLOOR_LAYER);
-      return trace;
     }
-    camera.layers.enable(PATH_TRACER_FLOOR_LAYER);
-    return camera;
+    this.fitTraceClip(trace);
+    return trace;
+  }
+
+  /**
+   * The view camera is parented to the orbit rig. Copy the world matrix and
+   * keep it: updating from the local matrix would drop that parent.
+   */
+  private detachTraceCamera(camera: PerspectiveCamera): PerspectiveCamera {
+    const trace = this.floorTraceCamera;
+    trace.copy(camera);
+    trace.matrixAutoUpdate = false;
+    trace.matrixWorldAutoUpdate = false;
+    trace.matrixWorldNeedsUpdate = false;
+    trace.layers.mask = camera.layers.mask;
+    return trace;
+  }
+
+  private fitTraceClip(camera: PerspectiveCamera) {
+    const scene = this.scene;
+    if (scene == null) {
+      return;
+    }
+    const box = this.traceClipBox.makeEmpty();
+    const bounds = scene.boundingBox;
+    if (!bounds.isEmpty()) {
+      scene.target.updateWorldMatrix(true, false);
+      box.copy(bounds).applyMatrix4(scene.target.matrixWorld);
+    }
+    if (this.regularFloor?.parent != null) {
+      this.expandTraceClipBox(box, this.regularFloor);
+    }
+    if (this.shadowCatcher?.parent != null) {
+      this.expandTraceClipBox(box, this.shadowCatcher);
+    }
+    if (box.isEmpty()) {
+      return;
+    }
+
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    let nearest = Infinity;
+    let farthest = 0;
+    const {min, max} = box;
+    for (const x of [min.x, max.x]) {
+      for (const y of [min.y, max.y]) {
+        for (const z of [min.z, max.z]) {
+          const depth = -this.traceClipCorner.set(x, y, z)
+                            .applyMatrix4(camera.matrixWorldInverse)
+                            .z;
+          if (!Number.isFinite(depth) || depth <= 1e-4) {
+            continue;
+          }
+          nearest = Math.min(nearest, depth);
+          farthest = Math.max(farthest, depth);
+        }
+      }
+    }
+    const planes = traceClipPlanes(nearest, farthest);
+    if (planes == null) {
+      return;
+    }
+    camera.near = planes.near;
+    camera.far = planes.far;
+    camera.updateProjectionMatrix();
+  }
+
+  private expandTraceClipBox(box: Box3, object: Object3D) {
+    object.updateWorldMatrix(true, false);
+    const measured = this.traceObjectBox.setFromObject(object);
+    if (measured.isEmpty()) {
+      return;
+    }
+    if (box.isEmpty()) {
+      box.copy(measured);
+      return;
+    }
+    box.union(measured);
   }
 
   private prepareCoverageCamera(source: PerspectiveCamera): PerspectiveCamera {

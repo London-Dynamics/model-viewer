@@ -88,9 +88,17 @@
       }
 
       .panel select,
-      .panel button {
+      .panel button,
+      .panel input[type='text'],
+      .panel input[type='number'] {
         box-sizing: border-box;
         width: 100%;
+      }
+
+      .panel .rotations {
+        display: grid;
+        gap: 0.35rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .panel .links a {
@@ -157,6 +165,28 @@
           Reflection
           <input id="reflection" type="range" min="0" max="1" step="0.05" value="0.2" />
         </label>
+        <label>
+          Shadow HDR
+          <input id="shadow-hdr" type="checkbox" />
+        </label>
+        <label>
+          Shadow HDR URL
+          <input id="shadow-hdr-url" type="text" placeholder="https://….hdr" />
+        </label>
+        <div class="rotations">
+          <label>
+            Rot X
+            <input id="shadow-rot-x" type="number" step="1" value="0" />
+          </label>
+          <label>
+            Rot Y
+            <input id="shadow-rot-y" type="number" step="1" value="0" />
+          </label>
+          <label>
+            Rot Z
+            <input id="shadow-rot-z" type="number" step="1" value="0" />
+          </label>
+        </div>
         <p id="crop">Crop —</p>
         <button id="clear" type="button">Clear caches</button>
         <p id="run-label">Starting</p>
@@ -237,6 +267,12 @@
         'shadow-reflection': 'Shadow and reflection',
       };
 
+      const shadowToggle = document.querySelector('#shadow-hdr');
+      const shadowUrlInput = document.querySelector('#shadow-hdr-url');
+      const shadowRotX = document.querySelector('#shadow-rot-x');
+      const shadowRotY = document.querySelector('#shadow-rot-y');
+      const shadowRotZ = document.querySelector('#shadow-rot-z');
+
       const caseSelect = document.querySelector('#case');
       const presetSelect = document.querySelector('#preset');
       const floorSelect = document.querySelector('#floor');
@@ -294,6 +330,15 @@
       presetSelect.value = presetId;
       floorSelect.value = floorMode;
       reflectionInput.value = String(reflection);
+      const initialShadow = params.get('shadowHdr') ?? '';
+      const initialRot = (params.get('shadowRot') ?? '0 0 0')
+          .split(/[\s,]+/)
+          .filter((part) => part !== '');
+      shadowToggle.checked = initialShadow !== '';
+      shadowUrlInput.value = initialShadow;
+      shadowRotX.value = initialRot[0] ?? '0';
+      shadowRotY.value = initialRot[1] ?? '0';
+      shadowRotZ.value = initialRot[2] ?? '0';
 
       const format = (ms) => {
         if (ms == null || !Number.isFinite(ms)) return '—';
@@ -375,7 +420,7 @@
         url.searchParams.set('preset', presetId);
         url.searchParams.set('floor', floorMode);
         url.searchParams.set('reflection', String(reflection));
-        for (const key of ['w', 'h', 'fov', 'orbit', 'target', 'shadowHdr', 'coverage', 'src', 'hdr']) {
+        for (const key of ['w', 'h', 'fov', 'orbit', 'target', 'shadowHdr', 'shadowRot', 'camera', 'coverage', 'src', 'hdr']) {
           const value = params.get(key);
           if (value) url.searchParams.set(key, value);
         }
@@ -429,10 +474,13 @@
         viewer.setAttribute('shadow-intensity', '0');
         viewer.setAttribute('shadow-softness', '0');
         viewer.setAttribute('environment-image', test.hdr);
-        const shadowHdr = params.get('shadowHdr');
-        if (shadowHdr) {
+        const shadowHdr = shadowUrlInput.value.trim();
+        if (shadowToggle.checked && shadowHdr) {
           viewer.setAttribute('shadow-environment-image', shadowHdr);
         }
+        viewer.setAttribute(
+            'shadow-environment-rotation',
+            `${shadowRotX.value || 0} ${shadowRotY.value || 0} ${shadowRotZ.value || 0}`);
         viewer.setAttribute('path-tracer', '');
         viewer.setAttribute('path-tracer-samples', '16');
         viewer.setAttribute('path-tracer-bounces', '15');
@@ -449,21 +497,23 @@
         viewer.setAttribute('path-tracer-floor', floorMode);
         viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
         if (test.bounds) viewer.setAttribute('bounds', test.bounds);
-        for (const [key, value] of Object.entries(test.camera ?? {})) {
-          viewer.setAttribute(key, value);
+        if (params.get('camera') !== 'auto') {
+          for (const [key, value] of Object.entries(test.camera ?? {})) {
+            viewer.setAttribute(key, value);
+          }
+          const fovParam = params.get('fov');
+          if (fovParam) {
+            // Default max is 30°. A wider fov param has to raise the clamp first.
+            viewer.setAttribute('max-field-of-view', '90deg');
+            viewer.setAttribute(
+                'field-of-view',
+                /deg$|rad$/i.test(fovParam) ? fovParam : `${fovParam}deg`);
+          }
+          const orbitParam = params.get('orbit');
+          if (orbitParam) viewer.setAttribute('camera-orbit', orbitParam);
+          const targetParam = params.get('target');
+          if (targetParam) viewer.setAttribute('camera-target', targetParam);
         }
-        const fovParam = params.get('fov');
-        if (fovParam) {
-          // Default max is 30°. A wider fov param has to raise the clamp first.
-          viewer.setAttribute('max-field-of-view', '90deg');
-          viewer.setAttribute(
-              'field-of-view',
-              /deg$|rad$/i.test(fovParam) ? fovParam : `${fovParam}deg`);
-        }
-        const orbitParam = params.get('orbit');
-        if (orbitParam) viewer.setAttribute('camera-orbit', orbitParam);
-        const targetParam = params.get('target');
-        if (targetParam) viewer.setAttribute('camera-target', targetParam);
         const frameW = Number(params.get('w'));
         const frameH = Number(params.get('h'));
         if (frameW >= 16 && frameH >= 16) {
@@ -495,7 +545,8 @@
         let firstFrameAt = null;
         viewer.addEventListener('load', () => {
           glbAt = performance.now();
-          if (params.get('fov') || params.get('orbit') || params.get('target')) {
+          if (params.get('camera') !== 'auto' &&
+              (params.get('fov') || params.get('orbit') || params.get('target'))) {
             const fovParam = params.get('fov');
             if (fovParam) {
               viewer.setAttribute('max-field-of-view', '90deg');
@@ -649,6 +700,30 @@
           viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
         }
       });
+      const applyShadowControls = () => {
+        const rotation =
+            `${shadowRotX.value || 0} ${shadowRotY.value || 0} ${shadowRotZ.value || 0}`;
+        const url = shadowUrlInput.value.trim();
+        params.set('shadowRot', rotation);
+        if (shadowToggle.checked && url) {
+          params.set('shadowHdr', url);
+        } else {
+          params.delete('shadowHdr');
+        }
+        writeUrl();
+        if (!viewer) return;
+        viewer.setAttribute('shadow-environment-rotation', rotation);
+        if (shadowToggle.checked && url) {
+          viewer.setAttribute('shadow-environment-image', url);
+        } else {
+          viewer.removeAttribute('shadow-environment-image');
+        }
+      };
+      shadowToggle.addEventListener('change', applyShadowControls);
+      shadowUrlInput.addEventListener('change', applyShadowControls);
+      shadowRotX.addEventListener('change', applyShadowControls);
+      shadowRotY.addEventListener('change', applyShadowControls);
+      shadowRotZ.addEventListener('change', applyShadowControls);
       document.querySelector('#clear').addEventListener('click', async () => {
         await clearCaches();
         start();

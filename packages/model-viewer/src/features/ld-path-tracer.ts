@@ -70,6 +70,7 @@ export declare interface LDPathTracerInterface {
   pathTracerFloorMetalness: number;
   pathTracerFloorOpacity: number;
   shadowEnvironmentImage: string|null;
+  shadowEnvironmentRotation: string|null;
   pathTracerPaused: boolean;
   pathTracerFrameBudget: number;
   pathTracerMultipleImportanceSampling: boolean;
@@ -243,6 +244,13 @@ export const LDPathTracerMixin = <
     /** Second HDR for the path-tracer shadow pass. Empty leaves one pass. */
     @property({type: String, attribute: 'shadow-environment-image'})
     shadowEnvironmentImage: string|null = '';
+
+    /**
+     * Euler rotation of the shadow HDR, in degrees, "x y z". Independent of
+     * the main environment rotation. Empty is 0 0 0.
+     */
+    @property({type: String, attribute: 'shadow-environment-rotation'})
+    shadowEnvironmentRotation: string|null = '';
 
     private shadowEnvironmentGeneration = 0;
 
@@ -462,6 +470,7 @@ export const LDPathTracerMixin = <
         'pathTracerFloorMetalness',
         'pathTracerFloorOpacity',
         'shadowEnvironmentImage',
+        'shadowEnvironmentRotation',
         'pathTracerPaused',
         'pathTracerFrameBudget',
         'pathTracerMultipleImportanceSampling',
@@ -698,6 +707,8 @@ export const LDPathTracerMixin = <
                 this.pathTracerFloorExtent :
                 DEFAULT_PATH_TRACER_OPTIONS.floorExtent),
         shadowEnvironmentImage: (this.shadowEnvironmentImage ?? '').trim(),
+        shadowEnvironmentRotation:
+            (this.shadowEnvironmentRotation ?? '').trim(),
         paused: this.pathTracerPaused,
         frameBudget: Math.max(1, Math.floor(this.pathTracerFrameBudget)),
         multipleImportanceSampling: this.pathTracerMultipleImportanceSampling,
