@@ -61,6 +61,24 @@
         width: 100%;
       }
 
+      /* Page background only. Transparent trace pixels show the checks. */
+      body.checker-bg {
+        background-color: #f2f2f2;
+        background-image:
+          linear-gradient(45deg, #e6e6e6 25%, transparent 25%),
+          linear-gradient(-45deg, #e6e6e6 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #e6e6e6 75%),
+          linear-gradient(-45deg, transparent 75%, #e6e6e6 75%);
+        background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+        background-size: 32px 32px;
+      }
+
+      body.checker-bg .shell,
+      body.checker-bg .stage,
+      body.checker-bg .stage model-viewer {
+        background: transparent;
+      }
+
       .panel {
         background: #fff;
         border-left: 1px solid #bdbdbd;
@@ -160,6 +178,10 @@
         <label>
           Floor
           <select id="floor"></select>
+        </label>
+        <label>
+          Checker background
+          <input id="checker" type="checkbox" />
         </label>
         <label>
           Reflection
@@ -267,6 +289,7 @@
         'shadow-reflection': 'Shadow and reflection',
       };
 
+      const checkerToggle = document.querySelector('#checker');
       const shadowToggle = document.querySelector('#shadow-hdr');
       const shadowUrlInput = document.querySelector('#shadow-hdr-url');
       const shadowRotX = document.querySelector('#shadow-rot-x');
@@ -334,6 +357,7 @@
       const initialRot = (params.get('shadowRot') ?? '0 0 0')
           .split(/[\s,]+/)
           .filter((part) => part !== '');
+      checkerToggle.checked = params.get('checker') === '1';
       shadowToggle.checked = initialShadow !== '';
       shadowUrlInput.value = initialShadow;
       shadowRotX.value = initialRot[0] ?? '0';
@@ -420,6 +444,11 @@
         url.searchParams.set('preset', presetId);
         url.searchParams.set('floor', floorMode);
         url.searchParams.set('reflection', String(reflection));
+        if (checkerToggle.checked) {
+          url.searchParams.set('checker', '1');
+        } else {
+          url.searchParams.delete('checker');
+        }
         for (const key of ['w', 'h', 'fov', 'orbit', 'target', 'shadowHdr', 'shadowRot', 'camera', 'coverage', 'src', 'hdr']) {
           const value = params.get(key);
           if (value) url.searchParams.set(key, value);
@@ -719,6 +748,11 @@
           viewer.removeAttribute('shadow-environment-image');
         }
       };
+      const applyChecker = () => {
+        document.body.classList.toggle('checker-bg', checkerToggle.checked);
+        writeUrl();
+      };
+      checkerToggle.addEventListener('change', applyChecker);
       shadowToggle.addEventListener('change', applyShadowControls);
       shadowUrlInput.addEventListener('change', applyShadowControls);
       shadowRotX.addEventListener('change', applyShadowControls);
@@ -729,7 +763,7 @@
         start();
       });
 
-      writeUrl();
+      applyChecker();
       start();
     </script>
   </body>
