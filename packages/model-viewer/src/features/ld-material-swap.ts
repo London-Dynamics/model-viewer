@@ -71,8 +71,15 @@ export interface MaterialSwapApplied {
   meshes: string[];
 }
 
+export interface MaterialSwapFailed {
+  key: string;
+  url: string;
+  reason: string;
+}
+
 export interface MaterialSwapResult {
   applied: MaterialSwapApplied[];
+  failed: MaterialSwapFailed[];
   missingTargets: string[];
   warnings: string[];
   quality: MaterialSwapQuality;
@@ -137,6 +144,18 @@ const $ownedSwaps = Symbol('ownedSwaps');
 
 let sharedCache: MaterialSwapCache|null = null;
 let sharedThreshold = DEFAULT_MATERIAL_SWAP_CACHE_SIZE;
+
+function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener('abort', () => controller.abort(), {once: true});
+  }
+  return controller.signal;
+}
 
 export function getMaterialSwapCache(): MaterialSwapCache {
   if (sharedCache == null) {
@@ -272,31 +291,50 @@ export const LDMaterialSwapMixin = <
         const cache = getMaterialSwapCache();
         const load = this.materialFileLoader();
         const byCacheKey = new Map<string, CachedMaterialFile>();
+        const failed: MaterialSwapFailed[] = [];
+        
         for (const winner of winners) {
           if (this.swapStale(generation, model)) {
             this.abandonLoaded(loaded);
-            return this.finishSwap(this.changedResult(quality, missingTargets));
+            return this.finishSwap(
+                this.changedResult(quality, missingTargets, failed));
           }
           const key = materialSwapCacheKey(winner.request.url, quality);
           let cached = byCacheKey.get(key);
           if (cached == null) {
-            cached = await cache.acquire(
-                winner.request.url, quality, load, options?.signal);
-            loaded.push(cached);
-            byCacheKey.set(key, cached);
+            try {
+              cached = await this.acquireWithTimeout(
+                  cache, winner.request.url, quality, load, options?.signal);
+              loaded.push(cached);
+              byCacheKey.set(key, cached);
+            } catch (error) {
+              const reason = this.formatLoadError(error);
+              console.warn(
+                  `[model-viewer] Skipping material swap for "${
+                      winner.request.url}": ${reason}`);
+              failed.push({
+                key: winner.instanceKey,
+                url: winner.request.url,
+                reason,
+              });
+            }
           }
         }
 
         if (this.swapStale(generation, model)) {
           this.abandonLoaded(loaded);
-          return this.finishSwap(this.changedResult(quality, missingTargets));
+          return this.finishSwap(
+              this.changedResult(quality, missingTargets, failed));
         }
 
         const warnings: string[] = [];
         const applied: MaterialSwapApplied[] = [];
         for (const winner of winners) {
           const key = materialSwapCacheKey(winner.request.url, quality);
-          const cached = byCacheKey.get(key)!;
+          const cached = byCacheKey.get(key);
+          if (cached == null) {
+            continue;
+          }
           for (const warning of cached.warnings) {
             if (warnings.indexOf(warning) === -1) {
               warnings.push(warning);
@@ -312,7 +350,7 @@ export const LDMaterialSwapMixin = <
             if (this.swapStale(generation, model)) {
               this.abandonLoaded(loaded);
               return this.finishSwap(
-                  this.changedResult(quality, missingTargets));
+                  this.changedResult(quality, missingTargets, failed));
             }
           }
           applied.push({
@@ -324,7 +362,15 @@ export const LDMaterialSwapMixin = <
           });
         }
 
-        return this.finishSwap({applied, missingTargets, warnings, quality});
+        if (applied.length === 0 && failed.length > 0) {
+          this.failSwap({
+            reason: 'load',
+            message:
+                `All ${failed.length} material swap(s) failed to load or parse`,
+          });
+        }
+
+        return this.finishSwap({applied, failed, missingTargets, warnings, quality});
       } catch (error) {
         this.abandonLoaded(loaded);
         if (error instanceof MaterialSwapError) {
@@ -433,11 +479,50 @@ export const LDMaterialSwapMixin = <
       return this[$swapGeneration] !== generation || host.model !== model;
     }
 
+    private async acquireWithTimeout(
+        cache: MaterialSwapCache, logicalUrl: string,
+        quality: MaterialSwapQuality, load: MaterialFileLoader,
+        signal?: AbortSignal): Promise<CachedMaterialFile> {
+      const TIMEOUT_MS = 10000;
+      const timeoutController = new AbortController();
+      const combinedSignal = signal ?
+          combineAbortSignals([signal, timeoutController.signal]) :
+          timeoutController.signal;
+
+      const timeoutId = setTimeout(() => {
+        timeoutController.abort();
+      }, TIMEOUT_MS);
+
+      try {
+        return await cache.acquire(logicalUrl, quality, load, combinedSignal);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    private formatLoadError(error: unknown): string {
+      if ((error as Error)?.name === 'AbortError') {
+        return 'Fetch timeout (10s exceeded)';
+      }
+      const message = errorMessage(error);
+      if (message.includes('Material file has no materials')) {
+        return 'GLB has no materials';
+      }
+      if (message.includes('404')) {
+        return '404 Not Found';
+      }
+      if (message.includes('fetch') || message.includes('network')) {
+        return 'Network error';
+      }
+      return message;
+    }
+
     private changedResult(
-        quality: MaterialSwapQuality,
-        missingTargets: string[]): MaterialSwapResult {
+        quality: MaterialSwapQuality, missingTargets: string[],
+        failed: MaterialSwapFailed[]): MaterialSwapResult {
       return {
         applied: [],
+        failed,
         missingTargets,
         warnings: [
           'The model changed before the material swap was applied.',
