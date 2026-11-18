@@ -107,7 +107,7 @@
     "utility-types": "3.11.0"
   },
   "peerDependencies": {
-    "three": "^0.172.0"
+    "three": "^0.185.0"
   },
   "devDependencies": {
     "@london-dynamics/types": "0.1.8",
@@ -120,7 +120,7 @@
     "@types/chai": "^4.3.19",
     "@types/mocha": "^10.0.10",
     "@types/pngjs": "^6.0.5",
-    "@types/three": "^0.172.0",
+    "@types/three": "^0.185.0",
     "@ungap/event-target": "^0.2.4",
     "@web/test-runner": "^0.20.0",
     "@web/test-runner-playwright": "^0.11.0",
@@ -133,7 +133,7 @@
     "rollup-plugin-dts": "^6.1.1",
     "rollup-plugin-polyfill": "^4.2.0",
     "terser": "^5.39.0",
-    "three": "^0.172.0",
+    "three": "^0.185.0",
     "typescript": "5.8.2"
   },
   "publishConfig": {
