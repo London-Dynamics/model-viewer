@@ -17,7 +17,7 @@ import {ModelViewerElement} from '@google/model-viewer';
 import {Renderer} from '@google/model-viewer/lib/three-components/Renderer.js';
 import {HSL} from 'three';
 
-import {getOwnPropertySymbolValue} from '../utilities.js';
+import {getOwnPropertySymbolValue, neutralizeLegacyPivot} from '../utilities.js';
 
 export const timePasses = (ms: number = 0): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,6 +163,7 @@ export const spy =
 export const createModelViewerElement =
     (src: string|null): ModelViewerElement => {
       const element = new ModelViewerElement();
+      neutralizeLegacyPivot(getOwnPropertySymbolValue(element, 'scene'));
       document.body.insertBefore(element, document.body.firstChild);
       element.src = src;
       return element;

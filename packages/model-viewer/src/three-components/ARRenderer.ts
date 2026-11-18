@@ -381,12 +381,13 @@ export class ARRenderer extends EventDispatcher<
         this.selectedController.userData.line.visible = false;
         if (scene.canScale) {
           this.isTwoFingering = true;
-          this.firstRatio = this.controllerSeparation() / scene.pivot.scale.x;
+          this.firstRatio =
+              this.controllerSeparation() / scene.pivotNode.scale.x;
           this.scaleLine.visible = true;
         }
       }
 
-      controller.attach(scene.pivot);
+      controller.attach(scene.pivotNode);
       this.selectedController = controller;
 
       scene.setShadowIntensity(0.01);
@@ -397,7 +398,7 @@ export class ARRenderer extends EventDispatcher<
 
       this.relativeOrientation.copy(controller.quaternion)
           .invert()
-          .multiply(scene.pivot.getWorldQuaternion(quaternion));
+          .multiply(scene.pivotNode.getWorldQuaternion(quaternion));
 
       otherController.userData.turning = false;
       controller.userData.turning = true;
@@ -417,12 +418,13 @@ export class ARRenderer extends EventDispatcher<
     }
     const scene = this.presentedScene!;
     // drop on floor
-    scene.attach(scene.pivot);
+    scene.attach(scene.pivotNode);
     this.selectedController = null;
     this.goalYaw = Math.atan2(
-        scene.pivot.matrix.elements[8], scene.pivot.matrix.elements[10]);
-    this.goalPosition.x = scene.pivot.position.x;
-    this.goalPosition.z = scene.pivot.position.z;
+        scene.pivotNode.matrix.elements[8],
+        scene.pivotNode.matrix.elements[10]);
+    this.goalPosition.x = scene.pivotNode.position.x;
+    this.goalPosition.z = scene.pivotNode.position.z;
   };
 
   /**
@@ -481,8 +483,8 @@ export class ARRenderer extends EventDispatcher<
       const scene = this.presentedScene!;
       this.applySrcIsRoomForAR(scene);
       this.placementBox!.dispose();
-      this.placementBox = new PlacementBox(
-          scene, this.placeOnWall ? 'back' : 'bottom');
+      this.placementBox =
+          new PlacementBox(scene, this.placeOnWall ? 'back' : 'bottom');
     }
   };
 
@@ -541,10 +543,10 @@ export class ARRenderer extends EventDispatcher<
         this.xrLight = null;
       }
 
-      scene.add(scene.pivot);
-      scene.pivot.quaternion.set(0, 0, 0, 1);
-      scene.pivot.position.set(0, 0, 0);
-      scene.pivot.scale.set(1, 1, 1);
+      scene.add(scene.pivotNode);
+      scene.pivotNode.quaternion.set(0, 0, 0, 1);
+      scene.pivotNode.position.set(0, 0, 0);
+      scene.pivotNode.scale.set(1, 1, 1);
       scene.setShadowOffset(0);
       const yaw = this.turntableRotation;
       if (yaw != null) {
@@ -677,7 +679,7 @@ export class ARRenderer extends EventDispatcher<
 
   private placeInitially() {
     const scene = this.presentedScene!;
-    const {pivot, element} = scene;
+    const {pivotNode: pivot, element} = scene;
     const {position} = pivot;
     const xrCamera = scene.getCamera();
 
@@ -811,7 +813,7 @@ export class ARRenderer extends EventDispatcher<
       box.show = true;
       this.isTwoFingering = true;
       const {separation} = this.fingerPolar(fingers);
-      this.firstRatio = separation / scene.pivot.scale.x;
+      this.firstRatio = separation / scene.pivotNode.scale.x;
     }
   };
 
@@ -860,7 +862,7 @@ export class ARRenderer extends EventDispatcher<
     }
     const fingers = frame.getHitTestResultsForTransientInput(hitSource);
     const scene = this.presentedScene!;
-    const scale = scene.pivot.scale.x;
+    const scale = scene.pivotNode.scale.x;
 
     // Rotating, translating and scaling are mutually exclusive operations; only
     // one can happen at a time, but we can switch during a gesture.
@@ -936,7 +938,7 @@ export class ARRenderer extends EventDispatcher<
 
   private moveScene(delta: number) {
     const scene = this.presentedScene!;
-    const {pivot} = scene;
+    const {pivotNode: pivot} = scene;
     const box = this.placementBox!;
     box.updateOpacity(delta);
 
@@ -975,11 +977,11 @@ export class ARRenderer extends EventDispatcher<
       this.scaleLine.lookAt(this.controller2.position);
     }
 
-    const oldScale = scene.pivot.scale.x;
+    const oldScale = scene.pivotNode.scale.x;
     if (this.goalScale !== oldScale) {
       const newScale =
           this.scaleDamper.update(oldScale, this.goalScale, delta, 1);
-      scene.pivot.scale.set(newScale, newScale, newScale);
+      scene.pivotNode.scale.set(newScale, newScale, newScale);
     }
 
     if (pivot.parent !== scene) {
@@ -1001,7 +1003,7 @@ export class ARRenderer extends EventDispatcher<
       if (this.xrMode === 'screen-space' && !this.isTranslating) {
         const offset = goal.y - y;
         if (this.placementComplete && this.placeOnWall === false) {
-          box.offsetHeight = offset / scene.pivot.scale.x;
+          box.offsetHeight = offset / scene.pivotNode.scale.x;
           scene.setShadowOffset(offset);
         } else if (offset === 0) {
           this.placementComplete = true;
@@ -1016,9 +1018,9 @@ export class ARRenderer extends EventDispatcher<
     scene.updateTarget(delta);
     // yaw must be updated last, since this also updates the shadow position.
     quaternion.setFromAxisAngle(vector3.set(0, 1, 0), this.goalYaw);
-    const angle = scene.pivot.quaternion.angleTo(quaternion);
+    const angle = scene.pivotNode.quaternion.angleTo(quaternion);
     const angleStep = angle - this.yawDamper.update(angle, 0, delta, Math.PI);
-    scene.pivot.quaternion.rotateTowards(quaternion, angleStep);
+    scene.pivotNode.quaternion.rotateTowards(quaternion, angleStep);
     // camera changes on every frame - user-interaction only if touching the
     // screen, plus damping time.
     scene.element.dispatchEvent(new CustomEvent<CameraChangeDetails>(

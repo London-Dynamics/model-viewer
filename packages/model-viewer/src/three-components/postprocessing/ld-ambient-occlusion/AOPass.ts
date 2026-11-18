@@ -641,26 +641,18 @@ class AOPass extends Pass {
 
 	prepareModelDepth( renderer ) {
 
-		if ( !this.environmentRootAffectsDepth() ) {
-
-			if ( this.sceneDepthTexture ) {
-
-				this.bindSamplingDepth( this.sceneDepthTexture );
-
-			}
-
-			this.syncOcclusionMask( false );
-			return;
-
-		}
-
+		// The beauty pass depth lives on the composer's multisampled target.
+		// On three r185 that depth texture stays at the clear value, so SAO
+		// never sees a surface unless an environment model already forced a
+		// second, non-multisampled depth pass. Always sample that pass.
+		const mask = this.environmentRootAffectsDepth();
 		this.ensureModelDepthTarget();
-		const root = this.scene.environmentRoot;
-		const previousVisible = root.visible;
+		const root = mask ? this.scene.environmentRoot : null;
+		const previousVisible = root ? root.visible : true;
 		const previousTarget = renderer.getRenderTarget();
 		const previousAutoClear = renderer.autoClear;
 		const previousShadowAutoUpdate = renderer.shadowMap.autoUpdate;
-		root.visible = false;
+		if ( root ) root.visible = false;
 
 		try {
 
@@ -672,7 +664,7 @@ class AOPass extends Pass {
 
 		} finally {
 
-			root.visible = previousVisible;
+			if ( root ) root.visible = previousVisible;
 			renderer.shadowMap.autoUpdate = previousShadowAutoUpdate;
 			renderer.autoClear = previousAutoClear;
 			renderer.setRenderTarget( previousTarget );
@@ -680,7 +672,7 @@ class AOPass extends Pass {
 		}
 
 		this.bindSamplingDepth( this.modelDepthTarget.depthTexture );
-		this.syncOcclusionMask( true );
+		this.syncOcclusionMask( mask );
 
 	}
 

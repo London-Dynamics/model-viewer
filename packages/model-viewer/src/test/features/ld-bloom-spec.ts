@@ -620,7 +620,11 @@ suite('LD Bloom', () => {
 
     const composer = getComposer(element);
     const outputPass = composer.outputPass!;
-    outputPass.fsQuad.render = () => {};
+    // three r185 renamed OutputPass.fsQuad to _fsQuad.
+    const quad = (outputPass as unknown as {_fsQuad?: {render: () => void}})
+                     ._fsQuad;
+    expect(quad, 'OutputPass fullscreen quad').to.not.equal(undefined);
+    quad!.render = () => {};
 
     const renderer = {
       autoClearColor: true,
