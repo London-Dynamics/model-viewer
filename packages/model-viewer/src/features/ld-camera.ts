@@ -117,11 +117,17 @@ export interface CameraAnimationOptions {
   stagger?: CameraStaggerOptions;
 }
 
-interface CameraPose {
+export interface CameraPose {
   position: Vector3;
   target: Vector3;
   fov?: number;
 }
+
+/**
+ * Where a move sits relative to the subject bounds. Exterior moves keep the
+ * direct and staggered paths. The other three use the crossing sampler.
+ */
+export type SubjectCrossing = 'exterior' | 'enter' | 'exit' | 'interior';
 
 /** Matches the guards LDControls setOrbit applies, to avoid gimbal lock. */
 const MIN_ORBIT_RADIUS = 0.0001;
@@ -1136,6 +1142,311 @@ function cameraCurve(
   return new CubicBezierCurve3(start.clone(), controlA, controlB, end.clone());
 }
 
+const WORLD_UP = new Vector3(0, 1, 0);
+const CAMERA_FORWARD = new Vector3(0, 0, -1);
+
+/**
+ * Eyes inside the subject bounds take the crossing path. An empty box cannot
+ * be entered. `avoidMargin` is not applied here — it only inflates the
+ * exterior avoidance volume.
+ */
+export function classifySubjectCrossing(
+  startEye: Vector3,
+  endEye: Vector3,
+  subject: Box3 | null
+): SubjectCrossing {
+  if (subject == null || subject.isEmpty()) {
+    return 'exterior';
+  }
+  const startInside = subject.containsPoint(startEye);
+  const endInside = subject.containsPoint(endEye);
+  if (startInside && endInside) {
+    return 'interior';
+  }
+  if (endInside) {
+    return 'enter';
+  }
+  if (startInside) {
+    return 'exit';
+  }
+  return 'exterior';
+}
+
+/**
+ * Progress where an enter move should still be holding the outgoing view.
+ * The arrival turn begins about one subject-radius out from the destination
+ * and always occupies the final 25–65% of the move.
+ */
+function crossingAlignment(
+  startEye: Vector3,
+  endEye: Vector3,
+  subject: Box3
+): number {
+  const travel = startEye.distanceTo(endEye);
+  const reach = Math.max(subject.getSize(new Vector3()).length() * 0.5, 1e-3);
+  if (travel < 1e-6) {
+    return 0.35;
+  }
+  return Math.min(0.75, Math.max(0.35, 1 - reach / travel));
+}
+
+/** Back-loaded turn: hold until `align`, then a cubic so the last step rotates. */
+function enterTurnProgress(t: number, align: number): number {
+  if (t <= align || align >= 1) {
+    return 0;
+  }
+  const u = (t - align) / (1 - align);
+  return u * u * u;
+}
+
+/** Front-loaded turn, finished by `1 - align` so the pull-out stays straight. */
+function exitTurnProgress(t: number, align: number): number {
+  const end = 1 - align;
+  if (end <= 1e-6 || t >= end) {
+    return 1;
+  }
+  const u = t / end;
+  return u * u * (3 - 2 * u);
+}
+
+/** Hold, then smoothstep out. Pairs with {@link exitTurnProgress}. */
+function exitMoveProgress(t: number, align: number): number {
+  const start = 1 - align;
+  if (t <= start) {
+    return 0;
+  }
+  if (start >= 1) {
+    return 1;
+  }
+  const u = (t - start) / (1 - start);
+  return u * u * (3 - 2 * u);
+}
+
+function quaternionLookingAt(eye: Vector3, target: Vector3): Quaternion {
+  const offset = target.clone().sub(eye);
+  if (offset.lengthSq() < 1e-12) {
+    offset.set(0, 0, -1);
+  }
+  const lookTarget = eye.clone().add(offset);
+  return new Quaternion().setFromRotationMatrix(
+    new Matrix4().lookAt(eye, lookTarget, WORLD_UP)
+  );
+}
+
+function cameraForward(quaternion: Quaternion): Vector3 {
+  return CAMERA_FORWARD.clone().applyQuaternion(quaternion);
+}
+
+/**
+ * Minimum correction that puts `aim` inside `halfFov`, faded out as `turn`
+ * takes over so the scripted arrival still lands on the destination look.
+ */
+function nudgeLookToward(
+  quaternion: Quaternion,
+  eye: Vector3,
+  aim: Vector3,
+  halfFov: number,
+  turn: number
+): Quaternion {
+  if (turn >= 1 || !(halfFov > 0)) {
+    return quaternion;
+  }
+  const forward = cameraForward(quaternion);
+  const toAim = aim.clone().sub(eye);
+  if (toAim.lengthSq() < 1e-8) {
+    return quaternion;
+  }
+  toAim.normalize();
+  const angle = forward.angleTo(toAim);
+  const limit = halfFov * 0.9;
+  if (angle <= limit || angle < 1e-6) {
+    return quaternion;
+  }
+  const axis = new Vector3().crossVectors(forward, toAim);
+  if (axis.lengthSq() < 1e-12) {
+    return quaternion;
+  }
+  axis.normalize();
+  const correction = new Quaternion().setFromAxisAngle(axis, angle - limit);
+  const framed = quaternion.clone().premultiply(correction);
+  return framed.slerp(quaternion, turn);
+}
+
+function poseFromEyeLook(
+  eye: Vector3,
+  quaternion: Quaternion,
+  start: CameraPose,
+  end: CameraPose,
+  progress: number
+): CameraPose {
+  const forward = cameraForward(quaternion);
+  const startDistance = Math.max(
+    start.position.distanceTo(start.target),
+    MIN_ORBIT_RADIUS
+  );
+  const endDistance = Math.max(
+    end.position.distanceTo(end.target),
+    MIN_ORBIT_RADIUS
+  );
+  const pose: CameraPose = {
+    position: eye.clone(),
+    target: eye
+      .clone()
+      .addScaledVector(
+        forward,
+        MathUtils.lerp(startDistance, endDistance, progress)
+      ),
+  };
+  if (start.fov != null && end.fov != null) {
+    pose.fov = MathUtils.lerp(start.fov, end.fov, progress);
+  } else if (end.fov != null && progress >= 1) {
+    pose.fov = end.fov;
+  }
+  return pose;
+}
+
+/**
+ * Enter: translate straight into the subject while holding the outgoing aim,
+ * then slerp into the final look with the turn back-loaded.
+ * Exit: turn to the outgoing look while still inside, then translate straight
+ * out. Interior: straight move and a smooth orientation blend, no avoidance bow.
+ */
+function sampleSubjectCrossingPose(
+  start: CameraPose,
+  end: CameraPose,
+  subject: Box3,
+  crossing: Exclude<SubjectCrossing, 'exterior'>,
+  progress: number
+): CameraPose {
+  const align = crossingAlignment(start.position, end.position, subject);
+  const qStart = quaternionLookingAt(start.position, start.target);
+  const qEnd = quaternionLookingAt(end.position, end.target);
+
+  if (crossing === 'interior') {
+    const eye = start.position.clone().lerp(end.position, progress);
+    const blend = progress * progress * (3 - 2 * progress);
+    return poseFromEyeLook(
+      eye,
+      qStart.slerp(qEnd, blend),
+      start,
+      end,
+      progress
+    );
+  }
+
+  if (crossing === 'exit') {
+    const eye = start.position.clone().lerp(
+      end.position,
+      exitMoveProgress(progress, align)
+    );
+    const turn = exitTurnProgress(progress, align);
+    return poseFromEyeLook(
+      eye,
+      qStart.slerp(qEnd, turn),
+      start,
+      end,
+      progress
+    );
+  }
+
+  const eye = start.position.clone().lerp(end.position, progress);
+  const turn = enterTurnProgress(progress, align);
+  const holdAim =
+    eye.distanceToSquared(start.target) < 1e-8
+      ? qStart
+      : quaternionLookingAt(eye, start.target);
+  let look = holdAim.slerp(qEnd, turn);
+  if (!subject.containsPoint(eye) && start.fov != null && end.fov != null) {
+    const halfFov =
+      (MathUtils.lerp(start.fov, end.fov, progress) * Math.PI) / 360;
+    look = nudgeLookToward(
+      look,
+      eye,
+      subject.getCenter(new Vector3()),
+      halfFov,
+      turn
+    );
+  }
+  return poseFromEyeLook(eye, look, start, end, progress);
+}
+
+function sampleDirectPose(
+  start: CameraPose,
+  end: CameraPose,
+  subject: Box3 | null,
+  options: CameraAnimationOptions,
+  progress: number
+): CameraPose {
+  const avoidBox =
+    options.avoidSubject && subject && !subject.isEmpty()
+      ? subject.clone().expandByScalar(Math.max(0, options.avoidMargin ?? 0))
+      : null;
+  const position = cameraCurve(
+    start.position,
+    end.position,
+    avoidBox
+  ).getPoint(progress);
+  const targetAvoidBox =
+    avoidBox &&
+    !avoidBox.containsPoint(start.target) &&
+    !avoidBox.containsPoint(end.target)
+      ? avoidBox
+      : null;
+  const pose: CameraPose = {
+    position,
+    target: cameraCurve(start.target, end.target, targetAvoidBox).getPoint(
+      progress
+    ),
+  };
+  if (start.fov != null && end.fov != null) {
+    pose.fov = MathUtils.lerp(start.fov, end.fov, progress);
+  }
+  return pose;
+}
+
+/**
+ * Sample one eased step of an `animateCameraTo` move.
+ * `progress` is already run through the timeline easing.
+ * Moves that begin or end inside `subject` ignore `transitionStyle` and
+ * `avoidSubject`; those still apply only to exterior-to-exterior moves.
+ */
+export function sampleCameraTransition(
+  start: CameraPose,
+  end: CameraPose,
+  subject: Box3 | null,
+  options: CameraAnimationOptions,
+  progress: number
+): CameraPose {
+  const t = clamp01(progress);
+  const crossing = classifySubjectCrossing(
+    start.position,
+    end.position,
+    subject
+  );
+  if (subject != null && crossing !== 'exterior') {
+    return sampleSubjectCrossingPose(start, end, subject, crossing, t);
+  }
+
+  if ((options.transitionStyle ?? 'staggered') === 'direct') {
+    return sampleDirectPose(start, end, subject, options, t);
+  }
+
+  const startSpherical = poseToSpherical(start.position, start.target);
+  const endSpherical = poseToSpherical(end.position, end.target);
+  return sampleStaggeredPose(
+    start,
+    end,
+    startSpherical,
+    endSpherical,
+    pickStaggerWindows(
+      startSpherical.radius,
+      endSpherical.radius,
+      options.stagger
+    ),
+    t
+  );
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
@@ -1742,9 +2053,10 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
         }
 
         const easing = getCameraEasing(options.easing);
-        const transitionStyle = options.transitionStyle ?? 'staggered';
-        const startFov = start.fov;
-        const endFov = end.fov;
+        const subject =
+          scene?.boundingBox && !scene.boundingBox.isEmpty()
+            ? scene.boundingBox
+            : null;
 
         let cancelled = false;
         await new Promise<void>((resolve) => {
@@ -1754,64 +2066,19 @@ export const LDCameraMixin = <T extends Constructor<ModelViewerElementBase>>(
             resolve();
           };
 
-          let applyProgress: (rawProgress: number) => void;
-
-          if (transitionStyle === 'direct') {
-            const avoidBox =
-              options.avoidSubject &&
-              scene?.boundingBox &&
-              !scene.boundingBox.isEmpty()
-                ? scene.boundingBox
-                    .clone()
-                    .expandByScalar(Math.max(0, options.avoidMargin ?? 0))
-                : null;
-            const positionCurve =
-                cameraCurve(start.position, end.position, avoidBox);
-            const targetAvoidBox =
-              avoidBox &&
-              !avoidBox.containsPoint(start.target) &&
-              !avoidBox.containsPoint(end.target)
-                ? avoidBox
-                : null;
-            const targetCurve =
-                cameraCurve(start.target, end.target, targetAvoidBox);
-
-            applyProgress = (rawProgress: number) => {
-              const progress = easing(rawProgress);
-              const pose: CameraPose = {
-                position: positionCurve.getPoint(progress),
-                target: targetCurve.getPoint(progress),
-              };
-
-              if (startFov != null && endFov != null) {
-                pose.fov = MathUtils.lerp(startFov, endFov, progress);
-              }
-
-              applyCameraPose(
-                pose, scene, controls, () => this[$needsRender](), true);
-            };
-          } else {
-            const startSpherical =
-                poseToSpherical(start.position, start.target);
-            const endSpherical = poseToSpherical(end.position, end.target);
-            const windows = pickStaggerWindows(
-                startSpherical.radius, endSpherical.radius, options.stagger);
-
-            applyProgress = (rawProgress: number) => {
-              // Ease the shared clock once (same as direct). Per-channel easing
-              // on a linear clock makes the composite path feel constant-speed.
-              const progress = easing(rawProgress);
-              const pose = sampleStaggeredPose(
-                  start,
-                  end,
-                  startSpherical,
-                  endSpherical,
-                  windows,
-                  progress);
-              applyCameraPose(
-                pose, scene, controls, () => this[$needsRender](), true);
-            };
-          }
+          // Ease the shared clock once. Crossing moves (an eye inside the
+          // subject) and exterior direct / staggered moves share that clock.
+          const applyProgress = (rawProgress: number) => {
+            const pose = sampleCameraTransition(
+              start,
+              end,
+              subject,
+              options,
+              easing(rawProgress)
+            );
+            applyCameraPose(
+              pose, scene, controls, () => this[$needsRender](), true);
+          };
 
           // Do not applyProgress(0): the live settled frame is already the
           // start pose. A t=0 applyCameraPose (lookAt + FPS focalOffset) snaps
