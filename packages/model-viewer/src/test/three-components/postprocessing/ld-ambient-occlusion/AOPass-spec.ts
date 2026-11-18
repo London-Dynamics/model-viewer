@@ -106,7 +106,7 @@ suite('AOPass src-model isolation', function() {
     return item;
   };
 
-  const renderComposite = (scene: Scene): {
+  const renderComposite = (scene: Scene, intensity = 1): {
     beauty: Uint8Array,
     composite: Uint8Array
   } => {
@@ -145,7 +145,7 @@ suite('AOPass src-model isolation', function() {
     pass.setGBuffer(depthTexture, undefined);
     pass.output =
         (AOPass as unknown as {OUTPUT: {Default: number}}).OUTPUT.Default;
-    pass.intensity = 1;
+    pass.intensity = intensity;
     pass.updateAoMaterial({
       algorithm: AOShader.ALGORITHM.SAO,
       radius: 1.25,
@@ -178,6 +178,93 @@ suite('AOPass src-model isolation', function() {
         const drop = maxChannelDrop(beauty, composite, 1, 200);
         expect(drop).to.be.greaterThan(
             12, 'src-model crevice should darken without an environment model');
+      });
+
+  test('AO intensity scales without an environment model', () => {
+    const scene = new Scene();
+    const model = new Group();
+    addCorner(
+        model,
+        new Vector3(0, 0, 0),
+        track(new MeshBasicMaterial({color: 0x00ff00})));
+    scene.add(model);
+
+    const half = renderComposite(scene, 0.5);
+    const full = renderComposite(scene, 1);
+    const halfDrop = maxChannelDrop(half.beauty, half.composite, 1, 200);
+    const fullDrop = maxChannelDrop(full.beauty, full.composite, 1, 200);
+
+    expect(halfDrop).to.be.greaterThan(
+        4, `half intensity should darken the crevice (drop ${halfDrop})`);
+    expect(fullDrop).to.be.greaterThan(
+        halfDrop * 1.4,
+        `full intensity should darken more than half (half ${halfDrop}, full ${
+            fullDrop})`);
+  });
+
+  test(
+      'darkens when the supplied depth texture was never rendered', () => {
+        const scene = new Scene();
+        const model = new Group();
+        addCorner(
+            model,
+            new Vector3(0, 0, 0),
+            track(new MeshBasicMaterial({color: 0x00ff00})));
+        scene.add(model);
+
+        const camera = new PerspectiveCamera(50, 1, 0.1, 50);
+        camera.position.set(0, 0.15, 5.2);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+
+        const beautyTarget =
+            track(new WebGLRenderTarget(WIDTH, HEIGHT, {samples: 0}));
+        const outputTarget =
+            track(new WebGLRenderTarget(WIDTH, HEIGHT, {samples: 0}));
+        renderer.setRenderTarget(beautyTarget);
+        renderer.clear(true, true, true);
+        renderer.render(scene, camera);
+        const beauty = readTarget(renderer, beautyTarget);
+
+        const blankDepth = track(new DepthTexture(WIDTH, HEIGHT));
+        const pass =
+            new AOPass(
+                scene, camera, WIDTH, HEIGHT, undefined, undefined,
+                undefined) as AOPass &
+        {
+          output: number;
+          intensity: number;
+          setGBuffer(depthTexture: DepthTexture, normalTexture: undefined):
+              void;
+          updateAoMaterial(parameters: object): void;
+          render(
+              renderer: WebGLRenderer, writeBuffer: WebGLRenderTarget,
+              readBuffer: WebGLRenderTarget): void;
+        };
+        pass.setGBuffer(blankDepth, undefined);
+        pass.output =
+            (AOPass as unknown as {OUTPUT: {Default: number}}).OUTPUT.Default;
+        pass.intensity = 1;
+        pass.updateAoMaterial({
+          algorithm: AOShader.ALGORITHM.SAO,
+          radius: 1.25,
+          distanceExponent: 1,
+          thickness: 8,
+          distanceFallOff: 0.25,
+          bias: 0.005,
+          scale: 1,
+          samples: 16,
+          nvAlignedSamples: 1,
+          screenSpaceRadius: 0,
+        });
+        pass.render(renderer, outputTarget, beautyTarget);
+        const drop = maxChannelDrop(
+            beauty, readTarget(renderer, outputTarget), 1, 200);
+        pass.dispose();
+        expect(drop).to.be.greaterThan(
+            12,
+            `AO should render its own depth when the composer depth is empty (drop ${
+                drop})`);
       });
 
   test(
