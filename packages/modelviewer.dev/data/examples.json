@@ -622,5 +622,15 @@
         "name": "Align and Distribute (Wall)"
       }
     ]
+  },
+  {
+    "name": "LD USDZ",
+    "htmlName": "ld_usdz_convert",
+    "examples": [
+      {
+        "htmlId": "usdz-convert",
+        "name": "USDZ to GLB"
+      }
+    ]
   }
 ]

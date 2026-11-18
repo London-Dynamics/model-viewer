@@ -19,7 +19,7 @@
 export type ModelLoadIssueCode =
     |'empty-response'|'http-error'|'invalid-glb-header'|'truncated-file'|
     'missing-decoder'|'unsupported-extension'|'no-scene'|'parse-error'|
-    'no-room-surfaces'|(string&{});
+    'no-room-surfaces'|'usdz-conversion'|(string&{});
 
 export type ModelLoadIssueSeverity = 'error'|'warning';
 
@@ -175,7 +175,8 @@ export const checkGlbHeader: LoadCheck = ({data}) => {
     issues.push({
       code: 'invalid-glb-header',
       severity: 'error',
-      message: `Unsupported GLB version ${version}; only version 2 is supported.`,
+      message:
+          `Unsupported GLB version ${version}; only version 2 is supported.`,
       details: {version},
     });
   }
@@ -192,34 +193,37 @@ export const checkGlbHeader: LoadCheck = ({data}) => {
   return issues;
 };
 
-export const checkRequiredExtensions: LoadCheck = ({data, hasMeshoptDecoder}) => {
-  const json = readGltfJson(data);
-  const required: unknown = json?.extensionsRequired;
-  if (!Array.isArray(required)) {
-    return [];
-  }
-  const issues: ModelLoadIssue[] = [];
-  for (const extension of required) {
-    if (typeof extension !== 'string') continue;
-    if (MESHOPT_EXTENSIONS.has(extension) && !hasMeshoptDecoder) {
-      issues.push({
-        code: 'missing-decoder',
-        severity: 'error',
-        message: `The model uses ${
-            extension} compression but no meshopt decoder is configured.`,
-        details: {extension},
-      });
-    } else if (!SUPPORTED_EXTENSIONS.has(extension)) {
-      issues.push({
-        code: 'unsupported-extension',
-        severity: 'error',
-        message: `The model requires an unsupported extension: ${extension}.`,
-        details: {extension},
-      });
-    }
-  }
-  return issues;
-};
+export const checkRequiredExtensions: LoadCheck =
+    ({data, hasMeshoptDecoder}) => {
+      const json = readGltfJson(data);
+      const required: unknown = json?.extensionsRequired;
+      if (!Array.isArray(required)) {
+        return [];
+      }
+      const issues: ModelLoadIssue[] = [];
+      for (const extension of required) {
+        if (typeof extension !== 'string')
+          continue;
+        if (MESHOPT_EXTENSIONS.has(extension) && !hasMeshoptDecoder) {
+          issues.push({
+            code: 'missing-decoder',
+            severity: 'error',
+            message: `The model uses ${
+                extension} compression but no meshopt decoder is configured.`,
+            details: {extension},
+          });
+        } else if (!SUPPORTED_EXTENSIONS.has(extension)) {
+          issues.push({
+            code: 'unsupported-extension',
+            severity: 'error',
+            message:
+                `The model requires an unsupported extension: ${extension}.`,
+            details: {extension},
+          });
+        }
+      }
+      return issues;
+    };
 
 /** Checks run on the raw file before parsing. Add new checks here. */
 export const preParseChecks: LoadCheck[] = [
@@ -239,7 +243,8 @@ const messageOf = (error: unknown) =>
 
 const classifyHttpError: ErrorClassifier = (error) => {
   const response = (error as {response?: Response})?.response;
-  if (!response || typeof response.status !== 'number') return [];
+  if (!response || typeof response.status !== 'number')
+    return [];
   return [{
     code: 'http-error',
     severity: 'error',
@@ -254,7 +259,8 @@ const classifyMissingDecoder: ErrorClassifier = (error) => {
     return [{
       code: 'missing-decoder',
       severity: 'error',
-      message: 'The model uses meshopt compression but no decoder is configured.',
+      message:
+          'The model uses meshopt compression but no decoder is configured.',
       details: {extension: 'EXT_meshopt_compression'},
     }];
   }
@@ -307,3 +313,22 @@ export const toModelLoadError = (error: unknown): ModelLoadError =>
     error instanceof ModelLoadError ?
     error :
     new ModelLoadError(classifyLoadError(error), error);
+
+/**
+ * USDZ was recognised, but converting it to GLB failed. The viewer dispatches
+ * this as an `error` event with `detail.type === 'usdzconversion'` and does
+ * not also report a generic load failure.
+ */
+export class UsdzConversionError extends Error {
+  readonly sourceError: unknown;
+
+  constructor(sourceError: unknown) {
+    const detail = sourceError instanceof Error ? sourceError.message :
+                                                  String(sourceError ?? '');
+    super(
+        detail ? `USDZ conversion failed: ${detail}` :
+                 'USDZ conversion failed');
+    this.name = 'UsdzConversionError';
+    this.sourceError = sourceError;
+  }
+}
