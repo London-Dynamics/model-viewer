@@ -19,7 +19,7 @@ import {IS_MOBILE} from '../constants.js';
 import ModelViewerElementBase, {$needsRender, $onModelLoad, $renderer} from '../model-viewer-base.js';
 import {Constructor} from '../utilities.js';
 
-import {CachedMaterialFile, DEFAULT_MATERIAL_SWAP_CACHE_SIZE, MaterialFileLoad, MaterialSwapCache, materialSwapCacheKey, MaterialSwapQuality} from './ld-material-swap/material-cache.js';
+import {CachedMaterialFile, DEFAULT_MATERIAL_SWAP_CACHE_SIZE, MaterialFileLoad, MaterialFileLoader, MaterialSwapCache, materialSwapCacheKey, MaterialSwapQuality} from './ld-material-swap/material-cache.js';
 import {ensurePhysicalMaterial} from './ld-material-swap/physical-material.js';
 import {syncOwnedMaterial} from './ld-material-swap/sync-material.js';
 import {GltfMeshName, groupPrimitivesByGltfMeshName, resolveMaterialSwapTargets} from './ld-material-swap/targets.js';
@@ -145,16 +145,23 @@ const $ownedSwaps = Symbol('ownedSwaps');
 let sharedCache: MaterialSwapCache|null = null;
 let sharedThreshold = DEFAULT_MATERIAL_SWAP_CACHE_SIZE;
 
-function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
-  const controller = new AbortController();
-  for (const signal of signals) {
-    if (signal.aborted) {
-      controller.abort();
-      break;
-    }
-    signal.addEventListener('abort', () => controller.abort(), {once: true});
+const MATERIAL_SWAP_TIMEOUT_MS = 10000;
+
+enum AbortReason {
+  CallerAborted = 'caller-aborted',
+  Timeout = 'timeout',
+}
+
+class TimeoutAbortError extends Error {
+  readonly reason: AbortReason;
+
+  constructor(reason: AbortReason) {
+    super(reason === AbortReason.Timeout ? 
+      'Material fetch timeout' : 
+      'Material fetch aborted by caller');
+    this.name = 'AbortError';
+    this.reason = reason;
   }
-  return controller.signal;
 }
 
 export function getMaterialSwapCache(): MaterialSwapCache {
@@ -309,6 +316,10 @@ export const LDMaterialSwapMixin = <
               byCacheKey.set(key, cached);
             } catch (error) {
               const reason = this.formatLoadError(error);
+              if (reason === null) {
+                this.abandonLoaded(loaded);
+                this.failSwap({reason: 'aborted', message: 'Material swap aborted'});
+              }
               console.warn(
                   `[model-viewer] Skipping material swap for "${
                       winner.request.url}": ${reason}`);
@@ -363,10 +374,11 @@ export const LDMaterialSwapMixin = <
         }
 
         if (applied.length === 0 && failed.length > 0) {
+          const failedSummary = failed.map(f => `${f.url} (${f.reason})`).join(', ');
           this.failSwap({
             reason: 'load',
             message:
-                `All ${failed.length} material swap(s) failed to load or parse`,
+                `All ${failed.length} material swap(s) failed to load or parse: ${failedSummary}`,
           });
         }
 
@@ -482,26 +494,63 @@ export const LDMaterialSwapMixin = <
     private async acquireWithTimeout(
         cache: MaterialSwapCache, logicalUrl: string,
         quality: MaterialSwapQuality, load: MaterialFileLoader,
-        signal?: AbortSignal): Promise<CachedMaterialFile> {
-      const TIMEOUT_MS = 10000;
-      const timeoutController = new AbortController();
-      const combinedSignal = signal ?
-          combineAbortSignals([signal, timeoutController.signal]) :
-          timeoutController.signal;
+        signal?: AbortSignal,
+        timeoutMs: number = MATERIAL_SWAP_TIMEOUT_MS): Promise<CachedMaterialFile> {
+      if (signal?.aborted) {
+        throw new TimeoutAbortError(AbortReason.CallerAborted);
+      }
 
-      const timeoutId = setTimeout(() => {
-        timeoutController.abort();
-      }, TIMEOUT_MS);
+      const cacheKey = materialSwapCacheKey(logicalUrl, quality);
+      const timeoutController = new AbortController();
+      let timeoutId: ReturnType<typeof setTimeout>|null = null;
+      let callerAbortListener: (() => void)|null = null;
+
+      const racePromise = new Promise<CachedMaterialFile>((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new TimeoutAbortError(AbortReason.Timeout));
+        }, timeoutMs);
+
+        if (signal) {
+          callerAbortListener = () => {
+            reject(new TimeoutAbortError(AbortReason.CallerAborted));
+          };
+          signal.addEventListener('abort', callerAbortListener, {once: true});
+        }
+
+        cache.acquire(logicalUrl, quality, load, signal)
+            .then(resolve)
+            .catch(reject);
+      });
 
       try {
-        return await cache.acquire(logicalUrl, quality, load, combinedSignal);
+        return await racePromise;
+      } catch (error) {
+        if (error instanceof TimeoutAbortError) {
+          if (cache.has(logicalUrl, quality)) {
+            const cached = cache as {entries: Map<string, Promise<CachedMaterialFile>>};
+            const pending = cached.entries.get(cacheKey);
+            if (pending != null) {
+              cached.entries.delete(cacheKey);
+              pending.catch(() => {});
+            }
+          }
+        }
+        throw error;
       } finally {
-        clearTimeout(timeoutId);
+        if (timeoutId != null) {
+          clearTimeout(timeoutId);
+        }
+        if (callerAbortListener != null && signal) {
+          signal.removeEventListener('abort', callerAbortListener);
+        }
       }
     }
 
-    private formatLoadError(error: unknown): string {
-      if ((error as Error)?.name === 'AbortError') {
+    private formatLoadError(error: unknown): string|null {
+      if (error instanceof TimeoutAbortError) {
+        if (error.reason === AbortReason.CallerAborted) {
+          return null;
+        }
         return 'Fetch timeout (10s exceeded)';
       }
       const message = errorMessage(error);

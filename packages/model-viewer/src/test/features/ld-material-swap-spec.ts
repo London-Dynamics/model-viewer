@@ -676,7 +676,7 @@ suite('applyMaterialSwaps', () => {
       });
 
   test('timeout: per-fetch timeout triggers after 10s', async function() {
-    this.timeout(15000);
+    this.timeout(5000);
     await withViewer(async ({element, track}) => {
       element.src = track(sceneFile());
       await waitForEvent(element, 'load');
@@ -686,13 +686,20 @@ suite('applyMaterialSwaps', () => {
       const original = loader.loadMaterial.bind(loader);
       loader.loadMaterial = async (url: string, withCredentials: boolean) => {
         if (url.includes('slow')) {
-          await new Promise((resolve) => setTimeout(resolve, 15000));
+          await new Promise((resolve) => setTimeout(resolve, 5000));
         }
         return original(url, withCredentials);
       };
 
+      const slowUrl = 'https://example.test/slow.glb';
+      const originalTimeout = (element as any).constructor.prototype.acquireWithTimeout;
+      (element as any).constructor.prototype.acquireWithTimeout = function(
+          cache: any, logicalUrl: string, quality: any, load: any, signal: any) {
+        const testTimeout = logicalUrl.includes('slow') ? 500 : 10000;
+        return originalTimeout.call(this, cache, logicalUrl, quality, load, signal, testTimeout);
+      };
+
       try {
-        const slowUrl = 'https://example.test/slow.glb';
         const start = Date.now();
         const result = await element.applyMaterialSwaps(
             [
@@ -702,13 +709,14 @@ suite('applyMaterialSwaps', () => {
             {quality: 'desktop'});
 
         const elapsed = Date.now() - start;
-        expect(elapsed).to.be.lessThan(12000);
+        expect(elapsed).to.be.lessThan(2000);
         expect(result.applied).to.have.length(1);
         expect(result.failed).to.have.length(1);
         expect(result.failed[0].url).to.equal(slowUrl);
         expect(result.failed[0].reason).to.include('timeout');
       } finally {
         loader.loadMaterial = original;
+        (element as any).constructor.prototype.acquireWithTimeout = originalTimeout;
       }
     });
   });
