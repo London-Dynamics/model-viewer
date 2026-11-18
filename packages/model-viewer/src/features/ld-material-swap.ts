@@ -19,7 +19,7 @@ import {IS_MOBILE} from '../constants.js';
 import ModelViewerElementBase, {$needsRender, $onModelLoad, $renderer} from '../model-viewer-base.js';
 import {Constructor} from '../utilities.js';
 
-import {CachedMaterialFile, DEFAULT_MATERIAL_SWAP_CACHE_SIZE, MaterialFileLoad, MaterialSwapCache, materialSwapCacheKey, MaterialSwapQuality} from './ld-material-swap/material-cache.js';
+import {CachedMaterialFile, DEFAULT_MATERIAL_SWAP_CACHE_SIZE, MaterialFileLoad, MaterialFileLoader, MaterialSwapCache, materialSwapCacheKey, MaterialSwapQuality} from './ld-material-swap/material-cache.js';
 import {ensurePhysicalMaterial} from './ld-material-swap/physical-material.js';
 import {syncOwnedMaterial} from './ld-material-swap/sync-material.js';
 import {GltfMeshName, groupPrimitivesByGltfMeshName, resolveMaterialSwapTargets} from './ld-material-swap/targets.js';
@@ -71,8 +71,15 @@ export interface MaterialSwapApplied {
   meshes: string[];
 }
 
+export interface MaterialSwapFailed {
+  key: string;
+  url: string;
+  reason: string;
+}
+
 export interface MaterialSwapResult {
   applied: MaterialSwapApplied[];
+  failed: MaterialSwapFailed[];
   missingTargets: string[];
   warnings: string[];
   quality: MaterialSwapQuality;
@@ -105,6 +112,7 @@ export interface LDMaterialSwapInterface {
 
 export interface LDMaterialSwapStatic {
   materialSwapCacheSize: number;
+  materialSwapTimeoutMs: number;
   clearMaterialSwapCache(): void;
 }
 
@@ -137,6 +145,24 @@ const $ownedSwaps = Symbol('ownedSwaps');
 
 let sharedCache: MaterialSwapCache|null = null;
 let sharedThreshold = DEFAULT_MATERIAL_SWAP_CACHE_SIZE;
+let materialSwapTimeoutMs = 10000;
+
+enum AbortReason {
+  CallerAborted = 'caller-aborted',
+  Timeout = 'timeout',
+}
+
+class TimeoutAbortError extends Error {
+  readonly reason: AbortReason;
+
+  constructor(reason: AbortReason) {
+    super(reason === AbortReason.Timeout ? 
+      'Material fetch timeout' : 
+      'Material fetch aborted by caller');
+    this.name = 'AbortError';
+    this.reason = reason;
+  }
+}
 
 export function getMaterialSwapCache(): MaterialSwapCache {
   if (sharedCache == null) {
@@ -176,6 +202,14 @@ export const LDMaterialSwapMixin = <
 
     static set materialSwapCacheSize(value: number) {
       setMaterialSwapCacheThreshold(value);
+    }
+
+    static get materialSwapTimeoutMs(): number {
+      return materialSwapTimeoutMs;
+    }
+
+    static set materialSwapTimeoutMs(value: number) {
+      materialSwapTimeoutMs = value;
     }
 
     static clearMaterialSwapCache() {
@@ -272,31 +306,54 @@ export const LDMaterialSwapMixin = <
         const cache = getMaterialSwapCache();
         const load = this.materialFileLoader();
         const byCacheKey = new Map<string, CachedMaterialFile>();
+        const failed: MaterialSwapFailed[] = [];
+        
         for (const winner of winners) {
           if (this.swapStale(generation, model)) {
             this.abandonLoaded(loaded);
-            return this.finishSwap(this.changedResult(quality, missingTargets));
+            return this.finishSwap(
+                this.changedResult(quality, missingTargets, failed));
           }
           const key = materialSwapCacheKey(winner.request.url, quality);
           let cached = byCacheKey.get(key);
           if (cached == null) {
-            cached = await cache.acquire(
-                winner.request.url, quality, load, options?.signal);
-            loaded.push(cached);
-            byCacheKey.set(key, cached);
+            try {
+              cached = await this.acquireWithTimeout(
+                  cache, winner.request.url, quality, load, options?.signal);
+              loaded.push(cached);
+              byCacheKey.set(key, cached);
+            } catch (error) {
+              const reason = this.formatLoadError(error);
+              if (reason === null) {
+                this.abandonLoaded(loaded);
+                this.failSwap({reason: 'aborted', message: 'Material swap aborted'});
+              }
+              console.warn(
+                  `[model-viewer] Skipping material swap for "${
+                      winner.request.url}": ${reason}`);
+              failed.push({
+                key: winner.instanceKey,
+                url: winner.request.url,
+                reason,
+              });
+            }
           }
         }
 
         if (this.swapStale(generation, model)) {
           this.abandonLoaded(loaded);
-          return this.finishSwap(this.changedResult(quality, missingTargets));
+          return this.finishSwap(
+              this.changedResult(quality, missingTargets, failed));
         }
 
         const warnings: string[] = [];
         const applied: MaterialSwapApplied[] = [];
         for (const winner of winners) {
           const key = materialSwapCacheKey(winner.request.url, quality);
-          const cached = byCacheKey.get(key)!;
+          const cached = byCacheKey.get(key);
+          if (cached == null) {
+            continue;
+          }
           for (const warning of cached.warnings) {
             if (warnings.indexOf(warning) === -1) {
               warnings.push(warning);
@@ -312,7 +369,7 @@ export const LDMaterialSwapMixin = <
             if (this.swapStale(generation, model)) {
               this.abandonLoaded(loaded);
               return this.finishSwap(
-                  this.changedResult(quality, missingTargets));
+                  this.changedResult(quality, missingTargets, failed));
             }
           }
           applied.push({
@@ -324,7 +381,16 @@ export const LDMaterialSwapMixin = <
           });
         }
 
-        return this.finishSwap({applied, missingTargets, warnings, quality});
+        if (applied.length === 0 && failed.length > 0) {
+          const failedSummary = failed.map(f => `${f.url} (${f.reason})`).join(', ');
+          this.failSwap({
+            reason: 'load',
+            message:
+                `All ${failed.length} material swap(s) failed to load or parse: ${failedSummary}`,
+          });
+        }
+
+        return this.finishSwap({applied, failed, missingTargets, warnings, quality});
       } catch (error) {
         this.abandonLoaded(loaded);
         if (error instanceof MaterialSwapError) {
@@ -340,12 +406,12 @@ export const LDMaterialSwapMixin = <
       }
     }
 
-    private materialFileLoader(): (url: string) => Promise<MaterialFileLoad> {
+    private materialFileLoader(): (url: string, signal?: AbortSignal) => Promise<MaterialFileLoad> {
       const credentials =
           (this as unknown as SwapModelHost).withCredentials === true;
       const loader = this[$renderer].loader;
-      return async (url: string) => {
-        const loaded = await loader.loadMaterial(url, credentials);
+      return async (url: string, signal?: AbortSignal) => {
+        const loaded = await loader.loadMaterial(url, credentials, signal);
         return {
           material: ensurePhysicalMaterial(loaded.material),
           warnings: loaded.warnings,
@@ -433,11 +499,101 @@ export const LDMaterialSwapMixin = <
       return this[$swapGeneration] !== generation || host.model !== model;
     }
 
+    private async acquireWithTimeout(
+        cache: MaterialSwapCache, logicalUrl: string,
+        quality: MaterialSwapQuality, load: MaterialFileLoader,
+        signal?: AbortSignal,
+        timeoutMs: number = materialSwapTimeoutMs): Promise<CachedMaterialFile> {
+      if (signal?.aborted) {
+        throw new TimeoutAbortError(AbortReason.CallerAborted);
+      }
+
+      const timeoutController = new AbortController();
+      const combinedSignal = this.combineAbortSignals(
+          signal ? [signal, timeoutController.signal] : [timeoutController.signal]);
+      let timeoutId: ReturnType<typeof setTimeout>|null = null;
+      let callerAbortListener: (() => void)|null = null;
+      let settled = false;
+
+      const racePromise = new Promise<CachedMaterialFile>((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          timeoutController.abort();
+          reject(new TimeoutAbortError(AbortReason.Timeout));
+        }, timeoutMs);
+
+        if (signal) {
+          callerAbortListener = () => {
+            reject(new TimeoutAbortError(AbortReason.CallerAborted));
+          };
+          signal.addEventListener('abort', callerAbortListener, {once: true});
+        }
+
+        cache.acquire(logicalUrl, quality, load, combinedSignal)
+            .then((result) => {
+              settled = true;
+              resolve(result);
+            })
+            .catch((error) => {
+              settled = true;
+              reject(error);
+            });
+      });
+
+      try {
+        return await racePromise;
+      } catch (error) {
+        if (error instanceof TimeoutAbortError && !settled) {
+          cache.evictPending(logicalUrl, quality);
+        }
+        throw error;
+      } finally {
+        if (timeoutId != null) {
+          clearTimeout(timeoutId);
+        }
+        if (callerAbortListener != null && signal) {
+          signal.removeEventListener('abort', callerAbortListener);
+        }
+      }
+    }
+
+    private combineAbortSignals(signals: AbortSignal[]): AbortSignal {
+      const controller = new AbortController();
+      for (const signal of signals) {
+        if (signal.aborted) {
+          controller.abort();
+          return controller.signal;
+        }
+        signal.addEventListener('abort', () => controller.abort(), {once: true});
+      }
+      return controller.signal;
+    }
+
+    private formatLoadError(error: unknown): string|null {
+      if (error instanceof TimeoutAbortError) {
+        if (error.reason === AbortReason.CallerAborted) {
+          return null;
+        }
+        return 'Fetch timeout (10s exceeded)';
+      }
+      const message = errorMessage(error);
+      if (message.includes('Material file has no materials')) {
+        return 'GLB has no materials';
+      }
+      if (message.includes('404')) {
+        return '404 Not Found';
+      }
+      if (message.includes('fetch') || message.includes('network')) {
+        return 'Network error';
+      }
+      return message;
+    }
+
     private changedResult(
-        quality: MaterialSwapQuality,
-        missingTargets: string[]): MaterialSwapResult {
+        quality: MaterialSwapQuality, missingTargets: string[],
+        failed: MaterialSwapFailed[]): MaterialSwapResult {
       return {
         applied: [],
+        failed,
         missingTargets,
         warnings: [
           'The model changed before the material swap was applied.',

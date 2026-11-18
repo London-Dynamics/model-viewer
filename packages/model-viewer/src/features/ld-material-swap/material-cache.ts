@@ -35,7 +35,8 @@ export interface CachedMaterialFile {
   warnings: string[];
 }
 
-export type MaterialFileLoader = (url: string) => Promise<MaterialFileLoad>;
+export type MaterialFileLoader =
+    (url: string, signal?: AbortSignal) => Promise<MaterialFileLoad>;
 
 const TEXTURE_KEYS = [
   'map',
@@ -166,6 +167,19 @@ export class MaterialSwapCache {
     this.policy.release(cacheKey);
   }
 
+  /**
+   * Evicts a pending load if it's still in progress. Used when a timeout or
+   * abort discards an in-flight request so later retries can refetch.
+   */
+  evictPending(logicalUrl: string, quality: MaterialSwapQuality): void {
+    const cacheKey = materialSwapCacheKey(logicalUrl, quality);
+    const pending = this.entries.get(cacheKey);
+    if (pending != null) {
+      this.entries.delete(cacheKey);
+      pending.catch(() => {});
+    }
+  }
+
   async acquire(
       logicalUrl: string, quality: MaterialSwapQuality,
       load: MaterialFileLoader,
@@ -176,7 +190,7 @@ export class MaterialSwapCache {
     const cacheKey = materialSwapCacheKey(logicalUrl, quality);
     let pending = this.entries.get(cacheKey);
     if (pending == null) {
-      pending = this.loadInto(cacheKey, logicalUrl, quality, load);
+      pending = this.loadInto(cacheKey, logicalUrl, quality, load, signal);
       this.entries.set(cacheKey, pending);
       const stored = pending;
       stored.catch(() => {
@@ -211,15 +225,15 @@ export class MaterialSwapCache {
 
   private async loadInto(
       cacheKey: string, logicalUrl: string, quality: MaterialSwapQuality,
-      load: MaterialFileLoader): Promise<CachedMaterialFile> {
+      load: MaterialFileLoader, signal?: AbortSignal): Promise<CachedMaterialFile> {
     if (quality === 'mobile') {
       const mobileUrl = qualityFileUrl(logicalUrl, 'mobile');
       try {
-        const loaded = await load(mobileUrl);
+        const loaded = await load(mobileUrl, signal);
         return this.toCached(cacheKey, logicalUrl, mobileUrl, quality, loaded);
       } catch (mobileError) {
         try {
-          const loaded = await load(logicalUrl);
+          const loaded = await load(logicalUrl, signal);
           return this.toCached(
               cacheKey, logicalUrl, logicalUrl, quality, loaded);
         } catch (baseError) {
@@ -231,7 +245,7 @@ export class MaterialSwapCache {
         }
       }
     }
-    const loaded = await load(logicalUrl);
+    const loaded = await load(logicalUrl, signal);
     return this.toCached(cacheKey, logicalUrl, logicalUrl, quality, loaded);
   }
 

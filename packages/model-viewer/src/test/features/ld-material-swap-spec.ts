@@ -414,6 +414,7 @@ suite('applyMaterialSwaps', () => {
                 }],
                 {quality: 'desktop'});
             expect(result.missingTargets).to.deep.equal([]);
+            expect(result.failed).to.deep.equal([]);
             expect(result.applied).to.have.length(1);
             expect(result.applied[0].meshes).to.have.members([
               'DoubleCAB_BodyPaint',
@@ -535,6 +536,7 @@ suite('applyMaterialSwaps', () => {
               ],
               {quality: 'desktop'});
           expect(result.missingTargets).to.deep.equal(['MissingMesh', 'Nope*']);
+          expect(result.failed).to.deep.equal([]);
           expect(completed).to.equal(result);
           expect(colorOf(trim).g).to.be.greaterThan(colorOf(trim).b);
           expect(colorOf(other).b).to.be.greaterThan(colorOf(other).g);
@@ -579,6 +581,218 @@ suite('applyMaterialSwaps', () => {
           expect(other.material).to.equal(otherMaterial);
         });
       });
+
+  test(
+      'partial failures: skips failed materials and applies successful ones',
+      async () => {
+        await withViewer(async ({element, track}) => {
+          element.src = track(sceneFile());
+          await waitForEvent(element, 'load');
+          const blueUrl = track(paintFile('BluePaint', [0, 0, 1, 1]));
+          const emptyUrl = track({asset: {version: '2.0'}, materials: []});
+          const groups = meshGroups(element);
+          const trim = groups.get('Trim')![0].mesh;
+          const other = groups.get('OtherPaint')![0].mesh;
+
+          const result = await element.applyMaterialSwaps(
+              [
+                {url: blueUrl, targets: ['Trim']},
+                {url: emptyUrl, targets: ['OtherPaint']},
+              ],
+              {quality: 'desktop'});
+
+          expect(result.applied).to.have.length(1);
+          expect(result.applied[0].url).to.equal(blueUrl);
+          expect(result.failed).to.have.length(1);
+          expect(result.failed[0].url).to.equal(emptyUrl);
+          expect(result.failed[0].reason).to.include('no materials');
+          expect(colorOf(trim).b).to.be.greaterThan(0.5);
+          expect(other.material).to.not.equal(trim.material);
+        });
+      });
+
+  test('partial failures: 404 error is skipped with warning', async () => {
+    await withViewer(async ({element, track}) => {
+      element.src = track(sceneFile());
+      await waitForEvent(element, 'load');
+      const blueUrl = track(paintFile('BluePaint', [0, 0, 1, 1]));
+      const badUrl = 'https://nonexistent.example/missing.glb';
+      const groups = meshGroups(element);
+      const trim = groups.get('Trim')![0].mesh;
+
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (msg: string) => {
+        warnings.push(msg);
+        originalWarn.call(console, msg);
+      };
+
+      try {
+        const result = await element.applyMaterialSwaps(
+            [
+              {url: blueUrl, targets: ['Trim']},
+              {url: badUrl, targets: ['OtherPaint']},
+            ],
+            {quality: 'desktop'});
+
+        expect(result.applied).to.have.length(1);
+        expect(result.failed).to.have.length(1);
+        expect(result.failed[0].url).to.equal(badUrl);
+        expect(warnings.some((w) => w.includes('Skipping material swap')))
+            .to.equal(true);
+        expect(colorOf(trim).b).to.be.greaterThan(0.5);
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+  });
+
+  test(
+      'partial failures: all failures reject with descriptive error',
+      async () => {
+        await withViewer(async ({element, track}) => {
+          element.src = track(sceneFile());
+          await waitForEvent(element, 'load');
+          const emptyUrl1 = track({asset: {version: '2.0'}, materials: []});
+          const emptyUrl2 = track({asset: {version: '2.0'}, materials: []});
+
+          let errorThrown: unknown = null;
+          try {
+            await element.applyMaterialSwaps(
+                [
+                  {url: emptyUrl1, targets: ['Trim']},
+                  {url: emptyUrl2, targets: ['OtherPaint']},
+                ],
+                {quality: 'desktop'});
+          } catch (error) {
+            errorThrown = error;
+          }
+
+          expect(errorThrown).to.be.instanceOf(MaterialSwapError);
+          const swapError = errorThrown as MaterialSwapError;
+          expect(swapError.detail.reason).to.equal('load');
+          expect(swapError.detail.message).to.include('All 2 material swap');
+        });
+      });
+
+  test('timeout: per-fetch timeout triggers after 10s', async function() {
+    this.timeout(3000);
+    await withViewer(async ({element, track}) => {
+      element.src = track(sceneFile());
+      await waitForEvent(element, 'load');
+      const blueUrl = track(paintFile('BluePaint', [0, 0, 1, 1]));
+
+      const originalTimeout = ModelViewerElement.materialSwapTimeoutMs;
+      ModelViewerElement.materialSwapTimeoutMs = 500;
+
+      const loader = element[$renderer].loader;
+      const original = loader.loadMaterial.bind(loader);
+      loader.loadMaterial = async (url: string, withCredentials: boolean, signal?: AbortSignal) => {
+        if (url.includes('slow')) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+        return original(url, withCredentials, signal);
+      };
+
+      try {
+        const slowUrl = 'https://example.test/slow.glb';
+        const start = Date.now();
+        const result = await element.applyMaterialSwaps(
+            [
+              {url: blueUrl, targets: ['Trim']},
+              {url: slowUrl, targets: ['OtherPaint']},
+            ],
+            {quality: 'desktop'});
+
+        const elapsed = Date.now() - start;
+        expect(elapsed).to.be.lessThan(1500);
+        expect(result.applied).to.have.length(1);
+        expect(result.failed).to.have.length(1);
+        expect(result.failed[0].url).to.equal(slowUrl);
+        expect(result.failed[0].reason).to.include('timeout');
+      } finally {
+        loader.loadMaterial = original;
+        ModelViewerElement.materialSwapTimeoutMs = originalTimeout;
+      }
+    });
+  });
+
+  test('caller abort: rejects whole swap with reason aborted', async () => {
+    await withViewer(async ({element, track}) => {
+      element.src = track(sceneFile());
+      await waitForEvent(element, 'load');
+      const blueUrl = track(paintFile('BluePaint', [0, 0, 1, 1]));
+      const greenUrl = track(paintFile('GreenPaint', [0, 1, 0, 1]));
+
+      const controller = new AbortController();
+      const loader = element[$renderer].loader;
+      const original = loader.loadMaterial.bind(loader);
+      let loadCount = 0;
+      loader.loadMaterial = async (url: string, withCredentials: boolean, signal?: AbortSignal) => {
+        loadCount++;
+        if (loadCount === 2) {
+          controller.abort();
+        }
+        return original(url, withCredentials, signal);
+      };
+
+      try {
+        let errorCaught: unknown = null;
+        try {
+          await element.applyMaterialSwaps(
+              [
+                {url: blueUrl, targets: ['Trim']},
+                {url: greenUrl, targets: ['OtherPaint']},
+              ],
+              {signal: controller.signal, quality: 'desktop'});
+        } catch (error) {
+          errorCaught = error;
+        }
+
+        expect(errorCaught).to.be.instanceOf(MaterialSwapError);
+        expect((errorCaught as MaterialSwapError).detail.reason)
+            .to.equal('aborted');
+      } finally {
+        loader.loadMaterial = original;
+      }
+    });
+  });
+
+  test('timeout: loader receives aborted signal', async function() {
+    this.timeout(2000);
+    await withViewer(async ({element, track}) => {
+      element.src = track(sceneFile());
+      await waitForEvent(element, 'load');
+
+      const originalTimeout = ModelViewerElement.materialSwapTimeoutMs;
+      ModelViewerElement.materialSwapTimeoutMs = 200;
+
+      const loader = element[$renderer].loader;
+      const original = loader.loadMaterial.bind(loader);
+      let signalReceived: AbortSignal|undefined;
+      loader.loadMaterial = async (url: string, withCredentials: boolean, signal?: AbortSignal) => {
+        if (url.includes('slow')) {
+          signalReceived = signal;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        return original(url, withCredentials, signal);
+      };
+
+      try {
+        const slowUrl = 'https://example.test/slow.glb';
+        await element.applyMaterialSwaps(
+            [{url: slowUrl, targets: ['Trim']}], {quality: 'desktop'});
+        expect(signalReceived).to.not.equal(undefined);
+        expect(signalReceived!.aborted).to.equal(true);
+      } catch (error) {
+        expect(signalReceived).to.not.equal(undefined);
+        expect(signalReceived!.aborted).to.equal(true);
+      } finally {
+        loader.loadMaterial = original;
+        ModelViewerElement.materialSwapTimeoutMs = originalTimeout;
+      }
+    });
+  });
 
   test(
       'mobile quality falls back to the base file and then hits the cache',

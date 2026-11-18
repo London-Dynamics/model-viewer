@@ -60,7 +60,7 @@ export const ModelViewerElement = ModelViewerElementImpl;
 export type ModelViewerElement = InstanceType<typeof ModelViewerElementImpl>;
 
 export {MATERIAL_SWAP_ERROR_EVENT, MATERIAL_SWAP_EVENT, MaterialSwapError,} from './features/ld-material-swap.js';
-export type{MaterialSwapApplied, MaterialSwapErrorDetail, MaterialSwapOptions, MaterialSwapRequest, MaterialSwapResult,} from './features/ld-material-swap.js';
+export type{MaterialSwapApplied, MaterialSwapErrorDetail, MaterialSwapFailed, MaterialSwapOptions, MaterialSwapRequest, MaterialSwapResult,} from './features/ld-material-swap.js';
 
 export type{RGB, RGBA} from './three-components/gltf-instance/gltf-2.0';
 export {ModelLoadError} from './three-components/load-issues.js';
