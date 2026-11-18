@@ -62,14 +62,39 @@ export class DiagnosingGLTFLoader extends GLTFLoader {
 export const loadWithLoader =
     (url: string,
      loader: GLTFLoader,
-     progressCallback: ProgressCallback = () => {}) => {
+     progressCallback: ProgressCallback = () => {},
+     signal?: AbortSignal) => {
       const onProgress = (event: ProgressEvent) => {
         const fraction = event.loaded / event.total;
         progressCallback!
             (Math.max(0, Math.min(1, isFinite(fraction) ? fraction : 1)));
       };
       return new Promise<GLTF>((resolve, reject) => {
-        loader.load(url, resolve, onProgress, reject);
+        if (signal?.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        const abortListener = () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        };
+        if (signal) {
+          signal.addEventListener('abort', abortListener, {once: true});
+        }
+        loader.load(
+            url,
+            (gltf) => {
+              if (signal) {
+                signal.removeEventListener('abort', abortListener);
+              }
+              resolve(gltf);
+            },
+            onProgress,
+            (error) => {
+              if (signal) {
+                signal.removeEventListener('abort', abortListener);
+              }
+              reject(error);
+            });
       });
     };
 
@@ -392,21 +417,21 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
    * The result is not cached here; the material-swap cache owns it. Files
    * with no scene are valid.
    */
-  async loadMaterial(url: string, withCredentials: boolean):
+  async loadMaterial(url: string, withCredentials: boolean, signal?: AbortSignal):
       Promise<{material: Material; warnings: string[]}> {
     const run = this[$materialLoadChain].then(
-        () => this.loadMaterialNow(url, withCredentials));
+        () => this.loadMaterialNow(url, withCredentials, signal));
     this[$materialLoadChain] = run.then(() => undefined, () => undefined);
     return run;
   }
 
-  private async loadMaterialNow(url: string, withCredentials: boolean):
+  private async loadMaterialNow(url: string, withCredentials: boolean, signal?: AbortSignal):
       Promise<{material: Material; warnings: string[]}> {
     this[$loader].setWithCredentials(withCredentials);
     if (meshoptDecoder != null) {
       this[$loader].setMeshoptDecoder(await meshoptDecoder);
     }
-    const gltf = await loadWithLoader(url, this[$loader]);
+    const gltf = await loadWithLoader(url, this[$loader], () => {}, signal);
     const json = gltf.parser.json as {materials?: Array<{name?: string}>};
     const materials = json.materials ?? [];
     if (materials.length === 0) {

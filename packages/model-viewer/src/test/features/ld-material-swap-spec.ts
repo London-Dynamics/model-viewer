@@ -676,30 +676,26 @@ suite('applyMaterialSwaps', () => {
       });
 
   test('timeout: per-fetch timeout triggers after 10s', async function() {
-    this.timeout(5000);
+    this.timeout(3000);
     await withViewer(async ({element, track}) => {
       element.src = track(sceneFile());
       await waitForEvent(element, 'load');
       const blueUrl = track(paintFile('BluePaint', [0, 0, 1, 1]));
 
+      const originalTimeout = ModelViewerElement.materialSwapTimeoutMs;
+      ModelViewerElement.materialSwapTimeoutMs = 500;
+
       const loader = element[$renderer].loader;
       const original = loader.loadMaterial.bind(loader);
-      loader.loadMaterial = async (url: string, withCredentials: boolean) => {
+      loader.loadMaterial = async (url: string, withCredentials: boolean, signal?: AbortSignal) => {
         if (url.includes('slow')) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-        return original(url, withCredentials);
-      };
-
-      const slowUrl = 'https://example.test/slow.glb';
-      const originalTimeout = (element as any).constructor.prototype.acquireWithTimeout;
-      (element as any).constructor.prototype.acquireWithTimeout = function(
-          cache: any, logicalUrl: string, quality: any, load: any, signal: any) {
-        const testTimeout = logicalUrl.includes('slow') ? 500 : 10000;
-        return originalTimeout.call(this, cache, logicalUrl, quality, load, signal, testTimeout);
+        return original(url, withCredentials, signal);
       };
 
       try {
+        const slowUrl = 'https://example.test/slow.glb';
         const start = Date.now();
         const result = await element.applyMaterialSwaps(
             [
@@ -709,14 +705,91 @@ suite('applyMaterialSwaps', () => {
             {quality: 'desktop'});
 
         const elapsed = Date.now() - start;
-        expect(elapsed).to.be.lessThan(2000);
+        expect(elapsed).to.be.lessThan(1500);
         expect(result.applied).to.have.length(1);
         expect(result.failed).to.have.length(1);
         expect(result.failed[0].url).to.equal(slowUrl);
         expect(result.failed[0].reason).to.include('timeout');
       } finally {
         loader.loadMaterial = original;
-        (element as any).constructor.prototype.acquireWithTimeout = originalTimeout;
+        ModelViewerElement.materialSwapTimeoutMs = originalTimeout;
+      }
+    });
+  });
+
+  test('caller abort: rejects whole swap with reason aborted', async () => {
+    await withViewer(async ({element, track}) => {
+      element.src = track(sceneFile());
+      await waitForEvent(element, 'load');
+      const blueUrl = track(paintFile('BluePaint', [0, 0, 1, 1]));
+      const greenUrl = track(paintFile('GreenPaint', [0, 1, 0, 1]));
+
+      const controller = new AbortController();
+      const loader = element[$renderer].loader;
+      const original = loader.loadMaterial.bind(loader);
+      let loadCount = 0;
+      loader.loadMaterial = async (url: string, withCredentials: boolean, signal?: AbortSignal) => {
+        loadCount++;
+        if (loadCount === 2) {
+          controller.abort();
+        }
+        return original(url, withCredentials, signal);
+      };
+
+      try {
+        let errorCaught: unknown = null;
+        try {
+          await element.applyMaterialSwaps(
+              [
+                {url: blueUrl, targets: ['Trim']},
+                {url: greenUrl, targets: ['OtherPaint']},
+              ],
+              {signal: controller.signal, quality: 'desktop'});
+        } catch (error) {
+          errorCaught = error;
+        }
+
+        expect(errorCaught).to.be.instanceOf(MaterialSwapError);
+        expect((errorCaught as MaterialSwapError).detail.reason)
+            .to.equal('aborted');
+      } finally {
+        loader.loadMaterial = original;
+      }
+    });
+  });
+
+  test('timeout: loader receives aborted signal', async function() {
+    this.timeout(2000);
+    await withViewer(async ({element, track}) => {
+      element.src = track(sceneFile());
+      await waitForEvent(element, 'load');
+
+      const originalTimeout = ModelViewerElement.materialSwapTimeoutMs;
+      ModelViewerElement.materialSwapTimeoutMs = 200;
+
+      const loader = element[$renderer].loader;
+      const original = loader.loadMaterial.bind(loader);
+      let signalReceived: AbortSignal|undefined;
+      loader.loadMaterial = async (url: string, withCredentials: boolean, signal?: AbortSignal) => {
+        if (url.includes('slow')) {
+          signalReceived = signal;
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        return original(url, withCredentials, signal);
+      };
+
+      try {
+        const slowUrl = 'https://example.test/slow.glb';
+        await element.applyMaterialSwaps(
+            [{url: slowUrl, targets: ['Trim']}], {quality: 'desktop'});
+        expect(signalReceived).to.not.equal(undefined);
+        expect(signalReceived!.aborted).to.equal(true);
+      } catch (error) {
+        expect(signalReceived).to.not.equal(undefined);
+        expect(signalReceived!.aborted).to.equal(true);
+      } finally {
+        loader.loadMaterial = original;
+        ModelViewerElement.materialSwapTimeoutMs = originalTimeout;
       }
     });
   });

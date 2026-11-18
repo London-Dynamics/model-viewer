@@ -112,6 +112,7 @@ export interface LDMaterialSwapInterface {
 
 export interface LDMaterialSwapStatic {
   materialSwapCacheSize: number;
+  materialSwapTimeoutMs: number;
   clearMaterialSwapCache(): void;
 }
 
@@ -144,8 +145,7 @@ const $ownedSwaps = Symbol('ownedSwaps');
 
 let sharedCache: MaterialSwapCache|null = null;
 let sharedThreshold = DEFAULT_MATERIAL_SWAP_CACHE_SIZE;
-
-const MATERIAL_SWAP_TIMEOUT_MS = 10000;
+let materialSwapTimeoutMs = 10000;
 
 enum AbortReason {
   CallerAborted = 'caller-aborted',
@@ -202,6 +202,14 @@ export const LDMaterialSwapMixin = <
 
     static set materialSwapCacheSize(value: number) {
       setMaterialSwapCacheThreshold(value);
+    }
+
+    static get materialSwapTimeoutMs(): number {
+      return materialSwapTimeoutMs;
+    }
+
+    static set materialSwapTimeoutMs(value: number) {
+      materialSwapTimeoutMs = value;
     }
 
     static clearMaterialSwapCache() {
@@ -398,12 +406,12 @@ export const LDMaterialSwapMixin = <
       }
     }
 
-    private materialFileLoader(): (url: string) => Promise<MaterialFileLoad> {
+    private materialFileLoader(): (url: string, signal?: AbortSignal) => Promise<MaterialFileLoad> {
       const credentials =
           (this as unknown as SwapModelHost).withCredentials === true;
       const loader = this[$renderer].loader;
-      return async (url: string) => {
-        const loaded = await loader.loadMaterial(url, credentials);
+      return async (url: string, signal?: AbortSignal) => {
+        const loaded = await loader.loadMaterial(url, credentials, signal);
         return {
           material: ensurePhysicalMaterial(loaded.material),
           warnings: loaded.warnings,
@@ -495,18 +503,21 @@ export const LDMaterialSwapMixin = <
         cache: MaterialSwapCache, logicalUrl: string,
         quality: MaterialSwapQuality, load: MaterialFileLoader,
         signal?: AbortSignal,
-        timeoutMs: number = MATERIAL_SWAP_TIMEOUT_MS): Promise<CachedMaterialFile> {
+        timeoutMs: number = materialSwapTimeoutMs): Promise<CachedMaterialFile> {
       if (signal?.aborted) {
         throw new TimeoutAbortError(AbortReason.CallerAborted);
       }
 
-      const cacheKey = materialSwapCacheKey(logicalUrl, quality);
       const timeoutController = new AbortController();
+      const combinedSignal = this.combineAbortSignals(
+          signal ? [signal, timeoutController.signal] : [timeoutController.signal]);
       let timeoutId: ReturnType<typeof setTimeout>|null = null;
       let callerAbortListener: (() => void)|null = null;
+      let settled = false;
 
       const racePromise = new Promise<CachedMaterialFile>((resolve, reject) => {
         timeoutId = setTimeout(() => {
+          timeoutController.abort();
           reject(new TimeoutAbortError(AbortReason.Timeout));
         }, timeoutMs);
 
@@ -517,23 +528,22 @@ export const LDMaterialSwapMixin = <
           signal.addEventListener('abort', callerAbortListener, {once: true});
         }
 
-        cache.acquire(logicalUrl, quality, load, signal)
-            .then(resolve)
-            .catch(reject);
+        cache.acquire(logicalUrl, quality, load, combinedSignal)
+            .then((result) => {
+              settled = true;
+              resolve(result);
+            })
+            .catch((error) => {
+              settled = true;
+              reject(error);
+            });
       });
 
       try {
         return await racePromise;
       } catch (error) {
-        if (error instanceof TimeoutAbortError) {
-          if (cache.has(logicalUrl, quality)) {
-            const cached = cache as {entries: Map<string, Promise<CachedMaterialFile>>};
-            const pending = cached.entries.get(cacheKey);
-            if (pending != null) {
-              cached.entries.delete(cacheKey);
-              pending.catch(() => {});
-            }
-          }
+        if (error instanceof TimeoutAbortError && !settled) {
+          cache.evictPending(logicalUrl, quality);
         }
         throw error;
       } finally {
@@ -544,6 +554,18 @@ export const LDMaterialSwapMixin = <
           signal.removeEventListener('abort', callerAbortListener);
         }
       }
+    }
+
+    private combineAbortSignals(signals: AbortSignal[]): AbortSignal {
+      const controller = new AbortController();
+      for (const signal of signals) {
+        if (signal.aborted) {
+          controller.abort();
+          return controller.signal;
+        }
+        signal.addEventListener('abort', () => controller.abort(), {once: true});
+      }
+      return controller.signal;
     }
 
     private formatLoadError(error: unknown): string|null {
