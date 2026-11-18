@@ -37,6 +37,7 @@ import {LDRenderPipelineMixin} from './features/ld-render-pipeline.js';
 import {LDSelectionMixin} from './features/ld-selection/index.js';
 import {LDServerAIDenoiseMixin} from './features/ld-server-ai-denoise.js';
 import {LDSkyboxRotationMixin} from './features/ld-skybox-rotation.js';
+import {LDUsdzMixin} from './features/ld-usdz.js';
 import {LoadingMixin} from './features/loading.js';
 import {SceneGraphMixin} from './features/scene-graph.js';
 import {StagingMixin} from './features/staging.js';
@@ -52,9 +53,9 @@ const ModelViewerElementImpl = LDMaterialSwapMixin(LDMaterialManagerMixin(
             LDModularMixin(LDSelectionMixin(LDLightsMixin(LDImageCaptureMixin(
                 LDCameraMixin(LDSkyboxRotationMixin(LDEnvironmentMixin(
                     LDAnimationMixin(LDDebugMixin(AnnotationMixin(SceneGraphMixin(
-                        StagingMixin(EnvironmentMixin(LDControlsMixin(
-                            LDARMixin(ARMixin(LoadingMixin(AnimationMixin(
-                                ModelViewerElementBase)))))))))))))))))))))))))));
+                        StagingMixin(EnvironmentMixin(LDControlsMixin(LDARMixin(
+                            ARMixin(LoadingMixin(LDUsdzMixin(AnimationMixin(
+                                ModelViewerElementBase))))))))))))))))))))))))))));
 
 export const ModelViewerElement = ModelViewerElementImpl;
 export type ModelViewerElement = InstanceType<typeof ModelViewerElementImpl>;
@@ -63,7 +64,9 @@ export {MATERIAL_SWAP_ERROR_EVENT, MATERIAL_SWAP_EVENT, MaterialSwapError,} from
 export type{MaterialSwapApplied, MaterialSwapErrorDetail, MaterialSwapOptions, MaterialSwapRequest, MaterialSwapResult,} from './features/ld-material-swap.js';
 
 export type{RGB, RGBA} from './three-components/gltf-instance/gltf-2.0';
-export {ModelLoadError} from './three-components/load-issues.js';
+export {ModelLoadError, UsdzConversionError} from './three-components/load-issues.js';
+export {convertUsdzToGlb} from './features/ld-usdz/convert-usdz.js';
+export type{ConvertUsdzToGlbOptions, UsdzUpAxis} from './features/ld-usdz/convert-usdz.js';
 export type{ModelLoadIssue, ModelLoadIssueCode, ModelLoadIssueSeverity} from './three-components/load-issues.js';
 
 customElements.define('model-viewer', ModelViewerElement);

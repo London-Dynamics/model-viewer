@@ -2885,5 +2885,55 @@
         "description": "Fires when a transform ends. detail.active is null; detail.transform is the final state. Each completed gesture — including <code>alignObjects</code> — is recorded as one undo step (see <a href=\"../docs/#ldHistory\">LD History</a>)."
       }
     ]
+  },
+  {
+    "Title": "LD USDZ",
+    "htmlName": "ld_usdz_convert",
+    "Attributes": [
+      {
+        "name": "usdz-meters-per-unit",
+        "htmlName": "usdzMetersPerUnit",
+        "description": "Meters represented by one unit in a USDZ <span class='attribute'>src</span>. When the attribute is omitted, the stage's <code>metersPerUnit</code> is used. A stage that does not set one is treated as meters (1), which matches RoomPlan, Polycam, and Scaniverse. When the attribute is set, it replaces the stage scale. Ignored for glTF and GLB sources. <span class='attribute'>ios-src</span> is never converted.",
+        "default": {
+          "default": "stage value, or 1",
+          "options": "positive number"
+        },
+        "links": [
+          "<a href=\"../examples/ld_usdz_convert/#usdz-convert\">USDZ to GLB</a>"
+        ]
+      },
+      {
+        "name": "usdz-up-axis",
+        "htmlName": "usdzUpAxis",
+        "description": "Replaces the stage up-axis correction for a USDZ <span class='attribute'>src</span>. <code>Z</code> rotates the root onto Y-up. <code>Y</code> leaves the root unrotated. When omitted, the file's <code>upAxis</code> is used.",
+        "default": {
+          "default": "stage upAxis",
+          "options": "Y, Z"
+        },
+        "links": [
+          "<a href=\"../examples/ld_usdz_convert/#usdz-convert\">USDZ to GLB</a>"
+        ]
+      }
+    ],
+    "Methods": [
+      {
+        "name": "convertUsdzToGlb(input, options?)",
+        "htmlName": "convertUsdzToGlb",
+        "description": "Converts a USDZ package, or a bare USDA/USDC buffer, to a GLB <code>Blob</code> (<code>model/gltf-binary</code>). <b>input</b> is a <code>Blob</code> or <code>ArrayBuffer</code>. <b>options.metersPerUnit</b> replaces the stage scale (default: stage value, or 1 meter when the stage omits it). <b>options.upAxis</b> is <code>'Y'</code> or <code>'Z'</code> and replaces the stage up-axis correction. The USD parser and glTF exporter are loaded on first use, so the main bundle does not include them. Conversion runs on the caller thread; the same function is the seam a worker can call later. Kept: PBR materials and textures, multi-material, opacity, units, Z-up to Y-up, skinning, and animation. Lost: lights, cameras, point instancers, complex variants, and MaterialX.",
+        "links": [
+          "<a href=\"../examples/ld_usdz_convert/#usdz-convert\">USDZ to GLB</a>"
+        ]
+      }
+    ],
+    "Events": [
+      {
+        "name": "error",
+        "htmlName": "usdzconversion",
+        "description": "When a USDZ <span class='attribute'>src</span> cannot be converted, the <span class='attribute'>error</span> event detail is <code>{ type: 'usdzconversion', sourceError, issues }</code>. <code>issues[0].code</code> is <code>usdz-conversion</code> and the message starts with <code>USDZ conversion failed</code>. A generic <code>loadfailure</code> is not also dispatched for that failure.",
+        "links": [
+          "<a href=\"../examples/ld_usdz_convert/#usdz-convert\">USDZ to GLB</a>"
+        ]
+      }
+    ]
   }
 ]

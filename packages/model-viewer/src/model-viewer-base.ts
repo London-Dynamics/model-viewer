@@ -21,7 +21,7 @@ import {HAS_INTERSECTION_OBSERVER, HAS_RESIZE_OBSERVER} from './constants.js';
 import {$updateEnvironment} from './features/environment.js';
 import {makeTemplate} from './template.js';
 import {$evictionPolicy, CachingGLTFLoader} from './three-components/CachingGLTFLoader.js';
-import {classifyLoadError, ModelLoadIssue} from './three-components/load-issues.js';
+import {classifyLoadError, ModelLoadIssue, UsdzConversionError} from './three-components/load-issues.js';
 import {ModelScene} from './three-components/ModelScene.js';
 import {ContextLostEvent, Renderer} from './three-components/Renderer.js';
 import {clamp, debounce} from './utilities.js';
@@ -41,7 +41,7 @@ const $defaultAriaLabel = Symbol('defaultAriaLabel');
 const $resizeObserver = Symbol('resizeObserver');
 const $clearModelTimeout = Symbol('clearModelTimeout');
 const $onContextLost = Symbol('onContextLost');
-const $loaded = Symbol('loaded');
+export const $loaded = Symbol('loaded');
 const $status = Symbol('status');
 const $onFocus = Symbol('onFocus');
 const $onBlur = Symbol('onBlur');
@@ -74,6 +74,10 @@ export const $updateLDEnvironment = Symbol('updateLDEnvironment');
 export const $awaitInitialEnvironment = Symbol('awaitInitialEnvironment');
 export const $updateCameraClipping = Symbol('updateCameraClipping');
 export const $collectLoadWarnings = Symbol('collectLoadWarnings');
+export const $resolveSourceUrl = Symbol('resolveSourceUrl');
+export const $revokeResolvedSource = Symbol('revokeResolvedSource');
+
+const $sourceGeneration = Symbol('sourceGeneration');
 
 export interface Vector3D {
   x: number
@@ -216,6 +220,7 @@ export default class ModelViewerElementBase extends ReactiveElement {
 
   protected[$resizeObserver]: ResizeObserver|null = null;
   protected[$intersectionObserver]: IntersectionObserver|null = null;
+  protected[$sourceGeneration] = 0;
 
   protected[$progressTracker]: ProgressTracker = new ProgressTracker();
 
@@ -610,6 +615,24 @@ export default class ModelViewerElementBase extends ReactiveElement {
   };
 
   /**
+   * URL passed to the glTF loader for `src`. The default is `src` itself.
+   * USDZ conversion returns a blob URL of the generated GLB.
+   */
+  protected async[$resolveSourceUrl](src: string): Promise<string> {
+    return src;
+  }
+
+  /**
+   * Drops a temporary URL produced by {@link $resolveSourceUrl}. Blob URLs
+   * are revoked after the loader has the bytes. Other URLs are left alone.
+   */
+  protected[$revokeResolvedSource](resolved: string, original: string) {
+    if (resolved !== original && resolved.startsWith('blob:')) {
+      URL.revokeObjectURL(resolved);
+    }
+  }
+
+  /**
    * Parses the element for an appropriate source URL and
    * sets the views to use the new model based.
    */
@@ -633,15 +656,34 @@ export default class ModelViewerElementBase extends ReactiveElement {
     const updateSourceProgress =
         this[$progressTracker].beginActivity('model-load');
     const source = this.src;
+    const generation = ++this[$sourceGeneration];
+    let resolved: string|null = null;
     try {
+      if (source != null) {
+        resolved = await this[$resolveSourceUrl](source);
+        if (generation !== this[$sourceGeneration] || this.src !== source) {
+          return;
+        }
+      }
+
+      const url = resolved ?? source;
       const srcUpdated = scene.setSource(
-          source,
+          url,
           (progress: number) =>
               updateSourceProgress(clamp(progress, 0, 1) * 0.95));
 
       const envUpdated = (this as any)[$updateEnvironment]();
 
       await Promise.all([srcUpdated, envUpdated]);
+      if (generation !== this[$sourceGeneration] || this.src !== source) {
+        return;
+      }
+      // Keep scene.url equal to the public src so a later update does not
+      // treat a blob URL as a new model. The glTF cache key stays the blob
+      // URL for this load; the next src change converts again.
+      if (resolved != null && resolved !== source && scene.url === resolved) {
+        scene.url = source;
+      }
       // When an environment model is set before the first reveal, wait until
       // it has loaded or failed so the product and environment appear together.
       await this[$awaitInitialEnvironment]();
@@ -669,11 +711,37 @@ export default class ModelViewerElementBase extends ReactiveElement {
         });
       });
     } catch (error) {
-      const issues = classifyLoadError(error);
-      this.dispatchEvent(new CustomEvent(
-          'error',
-          {detail: {type: 'loadfailure', sourceError: error, issues}}));
+      if (generation !== this[$sourceGeneration]) {
+        return;
+      }
+      if (resolved != null && resolved !== source &&
+          (scene.url === resolved || scene.url == null)) {
+        scene.url = source;
+      }
+      if (error instanceof UsdzConversionError) {
+        scene.reset();
+        scene.url = source;
+        this.dispatchEvent(new CustomEvent('error', {
+          detail: {
+            type: 'usdzconversion',
+            sourceError: error.sourceError,
+            issues: [{
+              code: 'usdz-conversion',
+              severity: 'error',
+              message: error.message,
+            }],
+          },
+        }));
+      } else {
+        const issues = classifyLoadError(error);
+        this.dispatchEvent(new CustomEvent(
+            'error',
+            {detail: {type: 'loadfailure', sourceError: error, issues}}));
+      }
     } finally {
+      if (resolved != null && source != null && resolved !== source) {
+        this[$revokeResolvedSource](resolved, source);
+      }
       updateSourceProgress(1.0);
     }
   }

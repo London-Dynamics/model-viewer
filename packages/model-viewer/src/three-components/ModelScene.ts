@@ -1922,13 +1922,16 @@ export class ModelScene extends Scene {
     const {schemaElement, element} = this;
     const {alt, poster, iosSrc} = element;
     if (src != null) {
+      const extension =
+          src.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase();
+      const encodingFormat = extension === 'gltf' ? 'model/gltf+json' :
+          extension === 'usdz'                    ? 'model/vnd.usdz+zip' :
+                                                    'model/gltf-binary';
       const encoding = [
         {
           '@type': 'MediaObject',
           contentUrl: src,
-          encodingFormat: src.split('.').pop()?.toLowerCase() === 'gltf' ?
-              'model/gltf+json' :
-              'model/gltf-binary',
+          encodingFormat,
         },
       ];
 
