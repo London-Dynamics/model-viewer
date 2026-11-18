@@ -171,6 +171,21 @@ export const loadThreeGLTF = (url: string): Promise<ThreeGLTF> => {
   });
 };
 
+export const webGpuAvailable = async(): Promise<boolean> => {
+  const gpu = (navigator as Navigator & {
+                gpu?: {requestAdapter?: () => Promise<unknown>},
+              }).gpu;
+  if (gpu == null || typeof gpu.requestAdapter !== 'function') {
+    return false;
+  }
+  try {
+    const adapter = await gpu.requestAdapter();
+    return adapter != null;
+  } catch {
+    return false;
+  }
+};
+
 export const createFakeThreeGLTF = () => {
   const scene = new Group();
 

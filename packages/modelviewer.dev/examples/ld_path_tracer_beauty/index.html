@@ -1,0 +1,770 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; Path tracer cache beauty demo</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="Path tracer cache beauty demo: Epic, no cache, and full frame."
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style>
+      html,
+      body {
+        background: #fff;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      .shell {
+        background: #fff;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 240px;
+        height: 100vh;
+        width: 100%;
+      }
+
+      .stage {
+        background: #fff;
+        min-width: 0;
+        position: relative;
+      }
+
+      .stage model-viewer {
+        background: #fff;
+        display: block;
+        height: 100%;
+        width: 100%;
+      }
+
+      /* Page background only. Transparent trace pixels show the checks. */
+      body.checker-bg {
+        background-color: #f2f2f2;
+        background-image:
+          linear-gradient(45deg, #e6e6e6 25%, transparent 25%),
+          linear-gradient(-45deg, #e6e6e6 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #e6e6e6 75%),
+          linear-gradient(-45deg, transparent 75%, #e6e6e6 75%);
+        background-position: 0 0, 0 16px, 16px -16px, -16px 0;
+        background-size: 32px 32px;
+      }
+
+      body.checker-bg .shell,
+      body.checker-bg .stage,
+      body.checker-bg .stage model-viewer {
+        background: transparent;
+      }
+
+      .panel {
+        background: #fff;
+        border-left: 1px solid #bdbdbd;
+        box-sizing: border-box;
+        color: rgba(0, 0, 0, 0.87);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        overflow: auto;
+        padding: 0.75rem;
+      }
+
+      .panel p,
+      .panel label,
+      .panel li {
+        font-size: 0.75rem;
+        line-height: 1.35;
+        margin: 0;
+      }
+
+      .panel label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+
+      .panel select,
+      .panel button,
+      .panel input[type='text'],
+      .panel input[type='number'] {
+        box-sizing: border-box;
+        width: 100%;
+      }
+
+      .panel .rotations {
+        display: grid;
+        gap: 0.35rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .panel .links a {
+        color: #1d4ed8;
+      }
+
+      .timeline {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .timeline li {
+        border-top: 1px solid rgba(0, 0, 0, 0.12);
+        display: grid;
+        gap: 0 0.5rem;
+        grid-template-columns: minmax(0, 1fr) auto;
+        padding: 0.35rem 0;
+      }
+
+      .timeline .name {
+        font-weight: 500;
+      }
+
+      .timeline .at,
+      .timeline .detail {
+        color: rgba(0, 0, 0, 0.54);
+        grid-column: 1 / -1;
+      }
+
+      .timeline li.complete .name,
+      .timeline li.complete .dur {
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell" id="beauty">
+      <div class="stage" id="stage"></div>
+      <aside class="panel" id="panel" data-ready="0" data-saved="0">
+        <p class="font-medium">Path tracer cache</p>
+        <p>
+          16 samples, 15 bounces, OIDN. The picture stays hidden until denoise
+          finishes.
+          <span class="links">
+            <a href="../ld_path_tracer/">Examples</a>
+            ·
+            <a href="../ld_path_tracer_settings/">Settings</a>
+          </span>
+        </p>
+        <label>
+          Test case
+          <select id="case"></select>
+        </label>
+        <label>
+          Preset
+          <select id="preset"></select>
+        </label>
+        <label>
+          Floor
+          <select id="floor"></select>
+        </label>
+        <label>
+          Checker background
+          <input id="checker" type="checkbox" />
+        </label>
+        <label>
+          Reflection
+          <input id="reflection" type="range" min="0" max="1" step="0.05" value="0.2" />
+        </label>
+        <label>
+          Shadow HDR
+          <input id="shadow-hdr" type="checkbox" />
+        </label>
+        <label>
+          Shadow HDR URL
+          <input id="shadow-hdr-url" type="text" placeholder="https://….hdr" />
+        </label>
+        <div class="rotations">
+          <label>
+            Rot X
+            <input id="shadow-rot-x" type="number" step="1" value="0" />
+          </label>
+          <label>
+            Rot Y
+            <input id="shadow-rot-y" type="number" step="1" value="0" />
+          </label>
+          <label>
+            Rot Z
+            <input id="shadow-rot-z" type="number" step="1" value="0" />
+          </label>
+        </div>
+        <p id="crop">Crop —</p>
+        <button id="clear" type="button">Clear caches</button>
+        <p id="run-label">Starting</p>
+        <p id="fps">FPS —</p>
+        <ul class="timeline" id="caches">
+          <li><span class="name">BVH</span><span id="cache-bvh">—</span></li>
+          <li><span class="name">Irradiance</span><span id="cache-irradiance">—</span></li>
+          <li><span class="name">Materials</span><span id="cache-materials">—</span></li>
+        </ul>
+        <ol class="timeline" id="timeline"></ol>
+      </aside>
+    </div>
+
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
+    ></script>
+    <script type="module">
+      const CASES = {
+        triton: {
+          label: 'Triton Beauty Demo',
+          src: 'https://assets.v2.londondynamics.com/547e0656-5fe2-4a43-aae0-6b39d3a4ee3a/puzzle/638be48e-26fd-1c99-a9c6-981ae0e920f4.glb',
+          hdr: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/dancing_hall_2k_desat.hdr',
+          camera: {
+            'camera-orbit': '308.273deg 75deg 145%',
+            'camera-target': 'auto auto auto',
+            'field-of-view': '28deg',
+            'min-field-of-view': '12deg',
+            'max-field-of-view': '40deg',
+            'min-camera-orbit': 'auto 0deg 4m',
+            'max-camera-orbit': 'auto 94deg 24m',
+          },
+        },
+        montana: {
+          label: 'Montana 001112',
+          src: 'https://assets.v2.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/puzzledefault/8daea_4e25777e-91ff-80c3-872f-c722d4937c36.glb',
+          hdr: 'https://images.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/6ae8e541a197e8a86ebb255d/287f1945-86aa-4eb1-af71-745c0f63ebc4.hdr',
+          bounds: 'tight',
+          camera: {
+            'camera-orbit': '30deg 75deg 145%',
+            'field-of-view': '28deg',
+          },
+        },
+        ri245: {
+          label: 'Centurion Ri245',
+          src: 'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/17949ff9-26b2-7158-2f6d-f48ba6ddf725.glb',
+          hdr: 'https://assets.v2.londondynamics.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000/environments/aircraft_workshop_4_Soft_BW.hdr',
+          bounds: 'tight',
+          camera: {
+            'camera-orbit': '30deg 75deg 145%',
+            'field-of-view': '28deg',
+          },
+        },
+      };
+
+      const PRESETS = {
+        epic: {label: 'Epic', coverage: true, cache: true},
+        nocache: {label: 'No cache', coverage: true, cache: false},
+        fullframe: {label: 'No cache, full frame', coverage: false, cache: false},
+      };
+
+      const DB_NAME = 'ld-path-tracer-beauty';
+      const DB_STORE = 'files';
+      const STEPS = [
+        'load',
+        'bvh',
+        'prep',
+        'trace-start',
+        'trace',
+        'denoise',
+        'complete',
+      ];
+
+      const FLOORS = {
+        none: 'None',
+        regular: 'Regular',
+        shadow: 'Shadow',
+        'shadow-reflection': 'Shadow and reflection',
+      };
+
+      const checkerToggle = document.querySelector('#checker');
+      const shadowToggle = document.querySelector('#shadow-hdr');
+      const shadowUrlInput = document.querySelector('#shadow-hdr-url');
+      const shadowRotX = document.querySelector('#shadow-rot-x');
+      const shadowRotY = document.querySelector('#shadow-rot-y');
+      const shadowRotZ = document.querySelector('#shadow-rot-z');
+
+      const caseSelect = document.querySelector('#case');
+      const presetSelect = document.querySelector('#preset');
+      const floorSelect = document.querySelector('#floor');
+      const reflectionInput = document.querySelector('#reflection');
+      const cropNode = document.querySelector('#crop');
+      const stage = document.querySelector('#stage');
+      const panel = document.querySelector('#panel');
+      const runLabel = document.querySelector('#run-label');
+      const fpsNode = document.querySelector('#fps');
+      const timeline = document.querySelector('#timeline');
+      const cacheNodes = {
+        bvh: document.querySelector('#cache-bvh'),
+        irradiance: document.querySelector('#cache-irradiance'),
+        materials: document.querySelector('#cache-materials'),
+      };
+
+      for (const [id, item] of Object.entries(CASES)) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = item.label;
+        caseSelect.append(option);
+      }
+      for (const [id, item] of Object.entries(PRESETS)) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = item.label;
+        presetSelect.append(option);
+      }
+      for (const [id, label] of Object.entries(FLOORS)) {
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = label;
+        floorSelect.append(option);
+      }
+      for (const id of STEPS) {
+        const item = document.createElement('li');
+        item.dataset.step = id;
+        if (id === 'complete') item.className = 'complete';
+        item.innerHTML = '<span class="name"></span><span class="dur"></span><span class="at"></span><span class="detail"></span>';
+        timeline.append(item);
+      }
+
+      const params = new URLSearchParams(location.search);
+      let caseId = CASES[params.get('case')] ? params.get('case') : 'triton';
+      let presetId = PRESETS[params.get('preset')] ? params.get('preset') : 'epic';
+      const requestedFloor = params.get('floor') === 'plain' ?
+          'regular' : params.get('floor');
+      let floorMode = FLOORS[requestedFloor] ? requestedFloor :
+          (requestedFloor === 'solid' || requestedFloor === 'open' ?
+              requestedFloor : 'shadow');
+      let reflection = Number(params.get('reflection'));
+      if (!Number.isFinite(reflection)) reflection = 0.2;
+      reflection = Math.min(1, Math.max(0, reflection));
+      caseSelect.value = caseId;
+      presetSelect.value = presetId;
+      floorSelect.value = floorMode;
+      reflectionInput.value = String(reflection);
+      const initialShadow = params.get('shadowHdr') ?? '';
+      const initialRot = (params.get('shadowRot') ?? '0 0 0')
+          .split(/[\s,]+/)
+          .filter((part) => part !== '');
+      checkerToggle.checked = params.get('checker') === '1';
+      shadowToggle.checked = initialShadow !== '';
+      shadowUrlInput.value = initialShadow;
+      shadowRotX.value = initialRot[0] ?? '0';
+      shadowRotY.value = initialRot[1] ?? '0';
+      shadowRotZ.value = initialRot[2] ?? '0';
+
+      const format = (ms) => {
+        if (ms == null || !Number.isFinite(ms)) return '—';
+        if (ms > 0 && ms < 10) return '<0.01 s';
+        return `${(ms / 1000).toFixed(2)} s`;
+      };
+
+      const since = (t0, at) => at == null ? null : at - t0;
+
+      const openDb = () => new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains(DB_STORE)) {
+            request.result.createObjectStore(DB_STORE);
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      const cacheKey = (id) => `beauty-demo:${id}:floor:${floorMode}`;
+
+      const readCache = async (id) => {
+        const db = await openDb();
+        try {
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_STORE, 'readonly');
+            const request = tx.objectStore(DB_STORE).get(cacheKey(id));
+            request.onsuccess = () => resolve(request.result ?? null);
+            request.onerror = () => reject(request.error);
+          });
+        } finally {
+          db.close();
+        }
+      };
+
+      const writeCache = async (id, blob) => {
+        const db = await openDb();
+        try {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_STORE, 'readwrite');
+            tx.objectStore(DB_STORE).put(blob, cacheKey(id));
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } finally {
+          db.close();
+        }
+      };
+
+      const clearCaches = async () => {
+        const db = await openDb();
+        try {
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(DB_STORE, 'readwrite');
+            const store = tx.objectStore(DB_STORE);
+            const request = store.getAllKeys();
+            request.onsuccess = () => {
+              for (const key of request.result) {
+                if (String(key).startsWith('beauty-demo:')) store.delete(key);
+              }
+            };
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } finally {
+          db.close();
+        }
+      };
+
+      let viewer = null;
+      let blobUrl = null;
+      let poll = 0;
+      let saved = false;
+
+      const writeUrl = () => {
+        const url = new URL(location.href);
+        url.searchParams.set('case', caseId);
+        url.searchParams.set('preset', presetId);
+        url.searchParams.set('floor', floorMode);
+        url.searchParams.set('reflection', String(reflection));
+        if (checkerToggle.checked) {
+          url.searchParams.set('checker', '1');
+        } else {
+          url.searchParams.delete('checker');
+        }
+        for (const key of ['w', 'h', 'fov', 'orbit', 'target', 'shadowHdr', 'shadowRot', 'camera', 'coverage', 'src', 'hdr']) {
+          const value = params.get(key);
+          if (value) url.searchParams.set(key, value);
+        }
+        history.replaceState(null, '', url);
+      };
+
+      const cacheState = (type, preset, status, session, warm, ready) => {
+        if (!preset.cache) return 'off';
+        const applied = status?.lastLoad?.applied;
+        if (warm && applied == null) return 'loaded';
+        if (warm) return applied.includes(type) ? 'loaded' : 'off';
+        if (type === 'bvh' && session?.bvhFinishedAt != null) return 'built';
+        if (type !== 'bvh' && session?.prepFinishedAt != null) return 'built';
+        if (ready) return 'built';
+        return '…';
+      };
+
+      const paintStep = (id, row) => {
+        const item = timeline.querySelector(`[data-step="${id}"]`);
+        item.querySelector('.name').textContent = row.name;
+        item.querySelector('.dur').textContent = format(row.duration);
+        item.querySelector('.at').textContent = row.at == null ? 'since start —' : `since start ${format(row.at)}`;
+        const detail = item.querySelector('.detail');
+        detail.textContent = row.detail ?? '';
+        detail.hidden = !row.detail;
+      };
+
+      const start = async () => {
+        cancelAnimationFrame(poll);
+        saved = false;
+        panel.dataset.saved = '0';
+        panel.dataset.ready = '0';
+        panel.dataset.totalMs = '';
+        delete panel.dataset.opacityAtReady;
+        if (blobUrl) {
+          URL.revokeObjectURL(blobUrl);
+          blobUrl = null;
+        }
+        viewer?.remove();
+        const test = {...CASES[caseId]};
+        if (params.get('src')) test.src = params.get('src');
+        if (params.get('hdr')) test.hdr = params.get('hdr');
+        const preset = PRESETS[presetId];
+        const stored = preset.cache ? await readCache(caseId) : null;
+        let warm = stored instanceof Blob;
+        let runKind = preset.cache ? (warm ? 'warm' : 'cold') : 'uncached';
+        viewer = document.createElement('model-viewer');
+        viewer.setAttribute('camera-controls', '');
+        viewer.setAttribute('interaction-prompt', 'none');
+        viewer.setAttribute('tone-mapping', 'neutral');
+        viewer.setAttribute('shadow-intensity', '0');
+        viewer.setAttribute('shadow-softness', '0');
+        viewer.setAttribute('environment-image', test.hdr);
+        const shadowHdr = shadowUrlInput.value.trim();
+        if (shadowToggle.checked && shadowHdr) {
+          viewer.setAttribute('shadow-environment-image', shadowHdr);
+        }
+        viewer.setAttribute(
+            'shadow-environment-rotation',
+            `${shadowRotX.value || 0} ${shadowRotY.value || 0} ${shadowRotZ.value || 0}`);
+        viewer.setAttribute('path-tracer', '');
+        viewer.setAttribute('path-tracer-samples', '16');
+        viewer.setAttribute('path-tracer-bounces', '15');
+        if (params.get('denoise') === '0') {
+          viewer.pathTracerDenoise = false;
+        } else {
+          viewer.setAttribute('path-tracer-denoise', '');
+        }
+        viewer.setAttribute('path-tracer-display', 'after-denoise');
+        const coverageParam = params.get('coverage');
+        const useCoverage = coverageParam === '1' ? true :
+            coverageParam === '0' ? false : preset.coverage;
+        if (useCoverage) viewer.setAttribute('path-tracer-coverage', '');
+        viewer.setAttribute('path-tracer-floor', floorMode);
+        viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
+        if (test.bounds) viewer.setAttribute('bounds', test.bounds);
+        if (params.get('camera') !== 'auto') {
+          for (const [key, value] of Object.entries(test.camera ?? {})) {
+            viewer.setAttribute(key, value);
+          }
+          const fovParam = params.get('fov');
+          if (fovParam) {
+            // Default max is 30°. A wider fov param has to raise the clamp first.
+            viewer.setAttribute('max-field-of-view', '90deg');
+            viewer.setAttribute(
+                'field-of-view',
+                /deg$|rad$/i.test(fovParam) ? fovParam : `${fovParam}deg`);
+          }
+          const orbitParam = params.get('orbit');
+          if (orbitParam) viewer.setAttribute('camera-orbit', orbitParam);
+          const targetParam = params.get('target');
+          if (targetParam) viewer.setAttribute('camera-target', targetParam);
+        }
+        const frameW = Number(params.get('w'));
+        const frameH = Number(params.get('h'));
+        if (frameW >= 16 && frameH >= 16) {
+          viewer.style.width = `${frameW}px`;
+          viewer.style.height = `${frameH}px`;
+        }
+        if (preset.cache) {
+          viewer.setAttribute('path-tracer-cache-bvh', '');
+          viewer.setAttribute('path-tracer-cache-irradiance', '');
+          viewer.setAttribute('path-tracer-cache-materials', '');
+          viewer.setAttribute('path-tracer-cache-load-bvh', '');
+          viewer.setAttribute('path-tracer-cache-load-irradiance', '');
+          viewer.setAttribute('path-tracer-cache-load-materials', '');
+        }
+        stage.append(viewer);
+        if (warm) {
+          try {
+            await viewer.updateComplete;
+            const result = await viewer.loadPathTracerCache(stored);
+            warm = (result?.applied ?? []).includes('bvh');
+          } catch (error) {
+            warm = false;
+            console.warn('Cache load failed', error);
+          }
+          runKind = warm ? 'warm' : 'cold';
+        }
+        const t0 = performance.now();
+        let glbAt = null;
+        let firstFrameAt = null;
+        viewer.addEventListener('load', () => {
+          glbAt = performance.now();
+          if (params.get('camera') !== 'auto' &&
+              (params.get('fov') || params.get('orbit') || params.get('target'))) {
+            const fovParam = params.get('fov');
+            if (fovParam) {
+              viewer.setAttribute('max-field-of-view', '90deg');
+              viewer.setAttribute(
+                  'field-of-view',
+                  /deg$|rad$/i.test(fovParam) ? fovParam : `${fovParam}deg`);
+            }
+            viewer.jumpCameraToGoal();
+          }
+          requestAnimationFrame(() => {
+            if (firstFrameAt == null) firstFrameAt = performance.now();
+          });
+        }, {once: true});
+        panel.dataset.run = runKind;
+        viewer.src = test.src;
+
+        let frames = 0;
+        let fpsWindow = performance.now();
+        let fps = 0;
+        const tick = (now) => {
+          frames++;
+          if (now - fpsWindow >= 400) {
+            fps = frames * 1000 / (now - fpsWindow);
+            frames = 0;
+            fpsWindow = now;
+          }
+          const composer = viewer.getPathTracerComposer?.();
+          const session = composer?.pathTracer ?? null;
+          const status = viewer.getPathTracerCacheStatus?.() ?? null;
+          const readyAt = session?.denoiseFinishedAt ?? null;
+          const ready = readyAt != null;
+          const totalMs = ready ? readyAt - t0 : null;
+          const bvhStart = session?.bvhStartedAt ?? null;
+          const bvhEnd = session?.bvhFinishedAt ?? null;
+          const prepStart = session?.prepStartedAt ?? null;
+          const prepEnd = session?.prepFinishedAt ?? null;
+          const loopStart = session?.traceLoopStartedAt ?? null;
+          const origin = session?.traceOriginAt ?? 0;
+          const firstSampleMs = session?.firstSampleMs ?? null;
+          const firstSampleAt = firstSampleMs == null || origin === 0 ? null : origin + firstSampleMs;
+          const samplesAt = session?.samplesReadyAt ?? null;
+          const denoiseStart = session?.denoiseInvokeAt ?? samplesAt;
+          const loadEnd = firstFrameAt ?? glbAt;
+          const restored = status?.timings?.bvhRestored ?? 0;
+          const built = status?.timings?.bvhBuilt ?? 0;
+          const bvhName = restored > 0 && built === 0 ? 'BVH restore' : 'BVH build';
+          const bvhDetail = restored > 0 && built === 0 ? `loaded ${restored}` :
+              built > 0 ? `built ${built}` : '';
+          runLabel.textContent = `${runKind} · ${preset.label} · ${test.label}`;
+          const coverage = composer?.getTraceCoverage?.() ?? null;
+          const percent = coverage?.areaPercent;
+          cropNode.textContent = percent == null ? 'Crop —' :
+            `Crop ${Number(percent).toFixed(1)}%`;
+          fpsNode.textContent = `FPS ${fps.toFixed(0)}`;
+          for (const type of ['bvh', 'irradiance', 'materials']) {
+            cacheNodes[type].textContent = cacheState(type, preset, status, session, warm, ready);
+          }
+          paintStep('load', {
+            name: 'First load',
+            duration: loadEnd == null ? null : loadEnd - t0,
+            at: since(t0, loadEnd),
+            detail: glbAt == null ? '' : `GLB ${format(glbAt - t0)} · realtime frame ${format(firstFrameAt == null ? null : firstFrameAt - glbAt)}`,
+          });
+          paintStep('bvh', {
+            name: bvhName,
+            duration: bvhStart == null || bvhEnd == null ? null : bvhEnd - bvhStart,
+            at: since(t0, bvhEnd),
+            detail: bvhDetail,
+          });
+          paintStep('prep', {
+            name: 'Material / irradiance',
+            duration: prepStart == null || prepEnd == null ? null : prepEnd - prepStart,
+            at: since(t0, prepEnd),
+            detail: '',
+          });
+          paintStep('trace-start', {
+            name: 'Path trace start',
+            duration: loopStart == null || firstSampleAt == null ? null : firstSampleAt - loopStart,
+            at: since(t0, firstSampleAt),
+            detail: '',
+          });
+          paintStep('trace', {
+            name: 'Full trace',
+            duration: firstSampleAt == null || samplesAt == null ? null : samplesAt - firstSampleAt,
+            at: since(t0, samplesAt),
+            detail: '16 samples on the GPU',
+          });
+          paintStep('denoise', {
+            name: 'Denoise',
+            duration: readyAt == null || denoiseStart == null ? null : readyAt - denoiseStart,
+            at: since(t0, readyAt),
+            detail: '',
+          });
+          paintStep('complete', {
+            name: 'Complete',
+            duration: totalMs,
+            at: totalMs,
+            detail: 'denoised, fade excluded',
+          });
+          panel.dataset.ready = ready ? '1' : '0';
+          panel.dataset.catcher = composer?.floorCatcherPhase ?? '';
+          panel.dataset.shadowPhase = composer?.shadowPassPhase ?? 'off';
+          const shadowTimes = composer?.shadowPassTimings;
+          if (shadowTimes?.model?.totalMs != null) {
+            panel.dataset.modelPassMs = String(Math.round(shadowTimes.model.totalMs));
+          }
+          if (shadowTimes?.shadow?.totalMs != null) {
+            panel.dataset.shadowPassMs = String(Math.round(shadowTimes.shadow.totalMs));
+          }
+          panel.dataset.totalMs = totalMs ?? '';
+          panel.dataset.run = runKind;
+          if (ready && panel.dataset.opacityAtReady == null) {
+            const canvas = viewer.shadowRoot?.querySelector('.path-tracer-webgpu');
+            panel.dataset.opacityAtReady = canvas == null ? '' : getComputedStyle(canvas).opacity;
+          }
+          if (ready && preset.cache && !warm && !saved) {
+            saved = true;
+            viewer.exportPathTracerCache().then((blob) => writeCache(caseId, blob)).then(() => {
+              panel.dataset.saved = '1';
+            }).catch((error) => {
+              panel.dataset.saved = 'error';
+              console.warn('Cache save failed', error);
+            });
+          }
+          if (ready && (warm || !preset.cache)) panel.dataset.saved = '1';
+          poll = requestAnimationFrame(tick);
+        };
+        poll = requestAnimationFrame(tick);
+      };
+
+      const selectAndStart = () => {
+        caseId = caseSelect.value;
+        presetId = presetSelect.value;
+        writeUrl();
+        start();
+      };
+
+      caseSelect.addEventListener('change', selectAndStart);
+      presetSelect.addEventListener('change', selectAndStart);
+      floorSelect.addEventListener('change', () => {
+        floorMode = floorSelect.value;
+        writeUrl();
+        if (viewer) {
+          viewer.setAttribute('path-tracer-floor', floorMode);
+        }
+      });
+      reflectionInput.addEventListener('input', () => {
+        reflection = Number(reflectionInput.value);
+        writeUrl();
+        if (viewer) {
+          viewer.setAttribute('path-tracer-floor-reflection', String(reflection));
+        }
+      });
+      const applyShadowControls = () => {
+        const rotation =
+            `${shadowRotX.value || 0} ${shadowRotY.value || 0} ${shadowRotZ.value || 0}`;
+        const url = shadowUrlInput.value.trim();
+        params.set('shadowRot', rotation);
+        if (shadowToggle.checked && url) {
+          params.set('shadowHdr', url);
+        } else {
+          params.delete('shadowHdr');
+        }
+        writeUrl();
+        if (!viewer) return;
+        viewer.setAttribute('shadow-environment-rotation', rotation);
+        if (shadowToggle.checked && url) {
+          viewer.setAttribute('shadow-environment-image', url);
+        } else {
+          viewer.removeAttribute('shadow-environment-image');
+        }
+      };
+      const applyChecker = () => {
+        document.body.classList.toggle('checker-bg', checkerToggle.checked);
+        writeUrl();
+      };
+      checkerToggle.addEventListener('change', applyChecker);
+      shadowToggle.addEventListener('change', applyShadowControls);
+      shadowUrlInput.addEventListener('change', applyShadowControls);
+      shadowRotX.addEventListener('change', applyShadowControls);
+      shadowRotY.addEventListener('change', applyShadowControls);
+      shadowRotZ.addEventListener('change', applyShadowControls);
+      document.querySelector('#clear').addEventListener('click', async () => {
+        await clearCaches();
+        start();
+      });
+
+      applyChecker();
+      start();
+    </script>
+  </body>
+</html>

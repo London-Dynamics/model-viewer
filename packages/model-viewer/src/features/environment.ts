@@ -17,8 +17,8 @@ import {property} from 'lit/decorators.js';
 import {ACESFilmicToneMapping, AgXToneMapping, CineonToneMapping, LinearToneMapping, NeutralToneMapping, NoToneMapping, ReinhardToneMapping, Texture} from 'three';
 
 import ModelViewerElementBase, {$needsRender, $progressTracker, $renderer, $scene, $shouldAttemptPreload} from '../model-viewer-base.js';
-import {clamp, Constructor, deserializeUrl} from '../utilities.js';
 import {ShadowMode} from '../three-components/ModelScene.js';
+import {clamp, Constructor, deserializeUrl} from '../utilities.js';
 
 export const BASE_OPACITY = 0.5;
 const DEFAULT_SHADOW_INTENSITY = 0.0;
@@ -42,6 +42,7 @@ export declare interface EnvironmentInterface {
   shadowSoftness: number;
   shadowMode: ShadowMode;
   exposure: number;
+  environmentIntensity: number;
   hasBakedShadow(): boolean;
 }
 
@@ -64,6 +65,9 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
     shadowMode: ShadowMode = DEFAULT_SHADOW_MODE;
 
     @property({type: Number}) exposure: number = DEFAULT_EXPOSURE;
+
+    @property({type: Number, attribute: 'environment-intensity'})
+    environmentIntensity: number = 1;
 
     @property({type: String, attribute: 'tone-mapping'})
     toneMapping: ToneMappingValue = 'auto';
@@ -96,6 +100,13 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (changedProperties.has('exposure')) {
         this[$scene].exposure = this.exposure;
+        this[$needsRender]();
+      }
+
+      if (changedProperties.has('environmentIntensity')) {
+        const intensity = this.environmentIntensity;
+        this[$scene].environmentIntensity =
+            Number.isFinite(intensity) ? Math.max(0, intensity) : 1;
         this[$needsRender]();
       }
 

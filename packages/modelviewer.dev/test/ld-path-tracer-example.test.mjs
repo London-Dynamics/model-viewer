@@ -191,10 +191,10 @@ assert.match(
     html,
     /['"]model-viewer-final\.png['"]/,
     'save final should download a final png file');
-assert.match(
+assert.doesNotMatch(
     html,
     /id="path-tracer-denoise-mode"/,
-    'path tracer example should expose a denoise mode selector');
+    'path tracer example should not expose a denoise mode selector');
 assert.match(
     html,
     /id="server-ai-denoise-scene-description"/,
@@ -250,18 +250,14 @@ assert.equal(
     getInputAttributes('path-tracer-samples-threshold').max,
     '64',
     'display threshold slider should be capped at 64 samples');
-assert.match(
+assert.doesNotMatch(
     html,
-    /<option value="off"[^>]*>Off<\/option>/,
-    'denoise mode selector should include off mode');
-assert.match(
+    /<option value="gpu"/,
+    'path tracer example should not offer the legacy GPU denoise mode');
+assert.doesNotMatch(
     html,
-    /<option value="gpu"[^>]*>GPU<\/option>/,
-    'denoise mode selector should include built-in GPU mode');
-assert.match(
-    html,
-    /<option value="server-ai"[^>]*>Server AI<\/option>/,
-    'denoise mode selector should include server AI mode');
+    /<option value="server-ai"/,
+    'path tracer example should not offer the legacy server AI denoise mode');
 assert.match(
     html,
     /id="server-ai-denoise-overlay"/,
@@ -304,8 +300,8 @@ assert.match(
     'server AI denoise should preserve the user sample target before core workflow updates it');
 assert.match(
     html,
-    /applyServerAIAspectRatio\(\)/,
-    'server AI denoise should pass aspect-ratio intent to model-viewer');
+    /const applyServerAIAspectRatio = \(/,
+    'server AI denoise should keep an aspect-ratio helper');
 assert.match(
     html,
     /server-ai-denoise-aspect-ratio/,
@@ -322,10 +318,10 @@ assert.match(
     html,
     /if \(\s*!serverAIDenoiseOverlay\.hidden\s*\) {\s*return;\s*}/s,
     'server AI polling should stop once the returned image overlay is visible');
-assert.match(
+assert.doesNotMatch(
     html,
     /setAttribute\(\s*['"]path-tracer-denoise-mode['"]/,
-    'denoise mode selector should configure the model-viewer denoise mode');
+    'path tracer example should not set a denoise mode');
 assert.match(
     html,
     /pauseServerAISampling\(\)/,
@@ -402,9 +398,38 @@ assert.doesNotMatch(
 
 assert.match(
     pathTracerComposer,
-    /samples:\s*32,/,
-    'path tracer feature should default to 32 target samples');
+    /samples:\s*16,/,
+    'path tracer feature should default to 16 target samples');
 assert.match(
     pathTracerComposer,
-    /samplesThreshold:\s*6,/,
-    'path tracer feature should default to 6 display-threshold samples');
+    /samplesThreshold:\s*1,/,
+    'path tracer feature should default to 1 display-threshold sample');
+assert.match(
+    pathTracerComposer,
+    /bounces:\s*15,/,
+    'path tracer feature should default to 15 bounces');
+assert.match(
+    pathTracerComposer,
+    /floor:\s*'none',/,
+    'path tracer feature should leave the floor off');
+assert.doesNotMatch(
+    serverAIDenoiseFeature,
+    /pathTracerDenoiseMode/,
+    'path tracer should not switch denoise with a mode');
+
+const beautyHtml = await readFile(resolve(
+    __dirname, '../examples/ld_path_tracer_beauty/index.html'), 'utf8');
+const montanaHdr =
+    'https://images.londondynamics.com/28d24461-579e-4156-99c4-ca336f4369db/6ae8e541a197e8a86ebb255d/287f1945-86aa-4eb1-af71-745c0f63ebc4.hdr';
+assert.match(beautyHtml, new RegExp(montanaHdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.doesNotMatch(beautyHtml, /Centurion-2\.hdr/);
+assert.match(beautyHtml, /shadow-reflection/);
+assert.match(beautyHtml, /searchParams\.set\('floor'/);
+assert.match(beautyHtml, /path-tracer-floor/);
+
+const catcherLogic = await readFile(resolve(
+    __dirname,
+    '../../model-viewer/src/three-components/postprocessing/ld-path-tracer/cache/LDShadowCatcherLogicKernel.ts'), 'utf8');
+assert.match(catcherLogic, /0\.2126, 0\.7152, 0\.0722/);
+assert.match(catcherLogic, /catcherSamples/);
+assert.doesNotMatch(catcherLogic, /1\.0 - visibility/);

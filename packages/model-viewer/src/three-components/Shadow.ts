@@ -16,14 +16,15 @@
 import {
   BackSide,
   Camera,
+  Color,
   DoubleSide,
   FrontSide,
   Box3,
   Material,
   Matrix4,
   Mesh,
-  MeshBasicMaterial,
   MeshDepthMaterial,
+  NoBlending,
   Object3D,
   OrthographicCamera,
   PlaneGeometry,
@@ -86,6 +87,34 @@ const ROOM_FLOOR_SHADOW_FRAGMENT = /* glsl */ `
   }
 `;
 
+// Black RGB and the shadow in alpha, feathered so the plane dissolves into
+// whatever is already in the framebuffer: the page color while rasterizing,
+// or the path-traced image once that is on screen.
+const SHADOW_FLOOR_VERTEX = /* glsl */ `
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const SHADOW_FLOOR_FRAGMENT = /* glsl */ `
+  uniform sampler2D shadowMap;
+  uniform float opacity;
+  varying vec2 vUv;
+
+  void main() {
+    vec2 edge = smoothstep(vec2(0.0), vec2(0.16), vUv) *
+        smoothstep(vec2(1.0), vec2(0.84), vUv);
+    float shadow = texture2D(shadowMap, vUv).a * opacity * edge.x * edge.y;
+    if (shadow < 0.001) {
+      discard;
+    }
+    gl_FragColor = vec4(0.0, 0.0, 0.0, shadow);
+  }
+`;
+
 type RoomFloorOverlay = {
   source: Mesh;
   overlay: Mesh;
@@ -115,6 +144,8 @@ export class Shadow extends Object3D {
   private intensity = 0;
   private softness = 1;
   private floor: Mesh;
+  private readonly floorMaterial: ShaderMaterial;
+  private readonly shadowClearColor = new Color();
   private blurPlane: Mesh;
   private boundingBox = new Box3();
   private size = new Vector3();
@@ -163,13 +194,20 @@ export class Shadow extends Object3D {
     // };
 
     const plane = new PlaneGeometry();
-    const shadowMaterial = new MeshBasicMaterial({
-      // color: new Color(1, 0, 0),
-      opacity: 1,
+    this.floorMaterial = new ShaderMaterial({
+      uniforms: {
+        shadowMap: {value: null},
+        opacity: {value: 1},
+      },
+      vertexShader: SHADOW_FLOOR_VERTEX,
+      fragmentShader: SHADOW_FLOOR_FRAGMENT,
       transparent: true,
+      premultipliedAlpha: true,
+      toneMapped: false,
+      depthWrite: false,
       side: BackSide,
     });
-    this.floor = new Mesh(plane, shadowMaterial);
+    this.floor = new Mesh(plane, this.floorMaterial);
     this.floor.userData.noHit = true;
     camera.add(this.floor);
 
@@ -193,6 +231,8 @@ export class Shadow extends Object3D {
 
     this.horizontalBlurMaterial.depthTest = false;
     this.verticalBlurMaterial.depthTest = false;
+    this.prepareBlurMaterial(this.horizontalBlurMaterial);
+    this.prepareBlurMaterial(this.verticalBlurMaterial);
 
     this.setScene(scene, softness, side);
   }
@@ -314,17 +354,26 @@ export class Shadow extends Object3D {
       this.renderTarget = new WebGLRenderTarget(width, height, params);
       this.renderTargetBlur = new WebGLRenderTarget(width, height, params);
 
-      (this.floor.material as MeshBasicMaterial).map =
-        this.renderTarget.texture;
+      this.floorMaterial.uniforms.shadowMap.value = this.renderTarget.texture;
       this.bindRoomFloorShadowMap();
     }
 
-    // These pads account for the softening radius around the shadow.
-    this.camera.scale.set(
-      size.x * (1 + TAP_WIDTH / baseWidth),
-      size.z * (1 + TAP_WIDTH / baseHeight),
-      1
-    );
+    // Pads keep the blur kernel inside the map. three's Camera omits scale
+    // from the view matrix, so camera.scale no longer widens the frustum
+    // while the floor and blur plane (its children) still grow. The visible
+    // plane then samples only the center texel and the shadow is a flat
+    // card. Size the frustum and the planes together instead.
+    const planeWidth = size.x * (1 + TAP_WIDTH / baseWidth);
+    const planeHeight = size.z * (1 + TAP_WIDTH / baseHeight);
+    this.camera.scale.set(1, 1, 1);
+    this.camera.left = -planeWidth / 2;
+    this.camera.right = planeWidth / 2;
+    this.camera.bottom = -planeHeight / 2;
+    this.camera.top = planeHeight / 2;
+    this.camera.updateProjectionMatrix();
+    this.floor.scale.set(planeWidth, planeHeight, 1);
+    this.blurPlane.scale.set(planeWidth, planeHeight, 1);
+    this.updateRoomFloorTextureMatrix();
     this.needsUpdate = true;
   }
 
@@ -525,9 +574,11 @@ export class Shadow extends Object3D {
     // force the depthMaterial to everything
     scene.overrideMaterial = this.depthMaterial;
 
-    // set renderer clear alpha
+    // Empty texels must be transparent black. A leftover white clear becomes
+    // a grey card once the blur mixes it into the shadow.
+    renderer.getClearColor(this.shadowClearColor);
     const initialClearAlpha = renderer.getClearAlpha();
-    renderer.setClearAlpha(0);
+    renderer.setClearColor(0x000000, 0);
     const floorWasVisible = this.floor.visible;
     this.floor.visible = false;
 
@@ -563,7 +614,7 @@ export class Shadow extends Object3D {
     // reset and render the normal scene
     renderer.xr.enabled = xrEnabled;
     renderer.setRenderTarget(oldRenderTarget);
-    renderer.setClearAlpha(initialClearAlpha);
+    renderer.setClearColor(this.shadowClearColor, initialClearAlpha);
     // this.cameraHelper.visible = true;
   }
 
@@ -662,6 +713,16 @@ export class Shadow extends Object3D {
     }
 
     this.floor.visible = floorWasVisible && !useRoomReceivers;
+  }
+
+  private prepareBlurMaterial(material: ShaderMaterial) {
+    material.fragmentShader = material.fragmentShader.replace(
+        'gl_FragColor = sum;', 'gl_FragColor = vec4(0.0, 0.0, 0.0, sum.a);');
+    material.transparent = true;
+    material.blending = NoBlending;
+    material.depthWrite = false;
+    material.toneMapped = false;
+    material.needsUpdate = true;
   }
 
   blurShadow(renderer: WebGLRenderer) {
@@ -770,7 +831,7 @@ export class Shadow extends Object3D {
   private applyReceiverVisibility(opacity: number): void {
     const useRoom = this.hasRoomFloorReceivers();
     this.floor.visible = this.intensity > 0 && !useRoom;
-    (this.floor.material as MeshBasicMaterial).opacity = opacity;
+    this.floorMaterial.uniforms.opacity.value = opacity;
     if (this.roomFloorMaterial != null) {
       this.roomFloorMaterial.uniforms.opacity.value = opacity;
     }

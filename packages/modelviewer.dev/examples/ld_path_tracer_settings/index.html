@@ -1,0 +1,1449 @@
+<!--
+/*
+* Copyright 2026 London Dynamics. All Rights Reserved.
+* Licensed under the Apache License, Version 2.0 (the 'License');
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an 'AS IS' BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>&lt;model-viewer&gt; path tracer settings</title>
+    <meta charset="utf-8" />
+    <meta
+      name="description"
+      content="Full-viewport model-viewer with every path-tracer setting in a right-hand sidebar."
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link type="text/css" href="../../styles/examples.css" rel="stylesheet" />
+    <link type="text/css" href="../../styles/docs.css" rel="stylesheet" />
+    <link
+      rel="shortcut icon"
+      type="image/png"
+      href="../../assets/favicon.png"
+    />
+    <style type="text/tailwindcss"></style>
+    <script src="../../styles/ld-ui-loader.js" data-href="../../styles/ld-ui.css"></script>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      .shell {
+        display: flex;
+        height: 100vh;
+        inset: 0;
+        position: fixed;
+        width: 100vw;
+      }
+
+      .shell > model-viewer {
+        flex: 1 1 auto;
+        height: 100%;
+        min-width: 0;
+        width: auto;
+      }
+
+      .path-tracer-performance-overlay {
+        background: rgba(17, 24, 39, 0.78);
+        border-radius: 0.375rem;
+        color: white;
+        font-size: 0.75rem;
+        left: 0.75rem;
+        line-height: 1rem;
+        max-width: min(24rem, calc(100vw - 19rem));
+        padding: 0.5rem;
+        position: absolute;
+        top: 0.75rem;
+        z-index: 2;
+      }
+
+      .performance-analyser {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .performance-analyser-header {
+        align-items: center;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: space-between;
+      }
+
+      .performance-analyser h3 {
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        line-height: 1rem;
+        margin: 0;
+      }
+
+      .performance-analyser-actions {
+        display: flex;
+        gap: 0.25rem;
+      }
+
+      .performance-analyser-actions button {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        font-size: 0.6875rem;
+        line-height: 1rem;
+        padding: 0.125rem 0.375rem;
+      }
+
+      .performance-analyser-grid {
+        display: grid;
+        gap: 0.25rem 0.75rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .performance-analyser-row {
+        align-items: baseline;
+        display: flex;
+        gap: 0.5rem;
+        justify-content: space-between;
+        min-width: 0;
+      }
+
+      .performance-analyser-row span {
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+      }
+
+      .performance-analyser-row strong {
+        color: white;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          'Liberation Mono', 'Courier New', monospace;
+        font-weight: 500;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .settings-bar {
+        background: #f8fafc;
+        border-left: 1px solid #e5e7eb;
+        box-sizing: border-box;
+        color: #111827;
+        flex: 0 0 17.5rem;
+        font-size: 12px;
+        height: 100%;
+        line-height: 1.3;
+        overflow: auto;
+        padding: 0.5rem 0.6rem 1rem;
+        width: 17.5rem;
+      }
+
+      .settings-bar h1 {
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.3;
+        margin: 0 0 0.25rem;
+      }
+
+      .settings-bar p,
+      .hint {
+        color: #4b5563;
+        font-size: 11px;
+        margin: 0 0 0.5rem;
+      }
+
+      .settings-bar a {
+        color: #2563eb;
+      }
+
+      details {
+        border-top: 1px solid #e5e7eb;
+        padding: 0.35rem 0;
+      }
+
+      summary {
+        cursor: pointer;
+        font-weight: 650;
+      }
+
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        margin-top: 0.4rem;
+      }
+
+      label.row {
+        align-items: center;
+        flex-direction: row;
+        gap: 0.4rem;
+      }
+
+      .url-row {
+        display: grid;
+        gap: 0.25rem;
+        grid-template-columns: 1fr auto;
+        margin-top: 0.35rem;
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      input[type='text'],
+      input[type='number'],
+      select,
+      textarea {
+        border: 1px solid #d1d5db;
+        border-radius: 0.25rem;
+        box-sizing: border-box;
+        padding: 0.2rem 0.35rem;
+        width: 100%;
+      }
+
+      input[type='range'],
+      input[type='color'] {
+        width: 100%;
+      }
+
+      input[type='color'] {
+        background: white;
+        border: 1px solid #d1d5db;
+        box-sizing: border-box;
+        height: 1.7rem;
+        padding: 0.1rem;
+      }
+
+      .slider-line {
+        align-items: center;
+        display: flex;
+        gap: 0.35rem;
+      }
+
+      .slider-line input[type='range'] {
+        flex: 1 1 auto;
+      }
+
+      .slider-line output {
+        font-variant-numeric: tabular-nums;
+        min-width: 2.6rem;
+        text-align: right;
+      }
+
+      .slider-line input.slider-value {
+        flex: 0 0 3.4rem;
+        font-variant-numeric: tabular-nums;
+        padding: 0.1rem 0.25rem;
+        text-align: right;
+        width: 3.4rem;
+      }
+
+      button {
+        background: #2563eb;
+        border: 0;
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        padding: 0.25rem 0.45rem;
+      }
+
+      button.ghost {
+        background: #e5e7eb;
+        color: #111827;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.4rem;
+      }
+
+      .stats {
+        background: #111827;
+        border-radius: 0.25rem;
+        color: white;
+        font-variant-numeric: tabular-nums;
+        margin-top: 0.4rem;
+        padding: 0.35rem 0.45rem;
+      }
+
+      .presets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.35rem;
+      }
+
+      .presets button {
+        background: white;
+        border: 1px solid #d1d5db;
+        color: #111827;
+      }
+    </style>
+  </head>
+  <body class="ld">
+    <div class="shell" id="settings">
+      <model-viewer
+        id="viewer"
+        camera-controls
+        interaction-prompt="none"
+        min-camera-orbit="auto auto 0.01m"
+        max-camera-orbit="auto auto 1000m"
+        shadow-intensity="1"
+        shadow-mode="soft-shadow"
+        path-tracer-floor
+        environment-intensity="1"
+        exposure="1"
+        tone-mapping="aces"
+        field-of-view="30deg"
+        path-tracer
+        path-tracer-samples="16"
+        path-tracer-samples-threshold="1"
+        path-tracer-display="after-denoise"
+        path-tracer-fade="0.3"
+        path-tracer-freeze-realtime
+        path-tracer-bounces="15"
+        path-tracer-render-scale="1"
+        path-tracer-tiles="1 1"
+        path-tracer-floor-color="#ffffff"
+        path-tracer-floor-roughness="0.2"
+        path-tracer-floor-metalness="0"
+        path-tracer-floor-opacity="1"
+        path-tracer-denoise
+      ></model-viewer>
+      <div
+        id="path-tracer-performance-analyser"
+        class="path-tracer-performance-overlay"
+      ></div>
+      <aside class="settings-bar" id="sidebar" aria-label="Path tracer settings">
+        <h1>Path tracer settings</h1>
+        <p>
+          Sets <code>&lt;model-viewer&gt;</code> attributes and properties only.
+          <a href="../ld_path_tracer/">Examples</a>
+          ·
+          <a href="../ld_path_tracer_beauty/">Beauty demo</a>
+          ·
+          <a href="../ld_path_tracer_upstream/">Upstream comparison</a>
+        </p>
+        <div id="controls"></div>
+      </aside>
+    </div>
+    <script
+      type="module"
+      src="../../../../node_modules/@london-dynamics/model-viewer/dist/model-viewer.js"
+    ></script>
+    <script type="module">
+      import {createPerformanceAnalyser} from '../built/performance-analyser.js';
+
+      const DEFAULT_SRC =
+          'https://assets.v2.londondynamics.com/daa34851-84b3-4c29-8823-fc258ccd9049/puzzle/7786a153-c7de-d806-401b-336324e1be1c.glb';
+      const DEFAULT_ENV =
+          'https://d1mepjfmhz5ui7.cloudfront.net/centurion/Centurion-2.hdr';
+
+      const viewer = document.querySelector('#viewer');
+      const controls = document.querySelector('#controls');
+      const ORBITS = {
+        'Three-quarter': '-45deg 75deg auto',
+        Front: '0deg 75deg auto',
+        Left: '-90deg 75deg auto',
+        Right: '90deg 75deg auto',
+        Back: '180deg 75deg auto',
+        Top: '0deg 10deg auto',
+      };
+      const LENSES = {
+        '50mm f/1.8': {
+          pathTracerDepthOfField: true,
+          fieldOfView: '39deg',
+          exposure: 2.5,
+          pathTracerFocalLength: 50,
+          pathTracerFStop: 1.8,
+          pathTracerFocusDistance: 4,
+          pathTracerApertureBlades: 7,
+          pathTracerAnamorphicRatio: 1,
+        },
+        '35mm f/2.8': {
+          pathTracerDepthOfField: true,
+          fieldOfView: '54deg',
+          exposure: 2.2,
+          pathTracerFocalLength: 35,
+          pathTracerFStop: 2.8,
+          pathTracerFocusDistance: 5,
+          pathTracerApertureBlades: 7,
+          pathTracerAnamorphicRatio: 1,
+        },
+        '85mm f/1.8': {
+          pathTracerDepthOfField: true,
+          fieldOfView: '24deg',
+          exposure: 3,
+          pathTracerFocalLength: 85,
+          pathTracerFStop: 1.8,
+          pathTracerFocusDistance: 3,
+          pathTracerApertureBlades: 9,
+          pathTracerAnamorphicRatio: 1,
+        },
+      };
+
+      const state = {
+        src: DEFAULT_SRC,
+        environmentImage: DEFAULT_ENV,
+        skybox: false,
+        pathTracer: true,
+        pathTracerSamples: 16,
+        pathTracerSamplesThreshold: 1,
+        pathTracerDisplay: 'after-denoise',
+        pathTracerFade: 0.3,
+        pathTracerOpacity: 1,
+        pathTracerFreezeRealtime: true,
+        pathTracerCoverage: false,
+        pathTracerShowRegion: false,
+        pathTracerBounces: 15,
+        pathTracerPixelRatio: 0,
+        pathTracerRenderScale: 1,
+        tilesX: 1,
+        tilesY: 1,
+        pathTracerDepthOfField: false,
+        pathTracerFocalLength: 50,
+        pathTracerFStop: 1.8,
+        pathTracerFocusDistance: 5,
+        pathTracerApertureBlades: 0,
+        pathTracerApertureRotation: 0,
+        pathTracerAnamorphicRatio: 1,
+        pathTracerDenoise: true,
+        strategy: 'sah',
+        maxLeafTris: 1,
+        exposure: 1,
+        toneMapping: 'aces',
+        environmentIntensity: 1,
+        shadowIntensity: 1,
+        shadowSoftness: 1,
+        shadowMode: 'soft-shadow',
+        lights: true,
+        pathTracerFloor: true,
+        pathTracerSoftShadow: false,
+        pathTracerFloorColor: '#ffffff',
+        pathTracerFloorRoughness: 0.2,
+        pathTracerFloorMetalness: 0,
+        pathTracerFloorOpacity: 1,
+        fieldOfView: 30,
+        orbit: 'Three-quarter',
+      };
+
+      const sections = [
+        {
+          title: 'Source',
+          open: true,
+          fields: ['src', 'environmentImage', 'skybox'],
+        },
+        {
+          title: 'Trace',
+          open: true,
+          fields: [
+            'pathTracer',
+            'actions',
+            'stats',
+            'pathTracerSamples',
+            'pathTracerSamplesThreshold',
+            'pathTracerDisplay',
+            'pathTracerFade',
+            'pathTracerOpacity',
+            'pathTracerFreezeRealtime',
+            'pathTracerCoverage',
+            'pathTracerShowRegion',
+            'pathTracerBounces',
+            'pathTracerPixelRatio',
+            'pathTracerRenderScale',
+            'tiles',
+          ],
+        },
+        {
+          title: 'Depth of field',
+          fields: [
+            'pathTracerDepthOfField',
+            'pathTracerFocalLength',
+            'pathTracerFStop',
+            'pathTracerFocusDistance',
+            'pathTracerApertureBlades',
+            'pathTracerApertureRotation',
+            'pathTracerAnamorphicRatio',
+            'lenses',
+          ],
+        },
+        {
+          title: 'Denoise',
+          fields: [
+            'pathTracerDenoise',
+          ],
+        },
+        {
+          title: 'BVH',
+          fields: ['strategy', 'maxLeafTris'],
+        },
+        {
+          title: 'Look',
+          open: true,
+          fields: [
+            'exposure',
+            'toneMapping',
+            'environmentIntensity',
+            'lights',
+            'shadowMode',
+            'shadowIntensity',
+            'shadowSoftness',
+            'pathTracerSoftShadow',
+          ],
+        },
+        {
+          title: 'Floor',
+          open: true,
+          fields: [
+            'pathTracerFloor',
+            'pathTracerFloorColor',
+            'pathTracerFloorRoughness',
+            'pathTracerFloorMetalness',
+            'pathTracerFloorOpacity',
+          ],
+        },
+        {
+          title: 'Camera',
+          fields: ['fieldOfView', 'orbits'],
+        },
+      ];
+
+      const fields = {
+        src: {label: 'GLB URL', kind: 'url', attr: 'src'},
+        environmentImage: {
+          label: 'Environment / HDR URL',
+          kind: 'url',
+          attr: 'environment-image',
+        },
+        skybox: {label: 'Use HDR as skybox', kind: 'checkbox', attr: 'skybox-image'},
+        pathTracer: {label: 'Path tracer', kind: 'checkbox', attr: 'path-tracer'},
+        pathTracerSamples: {
+          label: 'Samples',
+          kind: 'range',
+          attr: 'path-tracer-samples',
+          min: 1,
+          max: 500,
+          step: 1,
+          // Most tests sit around 8–16. The low end of the track covers 1–32
+          // and the number next to it sets an exact value.
+          fineMax: 32,
+        },
+        pathTracerSamplesThreshold: {
+          label: 'Samples threshold',
+          kind: 'range',
+          attr: 'path-tracer-samples-threshold',
+          min: 1,
+          max: 64,
+          step: 1,
+        },
+        pathTracerDisplay: {
+          label: 'Show trace',
+          kind: 'select',
+          attr: 'path-tracer-display',
+          options: ['progressive', 'before-denoise', 'after-denoise'],
+          labels: ['While tracing', 'When done, before denoise', 'After denoise'],
+        },
+        pathTracerFade: {
+          label: 'Fade (s)',
+          kind: 'range',
+          attr: 'path-tracer-fade',
+          min: 0,
+          max: 3,
+          step: 0.05,
+        },
+        pathTracerOpacity: {
+          label: 'Opacity while tracing',
+          kind: 'range',
+          attr: 'path-tracer-opacity',
+          min: 0,
+          max: 1,
+          step: 0.05,
+        },
+        pathTracerFreezeRealtime: {
+          label: 'Freeze realtime',
+          kind: 'checkbox',
+          attr: 'path-tracer-freeze-realtime',
+        },
+        pathTracerCoverage: {
+          label: 'Trace subject only',
+          kind: 'checkbox',
+          attr: 'path-tracer-coverage',
+        },
+        pathTracerShowRegion: {
+          label: 'Show debug region',
+          kind: 'checkbox',
+          attr: 'path-tracer-show-region',
+        },
+        pathTracerBounces: {
+          label: 'Bounces',
+          kind: 'range',
+          attr: 'path-tracer-bounces',
+          min: 1,
+          max: 50,
+          step: 1,
+        },
+        pathTracerPixelRatio: {
+          label: 'Pixel ratio',
+          kind: 'range',
+          attr: 'path-tracer-pixel-ratio',
+          min: 0,
+          max: 4,
+          step: 0.5,
+        },
+        pathTracerRenderScale: {
+          label: 'Render scale',
+          kind: 'range',
+          attr: 'path-tracer-render-scale',
+          min: 0.1,
+          max: 1,
+          step: 0.01,
+        },
+        tiles: {label: 'Tiles', kind: 'tiles', attr: 'path-tracer-tiles'},
+        pathTracerDepthOfField: {
+          label: 'Depth of field',
+          kind: 'checkbox',
+          attr: 'path-tracer-depth-of-field',
+        },
+        pathTracerFocalLength: {
+          label: 'Focal length',
+          kind: 'range',
+          attr: 'path-tracer-focal-length',
+          min: 10,
+          max: 200,
+          step: 1,
+        },
+        pathTracerFStop: {
+          label: 'f-stop',
+          kind: 'range',
+          attr: 'path-tracer-f-stop',
+          min: 0.5,
+          max: 22,
+          step: 0.1,
+        },
+        pathTracerFocusDistance: {
+          label: 'Focus distance',
+          kind: 'range',
+          attr: 'path-tracer-focus-distance',
+          min: 0.05,
+          max: 20,
+          step: 0.05,
+        },
+        pathTracerApertureBlades: {
+          label: 'Aperture blades',
+          kind: 'range',
+          attr: 'path-tracer-aperture-blades',
+          min: 0,
+          max: 16,
+          step: 1,
+        },
+        pathTracerApertureRotation: {
+          label: 'Aperture rotation (rad)',
+          kind: 'range',
+          attr: 'path-tracer-aperture-rotation',
+          min: -3.14,
+          max: 3.14,
+          step: 0.01,
+        },
+        pathTracerAnamorphicRatio: {
+          label: 'Anamorphic ratio',
+          kind: 'range',
+          attr: 'path-tracer-anamorphic-ratio',
+          min: 0.25,
+          max: 4,
+          step: 0.01,
+        },
+        pathTracerDenoise: {
+          label: 'OIDN',
+          kind: 'checkbox',
+          attr: 'path-tracer-denoise',
+        },
+        strategy: {
+          label: 'BVH strategy',
+          kind: 'select',
+          options: ['sah', 'center', 'average'],
+        },
+        maxLeafTris: {
+          label: 'Max leaf tris',
+          kind: 'range',
+          min: 1,
+          max: 64,
+          step: 1,
+        },
+        exposure: {
+          label: 'Exposure',
+          kind: 'range',
+          attr: 'exposure',
+          min: 0,
+          max: 5,
+          step: 0.01,
+        },
+        toneMapping: {
+          label: 'Tone mapping',
+          kind: 'select',
+          attr: 'tone-mapping',
+          options: ['auto', 'neutral', 'aces', 'agx', 'reinhard', 'cineon', 'linear', 'none'],
+        },
+        environmentIntensity: {
+          label: 'Environment intensity',
+          kind: 'range',
+          attr: 'environment-intensity',
+          min: 0,
+          max: 5,
+          step: 0.01,
+        },
+        lights: {
+          label: 'Model lights',
+          kind: 'checkbox',
+          attr: 'lights',
+        },
+        shadowMode: {
+          label: 'Soft shadow',
+          kind: 'select',
+          attr: 'shadow-mode',
+          options: ['none', 'soft-shadow'],
+        },
+        pathTracerSoftShadow: {
+          label: 'Soft shadow on trace',
+          kind: 'checkbox',
+          attr: 'path-tracer-soft-shadow',
+        },
+        pathTracerFloor: {
+          label: 'Floor',
+          kind: 'checkbox',
+          attr: 'path-tracer-floor',
+        },
+        shadowIntensity: {
+          label: 'Shadow intensity',
+          kind: 'range',
+          attr: 'shadow-intensity',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        shadowSoftness: {
+          label: 'Shadow softness',
+          kind: 'range',
+          attr: 'shadow-softness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        pathTracerFloorColor: {
+          label: 'Color',
+          kind: 'color',
+          attr: 'path-tracer-floor-color',
+        },
+        pathTracerFloorRoughness: {
+          label: 'Roughness',
+          kind: 'range',
+          attr: 'path-tracer-floor-roughness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        pathTracerFloorMetalness: {
+          label: 'Metalness',
+          kind: 'range',
+          attr: 'path-tracer-floor-metalness',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        pathTracerFloorOpacity: {
+          label: 'Opacity',
+          kind: 'range',
+          attr: 'path-tracer-floor-opacity',
+          min: 0,
+          max: 1,
+          step: 0.01,
+        },
+        fieldOfView: {
+          label: 'Field of view',
+          kind: 'range',
+          attr: 'field-of-view',
+          min: 10,
+          max: 90,
+          step: 1,
+        },
+      };
+
+      const inputs = {};
+      let traceStartedAt = performance.now();
+      let denoiseDoneSeconds = null;
+      let denoiseFinishArmed = false;
+      let applyingQuery = false;
+
+      const sectionOf = (name) => {
+        const details = document.createElement('details');
+        const known = sections.find((section) => section.title === name);
+        if (known?.open) {
+          details.open = true;
+        }
+        const summary = document.createElement('summary');
+        summary.textContent = name;
+        details.append(summary);
+        controls.append(details);
+        return details;
+      };
+
+      const remember = (name, node) => {
+        inputs[name] = node;
+        return node;
+      };
+
+      const FINE_SPAN = 700;
+
+      const unitToSamples = (unit, spec) => {
+        const fineMax = Math.min(spec.fineMax, spec.max);
+        if (unit <= FINE_SPAN) {
+          return clampInt(
+              spec.min + (unit / FINE_SPAN) * (fineMax - spec.min),
+              spec.min,
+              spec.max);
+        }
+        return clampInt(
+            fineMax + ((unit - FINE_SPAN) / (1000 - FINE_SPAN)) * (spec.max - fineMax),
+            spec.min,
+            spec.max);
+      };
+
+      const samplesToUnit = (samples, spec) => {
+        const fineMax = Math.min(spec.fineMax, spec.max);
+        const value = clampInt(samples, spec.min, spec.max);
+        if (value <= fineMax) {
+          return Math.round(((value - spec.min) / (fineMax - spec.min)) * FINE_SPAN);
+        }
+        return Math.round(
+            FINE_SPAN + ((value - fineMax) / (spec.max - fineMax)) * (1000 - FINE_SPAN));
+      };
+
+      const addRange = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const line = document.createElement('span');
+        line.className = 'slider-line';
+        const input = document.createElement('input');
+        input.type = 'range';
+        const fine = spec.fineMax != null;
+        input.min = fine ? '0' : String(spec.min);
+        input.max = fine ? '1000' : String(spec.max);
+        input.step = fine ? '1' : String(spec.step);
+        input.value = fine ? String(samplesToUnit(state[name], spec)) : String(state[name]);
+        const output = document.createElement(fine ? 'input' : 'output');
+        if (fine) {
+          output.type = 'number';
+          output.className = 'slider-value';
+          output.min = String(spec.min);
+          output.max = String(spec.max);
+          output.step = String(spec.step);
+          output.value = formatNumber(state[name], spec.step);
+          output.setAttribute('aria-label', spec.label);
+        } else {
+          output.textContent = formatNumber(state[name], spec.step);
+        }
+        const publish = (value, fromSlider) => {
+          state[name] = value;
+          if (!fromSlider) {
+            input.value = fine ? String(samplesToUnit(value, spec)) : String(value);
+          }
+          if (fine) {
+            output.value = formatNumber(value, spec.step);
+          } else {
+            output.textContent = formatNumber(value, spec.step);
+          }
+          applyField(name);
+          writeQuery();
+        };
+        input.addEventListener('input', () => {
+          publish(
+              fine ? unitToSamples(Number(input.value), spec) : Number(input.value),
+              true);
+        });
+        if (fine) {
+          const commitTyped = () => {
+            publish(clampInt(output.value, spec.min, spec.max));
+          };
+          output.addEventListener('change', commitTyped);
+          output.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commitTyped();
+            }
+          });
+        }
+        line.append(input, output);
+        label.append(line);
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const addCheck = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.className = 'row';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = Boolean(state[name]);
+        input.addEventListener('change', () => {
+          state[name] = input.checked;
+          applyField(name);
+          writeQuery();
+        });
+        label.append(input, document.createTextNode(spec.label));
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const addColor = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.value = String(state[name]);
+        input.addEventListener('input', () => {
+          state[name] = input.value;
+          applyField(name);
+          writeQuery();
+        });
+        label.append(input);
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const addSelect = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const select = document.createElement('select');
+        spec.options.forEach((option, index) => {
+          const node = document.createElement('option');
+          node.value = option;
+          node.textContent = spec.labels?.[index] ?? (option === '' ? '(auto)' : option);
+          select.append(node);
+        });
+        select.value = String(state[name] ?? '');
+        select.addEventListener('change', () => {
+          state[name] = select.value;
+          applyField(name);
+          writeQuery();
+        });
+        label.append(select);
+        parent.append(label);
+        remember(name, select);
+      };
+
+      const addUrl = (parent, name, spec) => {
+        const label = document.createElement('label');
+        label.textContent = spec.label;
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.spellcheck = false;
+        input.value = state[name];
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            loadUrl(name, input.value);
+          }
+        });
+        input.addEventListener('input', () => {
+          state[name] = input.value;
+        });
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Load';
+        button.addEventListener('click', () => loadUrl(name, input.value));
+        const row = document.createElement('div');
+        row.className = 'url-row';
+        row.append(input, button);
+        label.append(row);
+        parent.append(label);
+        remember(name, input);
+      };
+
+      const build = () => {
+        for (const section of sections) {
+          const details = sectionOf(section.title);
+          for (const name of section.fields) {
+            if (name === 'actions') {
+              const actions = document.createElement('div');
+              actions.className = 'actions';
+              actions.append(
+                  actionButton('Start trace', () => {
+                    state.pathTracer = true;
+                    syncControl('pathTracer');
+                    viewer.pathTracer = true;
+                    restartClock();
+                    writeQuery();
+                  }),
+                  actionButton('Stop trace', () => {
+                    state.pathTracer = false;
+                    syncControl('pathTracer');
+                    viewer.pathTracer = false;
+                    writeQuery();
+                  }, 'ghost'),
+                  actionButton('Reset trace', () => {
+                    viewer.resetPathTracer();
+                    restartClock();
+                  }, 'ghost'));
+              details.append(actions);
+              continue;
+            }
+            if (name === 'stats') {
+              const stats = document.createElement('div');
+              stats.className = 'stats';
+              stats.id = 'trace-stats';
+              stats.textContent = 'samples 0 · 0.0s';
+              details.append(stats);
+              continue;
+            }
+            if (name === 'tiles') {
+              const label = document.createElement('label');
+              label.textContent = 'Tiles';
+              const row = document.createElement('div');
+              row.className = 'url-row';
+              const x = document.createElement('input');
+              const y = document.createElement('input');
+              for (const input of [x, y]) {
+                input.type = 'number';
+                input.min = '1';
+                input.max = '8';
+                input.step = '1';
+              }
+              x.value = String(state.tilesX);
+              y.value = String(state.tilesY);
+              const publish = () => {
+                state.tilesX = clampInt(x.value, 1, 8);
+                state.tilesY = clampInt(y.value, 1, 8);
+                viewer.setAttribute('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
+                writeQuery();
+              };
+              x.addEventListener('change', publish);
+              y.addEventListener('change', publish);
+              row.append(x, y);
+              label.append(row);
+              details.append(label);
+              inputs.tilesX = x;
+              inputs.tilesY = y;
+              continue;
+            }
+            if (name === 'lenses' || name === 'orbits') {
+              const wrap = document.createElement('div');
+              wrap.className = 'presets';
+              const source = name === 'lenses' ? LENSES : ORBITS;
+              for (const label of Object.keys(source)) {
+                wrap.append(actionButton(label, () => {
+                  if (name === 'lenses') {
+                    applyLens(label);
+                  } else {
+                    state.orbit = label;
+                    viewer.setAttribute('camera-orbit', ORBITS[label]);
+                    restartClock();
+                    writeQuery();
+                  }
+                }, 'ghost'));
+              }
+              details.append(wrap);
+              continue;
+            }
+            const spec = fields[name];
+            if (spec.kind === 'url') {
+              addUrl(details, name, spec);
+            } else if (spec.kind === 'checkbox') {
+              addCheck(details, name, spec);
+            } else if (spec.kind === 'select') {
+              addSelect(details, name, spec);
+            } else if (spec.kind === 'range') {
+              addRange(details, name, spec);
+            } else if (spec.kind === 'color') {
+              addColor(details, name, spec);
+            }
+          }
+        }
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent =
+            'WebGPU only. If WebGPU is unavailable the real-time view stays. Path tracing denoises with Open Image Denoise once Samples is reached. Tiles do not split the WebGPU frame. Stop trace turns path-tracer off. Reset trace calls resetPathTracer().';
+        controls.append(hint);
+      };
+
+      const actionButton = (label, onClick, kind) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        if (kind) {
+          button.className = kind;
+        }
+        button.addEventListener('click', onClick);
+        return button;
+      };
+
+      const formatNumber = (value, step) => {
+        const numeric = Number(value);
+        if (Number(step) >= 1) {
+          return String(Math.round(numeric));
+        }
+        const places = String(step).includes('.') ?
+            String(step).split('.')[1].length :
+            0;
+        return numeric.toFixed(places);
+      };
+
+      const clampInt = (value, min, max) => {
+        const numeric = Math.round(Number(value));
+        if (!Number.isFinite(numeric)) {
+          return min;
+        }
+        return Math.min(max, Math.max(min, numeric));
+      };
+
+      const loadUrl = (name, value) => {
+        state[name] = value.trim();
+        if (inputs[name]) {
+          inputs[name].value = state[name];
+        }
+        applyField(name);
+        if (name === 'environmentImage' && state.skybox) {
+          applyField('skybox');
+        }
+        restartClock();
+        writeQuery();
+      };
+
+      const applyField = (name) => {
+        if (name === 'src') {
+          if (state.src) {
+            viewer.setAttribute('src', state.src);
+          }
+          return;
+        }
+        if (name === 'environmentImage') {
+          if (state.environmentImage) {
+            viewer.setAttribute('environment-image', state.environmentImage);
+          } else {
+            viewer.removeAttribute('environment-image');
+          }
+          return;
+        }
+        if (name === 'skybox') {
+          if (state.skybox && state.environmentImage) {
+            viewer.setAttribute('skybox-image', state.environmentImage);
+          } else {
+            viewer.removeAttribute('skybox-image');
+          }
+          return;
+        }
+        if (name === 'strategy' || name === 'maxLeafTris') {
+          viewer.setPathTracerOptions({
+            strategy: state.strategy,
+            maxLeafTris: state.maxLeafTris,
+          });
+          return;
+        }
+        if (name === 'fieldOfView') {
+          viewer.setAttribute('field-of-view', `${state.fieldOfView}deg`);
+          return;
+        }
+        if (name === 'lights') {
+          viewer.applyModelLights(state.lights);
+          return;
+        }
+        const spec = fields[name];
+        if (spec == null || spec.attr == null || spec.attr === 'skybox-image') {
+          return;
+        }
+        if (spec.kind === 'checkbox') {
+          if (state[name]) {
+            viewer.setAttribute(spec.attr, '');
+          } else {
+            viewer.removeAttribute(spec.attr);
+          }
+          return;
+        }
+        viewer.setAttribute(spec.attr, String(state[name]));
+      };
+
+      const applyLens = (label) => {
+        const lens = LENSES[label];
+        for (const [key, value] of Object.entries(lens)) {
+          if (key === 'fieldOfView') {
+            state.fieldOfView = Number(String(value).replace('deg', ''));
+            syncControl('fieldOfView');
+            viewer.setAttribute('field-of-view', value);
+          } else {
+            state[key] = value;
+            syncControl(key);
+            applyField(key);
+          }
+        }
+        restartClock();
+        writeQuery();
+      };
+
+      const syncControl = (name) => {
+        const node = inputs[name];
+        if (node == null) {
+          return;
+        }
+        if (node.type === 'checkbox') {
+          node.checked = Boolean(state[name]);
+        } else {
+          const spec = fields[name];
+          node.value = spec?.fineMax != null ?
+              String(samplesToUnit(state[name], spec)) :
+              String(state[name]);
+          const output = node.parentElement?.querySelector('output, input.slider-value');
+          if (output && spec?.step != null && document.activeElement !== output) {
+            const text = formatNumber(state[name], spec.step);
+            if (output.tagName === 'OUTPUT') {
+              output.textContent = text;
+            } else {
+              output.value = text;
+            }
+          }
+        }
+      };
+
+      const applyAll = () => {
+        for (const name of Object.keys(fields)) {
+          if (fields[name].kind === 'url') {
+            continue;
+          }
+          applyField(name);
+        }
+        viewer.setAttribute('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
+        viewer.setAttribute('camera-orbit', ORBITS[state.orbit] || ORBITS['Three-quarter']);
+        if (state.src) {
+          viewer.setAttribute('src', state.src);
+        }
+        applyField('environmentImage');
+        applyField('skybox');
+      };
+
+      const writeQuery = () => {
+        if (applyingQuery) {
+          return;
+        }
+        const params = new URLSearchParams();
+        params.set('src', state.src);
+        params.set('env', state.environmentImage);
+        params.set('skybox', state.skybox ? '1' : '0');
+        params.set('path-tracer', state.pathTracer ? '1' : '0');
+        params.set('path-tracer-samples', String(state.pathTracerSamples));
+        params.set('path-tracer-samples-threshold', String(state.pathTracerSamplesThreshold));
+        params.set('path-tracer-display', state.pathTracerDisplay);
+        params.set('path-tracer-fade', String(state.pathTracerFade));
+        params.set('path-tracer-opacity', String(state.pathTracerOpacity));
+        params.set('path-tracer-freeze-realtime', state.pathTracerFreezeRealtime ? '1' : '0');
+        params.set('path-tracer-coverage', state.pathTracerCoverage ? '1' : '0');
+        params.set('path-tracer-show-region', state.pathTracerShowRegion ? '1' : '0');
+        params.set('path-tracer-bounces', String(state.pathTracerBounces));
+        params.set('path-tracer-render-scale', String(state.pathTracerRenderScale));
+        params.set('path-tracer-pixel-ratio', String(state.pathTracerPixelRatio));
+        params.set('path-tracer-tiles', `${state.tilesX} ${state.tilesY}`);
+        params.set('path-tracer-depth-of-field', state.pathTracerDepthOfField ? '1' : '0');
+        params.set('path-tracer-focal-length', String(state.pathTracerFocalLength));
+        params.set('path-tracer-f-stop', String(state.pathTracerFStop));
+        params.set('path-tracer-focus-distance', String(state.pathTracerFocusDistance));
+        params.set('path-tracer-aperture-blades', String(state.pathTracerApertureBlades));
+        params.set('path-tracer-aperture-rotation', String(state.pathTracerApertureRotation));
+        params.set('path-tracer-anamorphic-ratio', String(state.pathTracerAnamorphicRatio));
+        params.set('path-tracer-denoise', state.pathTracerDenoise ? '1' : '0');
+        params.set('strategy', state.strategy);
+        params.set('max-leaf-tris', String(state.maxLeafTris));
+        params.set('exposure', String(state.exposure));
+        params.set('tone-mapping', state.toneMapping);
+        params.set('environment-intensity', String(state.environmentIntensity));
+        params.set('shadow-intensity', String(state.shadowIntensity));
+        params.set('shadow-softness', String(state.shadowSoftness));
+        params.set('shadow-mode', state.shadowMode);
+        params.set('lights', state.lights ? '1' : '0');
+        params.set('path-tracer-floor', state.pathTracerFloor ? '1' : '0');
+        params.set('path-tracer-soft-shadow', state.pathTracerSoftShadow ? '1' : '0');
+        params.set('path-tracer-floor-color', state.pathTracerFloorColor);
+        params.set('path-tracer-floor-roughness', String(state.pathTracerFloorRoughness));
+        params.set('path-tracer-floor-metalness', String(state.pathTracerFloorMetalness));
+        params.set('path-tracer-floor-opacity', String(state.pathTracerFloorOpacity));
+        params.set('field-of-view', String(state.fieldOfView));
+        params.set('camera-orbit', state.orbit);
+        history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+      };
+
+      const readBool = (params, key, fallback) => {
+        if (!params.has(key)) {
+          return fallback;
+        }
+        return params.get(key) === '1';
+      };
+
+      const readColor = (params, key, fallback) => {
+        if (!params.has(key)) {
+          return fallback;
+        }
+        const value = params.get(key) || '';
+        const hex = value.startsWith('#') ? value : `#${value}`;
+        return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.toLowerCase() : fallback;
+      };
+
+      const readNumber = (params, key, fallback) => {
+        if (!params.has(key)) {
+          return fallback;
+        }
+        const value = Number(params.get(key));
+        return Number.isFinite(value) ? value : fallback;
+      };
+
+      const readQuery = () => {
+        const params = new URLSearchParams(location.search);
+        if ([...params.keys()].length === 0) {
+          return;
+        }
+        applyingQuery = true;
+        state.src = params.get('src') || state.src;
+        state.environmentImage = params.has('env') ? params.get('env') : state.environmentImage;
+        state.skybox = readBool(params, 'skybox', state.skybox);
+        state.pathTracer = readBool(params, 'path-tracer', state.pathTracer);
+        state.pathTracerSamples = readNumber(params, 'path-tracer-samples', state.pathTracerSamples);
+        state.pathTracerSamplesThreshold = readNumber(params, 'path-tracer-samples-threshold', state.pathTracerSamplesThreshold);
+        state.pathTracerDisplay = params.get('path-tracer-display') || state.pathTracerDisplay;
+        state.pathTracerFade = readNumber(params, 'path-tracer-fade', state.pathTracerFade);
+        state.pathTracerOpacity = readNumber(params, 'path-tracer-opacity', state.pathTracerOpacity);
+        state.pathTracerFreezeRealtime = readBool(params, 'path-tracer-freeze-realtime', state.pathTracerFreezeRealtime);
+        state.pathTracerCoverage = readBool(params, 'path-tracer-coverage', state.pathTracerCoverage);
+        state.pathTracerShowRegion = readBool(params, 'path-tracer-show-region', state.pathTracerShowRegion);
+        state.pathTracerBounces = readNumber(params, 'path-tracer-bounces', state.pathTracerBounces);
+        state.pathTracerRenderScale = readNumber(params, 'path-tracer-render-scale', state.pathTracerRenderScale);
+        state.pathTracerPixelRatio = readNumber(params, 'path-tracer-pixel-ratio', state.pathTracerPixelRatio);
+        const tiles = (params.get('path-tracer-tiles') || '').split(/[\s,]+/).map(Number);
+        if (Number.isFinite(tiles[0])) {
+          state.tilesX = tiles[0];
+        }
+        if (Number.isFinite(tiles[1])) {
+          state.tilesY = tiles[1];
+        }
+        state.pathTracerDepthOfField = readBool(params, 'path-tracer-depth-of-field', state.pathTracerDepthOfField);
+        state.pathTracerFocalLength = readNumber(params, 'path-tracer-focal-length', state.pathTracerFocalLength);
+        state.pathTracerFStop = readNumber(params, 'path-tracer-f-stop', state.pathTracerFStop);
+        state.pathTracerFocusDistance = readNumber(params, 'path-tracer-focus-distance', state.pathTracerFocusDistance);
+        state.pathTracerApertureBlades = readNumber(params, 'path-tracer-aperture-blades', state.pathTracerApertureBlades);
+        state.pathTracerApertureRotation = readNumber(params, 'path-tracer-aperture-rotation', state.pathTracerApertureRotation);
+        state.pathTracerAnamorphicRatio = readNumber(params, 'path-tracer-anamorphic-ratio', state.pathTracerAnamorphicRatio);
+        state.pathTracerDenoise = readBool(params, 'path-tracer-denoise', state.pathTracerDenoise);
+        state.strategy = params.get('strategy') || state.strategy;
+        state.maxLeafTris = readNumber(params, 'max-leaf-tris', state.maxLeafTris);
+        state.exposure = readNumber(params, 'exposure', state.exposure);
+        state.toneMapping = params.get('tone-mapping') || state.toneMapping;
+        state.environmentIntensity = readNumber(params, 'environment-intensity', state.environmentIntensity);
+        state.shadowIntensity = readNumber(params, 'shadow-intensity', state.shadowIntensity);
+        state.shadowSoftness = readNumber(params, 'shadow-softness', state.shadowSoftness);
+        state.shadowMode = params.get('shadow-mode') || state.shadowMode;
+        state.lights = readBool(params, 'lights', state.lights);
+        state.pathTracerFloor = readBool(params, 'path-tracer-floor', state.pathTracerFloor);
+        state.pathTracerSoftShadow = readBool(params, 'path-tracer-soft-shadow', state.pathTracerSoftShadow);
+        if (state.shadowMode === 'path-tracer') {
+          state.shadowMode = 'none';
+          if (!params.has('path-tracer-floor')) {
+            state.pathTracerFloor = true;
+          }
+        }
+        state.pathTracerFloorColor = readColor(params, 'path-tracer-floor-color', state.pathTracerFloorColor);
+        state.pathTracerFloorRoughness = readNumber(params, 'path-tracer-floor-roughness', state.pathTracerFloorRoughness);
+        state.pathTracerFloorMetalness = readNumber(params, 'path-tracer-floor-metalness', state.pathTracerFloorMetalness);
+        state.pathTracerFloorOpacity = readNumber(params, 'path-tracer-floor-opacity', state.pathTracerFloorOpacity);
+        state.fieldOfView = readNumber(params, 'field-of-view', state.fieldOfView);
+        state.orbit = params.get('camera-orbit') || state.orbit;
+        applyingQuery = false;
+      };
+
+      const pushControls = () => {
+        for (const name of Object.keys(inputs)) {
+          if (name === 'tilesX' || name === 'tilesY') {
+            continue;
+          }
+          syncControl(name);
+        }
+        if (inputs.tilesX) {
+          inputs.tilesX.value = String(state.tilesX);
+          inputs.tilesY.value = String(state.tilesY);
+        }
+      };
+
+      const restartClock = () => {
+        traceStartedAt = performance.now();
+        denoiseDoneSeconds = null;
+        denoiseFinishArmed = false;
+      };
+
+      viewer.addEventListener('load', restartClock);
+      viewer.addEventListener('camera-change', restartClock);
+
+      build();
+      readQuery();
+      pushControls();
+      applyAll();
+      writeQuery();
+      createPerformanceAnalyser({
+        target: viewer,
+        mount: document.querySelector('#path-tracer-performance-analyser'),
+        title: 'Performance',
+        extraMetrics: [
+          {
+            label: 'Samples',
+            read: () =>
+              String(Math.floor(Number(viewer.pathTracerRenderedSamples || 0))),
+          },
+        ],
+      });
+
+      const stats = document.querySelector('#trace-stats');
+      let previousSamples = null;
+      const tick = () => {
+        const samples = Math.floor(Number(viewer.pathTracerRenderedSamples || 0));
+        // A new trace zeroes the sample count without going through Reset.
+        // Start the clock again whenever that count drops.
+        if (previousSamples != null && samples < previousSamples) {
+          restartClock();
+        }
+        previousSamples = samples;
+        const ready = viewer.isPathTracerReady ? 'ready' : 'building';
+        const denoise = viewer.pathTracerDenoiseStatus || '';
+        const finished = denoise === 'denoise finished';
+        if (!finished) {
+          denoiseFinishArmed = true;
+          denoiseDoneSeconds = null;
+        } else if (denoiseFinishArmed && denoiseDoneSeconds == null) {
+          denoiseDoneSeconds = (performance.now() - traceStartedAt) / 1000;
+        }
+        const seconds = (denoiseDoneSeconds ??
+            (performance.now() - traceStartedAt) / 1000).toFixed(1);
+        if (finished && denoiseDoneSeconds != null) {
+          stats.textContent =
+              `samples ${samples} · ${ready} · denoise finished in ${seconds}s`;
+        } else if (denoise === '') {
+          stats.textContent = `samples ${samples} · ${seconds}s · ${ready}`;
+        } else {
+          stats.textContent =
+              `samples ${samples} · ${seconds}s · ${ready} · ${denoise}`;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

@@ -231,14 +231,6 @@
                             />
                           </label>
                           <label>
-                            Denoise mode
-                            <select id="path-tracer-denoise-mode">
-                              <option value="off">Off</option>
-                              <option value="gpu" selected>GPU</option>
-                              <option value="server-ai">Server AI</option>
-                            </select>
-                          </label>
-                          <label>
                             Scene description
                             <textarea
                               id="server-ai-denoise-scene-description"
@@ -281,9 +273,6 @@
                       );
                       const samplesThresholdValue = document.querySelector(
                         '#samples-threshold-value'
-                      );
-                      const denoiseMode = document.querySelector(
-                        '#path-tracer-denoise-mode'
                       );
                       const serverAIDenoiseSceneDescription =
                         document.querySelector(
@@ -335,11 +324,7 @@
                         );
                         serverAIDenoiseOverlay.hidden = true;
                         serverAIDenoiseOverlay.removeAttribute('src');
-                        setServerAIDenoiseStatus(
-                          denoiseMode.value === 'server-ai'
-                            ? 'Waiting for target samples'
-                            : 'Server AI off'
-                        );
+                        setServerAIDenoiseStatus('Server AI off');
                       };
                       const waitForServerAIDenoiseOverlay = async () => {
                         if (serverAIDenoiseOverlay.complete) {
@@ -360,17 +345,9 @@
                           );
                         });
                       };
-                      const applyDenoiseMode = () => {
-                        const mode = denoiseMode.value;
-                        modelViewer.setAttribute(
-                          'path-tracer-denoise-mode',
-                          mode
-                        );
-                        clearServerAIDenoise();
-                      };
                       const maybeRunServerAIDenoise = async () => {
+                        return;
                         if (
-                          denoiseMode.value !== 'server-ai' ||
                           serverAIDenoiseRunning ||
                           !serverAIDenoiseOverlay.hidden
                         ) {
@@ -495,7 +472,6 @@
                         samplesThresholdValue.textContent = event.target.value;
                         scheduleThresholdUpdate(event.target.value);
                       });
-                      denoiseMode.addEventListener('change', applyDenoiseMode);
                       const commitSceneDescription = () => {
                         const nextSceneDescription =
                           serverAIDenoiseSceneDescription.value.trim();
@@ -510,7 +486,6 @@
                         commitSceneDescription
                       );
                       setInterval(maybeRunServerAIDenoise, 500);
-                      applyDenoiseMode();
                     })();
                   </script>
                 </template>

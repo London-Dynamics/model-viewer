@@ -21,6 +21,9 @@ import {Renderer} from '../../three-components/Renderer.js';
 import {Image as ImageInterface} from './api.js';
 import {$correlatedObjects, $onUpdate, ThreeDOMElement} from './three-dom-element.js';
 
+const imageData = (texture: ThreeTexture): any =>
+    (texture as {image?: any}).image;
+
 
 const quadMaterial = new MeshBasicMaterial();
 const quad = new PlaneGeometry(2, 2);
@@ -45,28 +48,27 @@ export class Image extends ThreeDOMElement implements ImageInterface {
   constructor(onUpdate: () => void, texture: ThreeTexture) {
     super(onUpdate, new Set<ThreeTexture>(texture ? [texture] : []));
 
-    if (!this[$threeTexture].image.src) {
-      this[$threeTexture].image.src =
-          texture.name ? texture.name : 'adhoc_image' + adhocNum++;
+    const image = imageData(this[$threeTexture]);
+    if (image != null && !image.src) {
+      image.src = texture.name ? texture.name : 'adhoc_image' + adhocNum++;
     }
-    if (!this[$threeTexture].image.name) {
-      this[$threeTexture].image.name =
-          (texture && texture.image && texture.image.src) ?
-          texture.image.src.split('/').pop() :
+    if (image != null && !image.name) {
+      image.name = (texture && imageData(texture) && imageData(texture).src) ?
+          imageData(texture).src.split('/').pop() :
           'adhoc_image';
     }
   }
 
   get name(): string {
-    return this[$threeTexture].image.name || '';
+    return imageData(this[$threeTexture])?.name || '';
   }
 
   get uri(): string|undefined {
-    return this[$threeTexture].image.src;
+    return imageData(this[$threeTexture])?.src;
   }
 
   get bufferView(): number|undefined {
-    return this[$threeTexture].image.bufferView;
+    return imageData(this[$threeTexture])?.bufferView;
   }
 
   get element(): HTMLVideoElement|HTMLCanvasElement|undefined {
@@ -91,7 +93,7 @@ export class Image extends ThreeDOMElement implements ImageInterface {
 
   set name(name: string) {
     for (const texture of this[$threeTextures]) {
-      texture.image.name = name;
+      imageData(texture).name = name;
     }
   }
 

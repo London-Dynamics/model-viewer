@@ -1024,6 +1024,18 @@
         }
       },
       {
+        "name": "environment-intensity",
+        "htmlName": "environmentIntensity",
+        "description": "Scales the scene environment map for both the real-time view and the path tracer. <code>1</code> keeps the HDR as authored. <code>0</code> removes environment lighting. The path tracer reads this from the scene and restarts accumulation when it changes.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_settings/#settings\"><span class='attribute'>environment-intensity</span> example</a>"
+        ],
+        "default": {
+          "default": "1",
+          "options": "any value 0 or greater"
+        }
+      },
+      {
         "name": "tone-mapping",
         "htmlName": "toneMapping",
         "description": "Selects the function that compresses the HDR rendering to an SDR image on your screen. ACES is a film industry standard that is commonly used, though it has serious color-accuracy problems. AgX is a new and improved tone mapper seeing broad adoption in film and games. Khronos PBR Neutral ('neutral') is a standard function designed specifically for accurate color reproduction in e-commerce. Our current default is neutral, but prior to v4.0 this default was ACES. The deprecated name commerce is an alias for neutral. Other options include NoToneMapping, which disables tone mapping entirely, LinearToneMapping, a simple linear scaling of brightness values, ReinhardToneMapping, a balanced approach for natural-looking HDR images, and CineonToneMapping, which emulates the look of traditional film. Each tone mapper has its use cases, depending on the desired visual outcome and application requirements.",
@@ -2654,6 +2666,150 @@
           "default": "0",
           "type": "number"
         }
+      },
+      {
+        "name": "shadow-environment-image",
+        "htmlName": "shadowEnvironmentImage",
+        "description": "Optional second HDR for a path-tracer shadow pass. When set and <span class=\"attribute\">path-tracer-floor</span> is <code>regular</code>, the tracer renders two denoised passes with the same camera and composites them. The model pass is the subject only, no floor, transparent background, lit by <span class=\"attribute\">environment-image</span>. The shadow pass is the floor only: the subject is invisible to the camera, still casts shadows, and still appears in reflections, lit entirely by this image. The floor is drawn under the model. Empty leaves the single-pass render unchanged. Other floor modes ignore this image.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_beauty/\">Beauty demo</a>"
+        ],
+        "default": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      {
+        "name": "shadow-environment-rotation",
+        "htmlName": "shadowEnvironmentRotation",
+        "description": "Euler rotation of <span class=\"attribute\">shadow-environment-image</span>, in degrees, as <code>x y z</code>. Independent of the main environment and skybox rotation. Empty is <code>0 0 0</code>. Used only for the shadow pass.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_beauty/\">Beauty demo</a>"
+        ],
+        "default": {
+          "default": "0 0 0",
+          "type": "string"
+        }
+      },
+      {
+        "name": "path-tracer-floor",
+        "htmlName": "pathTracerFloor",
+        "description": "Holdout floor under the subject. <code>none</code> (default) draws no floor. <code>shadow</code> is a shadow catcher: coverage is <code>1 - luminance(light with the subject) / luminance(light without it)</code> over the environment and direct lights, written as alpha so the page shows through wherever nothing is occluded. <code>shadow-reflection</code> adds a reflection of the subject only (Fresnel, <span class=\"attribute\">path-tracer-floor-reflection</span>, and a distance fade). Rays that reflect into the environment add nothing, and the floor's own shading never tints the page. A coloured HDR changes the shadow shape and stays neutral on the page. Empty or <code>1</code> means <code>shadow</code>, for the older boolean attribute.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_beauty/\">Beauty demo</a>"
+        ],
+        "default": {
+          "default": "none",
+          "options": "none, shadow, shadow-reflection"
+        }
+      },
+      {
+        "name": "path-tracer-floor-reflection",
+        "htmlName": "pathTracerFloorReflection",
+        "description": "Strength of the subject reflection when <span class=\"attribute\">path-tracer-floor</span> is <code>shadow-reflection</code>. Multiplied by a dielectric Fresnel term and the distance fade. <code>0.45</code> is the product-photo default. <code>0</code> leaves the shadow catcher with no reflection.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_beauty/\">Beauty demo</a>"
+        ],
+        "default": {
+          "default": "0.45",
+          "type": "number"
+        }
+      },
+      {
+        "name": "path-tracer-cache-url",
+        "htmlName": "pathTracerCacheUrl",
+        "description": "URL of a path-tracer cache file for the initial model. Separate from <span class=\"attribute\">src</span>. The file is fetched when path tracing is on. Each cache type is applied only when that type is enabled and its load-at-start flag is on.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      {
+        "name": "path-tracer-cache-verify",
+        "htmlName": "pathTracerCacheVerify",
+        "description": "When set, a cache file is used only if its header fingerprint matches the current GLB, environment, and tracer settings. Off by default: the fingerprint is still written and can be inspected, but a provided cache is used without that check.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-bvh",
+        "htmlName": "pathTracerCacheBvh",
+        "description": "Enable the BVH cache. Geometry only: a camera move, a material edit, and an environment change keep it. A <span class=\"attribute\">src</span> change drops it.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-irradiance",
+        "htmlName": "pathTracerCacheIrradiance",
+        "description": "Enable the world-space irradiance cache. It is reused across camera moves. It is cleared when geometry, a material swap, or the HDRI/lights change. A pure colour or emissive adjust keeps it, because the cache stores lighting with albedo divided out.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-materials",
+        "htmlName": "pathTracerCacheMaterials",
+        "description": "Enable the material-parameter cache. A material swap or a colour/property adjust clears it. Geometry-only and environment changes keep it.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "false",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-load-bvh",
+        "htmlName": "pathTracerCacheLoadBvh",
+        "description": "When a cache URL is loaded automatically, apply the BVH entry. Does not affect an explicit <code>loadPathTracerCache()</code> call.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-load-irradiance",
+        "htmlName": "pathTracerCacheLoadIrradiance",
+        "description": "When a cache URL is loaded automatically, apply the irradiance entry.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
+      },
+      {
+        "name": "path-tracer-cache-load-materials",
+        "htmlName": "pathTracerCacheLoadMaterials",
+        "description": "When a cache URL is loaded automatically, apply the material entry.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "default": {
+          "default": "true",
+          "options": "true, false"
+        }
       }
     ],
     "Properties": [
@@ -2688,13 +2844,59 @@
         ]
       },
       {
+        "name": "resetPathTracer()",
+        "htmlName": "resetPathTracer",
+        "description": "Restarts path-tracer sample accumulation without rebuilding the BVH. No-op when path tracing is off. Camera motion already restarts accumulation; this is the explicit control for a reset button.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer_settings/#settings\">Settings example</a>"
+        ],
+        "signature": "resetPathTracer(): void"
+      },
+      {
         "name": "capturePathTracerFrame(options?)",
         "htmlName": "capturePathTracerFrame",
-        "description": "Returns <code>{ dataUrl, width, height, samples }</code> for the path tracer's current output at the tracer target's native size. The image is read back from that target and is not resized. When <span class=\"attribute\">path-tracer-denoise</span> is on and <code>samples</code> is at least <span class=\"attribute\">path-tracer-samples-threshold</span>, the frame is the denoised image; otherwise it is the raw accumulation. The soft-shadow floor is composited on top, matching the on-screen path-traced pass. It does not rasterize the scene and does not reset accumulation. Rejects when path tracing is off or not ready, and when <code>samples</code> is 0 (for example just after the pixel ratio changes). <code>fileType</code> defaults to <code>image/png</code>; <code>encoderOptions</code> is the <code>toDataURL</code> quality. <code>minPixelRatio</code> and <code>minShortSide</code> are rejected: a one-off higher-resolution trace cannot reuse the live accumulator without resetting it. Set <span class=\"attribute\">path-tracer-pixel-ratio</span> so the on-screen trace is already the size you need. <code>serverAIDenoise()</code> uses this frame when the tracer is on and ready, and otherwise falls back to <code>captureImage()</code>.",
+        "description": "Returns <code>{ dataUrl, width, height, samples }</code> for the WebGPU path tracer's current output at the tracer target's native size. The image is the WebGPU canvas bitmap and is not resized. When <span class=\"attribute\">path-tracer-denoise</span> is on, Open Image Denoise replaces the raw accumulation once every pixel has reached <span class=\"attribute\">path-tracer-samples</span>. Rejects when path tracing is off, WebGPU is unavailable, or <code>samples</code> is 0. <code>minPixelRatio</code> and <code>minShortSide</code> are rejected. Set <span class=\"attribute\">path-tracer-pixel-ratio</span> so the on-screen trace is already the size you need. <code>serverAIDenoise()</code> uses this frame when the tracer is on and ready.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>",
+          "<a href=\"../examples/ld_path_tracer_settings/#settings\">Settings example</a>"
+        ],
+        "signature": "capturePathTracerFrame(options?: { fileType?: string; encoderOptions?: number }): Promise<{ dataUrl: string; width: number; height: number; samples: number }>"
+      },
+      {
+        "name": "exportPathTracerCache(types?)",
+        "htmlName": "exportPathTracerCache",
+        "description": "Serializes the resident cache types into one <code>.ldpt</code> blob. The header always includes a fingerprint of the GLB, environment, and tracer settings. <code>types</code> limits which entries are written.",
         "links": [
           "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
         ],
-        "signature": "capturePathTracerFrame(options?: { fileType?: string; encoderOptions?: number }): Promise<{ dataUrl: string; width: number; height: number; samples: number }>"
+        "signature": "exportPathTracerCache(types?: Array<'bvh' | 'irradiance' | 'materials'>): Promise<Blob>"
+      },
+      {
+        "name": "loadPathTracerCache(source, options?)",
+        "htmlName": "loadPathTracerCache",
+        "description": "Loads a cache file from a URL, <code>Blob</code>, or <code>ArrayBuffer</code>. A fingerprint mismatch is ignored only when <span class=\"attribute\">path-tracer-cache-verify</span> is set; otherwise the file is applied. Disabled types are skipped. Pass <code>respectLoadFlags: true</code> to also honour the per-type load-at-start flags (the cache URL does this).",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "loadPathTracerCache(source: string | Blob | ArrayBuffer, options?: { types?: Array<'bvh' | 'irradiance' | 'materials'>; respectLoadFlags?: boolean }): Promise<{ accepted: boolean; reason: string; matched: boolean; applied: string[]; skipped: string[] }>"
+      },
+      {
+        "name": "clearPathTracerCache(types?)",
+        "htmlName": "clearPathTracerCache",
+        "description": "Drops every resident cache, or the listed types (<code>bvh</code>, <code>irradiance</code>, <code>materials</code>).",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "clearPathTracerCache(types?: 'bvh' | 'irradiance' | 'materials' | Array<'bvh' | 'irradiance' | 'materials'>): void"
+      },
+      {
+        "name": "getPathTracerCacheStatus()",
+        "htmlName": "getPathTracerCacheStatus",
+        "description": "Flags, byte sizes, BVH build time, time to the first sample, time to a settled frame, and the last load result.",
+        "links": [
+          "<a href=\"../examples/ld_path_tracer/#ld-path-tracer\">Related examples</a>"
+        ],
+        "signature": "getPathTracerCacheStatus(): { flags, sizes, timings, lastLoad, fingerprint }"
       }
     ],
     "Events": [

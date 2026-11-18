@@ -14,12 +14,12 @@
  */
 
 import {expect} from 'chai';
-import {WebGLPathTracer} from 'three-gpu-pathtracer';
 
 import {ModelViewerElement} from '../../model-viewer.js';
 import {isCrossOriginScript, openPathTracerBvhWorker} from '../../three-components/postprocessing/ld-path-tracer/PathTracerBVHWorker.js';
+import {WebGPUPathTracerSession} from '../../three-components/postprocessing/ld-path-tracer/WebGPUPathTracerSession.js';
 import {waitForEvent} from '../../utilities.js';
-import {assetPath, rafPasses} from '../helpers.js';
+import {assetPath, rafPasses, webGpuAvailable} from '../helpers.js';
 
 const ASTRONAUT = assetPath('models/Astronaut.glb');
 
@@ -45,14 +45,17 @@ suite('LD path tracer BVH worker', function() {
   let workerUrls: string[] = [];
   let restore: () => void = () => {};
 
-  const originalSetSceneAsync = WebGLPathTracer.prototype.setSceneAsync;
+  const originalSetSceneAsync = WebGPUPathTracerSession.prototype.setSceneAsync;
   const OriginalWorker = window.Worker;
 
-  setup(async () => {
+  setup(async function() {
+    if (!(await webGpuAvailable())) {
+      this.skip();
+    }
     asyncBuilds = 0;
     workerUrls = [];
-    WebGLPathTracer.prototype.setSceneAsync = function(
-        this: WebGLPathTracer, ...args: unknown[]) {
+    WebGPUPathTracerSession.prototype.setSceneAsync = function(
+        this: WebGPUPathTracerSession, ...args: unknown[]) {
       asyncBuilds++;
       return (originalSetSceneAsync as (...inner: unknown[]) => Promise<void>)
           .apply(this, args);
@@ -65,7 +68,7 @@ suite('LD path tracer BVH worker', function() {
     };
     window.Worker = PatchedWorker as typeof Worker;
     restore = () => {
-      WebGLPathTracer.prototype.setSceneAsync = originalSetSceneAsync;
+      WebGPUPathTracerSession.prototype.setSceneAsync = originalSetSceneAsync;
       window.Worker = OriginalWorker;
     };
 

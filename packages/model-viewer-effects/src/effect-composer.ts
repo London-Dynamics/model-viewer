@@ -18,7 +18,7 @@ import {ModelScene} from '@google/model-viewer/lib/three-components/ModelScene.j
 import {ReactiveElement} from 'lit';
 import {property} from 'lit/decorators.js';
 import {EffectComposer as PPEffectComposer, EffectPass, NormalPass, Pass, RenderPass, Selection} from 'postprocessing';
-import {Camera, HalfFloatType, NeutralToneMapping, ToneMapping, UnsignedByteType, WebGLRenderer} from 'three';
+import {Camera, HalfFloatType, NeutralToneMapping, Scene, ToneMapping, UnsignedByteType, WebGLRenderer} from 'three';
 
 import {IMVEffect, IntegrationOptions, MVEffectBase} from './effects/mixins/effect-base.js';
 import {disposeEffectPass, isConvolution, validateLiteralType} from './utilities.js';
@@ -97,8 +97,11 @@ export class EffectComposer extends PPEffectComposer {
     super.setMainCamera(camera);
   }
 
-  override setMainScene(scene: ModelScene): void {
-    this.scene = scene;
+  override setMainScene(scene: Scene): void {
+    // Published @google/model-viewer@4.1.0 types ModelScene.pivot as an
+    // Object3D, which is not assignable to three r185's Vector3 pivot.
+    // The runtime object is still the scene the effect composer renders.
+    this.scene = scene as unknown as ModelScene;
     super.setMainScene(scene);
   }
 
@@ -109,7 +112,7 @@ export class EffectComposer extends PPEffectComposer {
   refresh(): void {
     if (this.camera && this.scene) {
       super.setMainCamera(this.camera);
-      super.setMainScene(this.scene);
+      super.setMainScene(this.scene as unknown as Scene);
     }
   }
 
@@ -229,7 +232,9 @@ export class MVEffectComposer extends ReactiveElement {
       frameBufferType: this.renderMode === 'quality' ? HalfFloatType :
                                                        UnsignedByteType,
     });
-    this.modelViewerElement.registerEffectComposer(this[$effectComposer]);
+    this.modelViewerElement.registerEffectComposer(
+        this[$effectComposer] as unknown as
+        Parameters<ModelViewerElement['registerEffectComposer']>[0]);
     this[$effectComposer].addPass(this[$renderPass], 0);
     this[$effectComposer].addPass(this[$normalPass], 1);
 
