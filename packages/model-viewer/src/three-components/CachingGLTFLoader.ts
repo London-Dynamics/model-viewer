@@ -113,10 +113,10 @@ const fetchScript = (src: string): Promise<Event> => {
 export type GLTFCacheBucket = 'model'|'environment';
 
 /**
- * At most one released environment model stays decoded, so a viewer can
+ * Default number of released environment models kept decoded, so a viewer can
  * switch back to the previous set without fetching again. Copies that are
  * still in use are retained and are never evicted, and they do not consume
- * this slot. This limit is not modelCacheSize.
+ * this budget. modelCacheSize does not change it; environmentCacheSize does.
  */
 const ENVIRONMENT_MODEL_CACHE_SIZE = 1;
 
@@ -417,16 +417,18 @@ export class CachingGLTFLoader<T extends GLTFInstanceConstructor =
    * The result is not cached here; the material-swap cache owns it. Files
    * with no scene are valid.
    */
-  async loadMaterial(url: string, withCredentials: boolean, signal?: AbortSignal):
-      Promise<{material: Material; warnings: string[]}> {
+  async loadMaterial(
+      url: string, withCredentials: boolean,
+      signal?: AbortSignal): Promise<{material: Material; warnings: string[]}> {
     const run = this[$materialLoadChain].then(
         () => this.loadMaterialNow(url, withCredentials, signal));
     this[$materialLoadChain] = run.then(() => undefined, () => undefined);
     return run;
   }
 
-  private async loadMaterialNow(url: string, withCredentials: boolean, signal?: AbortSignal):
-      Promise<{material: Material; warnings: string[]}> {
+  private async loadMaterialNow(
+      url: string, withCredentials: boolean,
+      signal?: AbortSignal): Promise<{material: Material; warnings: string[]}> {
     this[$loader].setWithCredentials(withCredentials);
     if (meshoptDecoder != null) {
       this[$loader].setMeshoptDecoder(await meshoptDecoder);

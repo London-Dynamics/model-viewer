@@ -151,9 +151,33 @@
         }
       },
       {
+        "name": "environmentCacheSize",
+        "htmlName": "environmentCacheSize",
+        "description": "This static, writable property sets how many released <span class='attribute'>environment-model</span> GLBs stay decoded. A model that a <span class='attribute'>&lt;model-viewer&gt;</span> is still showing is never evicted and does not count toward this limit. The cache is separate from <span class='attribute'>modelCacheSize</span>. The count is models, not bytes. When a model is evicted, its geometries, materials, and textures are disposed, including textures that were shared with the removed copy once nothing else references them. The default keeps one unused environment model so a desktop viewer can switch back without fetching it again. Set <code>0</code> on memory-limited clients so the previous environment model's GPU resources are released as soon as it is replaced.",
+        "default": {
+          "default": "1",
+          "options": "any integer >= 0"
+        },
+        "links": [
+          "<a href=\"../examples/ld_environment/#environment-model\">Environment model example</a>"
+        ]
+      },
+      {
+        "name": "environmentImageCacheSize",
+        "htmlName": "environmentImageCacheSize",
+        "description": "This static, writable property sets how many unused <span class='attribute'>environment-image</span> and <span class='attribute'>skybox-image</span> textures stay decoded. An image a viewer is still showing is never evicted and does not count toward this limit. The default is 0, so replacing an image disposes the previous texture, the PMREM reflection target Three.js generated from it, and a background cube map generated from a skybox. Switching back loads the image again; the browser HTTP cache makes that fetch cheap. Generated <code>neutral</code> and <code>legacy</code> lighting is not part of this cache. The whole cache is still disposed when the renderer is torn down.",
+        "default": {
+          "default": "0",
+          "options": "any integer >= 0"
+        },
+        "links": [
+          "<a href=\"../examples/ld_environment/#environment-model\">Environment model example</a>"
+        ]
+      },
+      {
         "name": "modelCacheSize",
         "htmlName": "modelCacheSize",
-        "description": "This static, writable property sets <span class='attribute'>&lt;model-viewer&gt;</span>'s internal glTF model cache size, controlling number of individual product <span class='attribute'>src</span> models that should be cached. Note that any number of models may be cached at a given time. This number sets the maximum number of unused product models that can be cached even if they are not being used by a <span class='attribute'>&lt;model-viewer&gt;</span> element in the document. Environment models loaded with <span class='attribute'>environment-model</span> use a separate cache: they do not count toward this limit, and loading a product src does not evict an environment model that is in use. Note also that the cache size is measured in number of glTF models, not bytes! This is important to keep in mind, since any two models may have wildly different byte sizes.",
+        "description": "This static, writable property sets <span class='attribute'>&lt;model-viewer&gt;</span>'s internal glTF model cache size, controlling number of individual product <span class='attribute'>src</span> models that should be cached. Note that any number of models may be cached at a given time. This number sets the maximum number of unused product models that can be cached even if they are not being used by a <span class='attribute'>&lt;model-viewer&gt;</span> element in the document. Environment models loaded with <span class='attribute'>environment-model</span> use <span class='attribute'>environmentCacheSize</span> instead: they do not count toward this limit, and loading a product src does not evict an environment model that is in use. Note also that the cache size is measured in number of glTF models, not bytes! This is important to keep in mind, since any two models may have wildly different byte sizes.",
         "default": {
           "default": "5",
           "options": "any integer >= 0"
