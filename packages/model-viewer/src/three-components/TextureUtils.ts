@@ -18,6 +18,7 @@ import {BackSide, BoxGeometry, CubeCamera, CubeTexture, DataTexture, Equirectang
 import {RGBELoader} from 'three/examples/jsm/loaders/RGBELoader.js';
 
 import {deserializeUrl, timePasses} from '../utilities.js';
+import {CacheEvictionPolicy} from '../utilities/cache-eviction-policy.js';
 
 import EnvironmentScene from './EnvironmentScene.js';
 
@@ -34,6 +35,26 @@ const MAX_SAMPLES = 20;
 const HDR_FILE_RE = /\.hdr(\.js)?$/;
 
 export default class TextureUtils {
+  /**
+   * Unused environment-image and skybox-image textures to keep. Images a
+   * viewer still holds are never evicted and do not consume this budget. The
+   * default is 0: switching images disposes the previous texture and the
+   * PMREM Three.js generated from it. Renderer teardown still clears the rest.
+   */
+  private static imageCacheLimit = 0;
+  private static readonly live = new Set<TextureUtils>();
+
+  static get environmentImageCacheSize(): number {
+    return TextureUtils.imageCacheLimit;
+  }
+
+  static set environmentImageCacheSize(value: number) {
+    TextureUtils.imageCacheLimit = value;
+    for (const utils of TextureUtils.live) {
+      utils.environmentImagePolicy.evictionThreshold = value;
+    }
+  }
+
   public lottieLoaderUrl = '';
 
   private _ldrLoader: TextureLoader|null = null;
@@ -45,11 +66,46 @@ export default class TextureUtils {
   private generatedEnvironmentMapAlt: Promise<CubeTexture>|null = null;
 
   private skyboxCache = new Map<string, Promise<Texture>>();
+  private environmentImagePolicy!: CacheEvictionPolicy<string>;
+  private readonly disposedEnvironmentImages = new WeakSet<Texture>();
+  /**
+   * LDR skyboxes are rendered into a target by the gainmap decoder. The
+   * texture we cache is that target's texture; disposing the texture alone
+   * does not release the target.
+   */
+  private readonly environmentImageTargets =
+      new Map<Texture, {dispose: () => void}>();
 
   private blurMaterial: ShaderMaterial|null = null;
   private blurScene: Scene|null = null;
 
   constructor(private threeRenderer: WebGLRenderer) {
+    this.environmentImagePolicy = new CacheEvictionPolicy<string>(
+        {
+          delete: (url: string) => {
+            this.deleteEnvironmentImage(url);
+          },
+        },
+        TextureUtils.environmentImageCacheSize,
+        {unusedOnly: true});
+    TextureUtils.live.add(this);
+  }
+
+  /**
+   * Marks an environment or skybox URL as displayed. The decoded texture is
+   * not evicted while any caller still holds it.
+   */
+  retainEnvironmentImage(url: string) {
+    this.environmentImagePolicy.retain(url);
+  }
+
+  /**
+   * Drops one hold on an environment or skybox URL. When the last hold is
+   * gone and the unused budget is full, the texture and its PMREM are
+   * disposed.
+   */
+  releaseEnvironmentImage(url: string) {
+    this.environmentImagePolicy.release(url);
   }
 
   private ldrLoader(withCredentials: boolean): TextureLoader {
@@ -124,7 +180,10 @@ export default class TextureUtils {
                     result as QuadRenderer<1016, GainMapDecoderMaterial>;
                 if (renderTarget != null) {
                   const {texture} = renderTarget;
+                  // Keep the decoded target. dispose(false) frees the
+                  // decoder's source images and leaves this target alive.
                   result.dispose(false);
+                  this.environmentImageTargets.set(texture, renderTarget);
                   resolve(texture);
                 } else {
                   resolve(result as DataTexture);
@@ -437,11 +496,60 @@ export default class TextureUtils {
     return shaderMaterial;
   }
 
-  async dispose() {
-    for (const [, promise] of this.skyboxCache) {
-      const skybox = await promise;
-      skybox.dispose();
+  private deleteEnvironmentImage(url: string) {
+    const pending = this.skyboxCache.get(url);
+    if (pending == null) {
+      return;
     }
+    this.skyboxCache.delete(url);
+    pending.then(
+        (texture) => {
+          this.disposeEnvironmentImage(texture);
+        },
+        () => {
+            // A rejected load has no texture to free.
+        });
+  }
+
+  /**
+   * Frees the equirect texture. Three.js's WebGLCubeUVMaps listens for the
+   * texture's dispose event and disposes the PMREM render target it
+   * generated from that equirect, so the reflection map does not stay on
+   * the GPU after the source is dropped.
+   */
+  private disposeEnvironmentImage(texture: Texture) {
+    if (this.disposedEnvironmentImages.has(texture)) {
+      return;
+    }
+    this.disposedEnvironmentImages.add(texture);
+    const image = texture.image as {close?: () => void} | null;
+    if (image != null && typeof image.close === 'function') {
+      image.close();
+    }
+    // texture.dispose() notifies WebGLCubeMaps / WebGLCubeUVMaps, which
+    // dispose the background cube map or PMREM. A render-target texture's
+    // own framebuffer is released by the target, not by that event.
+    texture.dispose();
+    const renderTarget = this.environmentImageTargets.get(texture);
+    if (renderTarget != null) {
+      this.environmentImageTargets.delete(texture);
+      renderTarget.dispose();
+    }
+  }
+
+  async dispose() {
+    TextureUtils.live.delete(this);
+    const pending = [...this.skyboxCache.values()];
+    this.skyboxCache.clear();
+    this.environmentImagePolicy.reset();
+    await Promise.all(pending.map(async (promise) => {
+      try {
+        this.disposeEnvironmentImage(await promise);
+      } catch {
+        // A rejected load has no texture to free.
+      }
+    }));
+    this.environmentImageTargets.clear();
     if (this.generatedEnvironmentMap != null) {
       (await this.generatedEnvironmentMap).dispose();
       this.generatedEnvironmentMap = null;

@@ -218,9 +218,9 @@ export const LDEnvironmentMixin =
 
           try {
             // Load beside src. Framing stays on the product scene; this root
-            // is not part of the target bounds. The environment bucket is not
-            // subject to modelCacheSize. The first reveal waits for this
-            // attempt to settle.
+            // is not part of the target bounds. The environment bucket follows
+            // environmentCacheSize, not modelCacheSize. The first reveal waits
+            // for this attempt to settle.
             const gltf = await this[$renderer].loader.load(
                 url, this, undefined, 'environment');
             if (loadId !== this.environmentModelLoadId ||

@@ -20,10 +20,11 @@ import {Camera as ThreeCamera, Event as ThreeEvent, Vector2, Vector3, WebGLRende
 import {HAS_INTERSECTION_OBSERVER, HAS_RESIZE_OBSERVER} from './constants.js';
 import {$updateEnvironment} from './features/environment.js';
 import {makeTemplate} from './template.js';
-import {$evictionPolicy, CachingGLTFLoader} from './three-components/CachingGLTFLoader.js';
+import {$environmentEvictionPolicy, $evictionPolicy, CachingGLTFLoader} from './three-components/CachingGLTFLoader.js';
 import {classifyLoadError, ModelLoadIssue} from './three-components/load-issues.js';
 import {ModelScene} from './three-components/ModelScene.js';
 import {ContextLostEvent, Renderer} from './three-components/Renderer.js';
+import TextureUtils from './three-components/TextureUtils.js';
 import {clamp, debounce} from './utilities.js';
 import {ProgressTracker} from './utilities/progress-tracker.js';
 
@@ -154,6 +155,33 @@ export default class ModelViewerElementBase extends ReactiveElement {
   /** @export */
   static get modelCacheSize(): number {
     return CachingGLTFLoader[$evictionPolicy].evictionThreshold
+  }
+
+  /**
+   * How many released environment-model GLBs stay decoded. Models still shown
+   * are never evicted and do not use this budget. This is separate from
+   * modelCacheSize. The default is 1, matching the previous hard-coded spare.
+   * Set 0 to drop the previous environment model's GPU resources on switch.
+   *
+   * @export
+   */
+  static set environmentCacheSize(value: number) {
+    CachingGLTFLoader[$environmentEvictionPolicy].evictionThreshold = value;
+  }
+
+  /** @export */
+  static get environmentCacheSize(): number {
+    return CachingGLTFLoader[$environmentEvictionPolicy].evictionThreshold;
+  }
+
+  /** @export */
+  static set environmentImageCacheSize(value: number) {
+    TextureUtils.environmentImageCacheSize = value;
+  }
+
+  /** @export */
+  static get environmentImageCacheSize(): number {
+    return TextureUtils.environmentImageCacheSize;
   }
 
   /** @export */

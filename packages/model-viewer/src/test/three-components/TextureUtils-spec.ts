@@ -14,7 +14,7 @@
  */
 
 import {expect} from 'chai';
-import {Cache, CubeReflectionMapping, EquirectangularReflectionMapping, WebGLRenderer} from 'three';
+import {Cache, CubeReflectionMapping, EquirectangularReflectionMapping, Mesh, MeshStandardMaterial, PerspectiveCamera, Scene, SphereGeometry, WebGLRenderer} from 'three';
 
 import TextureUtils from '../../three-components/TextureUtils.js';
 import {assetPath} from '../helpers.js';
@@ -181,5 +181,102 @@ suite('TextureUtils', () => {
       expect(environment.name).to.be.eq('legacy');
       expect(environment.mapping).to.be.eq(CubeReflectionMapping);
     });
+  });
+
+  suite('environment image cache', () => {
+    async function flush() {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    teardown(() => {
+      TextureUtils.environmentImageCacheSize = 0;
+    });
+
+    test(
+        'environmentImageCacheSize 0 disposes an unused HDR and its PMREM',
+        async () => {
+          TextureUtils.environmentImageCacheSize = 0;
+          const {environmentMap} =
+              await textureUtils.generateEnvironmentMapAndSkybox(
+                  null, HDR_EQUI_URL);
+          textureUtils.retainEnvironmentImage(environmentMap.name);
+
+          const scene = new Scene();
+          const camera = new PerspectiveCamera(45, 1, 0.1, 10);
+          camera.position.z = 3;
+          const mesh = new Mesh(
+              new SphereGeometry(0.5, 8, 8), new MeshStandardMaterial());
+          scene.add(mesh);
+          scene.environment = environmentMap;
+          threeRenderer.render(scene, camera);
+          const before = threeRenderer.info.memory.textures;
+          let disposed = false;
+          environmentMap.addEventListener('dispose', () => {
+            disposed = true;
+          });
+
+          scene.environment = null;
+          textureUtils.releaseEnvironmentImage(environmentMap.name);
+          await flush();
+
+          expect(disposed, 'source equirect was disposed').to.equal(true);
+          expect(before - threeRenderer.info.memory.textures)
+              .to.be.at.least(2, 'equirect and generated PMREM leave the GPU');
+          mesh.geometry.dispose();
+          (mesh.material as MeshStandardMaterial).dispose();
+        });
+
+    test(
+        'releasing an LDR skybox disposes its render target and cube map',
+        async () => {
+          TextureUtils.environmentImageCacheSize = 0;
+          const before = threeRenderer.info.memory.textures;
+          const skybox =
+              (await textureUtils.generateEnvironmentMapAndSkybox(EQUI_URL))
+                  .skybox!;
+          textureUtils.retainEnvironmentImage(skybox.name);
+          const scene = new Scene();
+          const camera = new PerspectiveCamera(45, 1, 0.1, 10);
+          camera.position.z = 3;
+          scene.background = skybox;
+          threeRenderer.render(scene, camera);
+          scene.background = null;
+          textureUtils.releaseEnvironmentImage(skybox.name);
+          await flush();
+          expect(threeRenderer.info.memory.textures).to.equal(before);
+        });
+
+    test(
+        'environmentImageCacheSize keeps that many released images',
+        async () => {
+          TextureUtils.environmentImageCacheSize = 1;
+          const first = (await textureUtils.generateEnvironmentMapAndSkybox(
+                             null, HDR_EQUI_URL))
+                            .environmentMap;
+          const second =
+              (await textureUtils.generateEnvironmentMapAndSkybox(EQUI_URL))
+                  .environmentMap;
+          textureUtils.retainEnvironmentImage(first.name);
+          textureUtils.retainEnvironmentImage(second.name);
+
+          let firstDisposed = false;
+          let secondDisposed = false;
+          first.addEventListener('dispose', () => {
+            firstDisposed = true;
+          });
+          second.addEventListener('dispose', () => {
+            secondDisposed = true;
+          });
+
+          textureUtils.releaseEnvironmentImage(first.name);
+          await flush();
+          expect(firstDisposed).to.equal(false);
+
+          textureUtils.releaseEnvironmentImage(second.name);
+          await flush();
+          expect(firstDisposed).to.equal(true);
+          expect(secondDisposed).to.equal(false);
+        });
   });
 });

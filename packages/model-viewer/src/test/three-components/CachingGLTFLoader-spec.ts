@@ -17,7 +17,7 @@ import {expect} from 'chai';
 import {BufferGeometry, Material, Mesh, Object3D, Texture} from 'three';
 
 import ModelViewerElementBase from '../../model-viewer-base.js';
-import {$evictionPolicy, CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
+import {$environmentEvictionPolicy, $evictionPolicy, CachingGLTFLoader} from '../../three-components/CachingGLTFLoader.js';
 import {ModelViewerGLTFInstance} from '../../three-components/gltf-instance/ModelViewerGLTFInstance.js';
 import {ModelLoadError} from '../../three-components/load-issues.js';
 import {assetPath} from '../helpers.js';
@@ -337,6 +337,92 @@ suite('CachingGLTFLoader', () => {
           expect(CachingGLTFLoader.has(TRIANGLE_GLTF_PATH)).to.equal(false);
           expect(CachingGLTFLoader.has(CUBE_GLTF_PATH)).to.equal(true);
           held.dispose();
+        });
+
+    test(
+        'environmentCacheSize defaults to one unused environment model', () => {
+          expect(ModelViewerElement.environmentCacheSize).to.equal(1);
+          expect(
+              CachingGLTFLoader[$environmentEvictionPolicy].evictionThreshold)
+              .to.equal(1);
+        });
+
+    test(
+        'environmentCacheSize 0 disposes a replaced environment model',
+        async () => {
+          const previous = ModelViewerElement.environmentCacheSize;
+          ModelViewerElement.environmentCacheSize = 0;
+          try {
+            const day = await loader.load(
+                ASTRONAUT_GLB_PATH, element, () => {}, 'environment');
+            const night = await loader.load(
+                TRIANGLE_GLTF_PATH, element, () => {}, 'environment');
+            const dayResources = watchDisposals(day.scene);
+            expect(dayResources.textureCount).to.be.greaterThan(0);
+            expect(dayResources.geometryCount).to.be.greaterThan(0);
+
+            day.dispose();
+            await flushDisposal();
+
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.equal(false);
+            expect(dayResources.geometriesDisposed()).to.equal(true);
+            expect(dayResources.materialsDisposed()).to.equal(true);
+            expect(dayResources.texturesDisposed()).to.equal(true);
+            expect(CachingGLTFLoader.has(TRIANGLE_GLTF_PATH)).to.equal(true);
+            night.dispose();
+          } finally {
+            ModelViewerElement.environmentCacheSize = previous;
+          }
+        });
+
+    test(
+        'lowering environmentCacheSize disposes unused environment models',
+        async () => {
+          const previous = ModelViewerElement.environmentCacheSize;
+          try {
+            expect(ModelViewerElement.environmentCacheSize).to.equal(1);
+            const day = await loader.load(
+                ASTRONAUT_GLB_PATH, element, () => {}, 'environment');
+            const night = await loader.load(
+                CUBE_GLTF_PATH, element, () => {}, 'environment');
+            const dayResources = watchDisposals(day.scene);
+            day.dispose();
+            await flushDisposal();
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.equal(true);
+            expect(dayResources.texturesDisposed()).to.equal(false);
+
+            ModelViewerElement.environmentCacheSize = 0;
+            await flushDisposal();
+
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.equal(false);
+            expect(dayResources.texturesDisposed()).to.equal(true);
+            expect(dayResources.geometriesDisposed()).to.equal(true);
+            expect(CachingGLTFLoader.has(CUBE_GLTF_PATH)).to.equal(true);
+            night.dispose();
+          } finally {
+            ModelViewerElement.environmentCacheSize = previous;
+          }
+        });
+
+    test(
+        'environmentCacheSize 0 keeps an environment model that is in use',
+        async () => {
+          const previous = ModelViewerElement.environmentCacheSize;
+          ModelViewerElement.environmentCacheSize = 0;
+          try {
+            const held = await loader.load(
+                ASTRONAUT_GLB_PATH, element, () => {}, 'environment');
+            const heldResources = watchDisposals(held.scene);
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.equal(true);
+            expect(heldResources.texturesDisposed()).to.equal(false);
+            expect(heldResources.geometriesDisposed()).to.equal(false);
+            held.dispose();
+            await flushDisposal();
+            expect(CachingGLTFLoader.has(ASTRONAUT_GLB_PATH)).to.equal(false);
+            expect(heldResources.texturesDisposed()).to.equal(true);
+          } finally {
+            ModelViewerElement.environmentCacheSize = previous;
+          }
         });
   });
 });

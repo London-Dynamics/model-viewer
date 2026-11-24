@@ -148,9 +148,17 @@
                   only when <span class="attribute">environment-model</span>
                   changes, and removed when that attribute is cleared. Product
                   framing still uses the product model only. Environment GLBs
-                  are cached separately and do not count toward
-                  <span class="attribute">modelCacheSize</span>. The HDR is used
-                  for lighting and as a visible skybox.
+                  are cached separately from product models.
+                  <span class="attribute">environmentCacheSize</span> (default
+                  1) is how many unused environment GLBs stay decoded; set it
+                  to 0 to release the previous one's textures and geometry on
+                  switch.
+                  <span class="attribute">environmentImageCacheSize</span>
+                  (default 0) does the same for
+                  <span class="attribute">environment-image</span> and
+                  <span class="attribute">skybox-image</span>, disposing the
+                  previous texture and its PMREM. The HDR is used for lighting
+                  and as a visible skybox.
                   <span class="attribute">clip-to-env</span> defaults to
                   true and extends the camera far plane to the environment
                   model's transformed bounds. It does not change orbit limits.

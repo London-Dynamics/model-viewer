@@ -17,8 +17,9 @@ import {property} from 'lit/decorators.js';
 import {ACESFilmicToneMapping, AgXToneMapping, CineonToneMapping, LinearToneMapping, NeutralToneMapping, NoToneMapping, ReinhardToneMapping, Texture} from 'three';
 
 import ModelViewerElementBase, {$needsRender, $progressTracker, $renderer, $scene, $shouldAttemptPreload} from '../model-viewer-base.js';
-import {clamp, Constructor, deserializeUrl} from '../utilities.js';
 import {ShadowMode} from '../three-components/ModelScene.js';
+import TextureUtils from '../three-components/TextureUtils.js';
+import {clamp, Constructor, deserializeUrl} from '../utilities.js';
 
 export const BASE_OPACITY = 0.5;
 const DEFAULT_SHADOW_INTENSITY = 0.0;
@@ -75,6 +76,48 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
     protected[$currentBackground]: Texture|null = null;
 
     private[$cancelEnvironmentUpdate]: ((...args: any[]) => any)|null = null;
+    private environmentImageUtils: TextureUtils|null = null;
+    private heldEnvironmentImageUrls: string[] = [];
+    private environmentUpdateToken = 0;
+
+    /**
+     * Cache keys for the equirects this viewer is showing. `legacy` and
+     * `neutral` are generated on the renderer and are not part of this cache.
+     * A skybox used as the reflection map is one key, not two.
+     */
+    private activeEnvironmentImageUrls(): string[] {
+      const skyboxUrl = deserializeUrl(this.skyboxImage);
+      const rawEnvironment = this.environmentImage;
+      const environmentUrl =
+          rawEnvironment === 'legacy' || rawEnvironment === 'neutral' ?
+          null :
+          deserializeUrl(rawEnvironment);
+      const urls: string[] = [];
+      if (environmentUrl != null) {
+        urls.push(environmentUrl);
+      }
+      if (skyboxUrl != null && urls.indexOf(skyboxUrl) === -1) {
+        urls.push(skyboxUrl);
+      }
+      return urls;
+    }
+
+    private adoptEnvironmentImageUtils(textureUtils: TextureUtils) {
+      if (this.environmentImageUtils !== textureUtils) {
+        this.environmentImageUtils = textureUtils;
+        this.heldEnvironmentImageUrls = [];
+      }
+    }
+
+    private releaseEnvironmentImageUrls(urls: readonly string[]) {
+      const textureUtils = this.environmentImageUtils;
+      if (textureUtils == null) {
+        return;
+      }
+      for (const url of urls) {
+        textureUtils.releaseEnvironmentImage(url);
+      }
+    }
 
     updated(changedProperties: Map<string|number|symbol, unknown>) {
       super.updated(changedProperties);
@@ -128,6 +171,7 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
     }
 
     async[$updateEnvironment]() {
+      const token = ++this.environmentUpdateToken;
       const {skyboxImage, environmentImage} = this;
 
       if (this[$cancelEnvironmentUpdate] != null) {
@@ -140,9 +184,21 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
       if (textureUtils == null) {
         return;
       }
+      this.adoptEnvironmentImageUtils(textureUtils);
+
+      const nextUrls = this.activeEnvironmentImageUrls();
+      const retainedForThisUpdate = nextUrls.filter(
+          (url) => this.heldEnvironmentImageUrls.indexOf(url) === -1);
+      for (const url of retainedForThisUpdate) {
+        textureUtils.retainEnvironmentImage(url);
+      }
 
       const updateEnvProgress =
           this[$progressTracker].beginActivity('environment-update');
+
+      const releaseStaleHold = () => {
+        this.releaseEnvironmentImageUrls(retainedForThisUpdate);
+      };
 
       try {
         const {environmentMap, skybox} =
@@ -151,6 +207,11 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
                 environmentImage,
                 (progress: number) => updateEnvProgress(clamp(progress, 0, 1)),
                 this.withCredentials);
+
+        if (token !== this.environmentUpdateToken) {
+          releaseStaleHold();
+          return;
+        }
 
         if (this[$currentEnvironmentMap] !== environmentMap) {
           this[$currentEnvironmentMap] = environmentMap;
@@ -167,11 +228,23 @@ export const EnvironmentMixin = <T extends Constructor<ModelViewerElementBase>>(
 
         this[$scene].setEnvironmentAndSkybox(
             this[$currentEnvironmentMap], this[$currentBackground]);
+        const released = this.heldEnvironmentImageUrls.filter(
+            (url) => nextUrls.indexOf(url) === -1);
+        this.releaseEnvironmentImageUrls(released);
+        this.heldEnvironmentImageUrls = nextUrls.slice();
       } catch (errorOrPromise) {
+        if (token !== this.environmentUpdateToken) {
+          releaseStaleHold();
+          return;
+        }
         if (errorOrPromise instanceof Error) {
           this[$scene].setEnvironmentAndSkybox(null, null);
+          releaseStaleHold();
+          this.releaseEnvironmentImageUrls(this.heldEnvironmentImageUrls);
+          this.heldEnvironmentImageUrls = [];
           throw errorOrPromise;
         }
+        releaseStaleHold();
       } finally {
         updateEnvProgress(1.0);
       }
