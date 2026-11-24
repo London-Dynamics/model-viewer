@@ -47,7 +47,21 @@ import {ChangeSource, PointerChangeEvent,} from '../../three-components/SmoothCo
 import {Constructor} from '../../utilities.js';
 import {timeline, TimingFunction} from '../../utilities/animation.js';
 
-import {ensureViewportGizmo, type ViewportGizmoHandle,} from './viewport-gizmo.js';
+import {
+  ensureViewportGizmo,
+  type ViewportGizmoHandle,
+  type ViewportGizmoLabels,
+} from './viewport-gizmo.js';
+
+/** Properties that change the face labels of the viewport gizmo. */
+const VIEWPORT_GIZMO_LABEL_PROPERTIES = [
+  'viewportGizmoLabelRight',
+  'viewportGizmoLabelTop',
+  'viewportGizmoLabelFront',
+  'viewportGizmoLabelLeft',
+  'viewportGizmoLabelBottom',
+  'viewportGizmoLabelBack',
+] as const;
 
 /**
  * Fixed CameraControls damping for LD product viewers. Host
@@ -1724,6 +1738,13 @@ export declare interface LDControlsInterface extends ControlsInterface {
   fpsFlyMode: boolean;
   fpsLookSensitivity: number;
   fpsMoveSensitivity: number;
+  showViewportGizmo: boolean;
+  viewportGizmoLabelRight: string;
+  viewportGizmoLabelTop: string;
+  viewportGizmoLabelFront: string;
+  viewportGizmoLabelLeft: string;
+  viewportGizmoLabelBottom: string;
+  viewportGizmoLabelBack: string;
   setCameraControlsMode(mode: CameraControlMode, options?: {
     enableKeyboardMove?: boolean,
     enableFlyMode?: boolean
@@ -1758,6 +1779,24 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
 
     @property({type: Boolean, attribute: 'viewport-gizmo'})
     showViewportGizmo: boolean = false;
+
+    @property({type: String, attribute: 'viewport-gizmo-label-right'})
+    viewportGizmoLabelRight: string = 'RIGHT';
+
+    @property({type: String, attribute: 'viewport-gizmo-label-top'})
+    viewportGizmoLabelTop: string = 'TOP';
+
+    @property({type: String, attribute: 'viewport-gizmo-label-front'})
+    viewportGizmoLabelFront: string = 'FRONT';
+
+    @property({type: String, attribute: 'viewport-gizmo-label-left'})
+    viewportGizmoLabelLeft: string = 'LEFT';
+
+    @property({type: String, attribute: 'viewport-gizmo-label-bottom'})
+    viewportGizmoLabelBottom: string = 'BOTTOM';
+
+    @property({type: String, attribute: 'viewport-gizmo-label-back'})
+    viewportGizmoLabelBack: string = 'BACK';
 
     viewportGizmoHandle: ViewportGizmoHandle|null = null;
 
@@ -2023,6 +2062,18 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
       this[$controls].enableExternalDragInteraction();
     }
 
+    /** Current gizmo face labels, from the viewport-gizmo-label-* attributes. */
+    getViewportGizmoLabels(): Partial<ViewportGizmoLabels> {
+      return {
+        right: this.viewportGizmoLabelRight,
+        top: this.viewportGizmoLabelTop,
+        front: this.viewportGizmoLabelFront,
+        left: this.viewportGizmoLabelLeft,
+        bottom: this.viewportGizmoLabelBottom,
+        back: this.viewportGizmoLabelBack,
+      };
+    }
+
     connectedCallback() {
       super.connectedCallback();
 
@@ -2042,6 +2093,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         controls: this[$controls],
         show: this.showViewportGizmo,
         existing: this.viewportGizmoHandle,
+        labels: this.getViewportGizmoLabels(),
       });
     }
 
@@ -2214,7 +2266,19 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
         });
       }
 
-      if (changedProperties.has('showViewportGizmo')) {
+      // The gizmo reads its labels only when it is built. Rebuild it when a
+      // label changes after the first update (old value must be defined).
+      const viewportGizmoLabelsChanged = VIEWPORT_GIZMO_LABEL_PROPERTIES.some(
+          (name) =>
+              changedProperties.has(name) &&
+              changedProperties.get(name) !== undefined);
+      if (viewportGizmoLabelsChanged && this.viewportGizmoHandle) {
+        this.viewportGizmoHandle.dispose();
+        this.viewportGizmoHandle = null;
+      }
+
+      if (changedProperties.has('showViewportGizmo') ||
+          viewportGizmoLabelsChanged) {
         this.viewportGizmoHandle = ensureViewportGizmo({
           host: this,
           scene: this[$scene],
@@ -2222,6 +2286,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           controls: this[$controls],
           show: this.showViewportGizmo,
           existing: this.viewportGizmoHandle,
+          labels: this.getViewportGizmoLabels(),
         });
       }
     }
@@ -2766,6 +2831,7 @@ export const LDControlsMixin = <T extends Constructor<ModelViewerElementBase>>(
           controls: this[$controls],
           show: this.showViewportGizmo,
           existing: this.viewportGizmoHandle,
+          labels: this.getViewportGizmoLabels(),
         });
       }
     }

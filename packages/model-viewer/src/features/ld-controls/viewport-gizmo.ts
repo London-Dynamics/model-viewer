@@ -42,6 +42,25 @@ type ControlsLike = {
   getTarget?: (target: THREE.Vector3) => THREE.Vector3;
 };
 
+/** Face labels shown on the viewport gizmo. */
+export interface ViewportGizmoLabels {
+  right: string;
+  top: string;
+  front: string;
+  left: string;
+  bottom: string;
+  back: string;
+}
+
+export const DEFAULT_VIEWPORT_GIZMO_LABELS: Readonly<ViewportGizmoLabels> = {
+  right: 'RIGHT',
+  top: 'TOP',
+  front: 'FRONT',
+  left: 'LEFT',
+  bottom: 'BOTTOM',
+  back: 'BACK',
+};
+
 interface EnsureOptions {
   host: ModelViewerElementBase;
   scene: any;
@@ -49,6 +68,21 @@ interface EnsureOptions {
   controls: any;
   show: boolean;
   existing?: ViewportGizmoHandle | null;
+  labels?: Partial<ViewportGizmoLabels>;
+}
+
+/** Returns each label, using the default when a value is empty or missing. */
+export function resolveViewportGizmoLabels(
+  labels: Partial<ViewportGizmoLabels> = {}
+): ViewportGizmoLabels {
+  const resolved: ViewportGizmoLabels = {...DEFAULT_VIEWPORT_GIZMO_LABELS};
+  for (const key of Object.keys(resolved) as (keyof ViewportGizmoLabels)[]) {
+    const value = labels[key];
+    if (typeof value === 'string' && value.length > 0) {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
 }
 
 function lengthVarToPixels(
@@ -161,6 +195,7 @@ export function ensureViewportGizmo(
   options: EnsureOptions
 ): ViewportGizmoHandle | null {
   const { scene, container, controls, show, existing, host } = options;
+  const labels = resolveViewportGizmoLabels(options.labels);
 
   // If the gizmo should be hidden, dispose any existing instance.
   if (!show) {
@@ -225,7 +260,7 @@ export function ensureViewportGizmo(
         color: 0x6495ed,
         labelColor: 0xffffff,
       },
-      label: 'RIGHT',
+      label: labels.right,
     },
     y: {
       labelColor: 0x44403c,
@@ -233,7 +268,7 @@ export function ensureViewportGizmo(
         color: 0x6495ed,
         labelColor: 0xffffff,
       },
-      label: 'TOP',
+      label: labels.top,
     },
     z: {
       labelColor: 0x44403c,
@@ -241,7 +276,7 @@ export function ensureViewportGizmo(
         color: 0x6495ed,
         labelColor: 0xffffff,
       },
-      label: 'FRONT',
+      label: labels.front,
     },
     nx: {
       labelColor: 0x44403c,
@@ -249,7 +284,7 @@ export function ensureViewportGizmo(
         color: 0x6495ed,
         labelColor: 0xffffff,
       },
-      label: 'LEFT',
+      label: labels.left,
     },
     ny: {
       labelColor: 0x44403c,
@@ -257,7 +292,7 @@ export function ensureViewportGizmo(
         color: 0x6495ed,
         labelColor: 0xffffff,
       },
-      label: 'BOTTOM',
+      label: labels.bottom,
     },
     nz: {
       labelColor: 0x44403c,
@@ -265,7 +300,7 @@ export function ensureViewportGizmo(
         color: 0x6495ed,
         labelColor: 0xffffff,
       },
-      label: 'BACK',
+      label: labels.back,
     },
   };
 

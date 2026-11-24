@@ -726,6 +726,78 @@
           "default": "false",
           "options": "true, false"
         }
+      },
+      {
+        "name": "viewport-gizmo-label-right",
+        "htmlName": "viewportGizmoLabelRight",
+        "description": "Text shown on the right face of the viewport gizmo. Use with <span class=\"attribute\">viewport-gizmo</span>. An empty value uses the default. Long labels make the text of all faces smaller.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-labels\">Viewport gizmo labels</a>"
+        ],
+        "default": {
+          "default": "RIGHT",
+          "options": "any text"
+        }
+      },
+      {
+        "name": "viewport-gizmo-label-top",
+        "htmlName": "viewportGizmoLabelTop",
+        "description": "Text shown on the top face of the viewport gizmo. Use with <span class=\"attribute\">viewport-gizmo</span>. An empty value uses the default. Long labels make the text of all faces smaller.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-labels\">Viewport gizmo labels</a>"
+        ],
+        "default": {
+          "default": "TOP",
+          "options": "any text"
+        }
+      },
+      {
+        "name": "viewport-gizmo-label-front",
+        "htmlName": "viewportGizmoLabelFront",
+        "description": "Text shown on the front face of the viewport gizmo. Use with <span class=\"attribute\">viewport-gizmo</span>. An empty value uses the default. Long labels make the text of all faces smaller.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-labels\">Viewport gizmo labels</a>"
+        ],
+        "default": {
+          "default": "FRONT",
+          "options": "any text"
+        }
+      },
+      {
+        "name": "viewport-gizmo-label-left",
+        "htmlName": "viewportGizmoLabelLeft",
+        "description": "Text shown on the left face of the viewport gizmo. Use with <span class=\"attribute\">viewport-gizmo</span>. An empty value uses the default. Long labels make the text of all faces smaller.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-labels\">Viewport gizmo labels</a>"
+        ],
+        "default": {
+          "default": "LEFT",
+          "options": "any text"
+        }
+      },
+      {
+        "name": "viewport-gizmo-label-bottom",
+        "htmlName": "viewportGizmoLabelBottom",
+        "description": "Text shown on the bottom face of the viewport gizmo. Use with <span class=\"attribute\">viewport-gizmo</span>. An empty value uses the default. Long labels make the text of all faces smaller.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-labels\">Viewport gizmo labels</a>"
+        ],
+        "default": {
+          "default": "BOTTOM",
+          "options": "any text"
+        }
+      },
+      {
+        "name": "viewport-gizmo-label-back",
+        "htmlName": "viewportGizmoLabelBack",
+        "description": "Text shown on the back face of the viewport gizmo. Use with <span class=\"attribute\">viewport-gizmo</span>. An empty value uses the default. Long labels make the text of all faces smaller.",
+        "links": [
+          "<a href=\"../examples/ld_camera/#viewport-gizmo-labels\">Viewport gizmo labels</a>"
+        ],
+        "default": {
+          "default": "BACK",
+          "options": "any text"
+        }
       }
     ],
     "CSS": [

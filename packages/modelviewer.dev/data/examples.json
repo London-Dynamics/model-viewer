@@ -358,6 +358,10 @@
         "name": "Viewport Gizmo Positioning"
       },
       {
+        "htmlId": "viewport-gizmo-labels",
+        "name": "Viewport Gizmo Labels"
+      },
+      {
         "htmlId": "interaction-mode-pan",
         "name": "Interaction Mode (Pan)"
       },

@@ -278,6 +278,40 @@
         </div>
 
         <div class="sample">
+          <div id="viewport-gizmo-labels" class="demo"></div>
+          <div class="content">
+            <div class="wrapper">
+              <div class="heading">
+                <h2 class="demo-title">Viewport gizmo labels</h2>
+                <h4>
+                  Set the face labels of the viewport gizmo with the
+                  <span class="attribute">viewport-gizmo-label-*</span>
+                  attributes. Each attribute sets one face. Long labels make
+                  the text of all faces smaller.
+                </h4>
+              </div>
+              <example-snippet stamp-to="viewport-gizmo-labels" highlight-as="html">
+                <template>
+                  <model-viewer
+                    src="../../shared-assets/models/cubes.gltf"
+                    camera-controls
+                    interaction-prompt="none"
+                    shadow-intensity="1"
+                    viewport-gizmo
+                    viewport-gizmo-label-top="Banana"
+                    viewport-gizmo-label-front="Apple"
+                    viewport-gizmo-label-right="Pear"
+                    viewport-gizmo-label-left="Plum"
+                    viewport-gizmo-label-bottom="Fig"
+                    viewport-gizmo-label-back="Grape"
+                  ></model-viewer>
+                </template>
+              </example-snippet>
+            </div>
+          </div>
+        </div>
+
+        <div class="sample">
           <div id="interaction-mode-pan" class="demo"></div>
           <div class="content">
             <div class="wrapper">
