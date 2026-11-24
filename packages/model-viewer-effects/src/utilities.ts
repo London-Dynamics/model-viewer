@@ -58,6 +58,21 @@ export function getOwnPropertySymbolValue<T = unknown>(object: any, key: string)
 }
 
 /**
+ * three r185 reads Object3D.pivot as a Vector3 in updateMatrix(). Published
+ * @google/model-viewer@4.1.0 still assigns its pivot Object3D to that field,
+ * which turns the scene matrix into NaN. A zero offset keeps the node in the
+ * graph and leaves the matrix unchanged. Our viewer uses pivotNode instead.
+ */
+export function neutralizeLegacyPivot(scene: {pivot?: unknown} | null | undefined): void {
+  const pivot = scene?.pivot as {isObject3D?: boolean; x?: number; y?: number; z?: number} | null | undefined;
+  if (pivot != null && pivot.isObject3D === true) {
+    pivot.x = 0;
+    pivot.y = 0;
+    pivot.z = 0;
+  }
+}
+
+/**
  * @param {Number} value
  * @param {Number} lowerLimit
  * @param {Number} upperLimit

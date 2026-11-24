@@ -13,35 +13,14 @@
  * limitations under the License.
  */
 
-import {
-  BackSide,
-  Camera,
-  DoubleSide,
-  FrontSide,
-  Box3,
-  Material,
-  Matrix4,
-  Mesh,
-  MeshBasicMaterial,
-  MeshDepthMaterial,
-  Object3D,
-  OrthographicCamera,
-  PlaneGeometry,
-  RenderTargetOptions,
-  RGBAFormat,
-  Scene,
-  ShaderMaterial,
-  Vector3,
-  WebGLRenderer,
-  WebGLRenderTarget,
-} from 'three';
-import { HorizontalBlurShader } from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
-import { VerticalBlurShader } from 'three/examples/jsm/shaders/VerticalBlurShader.js';
-import { lerp } from 'three/src/math/MathUtils.js';
+import {BackSide, Box3, Camera, Color, DoubleSide, FrontSide, Material, Matrix4, Mesh, MeshBasicMaterial, MeshDepthMaterial, Object3D, OrthographicCamera, PlaneGeometry, RenderTargetOptions, RGBAFormat, Scene, ShaderMaterial, Vector3, WebGLRenderer, WebGLRenderTarget,} from 'three';
+import {HorizontalBlurShader} from 'three/examples/jsm/shaders/HorizontalBlurShader.js';
+import {VerticalBlurShader} from 'three/examples/jsm/shaders/VerticalBlurShader.js';
+import {lerp} from 'three/src/math/MathUtils.js';
 
-import { ModelScene } from './ModelScene.js';
+import {ModelScene} from './ModelScene.js';
 
-export type Side = 'back' | 'bottom';
+export type Side = 'back'|'bottom';
 
 // The softness [0, 1] of the shadow is mapped to a resolution between
 // 2^LOG_MAX_RESOLUTION and 2^LOG_MIN_RESOLUTION.
@@ -87,8 +66,7 @@ const ROOM_FLOOR_SHADOW_FRAGMENT = /* glsl */ `
 `;
 
 type RoomFloorOverlay = {
-  source: Mesh;
-  overlay: Mesh;
+  source: Mesh; overlay: Mesh;
 };
 
 /**
@@ -107,14 +85,15 @@ type RoomFloorOverlay = {
 export class Shadow extends Object3D {
   private camera = new OrthographicCamera();
   // private cameraHelper = new CameraHelper(this.camera);
-  private renderTarget: WebGLRenderTarget | null = null;
-  private renderTargetBlur: WebGLRenderTarget | null = null;
+  private renderTarget: WebGLRenderTarget|null = null;
+  private renderTargetBlur: WebGLRenderTarget|null = null;
   private depthMaterial = new MeshDepthMaterial();
   private horizontalBlurMaterial = new ShaderMaterial(HorizontalBlurShader);
   private verticalBlurMaterial = new ShaderMaterial(VerticalBlurShader);
   private intensity = 0;
   private softness = 1;
   private floor: Mesh;
+  private readonly shadowClearColor = new Color();
   private blurPlane: Mesh;
   private boundingBox = new Box3();
   private size = new Vector3();
@@ -124,32 +103,17 @@ export class Shadow extends Object3D {
 
   private roomFloorOverlays: RoomFloorOverlay[] = [];
   private roomFloorSignature: string = '';
-  private roomFloorMaterial: ShaderMaterial | null = null;
+  private roomFloorMaterial: ShaderMaterial|null = null;
   private readonly textureMatrix = new Matrix4();
   private readonly tmpInvParentMatrix = new Matrix4();
   private readonly textureMatrixBias = new Matrix4().set(
-    0.5,
-    0.0,
-    0.0,
-    0.5,
-    0.0,
-    0.5,
-    0.0,
-    0.5,
-    0.0,
-    0.0,
-    0.5,
-    0.5,
-    0.0,
-    0.0,
-    0.0,
-    1.0
-  );
+      0.5, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0,
+      1.0);
 
   constructor(scene: ModelScene, softness: number, side: Side) {
     super();
 
-    const { camera } = this;
+    const {camera} = this;
     camera.rotation.x = Math.PI / 2;
     camera.left = -0.5;
     camera.right = 0.5;
@@ -181,11 +145,10 @@ export class Shadow extends Object3D {
     scene.target.add(this);
 
     // like MeshDepthMaterial, but goes from black to transparent
-    this.depthMaterial.onBeforeCompile = function (shader) {
+    this.depthMaterial.onBeforeCompile = function(shader) {
       shader.fragmentShader = shader.fragmentShader.replace(
-        'gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );',
-        'gl_FragColor = vec4( vec3( 0.0 ), ( 1.0 - fragCoordZ ) * opacity );'
-      );
+          'gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );',
+          'gl_FragColor = vec4( vec3( 0.0 ), ( 1.0 - fragCoordZ ) * opacity );');
     };
     // Render both sides, back sides face the light source and
     // front sides supply depth information for soft shadows
@@ -202,19 +165,18 @@ export class Shadow extends Object3D {
    * needed, as this controls the shadow's resolution.
    */
   setScene(scene: ModelScene, softness: number, side: Side) {
-    const { boundingBox, size, rotation, position } = this;
+    const {boundingBox, size, rotation, position} = this;
 
     this.isAnimated = scene.animationNames.length > 0;
     this.boundingBox.copy(scene.boundingBox);
     this.size.copy(scene.size);
-    this.maxDimension =
-      Math.max(size.x, size.y, size.z) *
-      (this.isAnimated ? ANIMATION_SCALING : 1);
+    this.maxDimension = Math.max(size.x, size.y, size.z) *
+        (this.isAnimated ? ANIMATION_SCALING : 1);
 
     this.boundingBox.getCenter(position);
 
     if (side === 'back') {
-      const { min, max } = boundingBox;
+      const {min, max} = boundingBox;
       [min.y, min.z] = [min.z, min.y];
       [max.y, max.z] = [max.z, max.y];
       [size.y, size.z] = [size.z, size.y];
@@ -230,8 +192,7 @@ export class Shadow extends Object3D {
       const maxY = boundingBox.max.y;
       size.y = this.maxDimension;
       boundingBox.expandByVector(
-        size.subScalar(this.maxDimension).multiplyScalar(-0.5)
-      );
+          size.subScalar(this.maxDimension).multiplyScalar(-0.5));
       boundingBox.min.y = minY;
       boundingBox.max.y = maxY;
       size.set(this.maxDimension, maxY - minY, this.maxDimension);
@@ -252,16 +213,14 @@ export class Shadow extends Object3D {
    */
   setSoftness(softness: number) {
     this.softness = softness;
-    const { size, camera } = this;
+    const {size, camera} = this;
     const scaleY = this.isAnimated ? ANIMATION_SCALING : 1;
 
-    const resolution =
-      scaleY *
-      Math.pow(
-        2,
-        LOG_MAX_RESOLUTION -
-          softness * (LOG_MAX_RESOLUTION - LOG_MIN_RESOLUTION)
-      );
+    const resolution = scaleY *
+        Math.pow(
+            2,
+            LOG_MAX_RESOLUTION -
+                softness * (LOG_MAX_RESOLUTION - LOG_MIN_RESOLUTION));
     this.setMapSize(resolution);
 
     const softFar = size.y / 2;
@@ -282,27 +241,24 @@ export class Shadow extends Object3D {
    * Lower-level version of the above function.
    */
   setMapSize(maxMapSize: number) {
-    const { size } = this;
+    const {size} = this;
 
     if (this.isAnimated) {
       maxMapSize *= ANIMATION_SCALING;
     }
 
     const baseWidth = Math.floor(
-      size.x > size.z ? maxMapSize : (maxMapSize * size.x) / size.z
-    );
+        size.x > size.z ? maxMapSize : (maxMapSize * size.x) / size.z);
     const baseHeight = Math.floor(
-      size.x > size.z ? (maxMapSize * size.z) / size.x : maxMapSize
-    );
+        size.x > size.z ? (maxMapSize * size.z) / size.x : maxMapSize);
     // width of blur filter in pixels (not adjustable)
     const TAP_WIDTH = 10;
     const width = TAP_WIDTH + baseWidth;
     const height = TAP_WIDTH + baseHeight;
 
-    if (
-      this.renderTarget != null &&
-      (this.renderTarget.width !== width || this.renderTarget.height !== height)
-    ) {
+    if (this.renderTarget != null &&
+        (this.renderTarget.width !== width ||
+         this.renderTarget.height !== height)) {
       this.renderTarget.dispose();
       this.renderTarget = null;
       this.renderTargetBlur!.dispose();
@@ -310,21 +266,31 @@ export class Shadow extends Object3D {
     }
 
     if (this.renderTarget == null) {
-      const params: RenderTargetOptions = { format: RGBAFormat };
+      const params: RenderTargetOptions = {format: RGBAFormat};
       this.renderTarget = new WebGLRenderTarget(width, height, params);
       this.renderTargetBlur = new WebGLRenderTarget(width, height, params);
 
       (this.floor.material as MeshBasicMaterial).map =
-        this.renderTarget.texture;
+          this.renderTarget.texture;
       this.bindRoomFloorShadowMap();
     }
 
-    // These pads account for the softening radius around the shadow.
-    this.camera.scale.set(
-      size.x * (1 + TAP_WIDTH / baseWidth),
-      size.z * (1 + TAP_WIDTH / baseHeight),
-      1
-    );
+    // Pads keep the blur kernel inside the map. three r183+ omits camera
+    // scale from the view matrix, so camera.scale no longer widens the
+    // frustum while the floor and blur plane (its children) still grow.
+    // The visible plane then samples only the center texel and the shadow
+    // is a flat card. Size the frustum and the planes together instead.
+    const planeWidth = size.x * (1 + TAP_WIDTH / baseWidth);
+    const planeHeight = size.z * (1 + TAP_WIDTH / baseHeight);
+    this.camera.scale.set(1, 1, 1);
+    this.camera.left = -planeWidth / 2;
+    this.camera.right = planeWidth / 2;
+    this.camera.bottom = -planeHeight / 2;
+    this.camera.top = planeHeight / 2;
+    this.camera.updateProjectionMatrix();
+    this.floor.scale.set(planeWidth, planeHeight, 1);
+    this.blurPlane.scale.set(planeWidth, planeHeight, 1);
+    this.updateRoomFloorTextureMatrix();
     this.needsUpdate = true;
   }
 
@@ -334,9 +300,8 @@ export class Shadow extends Object3D {
    */
   setIntensity(intensity: number) {
     this.intensity = intensity;
-    const opacity =
-      intensity *
-      lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
+    const opacity = intensity *
+        lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
     if (intensity > 0) {
       this.visible = true;
       this.applyReceiverVisibility(opacity);
@@ -404,7 +369,7 @@ export class Shadow extends Object3D {
    * synthetic plane. No-op when the mesh signature is unchanged. Pass null or
    * an empty list to clear and restore the synthetic plane.
    */
-  setRoomFloorReceivers(meshes: Mesh[] | null): void {
+  setRoomFloorReceivers(meshes: Mesh[]|null): void {
     const list = meshes && meshes.length > 0 ? meshes : null;
     if (list == null) {
       this.clearRoomFloorReceivers();
@@ -433,27 +398,23 @@ export class Shadow extends Object3D {
         this.syncOverlayMatrix(source, overlay);
       };
       this.add(overlay);
-      this.roomFloorOverlays.push({ source, overlay });
+      this.roomFloorOverlays.push({source, overlay});
     }
 
-    const opacity =
-      this.intensity *
-      lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
+    const opacity = this.intensity *
+        lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness);
     this.applyReceiverVisibility(opacity);
     this.updateRoomFloorTextureMatrix();
   }
 
   clearRoomFloorReceivers(): void {
-    if (
-      this.roomFloorOverlays.length === 0 &&
-      this.roomFloorMaterial == null &&
-      this.roomFloorSignature === ''
-    ) {
+    if (this.roomFloorOverlays.length === 0 && this.roomFloorMaterial == null &&
+        this.roomFloorSignature === '') {
       return;
     }
 
     for (let i = 0; i < this.roomFloorOverlays.length; i++) {
-      const { overlay } = this.roomFloorOverlays[i];
+      const {overlay} = this.roomFloorOverlays[i];
       overlay.onBeforeRender = () => {};
       overlay.removeFromParent();
       // Geometry is owned by the source GLTF — do not dispose.
@@ -469,9 +430,8 @@ export class Shadow extends Object3D {
 
     if (this.intensity > 0) {
       this.applyReceiverVisibility(
-        this.intensity *
-          lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness)
-      );
+          this.intensity *
+          lerp(DEFAULT_HARD_INTENSITY, 1, this.softness * this.softness));
     }
   }
 
@@ -496,20 +456,18 @@ export class Shadow extends Object3D {
     const modelScene = scene as any;
     const baseModel = modelScene._model;
     const baseModelWasVisible = baseModel?.visible;
-    const shouldHideBaseModel =
-      baseModel?.userData?.isBaseModel &&
-      modelScene.element?.disableBaseModelShadows;
+    const shouldHideBaseModel = baseModel?.userData?.isBaseModel &&
+        modelScene.element?.disableBaseModelShadows;
     if (shouldHideBaseModel) {
       baseModel.visible = false;
     }
 
-    // HACK: Hide helper overlays during shadow rendering to prevent interference
+    // HACK: Hide helper overlays during shadow rendering to prevent
+    // interference
     let gridContainer: any = null;
     let gridWasVisible = false;
-    const hiddenShadowHelperObjects: Array<{
-      object: Object3D;
-      visible: boolean;
-    }> = [];
+    const hiddenShadowHelperObjects:
+        Array<{object: Object3D; visible: boolean;}> = [];
     scene.traverse((object: any) => {
       if (object.name === 'ld-grid') {
         gridContainer = object;
@@ -517,7 +475,7 @@ export class Shadow extends Object3D {
         object.visible = false;
       }
       if (object.userData?.skipShadow === true && object.visible) {
-        hiddenShadowHelperObjects.push({ object, visible: true });
+        hiddenShadowHelperObjects.push({object, visible: true});
         object.visible = false;
       }
     });
@@ -525,9 +483,11 @@ export class Shadow extends Object3D {
     // force the depthMaterial to everything
     scene.overrideMaterial = this.depthMaterial;
 
-    // set renderer clear alpha
+    // Empty texels must be transparent black. A leftover white clear becomes
+    // a grey card once the blur mixes it into the shadow.
+    renderer.getClearColor(this.shadowClearColor);
     const initialClearAlpha = renderer.getClearAlpha();
-    renderer.setClearAlpha(0);
+    renderer.setClearColor(0x000000, 0);
     const floorWasVisible = this.floor.visible;
     this.floor.visible = false;
 
@@ -563,7 +523,7 @@ export class Shadow extends Object3D {
     // reset and render the normal scene
     renderer.xr.enabled = xrEnabled;
     renderer.setRenderTarget(oldRenderTarget);
-    renderer.setClearAlpha(initialClearAlpha);
+    renderer.setClearColor(this.shadowClearColor, initialClearAlpha);
     // this.cameraHelper.visible = true;
   }
 
@@ -586,14 +546,14 @@ export class Shadow extends Object3D {
 
     if (useRoomReceivers) {
       for (let i = 0; i < this.roomFloorOverlays.length; i++) {
-        let parent: Object3D | null = this.roomFloorOverlays[i].overlay;
+        let parent: Object3D|null = this.roomFloorOverlays[i].overlay;
         while (parent != null) {
           keepVisible.add(parent);
           parent = parent.parent;
         }
       }
     } else {
-      let parent: Object3D | null = this.floor;
+      let parent: Object3D|null = this.floor;
       while (parent != null) {
         keepVisible.add(parent);
         parent = parent.parent;
@@ -617,9 +577,8 @@ export class Shadow extends Object3D {
         return;
       }
 
-      const materials = Array.isArray(mesh.material)
-        ? mesh.material
-        : [mesh.material];
+      const materials =
+          Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const material of materials) {
         if (!materialColorWriteState.has(material)) {
           materialColorWriteState.set(material, material.colorWrite);
@@ -687,7 +646,7 @@ export class Shadow extends Object3D {
     blurPlane.material = verticalBlurMaterial;
     verticalBlurMaterial.uniforms.v.value = 1 / this.renderTarget!.height;
     verticalBlurMaterial.uniforms.tDiffuse.value =
-      this.renderTargetBlur!.texture;
+        this.renderTargetBlur!.texture;
 
     renderer.setRenderTarget(renderTarget);
     renderer.render(blurPlane, camera);
@@ -705,8 +664,7 @@ export class Shadow extends Object3D {
     this.textureMatrix.multiply(this.camera.projectionMatrix);
     this.textureMatrix.multiply(this.camera.matrixWorldInverse);
     this.roomFloorMaterial.uniforms.textureMatrix.value.copy(
-      this.textureMatrix
-    );
+        this.textureMatrix);
   }
 
   dispose() {
@@ -742,9 +700,9 @@ export class Shadow extends Object3D {
     }
     this.roomFloorMaterial = new ShaderMaterial({
       uniforms: {
-        shadowMap: { value: this.renderTarget?.texture ?? null },
-        opacity: { value: 1 },
-        textureMatrix: { value: this.textureMatrix.clone() },
+        shadowMap: {value: this.renderTarget?.texture ?? null},
+        opacity: {value: 1},
+        textureMatrix: {value: this.textureMatrix.clone()},
       },
       vertexShader: ROOM_FLOOR_SHADOW_VERTEX,
       fragmentShader: ROOM_FLOOR_SHADOW_FRAGMENT,
@@ -763,8 +721,7 @@ export class Shadow extends Object3D {
     if (this.roomFloorMaterial == null || this.renderTarget == null) {
       return;
     }
-    this.roomFloorMaterial.uniforms.shadowMap.value =
-      this.renderTarget.texture;
+    this.roomFloorMaterial.uniforms.shadowMap.value = this.renderTarget.texture;
   }
 
   private applyReceiverVisibility(opacity: number): void {
